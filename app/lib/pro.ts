@@ -1,5 +1,5 @@
-// ⭐ Velo Pro tools: contacts, and drafts of texts and calls Velo makes for
-// them from her own number. Velo only ever DRAFTS: nothing is sent or dialed
+// ⭐ Velo Pro tools: contacts, drafts of texts and calls Velo makes for them
+// from her own number, and drafts of posts to their Facebook Page. Velo only ever DRAFTS: nothing is sent or dialed
 // until the person approves it (Send in the app, or YES by text) — see
 // app/api/actions and runAction below.
 import type Anthropic from "@anthropic-ai/sdk";
@@ -7,13 +7,15 @@ import type { NextRequest } from "next/server";
 import type { Caller } from "./caller";
 import { sql } from "./db";
 import { toE164, showPhone, sendSms, startCall, publicUrl } from "./twilio";
+import { connectedPage, connectedPageName, publish, fbErrorMessage } from "./facebook";
 
-export const PRO_TOOL_NAMES = ["save_contact", "list_contacts", "draft_text", "draft_call"] as const;
+export const PRO_TOOL_NAMES = ["save_contact", "list_contacts", "draft_text", "draft_call", "draft_post"] as const;
 export const isProTool = (name: string) => (PRO_TOOL_NAMES as readonly string[]).includes(name);
 export class ProError extends Error {}
 const clean = (v: unknown, n: number) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, n);
 /** Per person per day. */
-export const DAILY = { text: 30, call: 10 };
+export const DAILY = { text: 30, call: 10, post: 10 };
+type Kind = keyof typeof DAILY;
 
 export const PRO_TOOLS: Anthropic.Tool[] = [
   {
@@ -45,6 +47,16 @@ export const PRO_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "draft_post",
+    description: "Draft a post for their connected Facebook Page. It is NOT published until they approve it (Post in the app, or YES by text). Write it in their voice for their audience; keep it natural, no hashtag spam. Never say it's posted.",
+    input_schema: {
+      type: "object",
+      properties: { message: { type: "string", description: "The post text" } },
+      required: ["message"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "draft_call",
     description: "Draft a phone call YOU (Velo) will make for them — e.g. book a table, confirm or move an appointment, ask a business a question. You'll say you're an AI assistant calling for them. It is NOT placed until they approve it in the app. Afterwards you'll report back what happened. Include every detail you'll need on the call in goal (names, dates, times, party size, callback number if they want one).",
     input_schema: {
@@ -71,7 +83,13 @@ async function resolveTo(c: Caller, to: unknown): Promise<{ name: string | null;
   return { name: String(hit.name), phone: String(hit.phone) };
 }
 
-export type Draft = { id: string; kind: "text" | "call"; to_name: string | null; to_phone: string; body: string; status: string };
+export type Draft = { id: string; kind: "text" | "call" | "post"; to_name: string | null; to_phone: string | null; body: string; status: string };
+
+/** Pro tools for this person: draft_post only once a Facebook Page is connected. */
+export async function proToolsFor(userId: string) {
+  const page = await connectedPageName(userId).catch(() => null);
+  return { tools: page ? PRO_TOOLS : PRO_TOOLS.filter(t => t.name !== "draft_post"), page };
+}
 
 export async function runProTool(c: Caller, name: string, input: unknown, drafts: Draft[]): Promise<unknown> {
   const a = input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>) : {};
@@ -90,6 +108,16 @@ export async function runProTool(c: Caller, name: string, input: unknown, drafts
     const rows = await db`select name, phone from velo_contacts where user_id = ${c.userId} order by lower(name) limit 200`;
     return rows.length ? { contacts: rows.map(r => ({ name: r.name, phone: showPhone(String(r.phone)) })) } : { result: "No contacts saved yet." };
   }
+  if (name === "draft_post") {
+    const body = clean(a.message, 1500);
+    if (body.length < 2) throw new ProError("Write the post.");
+    const page = await connectedPageName(c.userId);
+    if (!page) throw new ProError("They haven't connected a Facebook Page yet — Settings → Velo Pro → Facebook Page.");
+    const [row] = await db`insert into velo_actions (user_id, kind, to_name, body) values (${c.userId}, 'post', ${page}, ${body})
+      returning id, kind, to_name, to_phone, body, status`;
+    drafts.push(row as Draft);
+    return { ok: true, draft_id: row.id, page, tell_them: "Say it's ready for their Page and to tap Post (or reply YES if texting). Don't repeat the whole post. Never say it's posted." };
+  }
   if (name === "draft_text" || name === "draft_call") {
     const kind = name === "draft_text" ? "text" : "call";
     const body = clean(kind === "text" ? a.message : a.goal, kind === "text" ? 1200 : 1000);
@@ -107,20 +135,34 @@ export async function runProTool(c: Caller, name: string, input: unknown, drafts
 /** The text that actually goes out: always says who it's from. */
 export const outgoingText = (fromName: string, body: string) => `${fromName ? `${fromName} (via Velo)` : "Sent via Velo"}: ${body}`.slice(0, 1600);
 
-/** Sends an approved text or places an approved call. Checks Pro, ownership and daily limits. */
+/** Sends an approved text, places an approved call, or publishes an approved post. Checks Pro, ownership and daily limits. */
 export async function runAction(req: NextRequest, c: Caller, id: string): Promise<{ ok: boolean; status: string; error?: string }> {
   const db = sql();
   const [u] = await db`select plan, name from users where id = ${c.userId}`;
   if (u?.plan !== "pro") return { ok: false, status: "pending", error: "Texts and calls are part of Velo Pro." };
   // Claim it: pending → approved, once.
-  const [act] = await db`update velo_actions set status = 'approved', updated_at = now() where id = ${id} and user_id = ${c.userId} and status = 'pending' and kind in ('text', 'call')
+  const [act] = await db`update velo_actions set status = 'approved', updated_at = now() where id = ${id} and user_id = ${c.userId} and status = 'pending' and kind in ('text', 'call', 'post')
     returning id, kind, to_phone, body`;
   if (!act) return { ok: false, status: "gone", error: "That draft was already handled." };
+  const kind = act.kind as Kind;
   const [{ n }] = await db`select count(*)::int as n from velo_actions where user_id = ${c.userId} and kind = ${act.kind}
     and status in ('approved', 'calling', 'done') and created_at > now() - interval '1 day'`;
-  if (n > DAILY[act.kind as "text" | "call"]) {
+  if (n > DAILY[kind]) {
     await db`update velo_actions set status = 'pending' where id = ${id}`;
-    return { ok: false, status: "pending", error: `That's the daily limit for ${act.kind}s (${DAILY[act.kind as "text" | "call"]}). Try again tomorrow.` };
+    return { ok: false, status: "pending", error: `That's the daily limit for ${kind}s (${DAILY[kind]}). Try again tomorrow.` };
+  }
+  if (kind === "post") {
+    try {
+      const page = await connectedPage(c.userId);
+      if (!page) throw new Error("not connected");
+      const postId = await publish(page, String(act.body));
+      await db`update velo_actions set status = 'done', result = ${postId.slice(0, 200)}, updated_at = now() where id = ${id}`;
+      return { ok: true, status: "done" };
+    } catch (e) {
+      const msg = e instanceof Error && e.message === "not connected" ? "Your Facebook Page isn't connected anymore — Settings → Velo Pro." : fbErrorMessage(e);
+      await db`update velo_actions set status = 'failed', result = ${msg}, updated_at = now() where id = ${id}`;
+      return { ok: false, status: "failed", error: msg };
+    }
   }
   try {
     if (act.kind === "text") {

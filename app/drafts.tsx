@@ -1,11 +1,15 @@
 "use client";
-// ✉️📞 Texts and calls Velo drafted (Velo Pro). Nothing goes out until you tap
-// Send / Call here (or reply YES by text). Calls update when Velo reports back.
+// ✉️📞📣 Texts, calls and Facebook posts Velo drafted (Velo Pro). Nothing goes
+// out until you tap Send / Call / Post here (or reply YES by text). Calls update
+// when Velo reports back.
 import { useEffect, useState } from "react";
 import { api } from "./lib/api";
 import { formatPhone } from "./lib/contact";
 
-export type Draft = { id: string; kind: "text" | "call"; to_name: string | null; to_phone: string; body: string; status: string; result?: string | null };
+export type Draft = { id: string; kind: "text" | "call" | "post"; to_name: string | null; to_phone: string | null; body: string; status: string; result?: string | null };
+const HEAD = { text: "✉️ TEXT TO", call: "📞 CALL", post: "📣 FACEBOOK POST ON" };
+const BUTTON = { text: "Send", call: "Call", post: "Post" };
+const DONE = { text: "Sent ✅", call: "Call finished — report is in the chat.", post: "Posted ✅" };
 
 const LABEL: Record<string, string> = { done: "", calling: "Calling… I'll report back in the chat.", failed: "Didn't go through.", cancelled: "Cancelled.", approved: "Working on it…" };
 
@@ -13,8 +17,7 @@ export default function DraftCard({ d, onReport }: { d: Draft; onReport: () => v
   const [status, setStatus] = useState(d.status);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-  const who = d.to_name ? `${d.to_name} (${formatPhone(d.to_phone)})` : formatPhone(d.to_phone);
-  const text = d.kind === "text";
+  const who = d.kind === "post" ? d.to_name : d.to_name ? `${d.to_name} (${formatPhone(d.to_phone)})` : formatPhone(d.to_phone);
 
   // A call in progress: check back until Velo's report is in.
   useEffect(() => {
@@ -35,16 +38,16 @@ export default function DraftCard({ d, onReport }: { d: Draft; onReport: () => v
 
   return (
     <div data-testid="draft" className="card" style={{ padding: 12, marginLeft: 36, borderColor: status === "pending" ? "var(--accent)" : "var(--border)" }}>
-      <div className="muted" style={{ fontSize: 12, fontWeight: 700 }}>{text ? "✉️ TEXT TO" : "📞 CALL"} {who}</div>
-      <div style={{ margin: "6px 0 10px", whiteSpace: "pre-wrap", fontSize: 15 }}>{text ? d.body : `Goal: ${d.body}`}</div>
+      <div className="muted" style={{ fontSize: 12, fontWeight: 700 }}>{HEAD[d.kind]} {who}</div>
+      <div style={{ margin: "6px 0 10px", whiteSpace: "pre-wrap", fontSize: 15 }}>{d.kind === "call" ? `Goal: ${d.body}` : d.body}</div>
       {status === "pending" ? (
         <div className="row">
-          <button className="btn" disabled={busy} onClick={() => act("approve")} style={{ padding: "8px 16px" }}>{busy ? "…" : text ? "Send" : "Call"}</button>
+          <button className="btn" disabled={busy} onClick={() => act("approve")} style={{ padding: "8px 16px" }}>{busy ? "…" : BUTTON[d.kind]}</button>
           <button className="ghost" disabled={busy} onClick={() => act("cancel")} style={{ padding: "8px 14px" }}>Cancel</button>
         </div>
       ) : (
         <div style={{ fontSize: 13, color: status === "failed" ? "var(--bad)" : "var(--muted)" }}>
-          {status === "done" ? (text ? "Sent ✅" : "Call finished — report is in the chat.") : LABEL[status] || status}
+          {status === "done" ? DONE[d.kind] : LABEL[status] || status}
         </div>
       )}
       {err && <div style={{ color: "var(--bad)", fontSize: 13, marginTop: 6 }}>⚠️ {err}</div>}

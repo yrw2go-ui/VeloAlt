@@ -13,7 +13,7 @@ import { sql } from "./db";
 import { VELO_SYSTEM, CALL_TALK, CALL_RECAP, CALL_REMEMBER, CHAT_REMEMBER, SMS_TALK, PRO_INFO, FREE_INFO, errandPrompt, ERRAND_SUMMARY } from "./persona";
 import { MEMORY_TOOLS, isMemoryTool, runMemoryTool, MemoryError, memoryBlock, saveConversationMemory } from "./memory";
 import { REMINDER_TOOLS, isReminderTool, runReminderTool, ReminderError } from "./reminders";
-import { PRO_TOOLS, isProTool, runProTool, ProError, type Draft } from "./pro";
+import { proToolsFor, isProTool, runProTool, ProError, type Draft } from "./pro";
 import { twilioReady } from "./twilio";
 import { isValidTimeZone, localDate, formatClock, weekdayOf } from "./localTime";
 
@@ -38,6 +38,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   const name = String(opts.name || "").trim().split(/\s+/)[0].slice(0, 40);
   const [u] = await sql()`select plan from users where id = ${caller.userId}`;
   const pro = u?.plan === "pro" && twilioReady();
+  const proTools = pro ? await proToolsFor(caller.userId) : null;
   const drafts: Draft[] = [];
 
   // On a call Velo makes for them, the other person never hears their private memory.
@@ -55,7 +56,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
       text: [
         errand ? "" : name ? `Their first name is ${name}.` : "You don't know their name yet — if it comes up naturally, ask, and remember it.",
         `Right now it is ${today.label}${errand ? "" : " where they are"}.`,
-        errand ? "" : pro ? PRO_INFO : FREE_INFO,
+        errand ? "" : pro ? PRO_INFO + (proTools?.page ? `\nTheir Facebook Page "${proTools.page}" is connected: you can draft posts for it (draft_post).` : "\nNo Facebook Page is connected; if they want you to post, tell them to connect one in Settings → Velo Pro (Facebook only allows Pages, not personal profiles).") : FREE_INFO,
         memory ? `${memory}\n\nYou two have talked before — never introduce yourself; talk like someone who knows them.` : "",
         modeText,
       ].filter(Boolean).join("\n\n"),
@@ -73,7 +74,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   if (wrapUp) messages.push({ role: "user", content: mode === "recap" ? "(The call has ended. Write the call recap now, as described.)" : mode === "errandsum" ? "(The call has ended. Write the report now, as described.)" : "(This conversation has ended. Reply with only the JSON object for your memory, as described.)" });
 
   // Tools: none on wrap-ups or errands; Pro adds contacts and drafts.
-  const tools = wrapUp || errand ? undefined : [...MEMORY_TOOLS, ...REMINDER_TOOLS, ...(pro ? PRO_TOOLS : [])];
+  const tools = wrapUp || errand ? undefined : [...MEMORY_TOOLS, ...REMINDER_TOOLS, ...(proTools?.tools || [])];
   let reply = "";
   let changed = false;
   for (let round = 0; round < (tools ? 5 : 1); round++) {

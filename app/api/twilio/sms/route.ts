@@ -13,9 +13,10 @@ import { allow } from "../../../lib/rateLimit";
 const YES = /^\s*(yes|y|yep|yeah|send( it)?|ok(ay)?|do it|go)\s*[.!]*\s*$/i;
 const NO = /^\s*(no|n|nope|cancel|don'?t|stop it)\s*[.!]*\s*$/i;
 
-const preview = (d: Draft) => d.kind === "text"
-  ? `✉️ Text to ${d.to_name || showPhone(d.to_phone)}: "${d.body}"`
-  : `📞 Call ${d.to_name || showPhone(d.to_phone)} to: ${d.body}`;
+const preview = (d: Draft) => d.kind === "text" ? `✉️ Text to ${d.to_name || showPhone(String(d.to_phone))}: "${d.body}"`
+  : d.kind === "post" ? `📣 Post to ${d.to_name}: "${d.body}"`
+  : `📞 Call ${d.to_name || showPhone(String(d.to_phone))} to: ${d.body}`;
+const VERB = { text: "send", call: "call", post: "post" };
 
 export async function POST(req: NextRequest) {
   const params = new URLSearchParams(await req.text());
@@ -32,21 +33,22 @@ export async function POST(req: NextRequest) {
       // YES / NO: the latest draft from the last 30 minutes.
       if (YES.test(text) || NO.test(text)) {
         const [d] = await sql()`select id, kind, to_name, to_phone from velo_actions where user_id = ${owner.userId} and status = 'pending'
-          and kind in ('text', 'call') and created_at > now() - interval '30 minutes' order by created_at desc limit 1`;
+          and kind in ('text', 'call', 'post') and created_at > now() - interval '30 minutes' order by created_at desc limit 1`;
         if (d) {
           const who = String(d.to_name || showPhone(String(d.to_phone)));
+          const kind = String(d.kind) as keyof typeof VERB;
           if (NO.test(text)) {
             await sql()`update velo_actions set status = 'cancelled', updated_at = now() where id = ${d.id}`;
-            return reply(`Okay, cancelled — I won't ${d.kind === "text" ? "send that" : "make that call"}.`);
+            return reply(`Okay, cancelled — I won't ${kind === "text" ? "send that" : kind === "post" ? "post that" : "make that call"}.`);
           }
           const r = await runAction(req, owner, String(d.id));
-          return reply(r.ok ? (d.kind === "text" ? `Sent to ${who}. ✅` : `Calling ${who} now — I'll text you how it went. 📞`) : (r.error || "That didn't go through."));
+          return reply(r.ok ? (kind === "text" ? `Sent to ${who}. ✅` : kind === "post" ? `Posted to ${who}. ✅` : `Calling ${who} now — I'll text you how it went. 📞`) : (r.error || "That didn't go through."));
         }
       }
       const rows = await sql()`select role, content from velo_messages where user_id = ${owner.userId} order by created_at desc, id desc limit 30`;
       const turns = (rows.reverse() as Turn[]);
       const r = await askVelo(owner, { mode: "sms", messages: turns, timeZone: owner.timeZone, name: owner.name });
-      const drafts = r.drafts.length ? `\n\n${r.drafts.map(preview).join("\n")}\nReply YES to ${r.drafts[r.drafts.length - 1].kind === "text" ? "send" : "call"}, NO to cancel.` : "";
+      const drafts = r.drafts.length ? `\n\n${r.drafts.map(preview).join("\n")}\nReply YES to ${VERB[r.drafts[r.drafts.length - 1].kind]}, NO to cancel.` : "";
       await reply(r.reply + drafts);
     } catch (e) {
       console.error("sms", e);

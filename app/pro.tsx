@@ -1,6 +1,7 @@
 "use client";
 // ⭐ Settings → Velo Pro: upgrade / manage billing, Velo's own number, your
-// phone (verified by a text code, so Velo knows it's you), and contacts.
+// phone (verified by a text code, so Velo knows it's you), contacts, and the
+// Facebook Page Velo can post to.
 import { useEffect, useState } from "react";
 import { api, data } from "./lib/api";
 import { confirmAsk } from "./lib/dialog";
@@ -14,6 +15,7 @@ const PERKS = [
   "✉️ She texts people for you",
   "📞 She calls businesses and people for you — bookings, appointments, questions — and reports back",
   "💬 Text or call Velo any time, like a person",
+  "📣 She posts to your Facebook Page",
   "✅ Nothing goes out until you say Send",
 ];
 
@@ -50,6 +52,7 @@ export default function ProCard({ profile, onChange }: { profile: Profile; onCha
       </div>
       <PhoneCard profile={profile} onChange={onChange} />
       <Contacts />
+      <FacebookCard />
     </div>
   );
 }
@@ -126,6 +129,50 @@ function Contacts() {
           <button onClick={() => del(c)} aria-label={`Delete ${c.name}`} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 16 }}>🗑️</button>
         </div>
       ))}
+    </div>
+  );
+}
+
+type FbStatus = { configured: boolean; connected: boolean; pageName: string | null; choices: { id: string; name: string }[] };
+const FB_RESULT: Record<string, string> = {
+  connected: "", pick: "", nopages: "Facebook didn't share any Pages you can post to. Velo can post to Pages you manage (not personal profiles).",
+  cancelled: "Connecting was cancelled.", error: "Couldn't connect Facebook. Please try again.",
+};
+
+function FacebookCard() {
+  const [st, setSt] = useState<FbStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  // Back from Facebook Login (?fb=…), read before the address bar is cleaned.
+  const [msg, setMsg] = useState(() => (typeof location !== "undefined" ? FB_RESULT[new URLSearchParams(location.search).get("fb") || ""] || "" : ""));
+  const [tick, setTick] = useState(0);
+  useEffect(() => { api<FbStatus>("/api/social", { action: "status" }).then(setSt).catch(() => {}); }, [tick]);
+  const run = async (body: Record<string, unknown>) => {
+    setBusy(true); setMsg("");
+    try {
+      const r = await api<{ url?: string }>("/api/social", body);
+      if (r.url) { location.href = r.url; return; }
+      setTick(t => t + 1);
+    } catch (e) { setMsg(e instanceof Error ? e.message : "That didn't work."); }
+    setBusy(false);
+  };
+  if (!st) return null;
+  return (
+    <div className="card" data-testid="facebook">
+      <div style={{ fontWeight: 700 }}>📣 Facebook Page</div>
+      <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>Velo can draft posts for a Facebook Page you manage — you approve each one. (Facebook doesn&apos;t allow apps to post to personal profiles.)</div>
+      {!st.configured ? <div className="muted" style={{ fontSize: 14 }}>Coming soon.</div>
+        : st.connected ? (
+          <div className="row" style={{ justifyContent: "space-between" }}>
+            <div>Connected to <b>{st.pageName}</b> <span style={{ color: "var(--good)", fontSize: 13 }}>✓</span></div>
+            <button className="ghost" disabled={busy} style={{ padding: "6px 12px", fontSize: 13 }} onClick={async () => { if (await confirmAsk(`Disconnect ${st.pageName}? Velo won't be able to post there. Are you sure?`)) run({ action: "disconnect" }); }}>Disconnect</button>
+          </div>
+        ) : st.choices.length ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ fontSize: 14 }}>Which Page should Velo post to?</div>
+            {st.choices.map(p => <button key={p.id} className="ghost" disabled={busy} onClick={() => run({ action: "pick", pageId: p.id })} style={{ textAlign: "left" }}>{p.name}</button>)}
+          </div>
+        ) : <button className="btn" disabled={busy} onClick={() => run({ action: "connect" })}>Connect Facebook</button>}
+      {msg && <div style={{ color: "var(--bad)", fontSize: 13, marginTop: 8 }}>⚠️ {msg}</div>}
     </div>
   );
 }

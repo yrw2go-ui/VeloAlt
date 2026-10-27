@@ -8,7 +8,7 @@ Your personal assistant and companion — the Velo from GetPAID, as her own app.
 - ⏰ **Reminders** — "remind me to call Mom tomorrow at 6pm" pops up in the app on time.
 - ✅ **To-dos** — Velo adds to your list; check things off on the Today tab.
 - 🧑 **Looks** — pick Velo's face (each has her own voice).
-- ⭐ **Velo Pro** — Velo gets her own phone number: she texts and calls people for you (bookings, appointments, questions) and reports back, and you can text or call her. Every text and call is shown to you first and only goes out when you tap Send / Call (or reply YES). Texts go out marked "(via Velo)"; on calls she says she's an AI assistant calling for you.
+- ⭐ **Velo Pro** — Velo gets her own phone number: she texts and calls people for you (bookings, appointments, questions) and reports back, and you can text or call her. She can also post to your Facebook Page. Every text, call and post is shown to you first and only goes out when you tap Send / Call (or reply YES). Texts go out marked "(via Velo)"; on calls she says she's an AI assistant calling for you.
 
 ## Setup
 
@@ -25,7 +25,8 @@ Your personal assistant and companion — the Velo from GetPAID, as her own app.
    - Voice → "A call comes in": `https://<your-domain>/api/twilio/voice` (POST)
    - Voice → "Call status changes": `https://<your-domain>/api/twilio/status` (POST)
    - For texting US numbers, register the number for A2P 10DLC in Twilio.
-4. Limits: 30 texts and 10 calls per person per day; calls end after 10 minutes.
+4. **Facebook Page posting:** create a Meta app with Facebook Login, add `https://<your-domain>/api/social/callback` as a Valid OAuth Redirect URI, and request `pages_show_list`, `pages_manage_posts` and `pages_read_engagement` (App Review is needed before people outside your app's roles can connect). Set `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET`, `FACEBOOK_TOKEN_KEY` and `APP_ORIGIN`, and run `db/migrations/003-social.sql`. Facebook only lets apps post to Pages, not personal profiles.
+5. Limits: 30 texts, 10 calls and 10 posts per person per day; calls end after 10 minutes.
 
 Deploys on Vercel as a standard Next.js app with the same environment variables.
 

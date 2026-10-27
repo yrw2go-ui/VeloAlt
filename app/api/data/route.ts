@@ -118,7 +118,7 @@ export async function POST(req: NextRequest) {
       case "drafts.list": {
         // Recent texts and calls Velo drafted or made, for the chat's cards.
         const rows = await db`select id, kind, to_name, to_phone, body, status, result from velo_actions
-          where user_id = ${me} and kind in ('text', 'call') and created_at > now() - interval '2 days' order by created_at limit 30`;
+          where user_id = ${me} and kind in ('text', 'call', 'post') and created_at > now() - interval '2 days' order by created_at limit 30`;
         return NextResponse.json({ drafts: rows });
       }
 
