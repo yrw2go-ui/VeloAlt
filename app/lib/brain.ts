@@ -10,7 +10,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Caller } from "./caller";
 import { sql } from "./db";
-import { VELO_SYSTEM, CALL_TALK, CALL_RECAP, CALL_REMEMBER, CHAT_REMEMBER, SMS_TALK, PRO_INFO, FREE_INFO, errandPrompt, ERRAND_SUMMARY } from "./persona";
+import { VELO_SYSTEM, CALL_TALK, CALL_RECAP, CALL_REMEMBER, CHAT_REMEMBER, SMS_TALK, PRO_INFO, FREE_INFO, SEARCH_INFO, errandPrompt, ERRAND_SUMMARY } from "./persona";
 import { MEMORY_TOOLS, isMemoryTool, runMemoryTool, MemoryError, memoryBlock, saveConversationMemory } from "./memory";
 import { REMINDER_TOOLS, isReminderTool, runReminderTool, ReminderError } from "./reminders";
 import { proToolsFor, isProTool, runProTool, ProError, type Draft } from "./pro";
@@ -57,7 +57,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
       text: [
         errand ? "" : name ? `Their first name is ${name}.` : "You don't know their name yet — if it comes up naturally, ask, and remember it.",
         `Right now it is ${today.label}${errand ? "" : " where they are"}.`,
-        errand ? "" : pro ? PRO_INFO + (proTools?.page ? `\nTheir Facebook Page "${proTools.page}" is connected: you can draft posts for it (draft_post).` : "\nNo Facebook Page is connected; if they want you to post, tell them to connect one in Settings → Velo Pro (Facebook only allows Pages, not personal profiles).") : FREE_INFO,
+        errand ? "" : pro ? SEARCH_INFO + "\n\n" + PRO_INFO + (proTools?.page ? `\nTheir Facebook Page "${proTools.page}" is connected: you can draft posts for it (draft_post).` : "\nNo Facebook Page is connected; if they want you to post, tell them to connect one in Settings → Velo Pro (Facebook only allows Pages, not personal profiles).") : FREE_INFO,
         memory ? `${memory}\n\nYou two have talked before — never introduce yourself; talk like someone who knows them.` : "",
         modeText,
       ].filter(Boolean).join("\n\n"),
@@ -81,11 +81,17 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   const wrapUp = mode === "recap" || mode === "remember" || mode === "memo" || mode === "errandsum";
   if (wrapUp) messages.push({ role: "user", content: mode === "recap" ? "(The call has ended. Write the call recap now, as described.)" : mode === "errandsum" ? "(The call has ended. Write the report now, as described.)" : "(This conversation has ended. Reply with only the JSON object for your memory, as described.)" });
 
-  // Tools: none on wrap-ups or errands; Pro adds contacts and drafts.
-  const tools = wrapUp || errand ? undefined : [...MEMORY_TOOLS, ...REMINDER_TOOLS, ...(proTools?.tools || [])];
+  // Tools: none on wrap-ups or errands; Pro adds contacts, drafts, Amazon carts and 🔎 web search
+  // (Anthropic runs the searches; results come back in the same response).
+  const search = !!proTools && (mode === "chat" || mode === "sms" || mode === "talk");
+  const tools: Anthropic.ToolUnion[] | undefined = wrapUp || errand ? undefined : [
+    ...MEMORY_TOOLS, ...REMINDER_TOOLS, ...(proTools?.tools || []),
+    ...(search ? [{ type: "web_search_20260209" as const, name: "web_search" as const, max_uses: 5, user_location: { type: "approximate" as const, timezone: today.tz } }] : []),
+  ];
   let reply = "";
   let changed = false;
-  for (let round = 0; round < (tools ? 5 : 1); round++) {
+  const sources = new Map<string, string>(); // url → title, from the web pages she cited
+  for (let round = 0; round < (tools ? 6 : 1); round++) {
     const res = await client.messages.create({
       model: process.env.VELO_MODEL!,
       max_tokens: mode === "talk" || mode === "errand" || mode === "sms" ? 4000 : 8000,
@@ -96,7 +102,11 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
       messages,
     });
     if (res.stop_reason === "refusal") { reply = errand ? "I'm sorry, I can't help with that. Thanks for your time, goodbye. [[END]]" : "I'd rather not go there — but I'm here for anything else. What's on your mind?"; break; }
-    reply = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map(b => b.text).join("\n").trim();
+    const texts = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text");
+    reply = texts.map(b => b.text).join("").trim();
+    for (const t of texts) for (const c of t.citations || []) if (c.type === "web_search_result_location" && /^https:\/\//.test(c.url)) sources.set(c.url, c.title || new URL(c.url).hostname);
+    // A long web search can pause; send the turn back as is and the server picks it up.
+    if (res.stop_reason === "pause_turn") { messages.push({ role: "assistant", content: res.content }); continue; }
     if (res.stop_reason !== "tool_use") break;
     const calls = res.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
     if (!calls.length) break;
@@ -116,7 +126,12 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
       }
     }));
     messages.push({ role: "user", content: results });
-    if (round === 4) reply = "";
+    if (round === 5) reply = "";
+  }
+  // Where she found it: up to 3 links under a chat reply, 2 in a text, none spoken on a call.
+  if (sources.size && reply && (mode === "chat" || mode === "sms")) {
+    const list = [...sources].slice(0, mode === "sms" ? 2 : 3);
+    reply += mode === "sms" ? `\n\n${list.map(([u]) => u).join("\n")}` : `\n\nSources:\n${list.map(([u, t]) => `• ${t.slice(0, 80)} — ${u}`).join("\n")}`;
   }
 
   if (mode === "remember" || mode === "memo") {

@@ -121,8 +121,14 @@ function Bubble({ m }: { m: ChatMsg }) {
       {!mine && <VeloAvatar size={28} />}
       <div style={{ maxWidth: "80%", padding: "10px 14px", borderRadius: 18, borderBottomLeftRadius: mine ? 18 : 4, borderBottomRightRadius: mine ? 4 : 18,
         background: mine ? "linear-gradient(135deg, var(--accent), var(--accent2))" : "var(--surface2)", color: "var(--text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", lineHeight: 1.45, fontSize: 15 }}>
-        {m.content.replace(/\*\*(.+?)\*\*/g, "$1")}
+        {linkify(m.content.replace(/\*\*(.+?)\*\*/g, "$1"))}
       </div>
     </div>
   );
+}
+
+/** Web links in a message become tappable (https only; they open in a new tab). */
+function linkify(text: string) {
+  return text.split(/(https:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]])/g).map((part, i) =>
+    i % 2 ? <a key={i} href={part} target="_blank" rel="noopener noreferrer nofollow" style={{ color: "var(--accent)", wordBreak: "break-all" }}>{part.replace(/^https:\/\/(www\.)?/, "").slice(0, 60)}</a> : part);
 }

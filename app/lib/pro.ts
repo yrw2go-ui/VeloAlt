@@ -10,7 +10,7 @@ import { toE164, showPhone, sendSms, startCall, publicUrl } from "./twilio";
 import { connectedPage, connectedPageName, publish, fbErrorMessage } from "./facebook";
 import { scrub } from "./secrets";
 
-export const PRO_TOOL_NAMES = ["save_contact", "list_contacts", "draft_text", "draft_call", "draft_post"] as const;
+export const PRO_TOOL_NAMES = ["save_contact", "list_contacts", "draft_text", "draft_call", "draft_post", "amazon_cart"] as const;
 export const isProTool = (name: string) => (PRO_TOOL_NAMES as readonly string[]).includes(name);
 export class ProError extends Error {}
 const clean = (v: unknown, n: number) => scrub(String(v ?? "").replace(/\s+/g, " ").trim().slice(0, n));
@@ -44,6 +44,32 @@ export const PRO_TOOLS: Anthropic.Tool[] = [
         message: { type: "string", description: "The text to send (keep it short)" },
       },
       required: ["to", "message"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "amazon_cart",
+    description: "Put together an Amazon cart for them: the app shows the items with an \"Open Amazon cart\" button that adds them to THEIR Amazon cart, where they review and check out themselves. Nothing is bought by you. Find each product with web_search first (Amazon product pages look like amazon.com/.../dp/ASIN); use the 10-character ASIN from the page. Confirm the choice with them before calling this unless they were specific. Never say you ordered or bought anything.",
+    input_schema: {
+      type: "object",
+      properties: {
+        items: {
+          type: "array",
+          description: "Up to 10 products",
+          items: {
+            type: "object",
+            properties: {
+              asin: { type: "string", description: "Amazon ASIN, 10 letters/digits, e.g. B0C1234567" },
+              name: { type: "string", description: "Short product name" },
+              quantity: { type: "integer", description: "1–10" },
+              price: { type: "string", description: "Price you saw, e.g. \"$24.99\" (optional)" },
+            },
+            required: ["asin", "name"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["items"],
       additionalProperties: false,
     },
   },
@@ -84,7 +110,16 @@ async function resolveTo(c: Caller, to: unknown): Promise<{ name: string | null;
   return { name: String(hit.name), phone: String(hit.phone) };
 }
 
-export type Draft = { id: string; kind: "text" | "call" | "post"; to_name: string | null; to_phone: string | null; body: string; status: string };
+export type Draft = { id: string; kind: "text" | "call" | "post" | "cart"; to_name: string | null; to_phone: string | null; body: string; status: string; result?: string | null };
+
+type CartItem = { asin: string; name: string; quantity: number; price: string };
+/** Amazon's "add to cart" link: opens their own cart with these items; they check out on Amazon. */
+export function amazonCartUrl(items: CartItem[]) {
+  const q = new URLSearchParams();
+  items.forEach((it, i) => { q.set(`ASIN.${i + 1}`, it.asin); q.set(`Quantity.${i + 1}`, String(it.quantity)); });
+  if (/^[\w-]{1,40}$/.test(process.env.AMAZON_ASSOCIATE_TAG || "")) q.set("AssociateTag", process.env.AMAZON_ASSOCIATE_TAG!);
+  return `https://www.amazon.com/gp/aws/cart/add.html?${q}`;
+}
 
 /** Pro tools for this person: draft_post only once a Facebook Page is connected. */
 export async function proToolsFor(userId: string) {
@@ -108,6 +143,22 @@ export async function runProTool(c: Caller, name: string, input: unknown, drafts
   if (name === "list_contacts") {
     const rows = await db`select name, phone from velo_contacts where user_id = ${c.userId} order by lower(name) limit 200`;
     return rows.length ? { contacts: rows.map(r => ({ name: r.name, phone: showPhone(String(r.phone)) })) } : { result: "No contacts saved yet." };
+  }
+  if (name === "amazon_cart") {
+    const items: CartItem[] = (Array.isArray(a.items) ? a.items : []).slice(0, 10).map((it: Record<string, unknown>) => ({
+      asin: String(it?.asin || "").trim().toUpperCase(),
+      name: clean(it?.name, 120),
+      quantity: Math.min(10, Math.max(1, Math.round(Number(it?.quantity) || 1))),
+      price: clean(it?.price, 20),
+    }));
+    if (!items.length) throw new ProError("Add at least one product.");
+    const bad = items.find(it => !/^[A-Z0-9]{10}$/.test(it.asin) || !it.name);
+    if (bad) throw new ProError(`"${bad.name || bad.asin}" needs its 10-character Amazon ASIN — find the product page with web_search first.`);
+    const body = items.map(it => `${it.quantity} × ${it.name}${it.price ? ` (${it.price})` : ""}`).join("\n");
+    const [row] = await db`insert into velo_actions (user_id, kind, to_name, body, status, result) values (${c.userId}, 'cart', 'Amazon', ${body}, 'done', ${amazonCartUrl(items)})
+      returning id, kind, to_name, to_phone, body, status, result`;
+    drafts.push(row as Draft);
+    return { ok: true, items: items.length, tell_them: "Say their cart is ready: tap Open Amazon cart to review it and check out on Amazon (prices and delivery are confirmed there). Never say it's ordered." };
   }
   if (name === "draft_post") {
     const body = clean(a.message, 1500);

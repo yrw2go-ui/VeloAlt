@@ -16,8 +16,9 @@ const NO = /^\s*(no|n|nope|cancel|don'?t|stop it)\s*[.!]*\s*$/i;
 
 const preview = (d: Draft) => d.kind === "text" ? `✉️ Text to ${d.to_name || showPhone(String(d.to_phone))}: "${d.body}"`
   : d.kind === "post" ? `📣 Post to ${d.to_name}: "${d.body}"`
+  : d.kind === "cart" ? `🛒 Amazon cart:\n${d.body}\nReview & check out: ${d.result}`
   : `📞 Call ${d.to_name || showPhone(String(d.to_phone))} to: ${d.body}`;
-const VERB = { text: "send", call: "call", post: "post" };
+const VERB: Record<string, string> = { text: "send", call: "call", post: "post" };
 
 export async function POST(req: NextRequest) {
   const params = new URLSearchParams(await req.text());
@@ -50,7 +51,9 @@ export async function POST(req: NextRequest) {
       const rows = await sql()`select role, content from velo_messages where user_id = ${owner.userId} order by created_at desc, id desc limit 30`;
       const turns = (rows.reverse() as Turn[]);
       const r = await askVelo(owner, { mode: "sms", messages: turns, timeZone: owner.timeZone, name: owner.name });
-      const drafts = r.drafts.length ? `\n\n${r.drafts.map(preview).join("\n")}\nReply YES to ${VERB[r.drafts[r.drafts.length - 1].kind]}, NO to cancel.` : "";
+      // A cart is just a link (nothing to approve); texts, calls and posts wait for YES.
+      const waiting = r.drafts.filter(d => d.status === "pending");
+      const drafts = r.drafts.length ? `\n\n${r.drafts.map(preview).join("\n")}${waiting.length ? `\nReply YES to ${VERB[waiting[waiting.length - 1].kind]}, NO to cancel.` : ""}` : "";
       await reply(r.reply + drafts);
     } catch (e) {
       console.error("sms", e);
