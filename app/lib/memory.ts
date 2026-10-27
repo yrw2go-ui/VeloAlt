@@ -7,13 +7,14 @@ import type Anthropic from "@anthropic-ai/sdk";
 import type { Caller } from "./caller";
 import { localDate } from "./localTime";
 import { sql } from "./db";
+import { scrub } from "./secrets";
 
 export const MEMORY_TOOL_NAMES = ["remember", "update_goal", "forget_memory"] as const;
 export const isMemoryTool = (name: string) => (MEMORY_TOOL_NAMES as readonly string[]).includes(name);
 export class MemoryError extends Error {}
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_ACTIVE = 300;
-const clean = (v: unknown, n: number) => String(v || "").replace(/\s+/g, " ").trim().slice(0, n);
+const clean = (v: unknown, n: number) => scrub(String(v || "").replace(/\s+/g, " ").trim().slice(0, n));
 
 export const MEMORY_TOOLS: Anthropic.Tool[] = [
   {

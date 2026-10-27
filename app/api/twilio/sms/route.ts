@@ -5,6 +5,7 @@ import { ownerByPhone, addChat } from "../../../lib/owner";
 import { askVelo, aiReady, type Turn } from "../../../lib/brain";
 import { runAction, type Draft } from "../../../lib/pro";
 import { allow } from "../../../lib/rateLimit";
+import { scrub } from "../../../lib/secrets";
 
 // 💬 A text to Velo's number. From a Velo Pro member's verified phone, it's the
 // same conversation as the app chat; "YES" / "NO" approves or cancels the
@@ -22,7 +23,8 @@ export async function POST(req: NextRequest) {
   const params = new URLSearchParams(await req.text());
   if (!validTwilio(req, params)) return new Response("Forbidden", { status: 403 });
   const owner = await ownerByPhone(params.get("From") || "");
-  const text = String(params.get("Body") || "").trim().slice(0, 1600);
+  // 🔒 A code or password texted to Velo is hidden before it's saved or seen.
+  const text = scrub(String(params.get("Body") || "").trim().slice(0, 1600));
   if (!owner || !owner.pro || !text || !aiReady()) return twiml("");
   if (!allow(owner.userId)) return twiml(`<Message>That's a lot of messages — give me a minute.</Message>`);
 

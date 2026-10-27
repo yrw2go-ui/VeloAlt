@@ -5,6 +5,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import type { Caller } from "./caller";
 import { zonedToUtc, formatLocal } from "./localTime";
 import { sql } from "./db";
+import { scrub } from "./secrets";
 
 export const REMINDER_TOOL_NAMES = ["set_reminder", "list_reminders", "cancel_reminder", "add_task", "list_tasks", "complete_task"] as const;
 export const isReminderTool = (name: string) => (REMINDER_TOOL_NAMES as readonly string[]).includes(name);
@@ -12,7 +13,7 @@ export class ReminderError extends Error {}
 const MAX_PENDING = 100;
 const YEAR_MS = 366 * 86_400_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const clean = (v: unknown, n: number) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, n);
+const clean = (v: unknown, n: number) => scrub(String(v ?? "").replace(/\s+/g, " ").trim().slice(0, n));
 
 export const REMINDER_TOOLS: Anthropic.Tool[] = [
   {

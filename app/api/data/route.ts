@@ -5,6 +5,7 @@ import { isValidTimeZone } from "../../lib/localTime";
 import { VELO_LOOKS } from "../../lib/veloAvatars";
 import { toE164, showPhone, twilioReady, veloNumber } from "../../lib/twilio";
 import { PHONE_MSG } from "../../lib/contact";
+import { scrub } from "../../lib/secrets";
 
 // 📦 Everything the app reads and changes, for the signed-in person only.
 // POST { action, ...args } → { ... }. Every query is scoped to their user_id.
@@ -44,7 +45,7 @@ export async function POST(req: NextRequest) {
       }
       case "messages.add": {
         const list = (Array.isArray(b.messages) ? b.messages : []).slice(0, 4)
-          .map((m: { role?: string; content?: unknown }) => ({ role: m.role === "assistant" ? "assistant" : "user", content: String(m.content || "").slice(0, 8000) }))
+          .map((m: { role?: string; content?: unknown }) => ({ role: m.role === "assistant" ? "assistant" : "user", content: scrub(String(m.content || "").slice(0, 8000)) }))
           .filter((m: { content: string }) => m.content);
         // A millisecond apart so they always sort in the order sent.
         const at = Date.now() - list.length;

@@ -3,6 +3,7 @@ import { sql } from "../../../lib/db";
 import { validTwilio, twiml, say, sayAndListen, publicUrl } from "../../../lib/twilio";
 import { ownerByPhone, ownerById } from "../../../lib/owner";
 import { askVelo, aiReady, type Turn } from "../../../lib/brain";
+import { scrub } from "../../../lib/secrets";
 
 // 📞 Velo on the phone, one Twilio webhook per turn.
 //   ?a=<action id> — a call Velo placed FOR the owner (an approved draft_call): she
@@ -20,7 +21,8 @@ export async function POST(req: NextRequest) {
   const url = new URL(req.url);
   const actionId = url.searchParams.get("a") || "";
   const silences = Number(url.searchParams.get("s") || 0);
-  const heard = String(params.get("SpeechResult") || "").trim().slice(0, 1000);
+  // 🔒 Spoken passwords or codes are hidden before they're saved or seen.
+  const heard = scrub(String(params.get("SpeechResult") || "").trim().slice(0, 1000));
   const callSid = String(params.get("CallSid") || "");
   if (!aiReady()) return hangup("Sorry, Velo isn't available right now. Goodbye.");
 

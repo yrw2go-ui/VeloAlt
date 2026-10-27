@@ -16,6 +16,7 @@ import { REMINDER_TOOLS, isReminderTool, runReminderTool, ReminderError } from "
 import { proToolsFor, isProTool, runProTool, ProError, type Draft } from "./pro";
 import { twilioReady } from "./twilio";
 import { isValidTimeZone, localDate, formatClock, weekdayOf } from "./localTime";
+import { hideSecrets, HIDDEN } from "./secrets";
 
 // Only ever the app's own key (never another credential in the environment).
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, authToken: null });
@@ -63,10 +64,17 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
     },
   ];
 
-  const messages: Anthropic.MessageParam[] = opts.messages.slice(mode === "chat" || mode === "sms" ? -30 : -60).map(m => ({
-    role: m.role === "assistant" ? "assistant" : "user",
-    content: String(m.content || "").slice(0, 4000) || "…",
-  }));
+  // 🔒 Passwords and codes never reach the AI, whatever channel they came in on.
+  let hidLast = false;
+  const messages: Anthropic.MessageParam[] = opts.messages.slice(mode === "chat" || mode === "sms" ? -30 : -60).map((m, i, all) => {
+    const h = hideSecrets(String(m.content || "").slice(0, 4000));
+    // Hidden here, or already hidden on the phone / at the text or call webhook.
+    if ((h.hidden || h.text.includes(HIDDEN)) && i === all.length - 1 && m.role !== "assistant") hidLast = true;
+    return { role: m.role === "assistant" ? "assistant" : "user", content: h.text || "…" };
+  });
+  if (hidLast) system.push({ type: "text", text: errand
+    ? "Something they just said was replaced with [hidden] because it looked like a password, PIN or code. You can't hear it; if you need it, say the person you're calling for will follow up directly."
+    : "Part of their last message was replaced with [hidden] because it looked like a password, PIN or code. You never see those. Briefly tell them you hid it to keep them safe, and that they should never share passwords or codes with anyone — including you. Then carry on with the rest." });
   // A call opens with Velo's hello, so the turns can start on her side; the model wants the other person first.
   if (messages[0]?.role === "assistant") messages.unshift({ role: "user", content: mode === "chat" ? "(Chat opened.)" : "(Call connected.)" });
   if (!messages.length) messages.push({ role: "user", content: "(Call connected. Say your opening line now.)" });

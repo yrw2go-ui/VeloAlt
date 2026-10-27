@@ -8,11 +8,12 @@ import type { Caller } from "./caller";
 import { sql } from "./db";
 import { toE164, showPhone, sendSms, startCall, publicUrl } from "./twilio";
 import { connectedPage, connectedPageName, publish, fbErrorMessage } from "./facebook";
+import { scrub } from "./secrets";
 
 export const PRO_TOOL_NAMES = ["save_contact", "list_contacts", "draft_text", "draft_call", "draft_post"] as const;
 export const isProTool = (name: string) => (PRO_TOOL_NAMES as readonly string[]).includes(name);
 export class ProError extends Error {}
-const clean = (v: unknown, n: number) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, n);
+const clean = (v: unknown, n: number) => scrub(String(v ?? "").replace(/\s+/g, " ").trim().slice(0, n));
 /** Per person per day. */
 export const DAILY = { text: 30, call: 10, post: 10 };
 type Kind = keyof typeof DAILY;

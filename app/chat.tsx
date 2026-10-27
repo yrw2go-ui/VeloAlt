@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, data } from "./lib/api";
 import { VeloAvatar } from "./avatar";
 import DraftCard, { type Draft } from "./drafts";
+import { hideSecrets } from "./lib/secrets";
 import { timeZone } from "./lib/tz";
 
 export type ChatMsg = { role: "user" | "assistant"; content: string; draft?: Draft };
@@ -69,7 +70,8 @@ export default function Chat({ userId, name, onChanged, added }: { userId: strin
   }, [name]);
 
   const send = async (raw: string) => {
-    const t = raw.trim();
+    // 🔒 Passwords and codes are hidden right here, before anything leaves the phone.
+    const t = hideSecrets(raw.trim()).text;
     if (!t || busy || !msgs) return;
     const opener: ChatMsg[] = msgs.length ? [] : [{ role: "assistant", content: openingLine }];
     const next = [...msgs, ...opener, { role: "user" as const, content: t }];
