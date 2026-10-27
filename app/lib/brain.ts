@@ -10,7 +10,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Caller } from "./caller";
 import { sql } from "./db";
-import { VELO_SYSTEM, CALL_TALK, CALL_RECAP, CALL_REMEMBER, CHAT_REMEMBER, SMS_TALK, PRO_INFO, FREE_INFO, SEARCH_INFO, errandPrompt, ERRAND_SUMMARY } from "./persona";
+import { VELO_SYSTEM, CALL_TALK, CALL_RECAP, CALL_REMEMBER, CHAT_REMEMBER, SMS_TALK, PRO_INFO, FREE_INFO, SEARCH_INFO, errandPrompt, ERRAND_SUMMARY, PERSONALITY_PROMPT, PERSONALITIES, type Personality } from "./persona";
 import { MEMORY_TOOLS, isMemoryTool, runMemoryTool, MemoryError, memoryBlock, saveConversationMemory } from "./memory";
 import { REMINDER_TOOLS, isReminderTool, runReminderTool, ReminderError } from "./reminders";
 import { proToolsFor, isProTool, runProTool, ProError, type Draft } from "./pro";
@@ -39,7 +39,11 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   const { mode } = opts;
   const today = localNow(opts.timeZone);
   const name = String(opts.name || "").trim().split(/\s+/)[0].slice(0, 40);
-  const [u] = await sql()`select plan, chat_model from users where id = ${caller.userId}`;
+  const [u] = await sql()`select plan, chat_model, personality, adult_confirmed_at from users where id = ${caller.userId}`;
+  // 💬 Their chosen personality (romantic only after the adult confirmation). Calls Velo makes
+  // to other people and memory notes always use her plain voice.
+  let personality: Personality = PERSONALITIES.includes(u?.personality) ? u.personality : "friend";
+  if (personality === "romantic" && !u?.adult_confirmed_at) personality = "friend";
   const pro = u?.plan === "pro" && twilioReady();
   const proTools = pro ? await proToolsFor(caller.userId) : null;
   const drafts: Draft[] = [];
@@ -61,6 +65,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         `Right now it is ${today.label}${errand ? "" : " where they are"}.`,
         errand ? "" : pro ? SEARCH_INFO + "\n\n" + PRO_INFO + (proTools?.page ? `\nTheir Facebook Page "${proTools.page}" is connected: you can draft posts for it (draft_post).` : "\nNo Facebook Page is connected; if they want you to post, tell them to connect one in Settings → Velo Pro (Facebook only allows Pages, not personal profiles).") : FREE_INFO,
         memory ? `${memory}\n\nYou two have talked before — never introduce yourself; talk like someone who knows them.` : "",
+        mode === "chat" || mode === "sms" || mode === "talk" || mode === "recap" ? PERSONALITY_PROMPT[personality] : "",
         modeText,
       ].filter(Boolean).join("\n\n"),
     },

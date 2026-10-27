@@ -10,7 +10,7 @@ import Chat, { type ChatMsg } from "./chat";
 import Today from "./today";
 import Memory from "./memory";
 import { timeZone } from "./lib/tz";
-import ProCard, { BrainCard, type Profile } from "./pro";
+import ProCard, { BrainCard, PersonalityCard, type Profile } from "./pro";
 
 type Tab = "chat" | "today" | "memory" | "settings";
 const TABS: { id: Tab; icon: string; label: string }[] = [
@@ -215,6 +215,7 @@ function Settings({ name, setName, onOut, profile, onProfile }: { name: string; 
         <div className="muted" style={{ fontSize: 13, margin: "2px 0 12px" }}>Each face has her own voice on calls.</div>
         <VeloLookPicker />
       </div>
+      {profile && <PersonalityCard profile={profile} onChange={onProfile} />}
       {profile && <BrainCard profile={profile} onChange={onProfile} />}
       {profile && <ProCard profile={profile} onChange={onProfile} />}
       <button className="ghost" onClick={() => api("/api/auth", { action: "signout" }).finally(onOut)}>Sign out</button>
@@ -231,7 +232,7 @@ function ConfirmHost() {
         <div style={{ fontWeight: 700, marginBottom: 14 }}>{ask.text}</div>
         <div className="row" style={{ justifyContent: "flex-end" }}>
           <button className="ghost" onClick={() => ask.resolve(false)}>Cancel</button>
-          <button className="btn" style={{ background: "var(--bad)" }} onClick={() => ask.resolve(true)}>Yes, delete</button>
+          <button className="btn" style={ask.danger ? { background: "var(--bad)" } : undefined} onClick={() => ask.resolve(true)}>{ask.yes}</button>
         </div>
       </div>
     </div>

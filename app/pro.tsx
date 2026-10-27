@@ -10,6 +10,7 @@ import { formatPhone, contactProblem } from "./lib/contact";
 export type Profile = {
   name: string; look: string; plan: "free" | "pro"; proForSale: boolean; phone: string; phoneVerified: boolean; veloNumber: string;
   chatModel: string; models: { id: string; label: string; by: string; where: string }[];
+  personality: string; adultConfirmed: boolean;
 };
 type Contact = { id: string; name: string; phone: string };
 
@@ -206,6 +207,50 @@ export function BrainCard({ profile, onChange }: { profile: Profile; onChange: (
           );
         })}
       </div>
+    </div>
+  );
+}
+
+const STYLES = [
+  { id: "friend", icon: "😊", label: "Friend", about: "Warm, upbeat and casual — like a close friend." },
+  { id: "professional", icon: "💼", label: "Professional assistant", about: "Polished, efficient and to the point." },
+  { id: "sarcastic", icon: "😏", label: "Sarcastic assistant", about: "Dry wit and playful teasing — still helpful." },
+  { id: "romantic", icon: "💕", label: "Romantic companion", about: "Affectionate and a little flirty. Adults only, kept tasteful." },
+];
+
+/** Settings → Velo's personality: how she talks with you. Romantic asks for 18+ first. */
+export function PersonalityCard({ profile, onChange }: { profile: Profile; onChange: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const pick = async (id: string) => {
+    if (id === profile.personality) return;
+    let adult = false;
+    if (id === "romantic" && !profile.adultConfirmed) {
+      if (!(await confirmAsk("Romantic mode is for adults. Are you 18 or older?", { yes: "I'm 18 or older" }))) return;
+      adult = true;
+    }
+    setBusy(true); setMsg("");
+    try { await data("profile.update", { personality: id, ...(adult ? { adultConfirmed: true } : {}) }); onChange(); }
+    catch (e) { setMsg(e instanceof Error ? e.message : "Couldn't save."); }
+    setBusy(false);
+  };
+  return (
+    <div className="card" data-testid="personality">
+      <div style={{ fontWeight: 700 }}>💬 Velo&apos;s personality</div>
+      <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>How she talks with you in chat, texts and calls.</div>
+      <div role="radiogroup" aria-label="Velo's personality" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {STYLES.map(st => {
+          const on = st.id === profile.personality;
+          return (
+            <button key={st.id} role="radio" aria-checked={on} disabled={busy} onClick={() => pick(st.id)}
+              style={{ textAlign: "left", background: on ? "rgba(124,140,255,0.12)" : "var(--surface2)", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, borderRadius: 12, padding: "10px 12px", color: "var(--text)", cursor: on ? "default" : "pointer" }}>
+              <div style={{ fontWeight: 700 }}>{st.icon} {on ? "✓ " : ""}{st.label}</div>
+              <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{st.about}</div>
+            </button>
+          );
+        })}
+      </div>
+      {msg && <div style={{ color: "var(--bad)", fontSize: 13, marginTop: 8 }}>⚠️ {msg}</div>}
     </div>
   );
 }
