@@ -8,12 +8,24 @@ Your personal assistant and companion — the Velo from GetPAID, as her own app.
 - ⏰ **Reminders** — "remind me to call Mom tomorrow at 6pm" pops up in the app on time.
 - ✅ **To-dos** — Velo adds to your list; check things off on the Today tab.
 - 🧑 **Looks** — pick Velo's face (each has her own voice).
+- ⭐ **Velo Pro** — Velo gets her own phone number: she texts and calls people for you (bookings, appointments, questions) and reports back, and you can text or call her. Every text and call is shown to you first and only goes out when you tap Send / Call (or reply YES). Texts go out marked "(via Velo)"; on calls she says she's an AI assistant calling for you.
 
 ## Setup
 
 1. Create a Neon Postgres database and run `db/schema.sql` on it.
 2. Copy `.env.example` to `.env.local` and fill it in (`VELO_MODEL` is the Claude model id Velo uses).
 3. `npm install && npm run dev`
+
+### Velo Pro
+
+1. Run `db/migrations/002-pro.sql` (already included in `db/schema.sql` for new databases).
+2. **Stripe:** create a monthly price for Velo Pro (`STRIPE_PRICE_PRO`), and a webhook to `https://<your-domain>/api/stripe/webhook` for `checkout.session.completed` and `customer.subscription.*` (`STRIPE_WEBHOOK_SECRET`).
+3. **Twilio:** buy a number (`TWILIO_FROM`) and set it up:
+   - Messaging → "A message comes in": `https://<your-domain>/api/twilio/sms` (POST)
+   - Voice → "A call comes in": `https://<your-domain>/api/twilio/voice` (POST)
+   - Voice → "Call status changes": `https://<your-domain>/api/twilio/status` (POST)
+   - For texting US numbers, register the number for A2P 10DLC in Twilio.
+4. Limits: 30 texts and 10 calls per person per day; calls end after 10 minutes.
 
 Deploys on Vercel as a standard Next.js app with the same environment variables.
 

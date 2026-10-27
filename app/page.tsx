@@ -10,6 +10,7 @@ import Chat, { type ChatMsg } from "./chat";
 import Today from "./today";
 import Memory from "./memory";
 import { timeZone } from "./lib/tz";
+import ProCard, { type Profile } from "./pro";
 
 type Tab = "chat" | "today" | "memory" | "settings";
 const TABS: { id: Tab; icon: string; label: string }[] = [
@@ -77,8 +78,11 @@ function SignIn({ onIn }: { onIn: (u: User) => void }) {
 type DueReminder = { id: string; text: string };
 
 function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
-  const [tab, setTab] = useState<Tab>("chat");
+  // Back from Stripe checkout / billing: open Settings.
+  const [tab, setTab] = useState<Tab>(() => (typeof location !== "undefined" && new URLSearchParams(location.search).get("tab") === "settings" ? "settings" : "chat"));
   const [name, setName] = useState("");
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [profileTick, setProfileTick] = useState(0);
   const [calling, setCalling] = useState(false);
   const [firstCall, setFirstCall] = useState(false);
   const [due, setDue] = useState<DueReminder[]>([]);
@@ -90,13 +94,16 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   // Their profile: name, look, and the time zone they're in now.
   useEffect(() => {
     (async () => {
-      const p = await data<{ name: string; look: string; timeZone: string | null; hadCall: boolean }>("profile.get");
+      const p = await data<Profile & { timeZone: string | null; hadCall: boolean }>("profile.get");
+      setProfile(p);
       setName(p.name);
       applyVeloLook(p.look);
       setFirstCall(!p.hadCall);
       if (p.timeZone !== timeZone()) await data("profile.update", { timeZone: timeZone() });
     })().catch(() => {});
-  }, [userId]);
+  }, [userId, profileTick]);
+  // Clean the Stripe return params off the address bar.
+  useEffect(() => { if (location.search) history.replaceState(null, "", "/"); }, []);
 
   // ⏰ Due reminders pop up (checked every 30s and when the app comes back).
   useEffect(() => {
@@ -160,7 +167,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
         {tab === "chat" && <Chat userId={userId} name={name} onChanged={bump} added={chatAdd} />}
         {tab === "today" && <Today refresh={refresh} />}
         {tab === "memory" && <Memory refresh={refresh} />}
-        {tab === "settings" && <Settings name={name} setName={setName} onOut={onOut} />}
+        {tab === "settings" && <Settings name={name} setName={setName} onOut={onOut} profile={profile} onProfile={() => setProfileTick(t => t + 1)} />}
       </main>
 
       <nav style={{ display: "flex", borderTop: "1px solid var(--border)", paddingBottom: "env(safe-area-inset-bottom)", background: "var(--surface)" }}>
@@ -184,7 +191,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   );
 }
 
-function Settings({ name, setName, onOut }: { name: string; setName: (n: string) => void; onOut: () => void }) {
+function Settings({ name, setName, onOut, profile, onProfile }: { name: string; setName: (n: string) => void; onOut: () => void; profile: Profile | null; onProfile: () => void }) {
   const [draft, setDraft] = useState(name);
   const [saved, setSaved] = useState(false);
   useEffect(() => setDraft(name), [name]);
@@ -208,6 +215,7 @@ function Settings({ name, setName, onOut }: { name: string; setName: (n: string)
         <div className="muted" style={{ fontSize: 13, margin: "2px 0 12px" }}>Each face has her own voice on calls.</div>
         <VeloLookPicker />
       </div>
+      {profile && <ProCard profile={profile} onChange={onProfile} />}
       <button className="ghost" onClick={() => api("/api/auth", { action: "signout" }).finally(onOut)}>Sign out</button>
     </div>
   );

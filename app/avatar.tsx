@@ -55,7 +55,7 @@ export function VeloLookPicker() {
             <span style={{ display: "block", borderRadius: "50%", padding: 3, border: `3px solid ${on ? "var(--accent)" : "transparent"}` }}>
               <VeloAvatar size={56} look={l.id} />
             </span>
-            <span style={{ fontSize: 12, fontWeight: on ? 800 : 600, color: on ? "var(--accent)" : "var(--muted)" }}>{on ? "✓ " : ""}{l.voiceName}</span>
+            <span style={{ fontSize: 12, fontWeight: on ? 800 : 600, color: on ? "var(--accent)" : "var(--muted)" }}>{on ? "✓ " : ""}{l.id === "classic" ? "Classic" : l.voiceName}</span>
           </button>
         );
       })}

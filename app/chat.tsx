@@ -2,12 +2,15 @@
 // 💬 The chat with Velo. Messages are saved to velo_messages (so the chat
 // follows them across devices). When they leave the app after chatting, Velo
 // files a short summary and any new goals/facts in her memory ("memo").
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, data } from "./lib/api";
 import { VeloAvatar } from "./avatar";
+import DraftCard, { type Draft } from "./drafts";
 import { timeZone } from "./lib/tz";
 
-export type ChatMsg = { role: "user" | "assistant"; content: string };
+export type ChatMsg = { role: "user" | "assistant"; content: string; draft?: Draft };
+/** What Velo sees: real messages only (draft cards are local to the screen). */
+const realMsgs = (m: ChatMsg[]) => m.filter(x => !x.draft).map(({ role, content }) => ({ role, content }));
 const INTRO = "Hi, I'm Velo! 👋 I'm here for whatever you need — planning your day, reminders, to-dos, talking things through, or just keeping you company. What should I call you?";
 const HELLO = (n: string) => [`Hey${n ? ` ${n}` : ""}! What's on your mind?`, `Hi${n ? ` ${n}` : ""} — how's your day going?`, `Hey${n ? ` ${n}` : ""}, good to see you. What can I do for you?`];
 const SUGGESTIONS = ["Plan my day", "Remind me to call Mom tomorrow at 6pm", "I need to vent", "Help me set a goal"];
@@ -17,6 +20,21 @@ export default function Chat({ userId, name, onChanged, added }: { userId: strin
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  // A call finished: Velo's report landed in the chat (draft cards stay where they are).
+  const reload = useCallback(() => {
+    data<{ messages: ChatMsg[] }>("messages.list").then(r => setMsgs(m => {
+      // Fresh history from the server; each card goes back after the message it followed.
+      const out = [...r.messages];
+      let anchor: ChatMsg | undefined;
+      const after = new Map<ChatMsg | undefined, ChatMsg[]>();
+      for (const x of m || []) { if (x.draft) after.set(anchor, [...(after.get(anchor) || []), x]); else anchor = x; }
+      for (const [a, cards] of after) {
+        const i = a ? out.map(x => x.content).lastIndexOf(a.content) : -1;
+        out.splice(i >= 0 ? i + 1 : out.length, 0, ...cards);
+      }
+      return out;
+    })).catch(() => {});
+  }, []);
   const end = useRef<HTMLDivElement>(null);
   const msgsRef = useRef<ChatMsg[]>([]);
   const unsaved = useRef(0); // their messages since the last memo
@@ -24,7 +42,11 @@ export default function Chat({ userId, name, onChanged, added }: { userId: strin
   msgsRef.current = msgs || [];
 
   useEffect(() => {
-    data<{ messages: ChatMsg[] }>("messages.list").then(r => setMsgs(r.messages)).catch(() => setMsgs([]));
+    // History, then drafts still waiting for a Send and calls still going.
+    Promise.all([
+      data<{ messages: ChatMsg[] }>("messages.list").then(r => r.messages).catch(() => [] as ChatMsg[]),
+      data<{ drafts: Draft[] }>("drafts.list").then(r => r.drafts).catch(() => [] as Draft[]),
+    ]).then(([m, d]) => setMsgs([...m, ...d.filter(x => x.status === "pending" || x.status === "calling").map(draft => ({ role: "assistant" as const, content: "", draft }))]));
   }, [userId]);
   useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [msgs, busy]);
 
@@ -40,7 +62,7 @@ export default function Chat({ userId, name, onChanged, added }: { userId: strin
     const memo = () => {
       if (unsaved.current < 2 || document.visibilityState !== "hidden") return;
       unsaved.current = 0;
-      api("/api/velo", { mode: "memo", messages: msgsRef.current.slice(-40), timeZone: timeZone(), name }).catch(() => {});
+      api("/api/velo", { mode: "memo", messages: realMsgs(msgsRef.current).slice(-40), timeZone: timeZone(), name }).catch(() => {});
     };
     document.addEventListener("visibilitychange", memo);
     return () => document.removeEventListener("visibilitychange", memo);
@@ -55,8 +77,8 @@ export default function Chat({ userId, name, onChanged, added }: { userId: strin
     unsaved.current++;
     await data("messages.add", { messages: [...opener, { role: "user", content: t }] }).catch(() => {});
     try {
-      const r = await api<{ reply: string; changed?: boolean }>("/api/velo", { mode: "chat", messages: next, timeZone: timeZone(), name });
-      setMsgs(m => [...(m || []), { role: "assistant", content: r.reply }]);
+      const r = await api<{ reply: string; changed?: boolean; drafts?: Draft[] }>("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name });
+      setMsgs(m => [...(m || []), { role: "assistant", content: r.reply }, ...(r.drafts || []).map(draft => ({ role: "assistant" as const, content: "", draft }))]);
       await data("messages.add", { messages: [{ role: "assistant", content: r.reply }] }).catch(() => {});
       if (r.changed) onChanged();
     } catch (e) {
@@ -70,7 +92,7 @@ export default function Chat({ userId, name, onChanged, added }: { userId: strin
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <div data-testid="chat-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-        {shown.map((m, i) => <Bubble key={i} m={m} />)}
+        {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={i} m={m} />)}
         {busy && <div className="row"><VeloAvatar size={28} /><div className="muted" style={{ fontSize: 14 }}>Velo is typing…</div></div>}
         {err && <div style={{ color: "var(--bad)", fontSize: 14 }}>⚠️ {err}</div>}
         {msgs && msgs.length === 0 && (

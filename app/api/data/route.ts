@@ -3,6 +3,8 @@ import { sql } from "../../lib/db";
 import { resolveCaller } from "../../lib/caller";
 import { isValidTimeZone } from "../../lib/localTime";
 import { VELO_LOOKS } from "../../lib/veloAvatars";
+import { toE164, showPhone, twilioReady, veloNumber } from "../../lib/twilio";
+import { PHONE_MSG } from "../../lib/contact";
 
 // 📦 Everything the app reads and changes, for the signed-in person only.
 // POST { action, ...args } → { ... }. Every query is scoped to their user_id.
@@ -21,9 +23,13 @@ export async function POST(req: NextRequest) {
 
     switch (String(b.action || "")) {
       case "profile.get": {
-        const [u] = await db`select name, look, time_zone from users where id = ${me}`;
+        const [u] = await db`select name, look, time_zone, plan, phone, phone_verified_at from users where id = ${me}`;
         const [{ n }] = await db`select count(*)::int as n from velo_memories where user_id = ${me} and kind = 'call'`;
-        return NextResponse.json({ name: u?.name || "", look: u?.look || "default", timeZone: u?.time_zone || null, hadCall: n > 0 });
+        return NextResponse.json({
+          name: u?.name || "", look: u?.look || "default", timeZone: u?.time_zone || null, hadCall: n > 0,
+          plan: u?.plan || "free", proForSale: !!process.env.STRIPE_PRICE_PRO && twilioReady(),
+          phone: u?.phone ? showPhone(String(u.phone)) : "", phoneVerified: !!u?.phone_verified_at, veloNumber: veloNumber(),
+        });
       }
       case "profile.update": {
         if (typeof b.name === "string") await db`update users set name = ${clean(b.name, 80) || null}, updated_at = now() where id = ${me}`;
@@ -92,6 +98,29 @@ export async function POST(req: NextRequest) {
         if (!needId()) return bad("Unknown memory.");
         await db`delete from velo_memories where id = ${id} and user_id = ${me}`;
         return NextResponse.json({ ok: true });
+
+      case "contacts.list": {
+        const rows = await db`select id, name, phone from velo_contacts where user_id = ${me} order by lower(name) limit 500`;
+        return NextResponse.json({ contacts: rows.map(r => ({ id: r.id, name: r.name, phone: showPhone(String(r.phone)) })) });
+      }
+      case "contacts.add": {
+        const name = clean(b.name, 80), phone = toE164(b.phone);
+        if (!name) return bad("Add a name.");
+        if (!phone) return bad(PHONE_MSG);
+        await db`insert into velo_contacts (user_id, name, phone) values (${me}, ${name}, ${phone}) on conflict (user_id, lower(name)) do update set phone = excluded.phone`;
+        return NextResponse.json({ ok: true });
+      }
+      case "contacts.delete":
+        if (!needId()) return bad("Unknown contact.");
+        await db`delete from velo_contacts where id = ${id} and user_id = ${me}`;
+        return NextResponse.json({ ok: true });
+
+      case "drafts.list": {
+        // Recent texts and calls Velo drafted or made, for the chat's cards.
+        const rows = await db`select id, kind, to_name, to_phone, body, status, result from velo_actions
+          where user_id = ${me} and kind in ('text', 'call') and created_at > now() - interval '2 days' order by created_at limit 30`;
+        return NextResponse.json({ drafts: rows });
+      }
 
       default:
         return bad("Unknown action.");
