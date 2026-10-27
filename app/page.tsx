@@ -10,7 +10,7 @@ import Chat, { type ChatMsg } from "./chat";
 import Today from "./today";
 import Memory from "./memory";
 import { timeZone } from "./lib/tz";
-import ProCard, { type Profile } from "./pro";
+import ProCard, { BrainCard, type Profile } from "./pro";
 
 type Tab = "chat" | "today" | "memory" | "settings";
 const TABS: { id: Tab; icon: string; label: string }[] = [
@@ -215,6 +215,7 @@ function Settings({ name, setName, onOut, profile, onProfile }: { name: string; 
         <div className="muted" style={{ fontSize: 13, margin: "2px 0 12px" }}>Each face has her own voice on calls.</div>
         <VeloLookPicker />
       </div>
+      {profile && <BrainCard profile={profile} onChange={onProfile} />}
       {profile && <ProCard profile={profile} onChange={onProfile} />}
       <button className="ghost" onClick={() => api("/api/auth", { action: "signout" }).finally(onOut)}>Sign out</button>
     </div>

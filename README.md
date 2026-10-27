@@ -7,6 +7,7 @@ Your personal assistant and companion — the Velo from GetPAID, as her own app.
 - 🧠 **Memory** — Velo remembers your goals, the people and things in your life, and past chats; see and forget it all on the Memory tab.
 - ⏰ **Reminders** — "remind me to call Mom tomorrow at 6pm" pops up in the app on time.
 - ✅ **To-dos** — Velo adds to your list; check things off on the Today tab.
+- 🧠 **Velo's brain** — pick which AI she chats with: Claude (default), Qwen or DeepSeek. Memory, reminders and Pro features work with all of them; passwords and codes are hidden from every one.
 - 🧑 **Looks** — pick Velo's face (each has her own voice).
 - ⭐ **Velo Pro** — Velo gets her own phone number: she texts and calls people for you (bookings, appointments, questions) and reports back, and you can text or call her. She can also post to your Facebook Page, 🔎 search the web for you (answers come with links), and 🛒 put together Amazon carts — you review and check out on Amazon yourself. Every text, call and post is shown to you first and only goes out when you tap Send / Call (or reply YES). Texts go out marked "(via Velo)"; on calls she says she's an AI assistant calling for you.
 
@@ -28,6 +29,10 @@ Your personal assistant and companion — the Velo from GetPAID, as her own app.
 4. **Facebook Page posting:** create a Meta app with Facebook Login, add `https://<your-domain>/api/social/callback` as a Valid OAuth Redirect URI, and request `pages_show_list`, `pages_manage_posts` and `pages_read_engagement` (App Review is needed before people outside your app's roles can connect). Set `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET`, `FACEBOOK_TOKEN_KEY` and `APP_ORIGIN`, and run `db/migrations/003-social.sql`. Facebook only lets apps post to Pages, not personal profiles.
 5. **Web search** uses Anthropic's web search tool (billed per search on your Anthropic account; up to 5 searches per question) and needs a model that supports it. **Amazon carts** need no setup (optional: `AMAZON_ASSOCIATE_TAG`). Run `db/migrations/004-cart.sql`.
 6. Limits: 30 texts, 10 calls and 10 posts per person per day; calls end after 10 minutes.
+
+### Qwen and DeepSeek (optional)
+
+Set `QWEN_API_KEY` + `QWEN_MODEL` (Alibaba Cloud Model Studio) and/or `DEEPSEEK_API_KEY` + `DEEPSEEK_MODEL`, and run `db/migrations/005-chat-model.sql`. They handle the everyday conversation (chat, texts, calls with you); memory summaries, recaps and calls Velo makes for you stay on Claude, and if a provider fails Velo answers with Claude instead. Web search for them runs through Claude. Settings shows where each one processes data (DeepSeek's servers are in China).
 
 Deploys on Vercel as a standard Next.js app with the same environment variables.
 

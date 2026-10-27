@@ -11,6 +11,8 @@ import { timeZone } from "./lib/tz";
 
 export type ChatMsg = { role: "user" | "assistant"; content: string; draft?: Draft };
 /** What Velo sees: real messages only (draft cards are local to the screen). */
+// Their messages since the last memo. Kept outside the component so switching tabs doesn't reset it.
+const unsaved = { current: 0 };
 const realMsgs = (m: ChatMsg[]) => m.filter(x => !x.draft).map(({ role, content }) => ({ role, content }));
 const INTRO = "Hi, I'm Velo! 👋 I'm here for whatever you need — planning your day, reminders, to-dos, talking things through, or just keeping you company. What should I call you?";
 const HELLO = (n: string) => [`Hey${n ? ` ${n}` : ""}! What's on your mind?`, `Hi${n ? ` ${n}` : ""} — how's your day going?`, `Hey${n ? ` ${n}` : ""}, good to see you. What can I do for you?`];
@@ -38,7 +40,6 @@ export default function Chat({ userId, name, onChanged, added }: { userId: strin
   }, []);
   const end = useRef<HTMLDivElement>(null);
   const msgsRef = useRef<ChatMsg[]>([]);
-  const unsaved = useRef(0); // their messages since the last memo
   const [hello] = useState(() => Math.floor(Math.random() * 3));
   msgsRef.current = msgs || [];
 
@@ -81,6 +82,8 @@ export default function Chat({ userId, name, onChanged, added }: { userId: strin
     try {
       const r = await api<{ reply: string; changed?: boolean; drafts?: Draft[] }>("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name });
       setMsgs(m => [...(m || []), { role: "assistant", content: r.reply }, ...(r.drafts || []).map(draft => ({ role: "assistant" as const, content: "", draft }))]);
+      // Free the box as soon as her reply shows; saving it can finish in the background.
+      setBusy(false);
       await data("messages.add", { messages: [{ role: "assistant", content: r.reply }] }).catch(() => {});
       if (r.changed) onChanged();
     } catch (e) {

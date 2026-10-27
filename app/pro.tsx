@@ -7,7 +7,10 @@ import { api, data } from "./lib/api";
 import { confirmAsk } from "./lib/dialog";
 import { formatPhone, contactProblem } from "./lib/contact";
 
-export type Profile = { name: string; look: string; plan: "free" | "pro"; proForSale: boolean; phone: string; phoneVerified: boolean; veloNumber: string };
+export type Profile = {
+  name: string; look: string; plan: "free" | "pro"; proForSale: boolean; phone: string; phoneVerified: boolean; veloNumber: string;
+  chatModel: string; models: { id: string; label: string; by: string; where: string }[];
+};
 type Contact = { id: string; name: string; phone: string };
 
 const PERKS = [
@@ -173,6 +176,36 @@ function FacebookCard() {
           </div>
         ) : <button className="btn" disabled={busy} onClick={() => run({ action: "connect" })}>Connect Facebook</button>}
       {msg && <div style={{ color: "var(--bad)", fontSize: 13, marginTop: 8 }}>⚠️ {msg}</div>}
+    </div>
+  );
+}
+
+/** Settings → Velo's brain: which AI she chats with (only shown when there's a choice). */
+export function BrainCard({ profile, onChange }: { profile: Profile; onChange: () => void }) {
+  const [busy, setBusy] = useState(false);
+  if (profile.models.length < 2) return null;
+  const pick = async (id: string) => {
+    if (id === profile.chatModel) return;
+    setBusy(true);
+    await data("profile.update", { chatModel: id }).catch(() => {});
+    setBusy(false); onChange();
+  };
+  return (
+    <div className="card" data-testid="brain">
+      <div style={{ fontWeight: 700 }}>🧠 Velo&apos;s brain</div>
+      <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>The AI Velo chats with. Her memory, reminders and everything else stay the same. Passwords and codes are hidden from every one of them.</div>
+      <div role="radiogroup" aria-label="Velo's brain" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {profile.models.map(m => {
+          const on = m.id === profile.chatModel;
+          return (
+            <button key={m.id} role="radio" aria-checked={on} disabled={busy} onClick={() => pick(m.id)}
+              style={{ textAlign: "left", background: on ? "rgba(124,140,255,0.12)" : "var(--surface2)", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, borderRadius: 12, padding: "10px 12px", color: "var(--text)", cursor: on ? "default" : "pointer" }}>
+              <div style={{ fontWeight: 700 }}>{on ? "✓ " : ""}{m.label} <span className="muted" style={{ fontWeight: 400, fontSize: 13 }}>by {m.by}{m.id === "claude" ? " · default" : ""}</span></div>
+              <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{m.where}</div>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
