@@ -10,7 +10,7 @@ import { formatPhone, contactProblem } from "./lib/contact";
 export type Profile = {
   name: string; look: string; plan: "free" | "pro"; proForSale: boolean; phone: string; phoneVerified: boolean; veloNumber: string;
   chatModel: string; models: { id: string; label: string; by: string; where: string }[];
-  personality: string; adultConfirmed: boolean; isAdmin?: boolean; spicyVoice?: string; secretVoice?: string;
+  personality: string; adultConfirmed: boolean; isAdmin?: boolean; spicyVoice?: string; secretVoice?: string; spicyApiVoice?: string;
 };
 type Contact = { id: string; name: string; phone: string };
 
@@ -279,6 +279,23 @@ export function PersonalityCard({ profile, onChange }: { profile: Profile; onCha
                     catch (e) { setMsg(e instanceof Error ? e.message : "Couldn't save."); }
                     setBusy(false);
                   }} style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${profile.secretVoice === v ? "var(--accent)" : "var(--border)"}`, background: profile.secretVoice === v ? "rgba(124,140,255,0.12)" : "var(--surface2)", color: "var(--text)", cursor: "pointer", fontSize: 13 }}>
+                    {v}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {profile.spicyVoice === "spicy" && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Spicy API voice</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {["Bella Bright","Sarah","Laura","Alice","Matilda","Jessica","Lily"].map(v => (
+                  <button key={v} disabled={busy} onClick={async () => {
+                    setBusy(true); setMsg("");
+                    try { await data("profile.update", { spicyApiVoice: v }); onChange(); }
+                    catch (e) { setMsg(e instanceof Error ? e.message : "Couldn't save."); }
+                    setBusy(false);
+                  }} style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${profile.spicyApiVoice === v ? "var(--accent)" : "var(--border)"}`, background: profile.spicyApiVoice === v ? "rgba(124,140,255,0.12)" : "var(--surface2)", color: "var(--text)", cursor: "pointer", fontSize: 13 }}>
                     {v}
                   </button>
                 ))}
