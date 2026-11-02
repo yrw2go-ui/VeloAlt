@@ -204,7 +204,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         : name === "generate_image" && isSpicy ? { url: await generateImage((input as { prompt: string }).prompt) }
         : name === "generate_video" && isSpicy ? { status: await generateVideo((input as { prompt: string }).prompt, (input as { duration?: number }).duration) }
         : name === "save_character" && isSpicy ? { id: await saveCharacter((input as { image_url: string }).image_url, (input as { name?: string }).name) }
-        : name === "generate_with_character" && isSpicy ? { result: await generateWithCharacter((input as { prompt: string }).prompt, (input as { type?: string }).type || "image", "chr_placeholder") }
+        : name === "generate_with_character" && isSpicy ? { result: await generateWithCharacter((input as { prompt: string }).prompt, ((input as { type?: string }).type === "video" ? "video" : "image"), "chr_placeholder") }
         : (() => { throw new ReminderError(isProTool(name) ? "That's a Velo Pro feature." : `Unknown tool ${name}`); })();
       if (isReminderTool(name) && !name.startsWith("list_")) changed = true;
       return { content: JSON.stringify(out).slice(0, 12000) };
