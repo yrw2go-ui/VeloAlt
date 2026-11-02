@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
 
     switch (String(b.action || "")) {
       case "profile.get": {
-        const [u] = await db`select name, look, time_zone, plan, phone, phone_verified_at, chat_model, personality, adult_confirmed_at, spicy_voice, secret_voice from users where id = ${me}`;
+        const [u] = await db`select name, look, time_zone, plan, phone, phone_verified_at, chat_model, personality, adult_confirmed_at, spicy_voice, secret_voice, spicy_api_voice from users where id = ${me}`;
         const [{ n }] = await db`select count(*)::int as n from velo_memories where user_id = ${me} and kind = 'call'`;
         return NextResponse.json({
           name: u?.name || "", look: u?.look || "default", timeZone: u?.time_zone || null, hadCall: n > 0,
@@ -39,6 +39,7 @@ export async function POST(req: NextRequest) {
           isAdmin: c.email.toLowerCase() === "yrw2go@gmail.com",
           spicyVoice: u?.spicy_voice || "secretvoice",
           secretVoice: u?.secret_voice || "velvet",
+          spicyApiVoice: u?.spicy_api_voice || "Bella Bright",
         });
       }
       case "profile.update": {
@@ -52,6 +53,9 @@ export async function POST(req: NextRequest) {
         }
         if (typeof b.secretVoice === "string" && ["velvet","whisper","angel","jade","honey","crystal","diamond","sunny","star","candy","bubbles"].includes(b.secretVoice)) {
           await db`update users set secret_voice = ${b.secretVoice}, updated_at = now() where id = ${me}`;
+        }
+        if (typeof b.spicyApiVoice === "string") {
+          await db`update users set spicy_api_voice = ${b.spicyApiVoice}, updated_at = now() where id = ${me}`;
         }
         if (PERSONALITIES.includes(b.personality)) {
           const [a] = await db`select adult_confirmed_at from users where id = ${me}`;
