@@ -42,6 +42,35 @@ export async function POST(req: NextRequest) {
           spicyApiVoice: u?.spicy_api_voice || "Bella Bright",
         });
       }
+      
+      case "profile.generateLook": {
+        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
+        const key = process.env.SPICY_API_KEY;
+        if (!key) return bad("Not set up.");
+        const res = await fetch("https://api.spicyapi.com/v1/images/generations", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ model: "spicy-image-1", prompt: String(b.prompt || ""), size: "832*1216", n: 1 }),
+        });
+        if (!res.ok) return bad("Generation failed.");
+        const data = await res.json();
+        return NextResponse.json({ url: data?.data?.[0]?.url || null });
+      }
+      case "profile.saveLook": {
+        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
+        const key = process.env.SPICY_API_KEY;
+        if (!key) return bad("Not set up.");
+        const res = await fetch("https://api.spicyapi.com/v1/characters", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "Velo", image_urls: [String(b.imageUrl || "")] }),
+        });
+        if (!res.ok) return bad("Couldn't save.");
+        const data = await res.json();
+        // Store character id if desired
+        return NextResponse.json({ ok: true, characterId: data.id });
+      }
+
       case "profile.update": {
         if (typeof b.name === "string") await db`update users set name = ${clean(b.name, 80) || null}, updated_at = now() where id = ${me}`;
         if (typeof b.look === "string" && VELO_LOOKS.some(l => l.id === b.look)) await db`update users set look = ${b.look}, updated_at = now() where id = ${me}`;
