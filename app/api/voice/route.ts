@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
         res = await fetch("https://api.spicyapi.com/v1/audio/speech", {
           method: "POST",
           headers: { "Authorization": `Bearer ${process.env.SPICY_API_KEY}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ model: "spicy-voice-1", input: text, voice: u?.spicy_api_voice || "Bella Bright", response_format: "mp3" }),
+          body: JSON.stringify({ model: "spicy-voice-3", input: text, voice: u?.spicy_api_voice || "Bella Bright", response_format: "mp3" }),
         });
       } else if (process.env.SECRETVOICE_API_KEY) {
         const voice = u?.secret_voice || "velvet";
