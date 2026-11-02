@@ -2,3 +2,5 @@
 alter table users
   add column if not exists personality text not null default 'friend' check (personality in ('friend', 'professional', 'sarcastic', 'romantic', 'alternate')),
   add column if not exists adult_confirmed_at timestamptz;
+
+alter table users add column if not exists spicy_voice text default 'secretvoice';
