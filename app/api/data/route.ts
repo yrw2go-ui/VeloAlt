@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
 
     switch (String(b.action || "")) {
       case "profile.get": {
-        const [u] = await db`select name, look, time_zone, plan, phone, phone_verified_at, chat_model, personality, adult_confirmed_at from users where id = ${me}`;
+        const [u] = await db`select name, look, time_zone, plan, phone, phone_verified_at, chat_model, personality, adult_confirmed_at, spicy_voice from users where id = ${me}`;
         const [{ n }] = await db`select count(*)::int as n from velo_memories where user_id = ${me} and kind = 'call'`;
         return NextResponse.json({
           name: u?.name || "", look: u?.look || "default", timeZone: u?.time_zone || null, hadCall: n > 0,
@@ -37,6 +37,7 @@ export async function POST(req: NextRequest) {
           personality: (u?.personality === "romantic" && !u?.adult_confirmed_at) || (u?.personality === "alternate" && c.email.toLowerCase() !== "yrw2go@gmail.com") ? "friend" : (u?.personality || "friend"),
           adultConfirmed: !!u?.adult_confirmed_at,
           isAdmin: c.email.toLowerCase() === "yrw2go@gmail.com",
+          spicyVoice: u?.spicy_voice || "secretvoice",
         });
       }
       case "profile.update": {
@@ -45,6 +46,9 @@ export async function POST(req: NextRequest) {
         if (isValidTimeZone(b.timeZone)) await db`update users set time_zone = ${b.timeZone} where id = ${me}`;
         // Romantic is for adults: picking it needs the 18+ confirmation (sent with it, or given before).
         if (b.adultConfirmed === true) await db`update users set adult_confirmed_at = coalesce(adult_confirmed_at, now()) where id = ${me}`;
+        if (typeof b.spicyVoice === "string" && ["secretvoice","fish","spicy"].includes(b.spicyVoice)) {
+          await db`update users set spicy_voice = ${b.spicyVoice}, updated_at = now() where id = ${me}`;
+        }
         if (PERSONALITIES.includes(b.personality)) {
           const [a] = await db`select adult_confirmed_at from users where id = ${me}`;
           if (b.personality === "romantic" && !a?.adult_confirmed_at) return bad("Romantic mode is for adults — confirm you're 18 or older.");
