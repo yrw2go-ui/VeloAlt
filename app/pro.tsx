@@ -224,6 +224,7 @@ const STYLES = [
 /** Admin-only: generate and save looks for Velo. */
 function VeloLookGenerator({ profile, onChange }: { profile: Profile; onChange: () => void }) {
   const [prompt, setPrompt] = useState("");
+  const [provider, setProvider] = useState("spicy");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [url, setUrl] = useState("");
@@ -232,7 +233,7 @@ function VeloLookGenerator({ profile, onChange }: { profile: Profile; onChange: 
     if (!prompt.trim()) return;
     setBusy(true); setMsg(""); setUrl("");
     try {
-      const r = await data<{ url?: string }>("profile.generateLook", { prompt: prompt.trim() });
+      const r = await data<{ url?: string }>("profile.generateLook", { prompt: prompt.trim(), provider });
       if (r.url) setUrl(r.url);
       else setMsg("No image returned.");
     } catch (e) { setMsg(e instanceof Error ? e.message : "Failed."); }
@@ -252,8 +253,10 @@ function VeloLookGenerator({ profile, onChange }: { profile: Profile; onChange: 
     <div className="card" data-testid="look-generator">
       <div style={{ fontWeight: 700 }}>🖼️ Create Velo look (admin)</div>
       <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>Generate an image of her, then save it so future pictures stay consistent.</div>
-      <div className="row" style={{ gap: 8, marginBottom: 8 }}>
-        <input value={prompt} onChange={e => setPrompt(e.target.value)} placeholder="Describe her look…" style={{ flex: 1 }} />
+      <div className="row" style={{ gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+        <button disabled={busy} onClick={() => setProvider("spicy")} style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${provider === "spicy" ? "var(--accent)" : "var(--border)"}`, background: provider === "spicy" ? "rgba(124,140,255,0.12)" : "var(--surface2)", color: "var(--text)", cursor: "pointer", fontSize: 13 }}>Spicy</button>
+        <button disabled={busy} onClick={() => setProvider("atlas")} style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${provider === "atlas" ? "var(--accent)" : "var(--border)"}`, background: provider === "atlas" ? "rgba(124,140,255,0.12)" : "var(--surface2)", color: "var(--text)", cursor: "pointer", fontSize: 13 }}>Atlas</button>
+        <input value={prompt} onChange={e => setPrompt(e.target.value)} placeholder="Describe her look…" style={{ flex: 1, minWidth: 200 }} />
         <button className="btn" disabled={busy || !prompt.trim()} onClick={gen}>{busy ? "…" : "Generate"}</button>
       </div>
       {url && (
