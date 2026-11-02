@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
           const res = await fetch("https://api.atlascloud.ai/api/v1/model/generateImage", {
             method: "POST",
             headers: { Authorization: `Bearer ${process.env.ATLASCLOUD_API_KEY}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ model: "seedream-3.0", prompt }),
+            body: JSON.stringify({ model: "seedream-pro-5", prompt }),
           });
           if (!res.ok) {
             const err = await res.text().catch(() => "");
