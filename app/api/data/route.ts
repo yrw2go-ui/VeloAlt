@@ -45,16 +45,44 @@ export async function POST(req: NextRequest) {
       
       case "profile.generateLook": {
         if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
-        const key = process.env.SPICY_API_KEY;
-        if (!key) return bad("Not set up.");
-        const res = await fetch("https://api.spicyapi.com/v1/images/generations", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ model: "spicy-image-1", prompt: String(b.prompt || ""), size: "832*1216", n: 1 }),
-        });
-        if (!res.ok) return bad("Generation failed.");
-        const data = await res.json();
-        return NextResponse.json({ url: data?.data?.[0]?.url || null });
+        const provider = String(b.provider || "spicy");
+        const prompt = String(b.prompt || "");
+        if (provider === "atlas" && process.env.ATLASCLOUD_API_KEY) {
+          const res = await fetch("https://api.atlascloud.ai/api/v1/model/generateImage", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${process.env.ATLASCLOUD_API_KEY}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ model: "seedream-3.0", prompt }),
+          });
+          if (!res.ok) return bad("Atlas generation failed.");
+          const data = await res.json();
+          const predId = data?.data?.id;
+          if (!predId) return bad("No prediction id.");
+          // Poll a few times
+          for (let i = 0; i < 10; i++) {
+            await new Promise(r => setTimeout(r, 2000));
+            const poll = await fetch(`https://api.atlascloud.ai/api/v1/model/prediction/${predId}`, {
+              headers: { Authorization: `Bearer ${process.env.ATLASCLOUD_API_KEY}` },
+            });
+            if (poll.ok) {
+              const p = await poll.json();
+              if (p?.data?.status === "completed" && p?.data?.outputs?.[0]) {
+                return NextResponse.json({ url: p.data.outputs[0] });
+              }
+            }
+          }
+          return bad("Atlas timed out.");
+        } else {
+          const key = process.env.SPICY_API_KEY;
+          if (!key) return bad("Not set up.");
+          const res = await fetch("https://api.spicyapi.com/v1/images/generations", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ model: "spicy-image-1", prompt, size: "832*1216", n: 1 }),
+          });
+          if (!res.ok) return bad("Generation failed.");
+          const data = await res.json();
+          return NextResponse.json({ url: data?.data?.[0]?.url || null });
+        }
       }
       case "profile.saveLook": {
         if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
