@@ -28,7 +28,8 @@ export async function POST(req: NextRequest) {
     const password = String(body.password || "");
     if (!EMAIL.test(email)) return NextResponse.json({ error: "Enter a valid email, like you@example.com." }, { status: 400 });
     if (password.length < 8 || password.length > 200) return NextResponse.json({ error: "Passwords are 8 or more characters." }, { status: 400 });
-    const ip = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "local";
+    // The client can prepend anything to X-Forwarded-For; the proxy's own entry is the last one.
+    const ip = req.headers.get("x-real-ip")?.trim() || (req.headers.get("x-forwarded-for") || "").split(",").pop()?.trim() || "local";
     if (!allow(`signin:${email}`, SIGN_IN_LIMITS) || !allow(`signin-ip:${ip}`, SIGN_IN_LIMITS)) {
       return NextResponse.json({ error: "Too many tries — wait a few minutes and try again." }, { status: 429 });
     }
