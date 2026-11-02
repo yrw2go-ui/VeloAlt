@@ -9,6 +9,26 @@
 //   "errandsum" — a short report to the owner after that call
 import Anthropic from "@anthropic-ai/sdk";
 import type { Caller } from "./caller";
+
+const IMAGE_TOOL: Anthropic.Tool = {
+  name: "generate_image",
+  description: "Generate an explicit image from a text prompt (admin-only spicy feature). Returns a URL.",
+  input_schema: { type: "object", properties: { prompt: { type: "string", description: "Detailed description of the image to generate" } }, required: ["prompt"] },
+};
+
+async function generateImage(prompt: string): Promise<string> {
+  const key = process.env.SPICY_API_KEY;
+  if (!key) throw new Error("Image generation isn't set up.");
+  const res = await fetch("https://api.spicyapi.com/v1/images/generations", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "spicy-image-1", prompt, size: "832*1216", n: 1 }),
+  });
+  if (!res.ok) throw new Error("Image generation failed.");
+  const data = await res.json();
+  return data?.data?.[0]?.url || "No image returned.";
+}
+
 import { sql } from "./db";
 import { VELO_SYSTEM, CALL_TALK, CALL_RECAP, CALL_REMEMBER, CHAT_REMEMBER, SMS_TALK, PRO_INFO, FREE_INFO, SEARCH_INFO, errandPrompt, ERRAND_SUMMARY, PERSONALITY_PROMPT, PERSONALITIES, type Personality } from "./persona";
 import { MEMORY_TOOLS, isMemoryTool, runMemoryTool, MemoryError, memoryBlock, saveConversationMemory } from "./memory";
@@ -92,8 +112,10 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   // Tools: none on wrap-ups or errands; Pro adds contacts, drafts, Amazon carts and 🔎 web search
   // (Anthropic runs the searches; results come back in the same response).
   const search = !!proTools && (mode === "chat" || mode === "sms" || mode === "talk");
+  const isSpicy = personality === "alternate" && caller.email.toLowerCase() === "yrw2go@gmail.com";
   const tools: Anthropic.ToolUnion[] | undefined = wrapUp || errand ? undefined : [
     ...MEMORY_TOOLS, ...REMINDER_TOOLS, ...(proTools?.tools || []),
+    ...(isSpicy ? [IMAGE_TOOL] : []),
     ...(search ? [{ type: "web_search_20260209" as const, name: "web_search" as const, max_uses: 5, user_location: { type: "approximate" as const, timezone: today.tz } }] : []),
   ];
   let reply = "";
@@ -107,6 +129,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
       const out = isMemoryTool(name) ? await runMemoryTool(caller, name, input)
         : isReminderTool(name) ? await runReminderTool(caller, name, input, today.tz)
         : isProTool(name) && pro ? await runProTool(caller, name, input, drafts)
+        : name === "generate_image" && isSpicy ? { url: await generateImage((input as any).prompt) }
         : (() => { throw new ReminderError(isProTool(name) ? "That's a Velo Pro feature." : `Unknown tool ${name}`); })();
       if (isReminderTool(name) && !name.startsWith("list_")) changed = true;
       return { content: JSON.stringify(out).slice(0, 12000) };
