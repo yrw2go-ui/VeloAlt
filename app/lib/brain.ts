@@ -31,6 +31,57 @@ async function generateVideo(prompt: string, duration = 5): Promise<string> {
   return data?.id ? `Video task started: ${data.id}. Check back shortly.` : "Video request accepted.";
 }
 
+
+const SAVE_CHARACTER_TOOL: Anthropic.Tool = {
+  name: "save_character",
+  description: "Save a generated image URL as Velo's reusable look (admin-only). Future images/videos will use this face.",
+  input_schema: { type: "object", properties: { image_url: { type: "string" }, name: { type: "string", default: "Velo" } }, required: ["image_url"] },
+};
+
+const USE_CHARACTER_TOOL: Anthropic.Tool = {
+  name: "generate_with_character",
+  description: "Generate an image or video of Velo using her saved character look (admin-only).",
+  input_schema: { type: "object", properties: { prompt: { type: "string" }, type: { type: "string", enum: ["image","video"], default: "image" } }, required: ["prompt"] },
+};
+
+async function saveCharacter(imageUrl: string, name = "Velo"): Promise<string> {
+  const key = process.env.SPICY_API_KEY;
+  if (!key) throw new Error("Not set up.");
+  const res = await fetch("https://api.spicyapi.com/v1/characters", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ name, image_urls: [imageUrl] }),
+  });
+  if (!res.ok) throw new Error("Couldn't save character.");
+  const data = await res.json();
+  // Store the character id in the user's settings or a simple memory
+  return data.id || "saved";
+}
+
+async function generateWithCharacter(prompt: string, type: "image"|"video", characterId: string): Promise<string> {
+  const key = process.env.SPICY_API_KEY;
+  if (!key) throw new Error("Not set up.");
+  if (type === "image") {
+    const res = await fetch("https://api.spicyapi.com/v1/images/generations", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "spicy-image-1", prompt, character: characterId, size: "832*1216", n: 1 }),
+    });
+    if (!res.ok) throw new Error("Failed.");
+    const data = await res.json();
+    return data?.data?.[0]?.url || "No image.";
+  } else {
+    const res = await fetch("https://api.spicyapi.com/v1/videos/generations", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "spicy-character-video-1", prompt, character: characterId, duration: 5 }),
+    });
+    if (!res.ok) throw new Error("Failed.");
+    const data = await res.json();
+    return data?.id ? `Video task: ${data.id}` : "Started.";
+  }
+}
+
 const IMAGE_TOOL: Anthropic.Tool = {
   name: "generate_image",
   description: "Generate an explicit image from a text prompt (admin-only spicy feature). Returns a URL.",
@@ -136,7 +187,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   const isSpicy = personality === "alternate" && caller.email.toLowerCase() === "yrw2go@gmail.com";
   const tools: Anthropic.ToolUnion[] | undefined = wrapUp || errand ? undefined : [
     ...MEMORY_TOOLS, ...REMINDER_TOOLS, ...(proTools?.tools || []),
-    ...(isSpicy ? [IMAGE_TOOL, VIDEO_TOOL] : []),
+    ...(isSpicy ? [IMAGE_TOOL, VIDEO_TOOL, SAVE_CHARACTER_TOOL, USE_CHARACTER_TOOL] : []),
     ...(search ? [{ type: "web_search_20260209" as const, name: "web_search" as const, max_uses: 5, user_location: { type: "approximate" as const, timezone: today.tz } }] : []),
   ];
   let reply = "";
@@ -152,6 +203,8 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         : isProTool(name) && pro ? await runProTool(caller, name, input, drafts)
         : name === "generate_image" && isSpicy ? { url: await generateImage((input as any).prompt) }
         : name === "generate_video" && isSpicy ? { status: await generateVideo((input as any).prompt, (input as any).duration) }
+        : name === "save_character" && isSpicy ? { id: await saveCharacter((input as any).image_url, (input as any).name) }
+        : name === "generate_with_character" && isSpicy ? { result: await generateWithCharacter((input as any).prompt, (input as any).type || "image", "chr_placeholder") }
         : (() => { throw new ReminderError(isProTool(name) ? "That's a Velo Pro feature." : `Unknown tool ${name}`); })();
       if (isReminderTool(name) && !name.startsWith("list_")) changed = true;
       return { content: JSON.stringify(out).slice(0, 12000) };
