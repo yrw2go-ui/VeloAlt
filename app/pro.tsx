@@ -10,7 +10,7 @@ import { formatPhone, contactProblem } from "./lib/contact";
 export type Profile = {
   name: string; look: string; plan: "free" | "pro"; proForSale: boolean; phone: string; phoneVerified: boolean; veloNumber: string;
   chatModel: string; models: { id: string; label: string; by: string; where: string }[];
-  personality: string; adultConfirmed: boolean; isAdmin?: boolean;
+  personality: string; adultConfirmed: boolean; isAdmin?: boolean; spicyVoice?: string;
 };
 type Contact = { id: string; name: string; phone: string };
 
@@ -94,6 +94,23 @@ function PhoneCard({ profile, onChange }: { profile: Profile; onChange: () => vo
         </div>
       )}
       {msg && <div style={{ color: "var(--bad)", fontSize: 13, marginTop: 8 }}>⚠️ {msg}</div>}
+      {profile.personality === "alternate" && profile.isAdmin && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Voice for spicy mode</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {["secretvoice","fish","spicy"].map(v => (
+              <button key={v} disabled={busy} onClick={async () => {
+                setBusy(true); setMsg("");
+                try { await data("profile.update", { spicyVoice: v }); onChange(); }
+                catch (e) { setMsg(e instanceof Error ? e.message : "Couldn't save."); }
+                setBusy(false);
+              }} style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${profile.spicyVoice === v ? "var(--accent)" : "var(--border)"}`, background: profile.spicyVoice === v ? "rgba(124,140,255,0.12)" : "var(--surface2)", color: "var(--text)", cursor: "pointer", fontSize: 13 }}>
+                {v}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -177,6 +194,23 @@ function FacebookCard() {
           </div>
         ) : <button className="btn" disabled={busy} onClick={() => run({ action: "connect" })}>Connect Facebook</button>}
       {msg && <div style={{ color: "var(--bad)", fontSize: 13, marginTop: 8 }}>⚠️ {msg}</div>}
+      {profile.personality === "alternate" && profile.isAdmin && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Voice for spicy mode</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {["secretvoice","fish","spicy"].map(v => (
+              <button key={v} disabled={busy} onClick={async () => {
+                setBusy(true); setMsg("");
+                try { await data("profile.update", { spicyVoice: v }); onChange(); }
+                catch (e) { setMsg(e instanceof Error ? e.message : "Couldn't save."); }
+                setBusy(false);
+              }} style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${profile.spicyVoice === v ? "var(--accent)" : "var(--border)"}`, background: profile.spicyVoice === v ? "rgba(124,140,255,0.12)" : "var(--surface2)", color: "var(--text)", cursor: "pointer", fontSize: 13 }}>
+                {v}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -252,6 +286,23 @@ export function PersonalityCard({ profile, onChange }: { profile: Profile; onCha
         })}
       </div>
       {msg && <div style={{ color: "var(--bad)", fontSize: 13, marginTop: 8 }}>⚠️ {msg}</div>}
+      {profile.personality === "alternate" && profile.isAdmin && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Voice for spicy mode</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {["secretvoice","fish","spicy"].map(v => (
+              <button key={v} disabled={busy} onClick={async () => {
+                setBusy(true); setMsg("");
+                try { await data("profile.update", { spicyVoice: v }); onChange(); }
+                catch (e) { setMsg(e instanceof Error ? e.message : "Couldn't save."); }
+                setBusy(false);
+              }} style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${profile.spicyVoice === v ? "var(--accent)" : "var(--border)"}`, background: profile.spicyVoice === v ? "rgba(124,140,255,0.12)" : "var(--surface2)", color: "var(--text)", cursor: "pointer", fontSize: 13 }}>
+                {v}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
