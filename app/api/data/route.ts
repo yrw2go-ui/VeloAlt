@@ -53,7 +53,10 @@ export async function POST(req: NextRequest) {
             headers: { Authorization: `Bearer ${process.env.ATLASCLOUD_API_KEY}`, "Content-Type": "application/json" },
             body: JSON.stringify({ model: "seedream-3.0", prompt }),
           });
-          if (!res.ok) return bad("Atlas generation failed.");
+          if (!res.ok) {
+            const err = await res.text().catch(() => "");
+            return bad(`Atlas failed: ${res.status} ${err.slice(0, 200)}`);
+          }
           const data = await res.json();
           const predId = data?.data?.id;
           if (!predId) return bad("No prediction id.");
