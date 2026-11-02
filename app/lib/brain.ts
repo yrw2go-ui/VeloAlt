@@ -201,10 +201,10 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
       const out = isMemoryTool(name) ? await runMemoryTool(caller, name, input)
         : isReminderTool(name) ? await runReminderTool(caller, name, input, today.tz)
         : isProTool(name) && pro ? await runProTool(caller, name, input, drafts)
-        : name === "generate_image" && isSpicy ? { url: await generateImage((input as any).prompt) }
-        : name === "generate_video" && isSpicy ? { status: await generateVideo((input as any).prompt, (input as any).duration) }
-        : name === "save_character" && isSpicy ? { id: await saveCharacter((input as any).image_url, (input as any).name) }
-        : name === "generate_with_character" && isSpicy ? { result: await generateWithCharacter((input as any).prompt, (input as any).type || "image", "chr_placeholder") }
+        : name === "generate_image" && isSpicy ? { url: await generateImage((input as { prompt: string }).prompt) }
+        : name === "generate_video" && isSpicy ? { status: await generateVideo((input as { prompt: string }).prompt, (input as { duration?: number }).duration) }
+        : name === "save_character" && isSpicy ? { id: await saveCharacter((input as { image_url: string }).image_url, (input as { name?: string }).name) }
+        : name === "generate_with_character" && isSpicy ? { result: await generateWithCharacter((input as { prompt: string }).prompt, (input as { type?: string }).type || "image", "chr_placeholder") }
         : (() => { throw new ReminderError(isProTool(name) ? "That's a Velo Pro feature." : `Unknown tool ${name}`); })();
       if (isReminderTool(name) && !name.startsWith("list_")) changed = true;
       return { content: JSON.stringify(out).slice(0, 12000) };
