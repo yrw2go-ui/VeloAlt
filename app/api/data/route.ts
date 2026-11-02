@@ -34,9 +34,9 @@ export async function POST(req: NextRequest) {
           phone: u?.phone ? showPhone(String(u.phone)) : "", phoneVerified: !!u?.phone_verified_at, veloNumber: veloNumber(),
           chatModel: availableModels().includes(u?.chat_model) ? u?.chat_model : "claude",
           models: availableModels().map(id => ({ id, ...MODEL_INFO[id] })),
-          personality: (u?.personality === "romantic" && !u?.adult_confirmed_at) || (u?.personality === "alternate" && c.email.toLowerCase() !== "${ADMIN.lower()}") ? "friend" : (u?.personality || "friend"),
+          personality: (u?.personality === "romantic" && !u?.adult_confirmed_at) || (u?.personality === "alternate" && c.email.toLowerCase() !== "yrw2go@gmail.com") ? "friend" : (u?.personality || "friend"),
           adultConfirmed: !!u?.adult_confirmed_at,
-          isAdmin: c.email.toLowerCase() === "${ADMIN.lower()}",
+          isAdmin: c.email.toLowerCase() === "yrw2go@gmail.com",
         });
       }
       case "profile.update": {
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
         if (PERSONALITIES.includes(b.personality)) {
           const [a] = await db`select adult_confirmed_at from users where id = ${me}`;
           if (b.personality === "romantic" && !a?.adult_confirmed_at) return bad("Romantic mode is for adults — confirm you're 18 or older.");
-          if (b.personality === "alternate" && c.email.toLowerCase() !== "${ADMIN.lower()}") return bad("Alternate personality is admin-only.");
+          if (b.personality === "alternate" && c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Alternate personality is admin-only.");
           await db`update users set personality = ${b.personality}, updated_at = now() where id = ${me}`;
         }
         if (CHAT_MODELS.includes(b.chatModel) && availableModels().includes(b.chatModel as ChatModel)) await db`update users set chat_model = ${b.chatModel}, updated_at = now() where id = ${me}`;
