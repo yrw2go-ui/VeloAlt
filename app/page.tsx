@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { api, data } from "./lib/api";
 import { currentAsk, subscribeAsk } from "./lib/dialog";
-import { VeloAvatar, VeloLookPicker, applyVeloLook, useVeloLook } from "./avatar";
+import { VeloLogo, VeloLookPicker, applyVeloLook, useVeloLook } from "./avatar";
 import VeloCall, { canCallVelo, primeSpeech } from "./call";
 import Chat, { type ChatMsg } from "./chat";
 import Today from "./today";
@@ -29,7 +29,7 @@ export default function Home() {
     window.addEventListener("velo:signed-out", out);
     return () => window.removeEventListener("velo:signed-out", out);
   }, []);
-  if (user === undefined) return <Center><VeloAvatar size={96} /></Center>;
+  if (user === undefined) return <Center><VeloLogo size={96} /></Center>;
   if (!user) return <SignIn onIn={setUser} />;
   return <Main key={user.id} userId={user.id} onOut={() => setUser(null)} />;
 }
@@ -61,7 +61,7 @@ function SignIn({ onIn }: { onIn: (u: User) => void }) {
     <Center>
       <form onSubmit={go} style={{ width: "100%", maxWidth: 380, display: "flex", flexDirection: "column", gap: 12, alignItems: "stretch" }}>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, marginBottom: 8 }}>
-          <VeloAvatar size={112} />
+          <VeloLogo size={112} />
           <h1 style={{ margin: 0, fontSize: 32 }}>Velo</h1>
           <div className="muted" style={{ textAlign: "center" }}>Your personal assistant and companion.</div>
         </div>
@@ -143,7 +143,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   return (
     <div style={{ height: "100dvh", display: "flex", flexDirection: "column", maxWidth: 720, margin: "0 auto" }}>
       <header className="row" style={{ padding: "max(12px, env(safe-area-inset-top)) 16px 12px", borderBottom: "1px solid var(--border)" }}>
-        <VeloAvatar size={40} />
+        <VeloLogo size={40} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 800, fontSize: 18 }}>Velo</div>
           <div className="muted" style={{ fontSize: 12 }}>{name ? `Here for you, ${name.split(" ")[0]}` : "Your assistant & companion"}</div>

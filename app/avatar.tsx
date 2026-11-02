@@ -41,6 +41,12 @@ export function VeloAvatar({ size = 32, style, look: lookId }: { size?: number; 
   );
 }
 
+/** Velo's logo: the "V" in the cloud (app icon, sign-in, header). Her chosen face stays in chats and calls. */
+export function VeloLogo({ size = 40 }: { size?: number }) {
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src="/velo.png" width={size} height={size} alt="Velo" draggable={false} style={{ display: "block", flexShrink: 0, width: size, height: size, objectFit: "contain" }} />;
+}
+
 /** Settings → Velo's look: tap a face to pick (each face has its own voice on calls). */
 export function VeloLookPicker() {
   const chosen = useVeloLook();
