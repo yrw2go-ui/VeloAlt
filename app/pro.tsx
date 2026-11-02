@@ -10,7 +10,7 @@ import { formatPhone, contactProblem } from "./lib/contact";
 export type Profile = {
   name: string; look: string; plan: "free" | "pro"; proForSale: boolean; phone: string; phoneVerified: boolean; veloNumber: string;
   chatModel: string; models: { id: string; label: string; by: string; where: string }[];
-  personality: string; adultConfirmed: boolean; isAdmin?: boolean; spicyVoice?: string;
+  personality: string; adultConfirmed: boolean; isAdmin?: boolean; spicyVoice?: string; secretVoice?: string;
 };
 type Contact = { id: string; name: string; phone: string };
 
@@ -268,6 +268,23 @@ export function PersonalityCard({ profile, onChange }: { profile: Profile; onCha
               </button>
             ))}
           </div>
+          {profile.spicyVoice === "secretvoice" && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>SecretVoice voice</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {["velvet","whisper","angel","jade","honey","crystal","diamond","sunny","star","candy","bubbles"].map(v => (
+                  <button key={v} disabled={busy} onClick={async () => {
+                    setBusy(true); setMsg("");
+                    try { await data("profile.update", { secretVoice: v }); onChange(); }
+                    catch (e) { setMsg(e instanceof Error ? e.message : "Couldn't save."); }
+                    setBusy(false);
+                  }} style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${profile.secretVoice === v ? "var(--accent)" : "var(--border)"}`, background: profile.secretVoice === v ? "rgba(124,140,255,0.12)" : "var(--surface2)", color: "var(--text)", cursor: "pointer", fontSize: 13 }}>
+                    {v}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
