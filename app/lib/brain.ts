@@ -44,6 +44,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   // to other people and memory notes always use her plain voice.
   let personality: Personality = PERSONALITIES.includes(u?.personality) ? u.personality : "friend";
   if (personality === "romantic" && !u?.adult_confirmed_at) personality = "friend";
+  if (personality === "alternate" && caller.email.toLowerCase() !== "${ADMIN.lower()}") personality = "friend";
   const pro = u?.plan === "pro" && twilioReady();
   const proTools = pro ? await proToolsFor(caller.userId) : null;
   const drafts: Draft[] = [];

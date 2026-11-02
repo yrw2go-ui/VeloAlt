@@ -10,7 +10,7 @@ import { formatPhone, contactProblem } from "./lib/contact";
 export type Profile = {
   name: string; look: string; plan: "free" | "pro"; proForSale: boolean; phone: string; phoneVerified: boolean; veloNumber: string;
   chatModel: string; models: { id: string; label: string; by: string; where: string }[];
-  personality: string; adultConfirmed: boolean;
+  personality: string; adultConfirmed: boolean; isAdmin?: boolean;
 };
 type Contact = { id: string; name: string; phone: string };
 
@@ -216,6 +216,7 @@ const STYLES = [
   { id: "professional", icon: "💼", label: "Professional assistant", about: "Polished, efficient and to the point." },
   { id: "sarcastic", icon: "😏", label: "Sarcastic assistant", about: "Dry wit and playful teasing — still helpful." },
   { id: "romantic", icon: "💕", label: "Romantic companion", about: "Affectionate and a little flirty. Adults only, kept tasteful." },
+  { id: "alternate", icon: "🌶️", label: "Alternate (spicy)", about: "Admin-only. Bold, flirty roleplay when you lead." },
 ];
 
 /** Settings → Velo's personality: how she talks with you. Romantic asks for 18+ first. */
@@ -239,7 +240,7 @@ export function PersonalityCard({ profile, onChange }: { profile: Profile; onCha
       <div style={{ fontWeight: 700 }}>💬 Velo&apos;s personality</div>
       <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>How she talks with you in chat, texts and calls.</div>
       <div role="radiogroup" aria-label="Velo's personality" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {STYLES.map(st => {
+        {STYLES.filter(st => st.id !== "alternate" || profile.isAdmin).map(st => {
           const on = st.id === profile.personality;
           return (
             <button key={st.id} role="radio" aria-checked={on} disabled={busy} onClick={() => pick(st.id)}
