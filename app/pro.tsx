@@ -215,7 +215,7 @@ const STYLES = [
   { id: "friend", icon: "😊", label: "Friend", about: "Warm, upbeat and casual — like a close friend." },
   { id: "professional", icon: "💼", label: "Professional assistant", about: "Polished, efficient and to the point." },
   { id: "sarcastic", icon: "😏", label: "Sarcastic assistant", about: "Dry wit and playful teasing — still helpful." },
-  { id: "romantic", icon: "💕", label: "Romantic companion", about: "Affectionate and a little flirty. Adults only, kept tasteful." },
+  { id: "romantic", icon: "💕", label: "Romantic companion", about: "Confident, charming and flirty, with pet names. Adults only, never sexual." },
   { id: "alternate", icon: "🌶️", label: "Alternate (spicy)", about: "Admin-only. Bold, flirty roleplay when you lead." },
 ];
 
