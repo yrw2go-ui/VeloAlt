@@ -94,6 +94,20 @@ function PhoneCard({ profile, onChange }: { profile: Profile; onChange: () => vo
         </div>
       )}
       {msg && <div style={{ color: "var(--bad)", fontSize: 13, marginTop: 8 }}>⚠️ {msg}</div>}
+      {looks.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>Saved looks</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {looks.map(l => (
+              <div key={l.id} style={{ textAlign: "center" }}>
+                <img src={l.image_url} alt={l.name} style={{ width: 80, height: 80, objectFit: "cover", borderRadius: 8, border: l.is_active ? "2px solid var(--accent)" : "1px solid var(--border)" }} />
+                <div style={{ fontSize: 11, marginTop: 2 }}>{l.is_active ? "Active" : ""}</div>
+                {!l.is_active && <button disabled={busy} onClick={async () => { setBusy(true); await data("profile.setActiveLook", { id: l.id }); loadLooks(); setBusy(false); }} style={{ fontSize: 11, marginTop: 2 }}>Set active</button>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -228,6 +242,11 @@ function VeloLookGenerator({ profile, onChange }: { profile: Profile; onChange: 
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [url, setUrl] = useState("");
+  const [looks, setLooks] = useState<{id:string; name:string; image_url:string; is_active:boolean}[]>([]);
+  const loadLooks = async () => {
+    try { const r = await data<{looks: typeof looks}>("profile.listLooks"); setLooks(r.looks || []); } catch {}
+  };
+  useEffect(() => { loadLooks(); }, []);
   if (!profile.isAdmin) return null;
   const gen = async () => {
     if (!prompt.trim()) return;
@@ -243,8 +262,9 @@ function VeloLookGenerator({ profile, onChange }: { profile: Profile; onChange: 
     if (!url) return;
     setBusy(true); setMsg("");
     try {
-      await data("profile.saveLook", { imageUrl: url });
+      await data("profile.saveLook", { imageUrl: url, name: "Velo" });
       setMsg("Saved as Velo look.");
+      loadLooks();
       onChange();
     } catch (e) { setMsg(e instanceof Error ? e.message : "Could not save."); }
     setBusy(false);
@@ -266,6 +286,20 @@ function VeloLookGenerator({ profile, onChange }: { profile: Profile; onChange: 
         </div>
       )}
       {msg && <div style={{ color: "var(--bad)", fontSize: 13, marginTop: 8 }}>⚠️ {msg}</div>}
+      {looks.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>Saved looks</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {looks.map(l => (
+              <div key={l.id} style={{ textAlign: "center" }}>
+                <img src={l.image_url} alt={l.name} style={{ width: 80, height: 80, objectFit: "cover", borderRadius: 8, border: l.is_active ? "2px solid var(--accent)" : "1px solid var(--border)" }} />
+                <div style={{ fontSize: 11, marginTop: 2 }}>{l.is_active ? "Active" : ""}</div>
+                {!l.is_active && <button disabled={busy} onClick={async () => { setBusy(true); await data("profile.setActiveLook", { id: l.id }); loadLooks(); setBusy(false); }} style={{ fontSize: 11, marginTop: 2 }}>Set active</button>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
