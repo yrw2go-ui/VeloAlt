@@ -43,6 +43,29 @@ export async function POST(req: NextRequest) {
         });
       }
       
+      
+      case "profile.listLooks": {
+        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
+        const looks = await db`select id, name, image_url, is_active from velo_looks where user_id = ${me} order by created_at desc`;
+        return NextResponse.json({ looks });
+      }
+      case "profile.saveLook": {
+        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
+        const name = String(b.name || "Velo");
+        const imageUrl = String(b.imageUrl || "");
+        if (!imageUrl) return bad("No image.");
+        await db`update velo_looks set is_active = false where user_id = ${me}`;
+        await db`insert into velo_looks (user_id, name, image_url, is_active) values (${me}, ${name}, ${imageUrl}, true)`;
+        return NextResponse.json({ ok: true });
+      }
+      case "profile.setActiveLook": {
+        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
+        const id = String(b.id || "");
+        await db`update velo_looks set is_active = false where user_id = ${me}`;
+        await db`update velo_looks set is_active = true where id = ${id} and user_id = ${me}`;
+        return NextResponse.json({ ok: true });
+      }
+
       case "profile.generateLook": {
         if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
         const provider = String(b.provider || "spicy");
@@ -61,8 +84,8 @@ export async function POST(req: NextRequest) {
           const predId = data?.data?.id;
           if (!predId) return bad("No prediction id.");
           // Poll a few times
-          for (let i = 0; i < 10; i++) {
-            await new Promise(r => setTimeout(r, 2000));
+          for (let i = 0; i < 30; i++) {
+            await new Promise(r => setTimeout(r, 3000));
             const poll = await fetch(`https://api.atlascloud.ai/api/v1/model/prediction/${predId}`, {
               headers: { Authorization: `Bearer ${process.env.ATLASCLOUD_API_KEY}` },
             });
