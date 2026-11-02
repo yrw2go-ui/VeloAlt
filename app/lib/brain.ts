@@ -10,6 +10,27 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Caller } from "./caller";
 
+
+const VIDEO_TOOL: Anthropic.Tool = {
+  name: "generate_video",
+  description: "Generate an explicit short video from a text prompt (admin-only spicy feature). Returns a URL when ready.",
+  input_schema: { type: "object", properties: { prompt: { type: "string", description: "Detailed description of the video to generate" }, duration: { type: "number", description: "Duration in seconds (3-15)", default: 5 } }, required: ["prompt"] },
+};
+
+async function generateVideo(prompt: string, duration = 5): Promise<string> {
+  const key = process.env.SPICY_API_KEY;
+  if (!key) throw new Error("Video generation isn't set up.");
+  const res = await fetch("https://api.spicyapi.com/v1/videos/generations", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "spicy-motion-3", prompt, duration: Math.min(Math.max(duration, 3), 15) }),
+  });
+  if (!res.ok) throw new Error("Video generation failed.");
+  const data = await res.json();
+  // Video is async — return the task id or poll. For simplicity return the task URL if present.
+  return data?.id ? `Video task started: ${data.id}. Check back shortly.` : "Video request accepted.";
+}
+
 const IMAGE_TOOL: Anthropic.Tool = {
   name: "generate_image",
   description: "Generate an explicit image from a text prompt (admin-only spicy feature). Returns a URL.",
@@ -115,7 +136,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   const isSpicy = personality === "alternate" && caller.email.toLowerCase() === "yrw2go@gmail.com";
   const tools: Anthropic.ToolUnion[] | undefined = wrapUp || errand ? undefined : [
     ...MEMORY_TOOLS, ...REMINDER_TOOLS, ...(proTools?.tools || []),
-    ...(isSpicy ? [IMAGE_TOOL] : []),
+    ...(isSpicy ? [IMAGE_TOOL, VIDEO_TOOL] : []),
     ...(search ? [{ type: "web_search_20260209" as const, name: "web_search" as const, max_uses: 5, user_location: { type: "approximate" as const, timezone: today.tz } }] : []),
   ];
   let reply = "";
@@ -130,6 +151,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         : isReminderTool(name) ? await runReminderTool(caller, name, input, today.tz)
         : isProTool(name) && pro ? await runProTool(caller, name, input, drafts)
         : name === "generate_image" && isSpicy ? { url: await generateImage((input as any).prompt) }
+        : name === "generate_video" && isSpicy ? { status: await generateVideo((input as any).prompt, (input as any).duration) }
         : (() => { throw new ReminderError(isProTool(name) ? "That's a Velo Pro feature." : `Unknown tool ${name}`); })();
       if (isReminderTool(name) && !name.startsWith("list_")) changed = true;
       return { content: JSON.stringify(out).slice(0, 12000) };
