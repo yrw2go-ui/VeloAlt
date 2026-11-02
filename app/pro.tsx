@@ -220,7 +220,55 @@ const STYLES = [
   { id: "alternate", icon: "🌶️", label: "Alternate (spicy)", about: "Admin-only. Bold, flirty roleplay when you lead." },
 ];
 
+
+/** Admin-only: generate and save looks for Velo. */
+function VeloLookGenerator({ profile, onChange }: { profile: Profile; onChange: () => void }) {
+  const [prompt, setPrompt] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [url, setUrl] = useState("");
+  if (!profile.isAdmin) return null;
+  const gen = async () => {
+    if (!prompt.trim()) return;
+    setBusy(true); setMsg(""); setUrl("");
+    try {
+      const r = await data<{ url?: string }>("profile.generateLook", { prompt: prompt.trim() });
+      if (r.url) setUrl(r.url);
+      else setMsg("No image returned.");
+    } catch (e) { setMsg(e instanceof Error ? e.message : "Failed."); }
+    setBusy(false);
+  };
+  const save = async () => {
+    if (!url) return;
+    setBusy(true); setMsg("");
+    try {
+      await data("profile.saveLook", { imageUrl: url });
+      setMsg("Saved as Velo's look.");
+      onChange();
+    } catch (e) { setMsg(e instanceof Error ? e.message : "Couldn't save."); }
+    setBusy(false);
+  };
+  return (
+    <div className="card" data-testid="look-generator">
+      <div style={{ fontWeight: 700 }}>🖼️ Create Velo's look (admin)</div>
+      <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>Generate an image of her, then save it so future pictures stay consistent.</div>
+      <div className="row" style={{ gap: 8, marginBottom: 8 }}>
+        <input value={prompt} onChange={e => setPrompt(e.target.value)} placeholder="Describe her look…" style={{ flex: 1 }} />
+        <button className="btn" disabled={busy || !prompt.trim()} onClick={gen}>{busy ? "…" : "Generate"}</button>
+      </div>
+      {url && (
+        <div style={{ marginTop: 8 }}>
+          <img src={url} alt="Generated" style={{ maxWidth: "100%", borderRadius: 8, marginBottom: 8 }} />
+          <button className="btn" disabled={busy} onClick={save}>Save as Velo's look</button>
+        </div>
+      )}
+      {msg && <div style={{ color: "var(--bad)", fontSize: 13, marginTop: 8 }}>⚠️ {msg}</div>}
+    </div>
+  );
+}
+
 /** Settings → Velo's personality: how she talks with you. Romantic asks for 18+ first. */
+export function LookGenerator(props: { profile: Profile; onChange: () => void }) { return <VeloLookGenerator {...props} />; }
 export function PersonalityCard({ profile, onChange }: { profile: Profile; onChange: () => void }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
