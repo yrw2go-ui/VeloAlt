@@ -33,20 +33,30 @@ export async function POST(req: NextRequest) {
           body: JSON.stringify({ text, format: "mp3", reference_id: process.env.FISH_VOICE_ID || undefined }),
         });
       } else if (provider === "spicy" && process.env.SPICY_API_KEY) {
-        const spicyRes = await fetch("https://api.spicyapi.com/v1/audio/speech", {
-          method: "POST",
-          headers: { "Authorization": `Bearer ${process.env.SPICY_API_KEY}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ model: "spicy-voice-3", input: text, voice: u?.spicy_api_voice || "Bella Bright", response_format: "mp3", stream: true }),
-        });
-        if (spicyRes.ok && spicyRes.headers.get("content-type")?.includes("audio")) {
-          res = spicyRes;
-        } else if (spicyRes.ok) {
-          const data = await spicyRes.json().catch(() => ({}));
-          if (data.url) {
-            const audioRes = await fetch(data.url);
-            if (audioRes.ok) res = audioRes;
+        try {
+          const spicyRes = await fetch("https://api.spicyapi.com/v1/audio/speech", {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${process.env.SPICY_API_KEY}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+              model: "spicy-voice-1", 
+              input: text, 
+              voice: u?.spicy_api_voice || "Bella Bright", 
+              response_format: "mp3" 
+            }),
+          });
+          if (spicyRes.ok) {
+            const ct = spicyRes.headers.get("content-type") || "";
+            if (ct.includes("audio") || ct.includes("octet")) {
+              res = spicyRes;
+            } else {
+              const data = await spicyRes.json().catch(() => ({}));
+              if (data.url) {
+                const audioRes = await fetch(data.url);
+                if (audioRes.ok) res = audioRes;
+              }
+            }
           }
-        }
+        } catch { /* fall through */ }
       } else if (process.env.SECRETVOICE_API_KEY) {
         const voice = u?.secret_voice || "velvet";
         res = await fetch(`https://api.secretvoice.dev/v1/text-to-speech/${voice}`, {
