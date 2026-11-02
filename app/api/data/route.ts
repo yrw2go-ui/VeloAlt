@@ -1,3 +1,4 @@
+import { put } from "@vercel/blob";
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "../../lib/db";
 import { resolveCaller } from "../../lib/caller";
@@ -54,9 +55,14 @@ export async function POST(req: NextRequest) {
         const name = String(b.name || "Velo");
         const imageUrl = String(b.imageUrl || "");
         if (!imageUrl) return bad("No image.");
+        // Download and re-upload to Vercel Blob for permanence
+        const imgRes = await fetch(imageUrl);
+        if (!imgRes.ok) return bad("Couldn't download image.");
+        const blob = await imgRes.blob();
+        const uploaded = await put(`velo-looks/${me}/${Date.now()}.jpg`, blob, { access: "public" });
         await db`update velo_looks set is_active = false where user_id = ${me}`;
-        await db`insert into velo_looks (user_id, name, image_url, is_active) values (${me}, ${name}, ${imageUrl}, true)`;
-        return NextResponse.json({ ok: true });
+        await db`insert into velo_looks (user_id, name, image_url, is_active) values (${me}, ${name}, ${uploaded.url}, true)`;
+        return NextResponse.json({ ok: true, url: uploaded.url });
       }
       case "profile.setActiveLook": {
         if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
