@@ -243,14 +243,14 @@ function VeloLookGenerator({ profile, onChange }: { profile: Profile; onChange: 
     setBusy(true); setMsg("");
     try {
       await data("profile.saveLook", { imageUrl: url });
-      setMsg("Saved as Velo's look.");
+      setMsg("Saved as Velo look.");
       onChange();
-    } catch (e) { setMsg(e instanceof Error ? e.message : "Couldn't save."); }
+    } catch (e) { setMsg(e instanceof Error ? e.message : "Could not save."); }
     setBusy(false);
   };
   return (
     <div className="card" data-testid="look-generator">
-      <div style={{ fontWeight: 700 }}>🖼️ Create Velo's look (admin)</div>
+      <div style={{ fontWeight: 700 }}>🖼️ Create Velo look (admin)</div>
       <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>Generate an image of her, then save it so future pictures stay consistent.</div>
       <div className="row" style={{ gap: 8, marginBottom: 8 }}>
         <input value={prompt} onChange={e => setPrompt(e.target.value)} placeholder="Describe her look…" style={{ flex: 1 }} />
@@ -259,7 +259,7 @@ function VeloLookGenerator({ profile, onChange }: { profile: Profile; onChange: 
       {url && (
         <div style={{ marginTop: 8 }}>
           <img src={url} alt="Generated" style={{ maxWidth: "100%", borderRadius: 8, marginBottom: 8 }} />
-          <button className="btn" disabled={busy} onClick={save}>Save as Velo's look</button>
+          <button className="btn" disabled={busy} onClick={save}>Save as Velo look</button>
         </div>
       )}
       {msg && <div style={{ color: "var(--bad)", fontSize: 13, marginTop: 8 }}>⚠️ {msg}</div>}
@@ -267,7 +267,6 @@ function VeloLookGenerator({ profile, onChange }: { profile: Profile; onChange: 
   );
 }
 
-/** Settings → Velo's personality: how she talks with you. Romantic asks for 18+ first. */
 export function LookGenerator(props: { profile: Profile; onChange: () => void }) { return <VeloLookGenerator {...props} />; }
 export function PersonalityCard({ profile, onChange }: { profile: Profile; onChange: () => void }) {
   const [busy, setBusy] = useState(false);
