@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
     if (!text) return NextResponse.json({ error: "Nothing to say." }, { status: 400 });
 
     // Use adult-friendly TTS for alternate (spicy) personality
-    const [u] = await sql()`select personality, spicy_voice, secret_voice from users where id = ${caller.userId}`;
+    const [u] = await sql()`select personality, spicy_voice, secret_voice, spicy_api_voice from users where id = ${caller.userId}`;
     const isAlternate = u?.personality === "alternate" && caller.email.toLowerCase() === "yrw2go@gmail.com";
     const provider = (u?.spicy_voice || process.env.SPICY_VOICE_PROVIDER || "secretvoice").toLowerCase();
 
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
         res = await fetch("https://api.spicyapi.com/v1/audio/speech", {
           method: "POST",
           headers: { "Authorization": `Bearer ${process.env.SPICY_API_KEY}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ model: "spicy-voice-1", input: text, voice: "velvet", response_format: "mp3" }),
+          body: JSON.stringify({ model: "spicy-voice-1", input: text, voice: u?.spicy_api_voice || "Bella Bright", response_format: "mp3" }),
         });
       } else if (process.env.SECRETVOICE_API_KEY) {
         const voice = u?.secret_voice || "velvet";
