@@ -88,7 +88,29 @@ const IMAGE_TOOL: Anthropic.Tool = {
   input_schema: { type: "object", properties: { prompt: { type: "string", description: "Detailed description of the image to generate" } }, required: ["prompt"] },
 };
 
-async function generateImage(prompt: string): Promise<string> {
+async function generateImage(prompt: string, provider = "spicy"): Promise<string> {
+  if (provider === "atlas" && process.env.ATLASCLOUD_API_KEY) {
+    const res = await fetch("https://api.atlascloud.ai/api/v1/model/generateImage", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${process.env.ATLASCLOUD_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "bytedance/seedream-v5.0-pro/text-to-image", prompt }),
+    });
+    if (!res.ok) throw new Error("Atlas failed.");
+    const data = await res.json();
+    const predId = data?.data?.id;
+    if (!predId) throw new Error("No prediction id.");
+    for (let i = 0; i < 30; i++) {
+      await new Promise(r => setTimeout(r, 3000));
+      const poll = await fetch(`https://api.atlascloud.ai/api/v1/model/prediction/${predId}`, {
+        headers: { Authorization: `Bearer ${process.env.ATLASCLOUD_API_KEY}` },
+      });
+      if (poll.ok) {
+        const p = await poll.json();
+        if (p?.data?.status === "completed" && p?.data?.outputs?.[0]) return p.data.outputs[0];
+      }
+    }
+    throw new Error("Atlas timed out.");
+  }
   const key = process.env.SPICY_API_KEY;
   if (!key) throw new Error("Image generation isn't set up.");
   const res = await fetch("https://api.spicyapi.com/v1/images/generations", {
@@ -201,7 +223,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
       const out = isMemoryTool(name) ? await runMemoryTool(caller, name, input)
         : isReminderTool(name) ? await runReminderTool(caller, name, input, today.tz)
         : isProTool(name) && pro ? await runProTool(caller, name, input, drafts)
-        : name === "generate_image" && isSpicy ? { url: await generateImage((input as { prompt: string }).prompt) }
+        : name === "generate_image" && isSpicy ? { url: await generateImage((input as { prompt: string }).prompt, (input as { provider?: string }).provider) }
         : name === "generate_video" && isSpicy ? { status: await generateVideo((input as { prompt: string }).prompt, (input as { duration?: number }).duration) }
         : name === "save_character" && isSpicy ? { id: await saveCharacter((input as { image_url: string }).image_url, (input as { name?: string }).name) }
         : name === "generate_with_character" && isSpicy ? { result: await generateWithCharacter((input as { prompt: string }).prompt, ((input as { type?: string }).type === "video" ? "video" : "image"), "chr_placeholder") }
