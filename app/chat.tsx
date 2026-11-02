@@ -8,6 +8,7 @@ import { VeloAvatar } from "./avatar";
 import DraftCard, { type Draft } from "./drafts";
 import { hideSecrets } from "./lib/secrets";
 import { timeZone } from "./lib/tz";
+import { useDictation } from "./dictate";
 
 export type ChatMsg = { role: "user" | "assistant"; content: string; draft?: Draft };
 /** What Velo sees: real messages only (draft cards are local to the screen). */
@@ -21,6 +22,10 @@ const SUGGESTIONS = ["Plan my day", "Remind me to call Mom tomorrow at 6pm", "I 
 export default function Chat({ userId, name, onChanged, added }: { userId: string; name: string; onChanged: () => void; added: ChatMsg | null }) {
   const [msgs, setMsgs] = useState<ChatMsg[] | null>(null);
   const [text, setText] = useState("");
+  const mic = useDictation(setText);
+  // The box grows with the message (typed or spoken), up to about 5 lines.
+  const box = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => { const el = box.current; if (!el) return; el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, 140)}px`; }, [text]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   // A call finished: Velo's report landed in the chat (draft cards stay where they are).
@@ -71,6 +76,7 @@ export default function Chat({ userId, name, onChanged, added }: { userId: strin
   }, [name]);
 
   const send = async (raw: string) => {
+    if (mic.listening) mic.stop();
     // 🔒 Passwords and codes are hidden right here, before anything leaves the phone.
     const t = hideSecrets(raw.trim()).text;
     if (!t || busy || !msgs) return;
@@ -108,11 +114,26 @@ export default function Chat({ userId, name, onChanged, added }: { userId: strin
         <div ref={end} />
       </div>
       <form onSubmit={e => { e.preventDefault(); send(text); }} className="row" style={{ padding: "10px 12px", borderTop: "1px solid var(--border)" }}>
-        <textarea rows={1} value={text} onChange={e => setText(e.target.value)} placeholder={msgs ? "Message Velo…" : "Loading…"} aria-label="Message Velo" disabled={!msgs}
+        <textarea ref={box} rows={1} value={text} onChange={e => setText(e.target.value)} placeholder={msgs ? "Message Velo…" : "Loading…"} aria-label="Message Velo" disabled={!msgs}
           onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(text); } }}
           style={{ resize: "none", maxHeight: 140, borderRadius: 20 }} />
+        {mic.supported && (
+          <button type="button" onClick={() => (mic.listening ? mic.stop() : mic.start(text))} disabled={!msgs || busy}
+            aria-label={mic.listening ? "Stop listening" : "Talk instead of typing"} aria-pressed={mic.listening} data-testid="chat-mic"
+            style={{ borderRadius: 999, width: 46, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 20,
+              border: `1px solid ${mic.listening ? "var(--bad)" : "var(--border)"}`, background: mic.listening ? "rgba(248,113,113,0.18)" : "var(--surface2)", color: "var(--text)",
+              animation: mic.listening ? "micPulse 1.4s infinite" : undefined }}>
+            {mic.listening ? "⏹" : "🎙️"}
+          </button>
+        )}
         <button className="btn" disabled={!text.trim() || busy} aria-label="Send" style={{ borderRadius: 999, width: 46, height: 46, padding: 0, flexShrink: 0 }}>➤</button>
       </form>
+      {(mic.listening || mic.error) && (
+        <div style={{ padding: "0 14px 8px", fontSize: 12, color: mic.error ? "var(--bad)" : "var(--muted)" }}>
+          {mic.error ? `⚠️ ${mic.error}` : "Listening… tap ⏹ when you're done, then Send."}
+        </div>
+      )}
+      <style>{`@keyframes micPulse { 0% { box-shadow: 0 0 0 0 rgba(248,113,113,.5) } 70% { box-shadow: 0 0 0 10px rgba(248,113,113,0) } 100% { box-shadow: 0 0 0 0 rgba(248,113,113,0) } }`}</style>
     </div>
   );
 }
