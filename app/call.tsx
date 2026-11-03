@@ -375,6 +375,12 @@ export default function VeloCall({ request, onEnd, voice = "female", name, first
     try { r.start(); } catch { /* already started */ }
   };
 
+  const sendTyped = () => {
+    const t = typed.trim();
+    if (!t || phase === "thinking" || phase === "speaking") return;
+    setTyped("");
+    think(t);
+  };
   const think = async (text: string) => {
     const next = [...turnsRef.current, { role: "user" as const, content: text }];
     setTurns(next); setPhase("thinking"); setErr("");
