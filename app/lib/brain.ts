@@ -88,7 +88,7 @@ const IMAGE_TOOL: Anthropic.Tool = {
   input_schema: { type: "object", properties: { prompt: { type: "string", description: "Detailed description of the image to generate" } }, required: ["prompt"] },
 };
 
-async function generateImage(prompt: string, provider = "spicy"): Promise<string> {
+async function generateImage(prompt: string, provider = "atlas"): Promise<string> {
   if (provider === "atlas" && process.env.ATLASCLOUD_API_KEY) {
     const res = await fetch("https://api.atlascloud.ai/api/v1/model/generateImage", {
       method: "POST",
@@ -223,7 +223,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
       const out = isMemoryTool(name) ? await runMemoryTool(caller, name, input)
         : isReminderTool(name) ? await runReminderTool(caller, name, input, today.tz)
         : isProTool(name) && pro ? await runProTool(caller, name, input, drafts)
-        : name === "generate_image" && isSpicy ? { url: await generateImage((input as { prompt: string }).prompt, (input as { provider?: string }).provider) }
+        : name === "generate_image" && isSpicy ? { url: await generateImage((input as { prompt: string }).prompt, (input as { provider?: string }).provider || "atlas") }
         : name === "generate_video" && isSpicy ? { status: await generateVideo((input as { prompt: string }).prompt, (input as { duration?: number }).duration) }
         : name === "save_character" && isSpicy ? { id: await saveCharacter((input as { image_url: string }).image_url, (input as { name?: string }).name) }
         : name === "generate_with_character" && isSpicy ? { result: await generateWithCharacter((input as { prompt: string }).prompt, ((input as { type?: string }).type === "video" ? "video" : "image"), "chr_placeholder") }
