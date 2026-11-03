@@ -164,6 +164,7 @@ export default function VeloCall({ request, onEnd, voice = "female", name, first
   const [heard, setHeard] = useState("");
   const [secs, setSecs] = useState(0);
   const [err, setErr] = useState("");
+  const [typed, setTyped] = useState("");
   const [saving, setSaving] = useState(false);
   const live = useRef(true);
   const muted = useRef(false);
@@ -461,6 +462,12 @@ export default function VeloCall({ request, onEnd, voice = "female", name, first
         {err && <div style={{ color: "#fca5a5", fontSize: 13, textAlign: "center" }}>⚠️ {err}</div>}
       </div>
 
+      {phase !== "ended" && (
+        <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 440, marginTop: 8, display: "flex", gap: 8 }}>
+          <input value={typed} onChange={e => setTyped(e.target.value)} onKeyDown={e => e.key === "Enter" && sendTyped()} placeholder="Type to her…" style={{ flex: 1, padding: "10px 12px", borderRadius: 12, border: "1px solid #374151", background: "#111827", color: "#f1f1f3", fontSize: 15 }} />
+          <button onClick={sendTyped} disabled={!typed.trim() || phase === "thinking" || phase === "speaking"} style={{ padding: "10px 14px", borderRadius: 12, background: "#3b82f6", color: "white", border: "none", fontWeight: 600, cursor: "pointer" }}>Send</button>
+        </div>
+      )}
       {phase !== "ended" && (
         <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 440, marginTop: 14, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", justifyContent: "center" }}>
           <button role="switch" aria-checked={showText} onClick={() => setShowText(t => !t)} data-testid="velo-call-text"
