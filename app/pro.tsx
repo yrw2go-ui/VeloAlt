@@ -224,6 +224,7 @@ const STYLES = [
 /** Admin-only: generate and save looks for Velo. */
 function VeloLookGenerator({ profile, onChange }: { profile: Profile; onChange: () => void }) {
   const [prompt, setPrompt] = useState("");
+  const [lookName, setLookName] = useState("Velo");
   const [provider, setProvider] = useState("atlas");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -234,6 +235,21 @@ function VeloLookGenerator({ profile, onChange }: { profile: Profile; onChange: 
   };
   useEffect(() => { loadLooks(); }, []);
   if (!profile.isAdmin) return null;
+  const upload = async (file: File) => {
+    setBusy(true); setMsg("");
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const dataUrl = reader.result as string;
+        await data("profile.uploadLook", { imageData: dataUrl, name: lookName });
+        setMsg("Uploaded and saved.");
+        loadLooks();
+        onChange();
+        setBusy(false);
+      };
+      reader.readAsDataURL(file);
+    } catch (e) { setMsg(e instanceof Error ? e.message : "Upload failed."); setBusy(false); }
+  };
   const gen = async () => {
     if (!prompt.trim()) return;
     setBusy(true); setMsg(""); setUrl("");
@@ -259,6 +275,13 @@ function VeloLookGenerator({ profile, onChange }: { profile: Profile; onChange: 
     <div className="card" data-testid="look-generator">
       <div style={{ fontWeight: 700 }}>🖼️ Create Velo look (admin)</div>
       <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>Generate an image of her, then save it so future pictures stay consistent.</div>
+      <div className="row" style={{ gap: 8, marginBottom: 8 }}>
+        <input value={lookName} onChange={e => setLookName(e.target.value)} placeholder="Character name" style={{ width: 140 }} />
+        <label style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 13 }}>
+          Upload photo
+          <input type="file" accept="image/*" style={{ display: "none" }} onChange={e => e.target.files?.[0] && upload(e.target.files[0])} />
+        </label>
+      </div>
       <div className="row" style={{ gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
         <button disabled={busy} onClick={() => setProvider("spicy")} style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${provider === "spicy" ? "var(--accent)" : "var(--border)"}`, background: provider === "spicy" ? "rgba(124,140,255,0.12)" : "var(--surface2)", color: "var(--text)", cursor: "pointer", fontSize: 13 }}>Spicy</button>
         <button disabled={busy} onClick={() => setProvider("atlas")} style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${provider === "atlas" ? "var(--accent)" : "var(--border)"}`, background: provider === "atlas" ? "rgba(124,140,255,0.12)" : "var(--surface2)", color: "var(--text)", cursor: "pointer", fontSize: 13 }}>Atlas</button>
@@ -327,7 +350,7 @@ export function PersonalityCard({ profile, onChange }: { profile: Profile; onCha
         <div style={{ marginTop: 12 }}>
           <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Voice for spicy mode</div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {["secretvoice","fish","spicy"].map(v => (
+            {["secretvoice","fish","resemble","spicy"].map(v => (
               <button key={v} disabled={busy} onClick={async () => {
                 setBusy(true); setMsg("");
                 try { await data("profile.update", { spicyVoice: v }); onChange(); }
