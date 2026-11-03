@@ -224,7 +224,7 @@ const STYLES = [
 /** Admin-only: generate and save looks for Velo. */
 function VeloLookGenerator({ profile, onChange }: { profile: Profile; onChange: () => void }) {
   const [prompt, setPrompt] = useState("");
-  const [provider, setProvider] = useState("spicy");
+  const [provider, setProvider] = useState("atlas");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [url, setUrl] = useState("");
