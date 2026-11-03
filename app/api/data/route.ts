@@ -72,6 +72,21 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true });
       }
 
+      
+      case "profile.uploadLook": {
+        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
+        const name = String(b.name || "Velo");
+        const imageData = String(b.imageData || "");
+        if (!imageData) return bad("No image.");
+        // imageData is a data URL or base64
+        const buf = Buffer.from(imageData.split(",")[1] || imageData, "base64");
+        const blob = new Blob([buf], { type: "image/jpeg" });
+        const uploaded = await put(`velo-looks/${me}/${Date.now()}.jpg`, blob, { access: "public" });
+        await db`update velo_looks set is_active = false where user_id = ${me}`;
+        await db`insert into velo_looks (user_id, name, image_url, is_active) values (${me}, ${name}, ${uploaded.url}, true)`;
+        return NextResponse.json({ ok: true, url: uploaded.url });
+      }
+
       case "profile.generateLook": {
         if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
         const provider = String(b.provider || "spicy");
