@@ -38,15 +38,16 @@ export async function POST(req: NextRequest) {
             method: "POST",
             headers: { "Authorization": `Bearer ${process.env.SPICY_API_KEY}`, "Content-Type": "application/json" },
             body: JSON.stringify({ 
-              model: "spicy-voice-1", 
+              model: "spicy-voice-3", 
               input: text, 
               voice: u?.spicy_api_voice || "Bella Bright", 
-              response_format: "mp3" 
+              response_format: "mp3",
+              stream: true
             }),
           });
           if (spicyRes.ok) {
             const ct = spicyRes.headers.get("content-type") || "";
-            if (ct.includes("audio") || ct.includes("octet")) {
+            if (ct.includes("audio") || ct.includes("octet") || ct.includes("mpeg")) {
               res = spicyRes;
             } else {
               const data = await spicyRes.json().catch(() => ({}));
@@ -56,7 +57,7 @@ export async function POST(req: NextRequest) {
               }
             }
           }
-        } catch { /* fall through */ }
+        } catch { /* fall through to ElevenLabs */ }
       } else if (process.env.SECRETVOICE_API_KEY) {
         const voice = u?.secret_voice || "velvet";
         res = await fetch(`https://api.secretvoice.dev/v1/text-to-speech/${voice}`, {
