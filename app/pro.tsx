@@ -336,16 +336,14 @@ export function UpdateCard() {
 }
 
 export function ModeCard({ profile, onChange }: { profile: Profile; onChange: () => void }) {
-  const [mode, setMode] = useState(profile.mode || "productivity");
-  const [notifySpicy, setNotifySpicy] = useState(profile.notifySpicy || false);
-  const [notifyProd, setNotifyProd] = useState(profile.notifyProductivity !== false);
+  const mode = profile.mode || "productivity";
+  const notifySpicy = profile.notifySpicy || false;
+  const notifyProd = profile.notifyProductivity !== false;
   const set = async (m: string) => {
-    setMode(m);
     await data("profile.setMode", { mode: m });
     onChange();
   };
   const setNotify = async (side: string, on: boolean) => {
-    if (side === "spicy") setNotifySpicy(on); else setNotifyProd(on);
     await data("profile.setNotify", { side, on });
     onChange();
   };
@@ -353,17 +351,17 @@ export function ModeCard({ profile, onChange }: { profile: Profile; onChange: ()
     <div className="card">
       <div style={{ fontWeight: 700 }}>App mode</div>
       <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>Switch between spicy and productivity.</div>
-      <div className="row" style={{ gap: 8, marginBottom: 12 }}>
-        <button disabled={mode === "productivity"} onClick={() => set("productivity")} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid var(--border)", background: mode === "productivity" ? "var(--accent)" : "var(--surface2)", color: "white" }}>Productivity</button>
-        <button disabled={mode === "spicy"} onClick={() => set("spicy")} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid var(--border)", background: mode === "spicy" ? "var(--accent)" : "var(--surface2)", color: "white" }}>Spicy</button>
+      <div className="row" style={{ gap: 8, marginBottom: 16 }}>
+        <button onClick={() => set("productivity")} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid var(--border)", background: mode === "productivity" ? "var(--accent)" : "transparent", color: mode === "productivity" ? "white" : "var(--text)", fontWeight: 600 }}>Productivity</button>
+        <button onClick={() => set("spicy")} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid var(--border)", background: mode === "spicy" ? "var(--accent)" : "transparent", color: mode === "spicy" ? "white" : "var(--text)", fontWeight: 600 }}>Spicy</button>
       </div>
-      <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 6 }}>Push notifications</div>
-      <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-        <input type="checkbox" checked={notifyProd} onChange={e => setNotify("productivity", e.target.checked)} />
+      <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8 }}>Notifications</div>
+      <label style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, cursor: "pointer" }}>
+        <input type="checkbox" checked={notifyProd} onChange={e => setNotify("productivity", e.target.checked)} style={{ width: 18, height: 18 }} />
         Productivity alerts
       </label>
-      <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <input type="checkbox" checked={notifySpicy} onChange={e => setNotify("spicy", e.target.checked)} />
+      <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+        <input type="checkbox" checked={notifySpicy} onChange={e => setNotify("spicy", e.target.checked)} style={{ width: 18, height: 18 }} />
         Spicy alerts
       </label>
     </div>
