@@ -135,5 +135,5 @@ alter table velo_actions add constraint velo_actions_kind_check check (kind in (
 alter table users add column if not exists chat_model text not null default 'claude' check (chat_model in ('claude', 'qwen', 'deepseek'));
 -- 💬 Velo's personality per person; romantic needs the adult confirmation first.
 alter table users
-  add column if not exists personality text not null default 'friend' check (personality in ('friend', 'professional', 'sarcastic', 'romantic', 'alternate')),
+  add column if not exists personality text not null default 'friend' check (personality in ('friend', 'professional', 'sarcastic', 'romantic')),
   add column if not exists adult_confirmed_at timestamptz;

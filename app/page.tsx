@@ -10,7 +10,7 @@ import Chat, { type ChatMsg } from "./chat";
 import Today from "./today";
 import Memory from "./memory";
 import { timeZone } from "./lib/tz";
-import ProCard, { BrainCard, PersonalityCard, LookGenerator, ModeCard, UpdateCard, CharacterGallery, CustomLookRow, type Profile } from "./pro";
+import ProCard, { BrainCard, PersonalityCard, type Profile } from "./pro";
 
 type Tab = "chat" | "today" | "memory" | "settings";
 const TABS: { id: Tab; icon: string; label: string }[] = [
@@ -79,13 +79,7 @@ type DueReminder = { id: string; text: string };
 
 function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   // Back from Stripe checkout / billing: open Settings.
-  const [tab, setTab] = useState<Tab>(() => {
-    if (typeof window === "undefined") return "chat";
-    const saved = localStorage.getItem("velo-tab") as Tab;
-    const urlTab = new URLSearchParams(location.search).get("tab");
-    return (urlTab === "settings" ? "settings" : saved) || "chat";
-  });
-  useEffect(() => { localStorage.setItem("velo-tab", tab); }, [tab]);
+  const [tab, setTab] = useState<Tab>(() => (typeof location !== "undefined" && new URLSearchParams(location.search).get("tab") === "settings" ? "settings" : "chat"));
   const [name, setName] = useState("");
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profileTick, setProfileTick] = useState(0);
@@ -95,12 +89,6 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   const [refresh, setRefresh] = useState(0);
   const [chatAdd, setChatAdd] = useState<ChatMsg | null>(null);
   const look = useVeloLook();
-  const [activeChar, setActiveChar] = useState<{ name: string; image: string }>({ name: "Velo", image: "" });
-  useEffect(() => {
-    const on = (e: Event) => setActiveChar((e as CustomEvent).detail || { name: "Velo", image: "" });
-    window.addEventListener("velo:character", on);
-    return () => window.removeEventListener("velo:character", on);
-  }, []);
   const bump = useCallback(() => setRefresh(r => r + 1), []);
 
   // Their profile: name, look, and the time zone they're in now.
@@ -141,12 +129,6 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
 
   const startCall = () => { primeSpeech(); setCalling(true); };
   const callRequest = async (turns: { role: "user" | "assistant"; content: string }[], mode: "talk" | "recap" | "remember") => {
-    const character = activeChar.name || "Velo";
-    if (profile?.isAdmin) {
-      const r = await data<{ reply: string; changed?: boolean }>("character.call", { mode, messages: turns, timeZone: timeZone(), name, character });
-      if (r.changed) bump();
-      return r.reply;
-    }
     const r = await api<{ reply: string; changed?: boolean }>("/api/velo", { mode, messages: turns, timeZone: timeZone(), name });
     if (r.changed) bump();
     return r.reply;
@@ -161,14 +143,12 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   return (
     <div style={{ height: "100dvh", display: "flex", flexDirection: "column", maxWidth: 720, margin: "0 auto" }}>
       <header className="row" style={{ padding: "max(12px, env(safe-area-inset-top)) 16px 12px", borderBottom: "1px solid var(--border)" }}>
-        {activeChar.image
-          ? <img src={"/api/pic?u=" + encodeURIComponent(activeChar.image)} alt="" style={{ width: 40, height: 40, borderRadius: "50%", objectFit: "cover" }} />
-          : <VeloLogo size={40} />}
+        <VeloLogo size={40} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 800, fontSize: 18 }}>{activeChar.name || "Velo"}</div>
+          <div style={{ fontWeight: 800, fontSize: 18 }}>Velo</div>
           <div className="muted" style={{ fontSize: 12 }}>{name ? `Here for you, ${name.split(" ")[0]}` : "Your assistant & companion"}</div>
         </div>
-        {canCallVelo() && <button className="btn" onClick={startCall} aria-label={"Call " + (activeChar.name || "Velo")} data-testid="call-velo" style={{ borderRadius: 999, padding: "10px 16px" }}>📞 {activeChar.name && activeChar.name !== "Velo" ? activeChar.name : "Call"}</button>}
+        {canCallVelo() && <button className="btn" onClick={startCall} aria-label="Call Velo" data-testid="call-velo" style={{ borderRadius: 999, padding: "10px 16px" }}>📞 Call</button>}
       </header>
 
       {due.length > 0 && (
@@ -200,7 +180,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       </nav>
 
       {calling && (
-        <VeloCall key={activeChar.name || "Velo"} name={name} who={activeChar.name || "Velo"} faceUrl={activeChar.image} firstCall={firstCall && (activeChar.name || "Velo") === "Velo"} request={callRequest} fetchVoice={fetchVoice}
+        <VeloCall key={look} name={name} firstCall={firstCall} request={callRequest} fetchVoice={fetchVoice}
           onEnd={(recap) => {
             setCalling(false); setFirstCall(false);
             if (recap) { setChatAdd({ role: "assistant", content: recap }); setTab("chat"); }
@@ -234,13 +214,8 @@ function Settings({ name, setName, onOut, profile, onProfile }: { name: string; 
         <div style={{ fontWeight: 700 }}>🧑 Velo&apos;s look</div>
         <div className="muted" style={{ fontSize: 13, margin: "2px 0 12px" }}>Each face has her own voice on calls.</div>
         <VeloLookPicker />
-        <CustomLookRow />
       </div>
-      {profile && <UpdateCard />}
-            {profile && <ModeCard profile={profile} onChange={onProfile} />}
-            {profile && <PersonalityCard profile={profile} onChange={onProfile} />}
-      {profile && <CharacterGallery profile={profile} onChange={onProfile} />}
-            {profile && <LookGenerator profile={profile} onChange={onProfile} />}
+      {profile && <PersonalityCard profile={profile} onChange={onProfile} />}
       {profile && <BrainCard profile={profile} onChange={onProfile} />}
       {profile && <ProCard profile={profile} onChange={onProfile} />}
       <button className="ghost" onClick={() => api("/api/auth", { action: "signout" }).finally(onOut)}>Sign out</button>

@@ -1,4 +1,3 @@
-import { put, del, list } from "@vercel/blob";
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "../../lib/db";
 import { resolveCaller } from "../../lib/caller";
@@ -9,14 +8,12 @@ import { PHONE_MSG } from "../../lib/contact";
 import { scrub } from "../../lib/secrets";
 import { availableModels, CHAT_MODELS, MODEL_INFO, type ChatModel } from "../../lib/models";
 import { PERSONALITIES } from "../../lib/persona";
-import { askVelo, makePicture, wantsPicture, spicyPicLine } from "../../lib/brain";
 
 // 📦 Everything the app reads and changes, for the signed-in person only.
 // POST { action, ...args } → { ... }. Every query is scoped to their user_id.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const clean = (v: unknown, n: number) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, n);
 const bad = (error: string) => NextResponse.json({ error }, { status: 400 });
-export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   try {
@@ -27,335 +24,20 @@ export async function POST(req: NextRequest) {
     const id = String(b.id || "");
     const needId = () => UUID.test(id);
 
-    const storeRemote = async (remoteUrl: string, character = "Velo") => {
-      let stored = remoteUrl;
-      if (!remoteUrl.includes(".blob.vercel-storage.com")) {
-        const imgRes = await fetch(remoteUrl);
-        if (!imgRes.ok) throw new Error(`Couldn't download image (${imgRes.status}).`);
-        const buf = Buffer.from(await imgRes.arrayBuffer());
-        if (buf.length < 32) throw new Error("Image download was empty.");
-        const type = (imgRes.headers.get("content-type") || "image/jpeg").split(";")[0];
-        const ext = type.includes("png") ? "png" : type.includes("webp") ? "webp" : "jpg";
-        const uploaded = await put(`velo-looks/${me}/${Date.now()}.${ext}`, buf, { access: "public", contentType: type });
-        if (!uploaded.url) throw new Error("Blob upload failed. Check BLOB_READ_WRITE_TOKEN.");
-        stored = uploaded.url;
-      }
-      const name = String(character || "Velo").slice(0, 80);
-      try { await db`insert into character_media (user_id, character_name, media_url, media_type) values (${me}, ${name}, ${stored}, 'image')`; } catch { /* gallery optional */ }
-      try { await db`insert into velo_looks (user_id, name, image_url, is_active) values (${me}, ${name}, ${stored}, false)`; } catch { /* looks optional */ }
-      return stored;
-    };
-
     switch (String(b.action || "")) {
-      
-      case "profile.setMode": {
-        const mode = String(b.mode || "productivity");
-        if (!["spicy","productivity"].includes(mode)) return bad("Bad mode.");
-        await db`update users set mode = ${mode} where id = ${me}`;
-        return NextResponse.json({ ok: true });
-      }
-      case "profile.setNotify": {
-        const side = String(b.side || "productivity");
-        const on = Boolean(b.on);
-        if (side === "spicy") await db`update users set notify_spicy = ${on} where id = ${me}`;
-        else await db`update users set notify_productivity = ${on} where id = ${me}`;
-        return NextResponse.json({ ok: true });
-      }
-
       case "profile.get": {
-        const add = async (q: Promise<unknown>) => { try { await q; } catch { /* column already there */ } };
-        await add(db`alter table users add column if not exists personality text default 'friend'`);
-        await add(db`alter table users add column if not exists adult_confirmed_at timestamptz`);
-        await add(db`alter table users add column if not exists spicy_voice text default 'secretvoice'`);
-        await add(db`alter table users add column if not exists secret_voice text default 'velvet'`);
-        await add(db`alter table users add column if not exists spicy_api_voice text default 'Bella Bright'`);
-        await add(db`alter table users add column if not exists mode text default 'productivity'`);
-        await add(db`alter table users add column if not exists notify_spicy boolean default false`);
-        await add(db`alter table users add column if not exists notify_productivity boolean default true`);
-        let u: Record<string, unknown> | undefined;
-        try {
-          const rows = await db`select name, look, time_zone, plan, phone, phone_verified_at, chat_model, personality, adult_confirmed_at, spicy_voice, secret_voice, spicy_api_voice, mode, notify_spicy, notify_productivity from users where id = ${me}`;
-          u = rows[0] as Record<string, unknown> | undefined;
-        } catch {
-          const rows = await db`select name, look, time_zone, plan, phone, phone_verified_at, chat_model from users where id = ${me}`;
-          u = rows[0] as Record<string, unknown> | undefined;
-        }
+        const [u] = await db`select name, look, time_zone, plan, phone, phone_verified_at, chat_model, personality, adult_confirmed_at from users where id = ${me}`;
         const [{ n }] = await db`select count(*)::int as n from velo_memories where user_id = ${me} and kind = 'call'`;
-        const personality = String(u?.personality || "friend");
-        const adult = !!u?.adult_confirmed_at;
         return NextResponse.json({
           name: u?.name || "", look: u?.look || "default", timeZone: u?.time_zone || null, hadCall: n > 0,
           plan: u?.plan || "free", proForSale: !!process.env.STRIPE_PRICE_PRO && twilioReady(),
           phone: u?.phone ? showPhone(String(u.phone)) : "", phoneVerified: !!u?.phone_verified_at, veloNumber: veloNumber(),
-          chatModel: availableModels().includes(u?.chat_model as ChatModel) ? u?.chat_model : "claude",
+          chatModel: availableModels().includes(u?.chat_model) ? u?.chat_model : "claude",
           models: availableModels().map(id => ({ id, ...MODEL_INFO[id] })),
-          personality: (personality === "romantic" && !adult) || (personality === "alternate" && c.email.toLowerCase() !== "yrw2go@gmail.com") ? "friend" : personality,
-          adultConfirmed: adult,
-          mode: u?.mode || "productivity",
-          notifySpicy: !!u?.notify_spicy,
-          notifyProductivity: u?.notify_productivity !== false,
-          isAdmin: c.email.toLowerCase() === "yrw2go@gmail.com",
-          spicyVoice: u?.spicy_voice || "secretvoice",
-          secretVoice: u?.secret_voice || "velvet",
-          spicyApiVoice: u?.spicy_api_voice || "Bella Bright",
+          // Anything unknown (or romantic without the 18+ confirmation) shows as Friend.
+          personality: !PERSONALITIES.includes(u?.personality) || (u?.personality === "romantic" && !u?.adult_confirmed_at) ? "friend" : u?.personality,
+          adultConfirmed: !!u?.adult_confirmed_at,
         });
-      }
-      
-      
-      case "profile.listLooks": {
-        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
-        const looks = await db`select id, name, image_url, is_active from velo_looks where user_id = ${me} order by created_at desc`;
-        return NextResponse.json({ looks });
-      }
-      case "profile.saveLook": {
-        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
-        const name = String(b.name || "Velo");
-        const imageUrl = String(b.imageUrl || "");
-        if (!imageUrl) return bad("No image.");
-        // Download and re-upload to Vercel Blob for permanence
-        const imgRes = await fetch(imageUrl);
-        if (!imgRes.ok) return bad("Couldn't download image.");
-        const blob = await imgRes.blob();
-        const uploaded = await put(`velo-looks/${me}/${Date.now()}.jpg`, blob, { access: "public" });
-        if (!uploaded.url) return bad("Blob upload failed. Check token.");
-        await db`update velo_looks set is_active = false where user_id = ${me}`;
-        await db`insert into velo_looks (user_id, name, image_url, is_active) values (${me}, ${name}, ${uploaded.url}, true)`;
-        await db`insert into character_media (user_id, character_name, media_url, media_type) values (${me}, ${name}, ${uploaded.url}, 'image')`;
-        return NextResponse.json({ ok: true, url: uploaded.url });
-      }
-      case "profile.setActiveLook": {
-        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
-        const id = String(b.id || "");
-        await db`update velo_looks set is_active = false where user_id = ${me}`;
-        await db`update velo_looks set is_active = true where id = ${id} and user_id = ${me}`;
-        return NextResponse.json({ ok: true });
-      }
-      case "profile.listOrphans": {
-        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
-        const media = await db`select media_url from character_media where user_id = ${me}`;
-        const looks = await db`select image_url from velo_looks where user_id = ${me}`;
-        const used = new Set<string>();
-        for (const r of media) if (r.media_url) used.add(String(r.media_url));
-        for (const r of looks) if (r.image_url) used.add(String(r.image_url));
-        const orphans: { url: string; pathname: string; size: number }[] = [];
-        let cursor: string | undefined;
-        for (let i = 0; i < 20; i++) {
-          const page = await list({ prefix: `velo-looks/${me}/`, cursor, limit: 1000 });
-          for (const blob of page.blobs) if (!used.has(blob.url)) orphans.push({ url: blob.url, pathname: blob.pathname, size: blob.size });
-          if (!page.hasMore) break;
-          cursor = page.cursor;
-        }
-        return NextResponse.json({ orphans, used: used.size });
-      }
-      case "profile.deleteOrphans": {
-        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
-        const urls = Array.isArray(b.urls) ? b.urls.map(String).filter((u: string) => u.includes(".blob.vercel-storage.com") && u.includes(`/velo-looks/${me}/`)).slice(0, 200) : [];
-        let deleted = 0;
-        for (const url of urls) { try { await del(url); deleted++; } catch { /* already gone */ } }
-        return NextResponse.json({ ok: true, deleted });
-      }
-      case "profile.deleteLook": {
-        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
-        const id = String(b.id || "");
-        const rows = await db`select image_url from velo_looks where id = ${id} and user_id = ${me}`;
-        const url = String(rows[0]?.image_url || "");
-        await db`delete from velo_looks where id = ${id} and user_id = ${me}`;
-        if (url) {
-          try { await db`delete from character_media where user_id = ${me} and media_url = ${url}`; } catch { /* optional */ }
-          if (url.includes(".blob.vercel-storage.com")) {
-            try { await del(url); } catch { /* blob already gone */ }
-          }
-        }
-        return NextResponse.json({ ok: true });
-      }
-      case "profile.setLookFace": {
-        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
-        const id = String(b.id || "");
-        const rows = await db`select name, image_url from velo_looks where id = ${id} and user_id = ${me}`;
-        const name = String(rows[0]?.name || "");
-        const url = String(rows[0]?.image_url || "");
-        if (!name || !url) return bad("Look not found.");
-        await db`update users set look = ${"char:" + name}, updated_at = now() where id = ${me}`;
-        try { await db`update character_media set created_at = now() where user_id = ${me} and media_url = ${url}`; } catch { /* optional */ }
-        return NextResponse.json({ ok: true, name });
-      }
-
-      
-      case "profile.uploadLook": {
-        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
-        const name = String(b.name || "Velo");
-        const imageData = String(b.imageData || "");
-        if (!imageData) return bad("No image.");
-        // imageData is a data URL or base64
-        const buf = Buffer.from(imageData.split(",")[1] || imageData, "base64");
-        const blob = new Blob([buf], { type: "image/jpeg" });
-        const uploaded = await put(`velo-looks/${me}/${Date.now()}.jpg`, blob, { access: "public" });
-        if (!uploaded.url) return bad("Blob upload failed. Check token.");
-        await db`update velo_looks set is_active = false where user_id = ${me}`;
-        await db`insert into velo_looks (user_id, name, image_url, is_active) values (${me}, ${name}, ${uploaded.url}, true)`;
-        await db`insert into character_media (user_id, character_name, media_url, media_type) values (${me}, ${name}, ${uploaded.url}, 'image')`;
-        return NextResponse.json({ ok: true, url: uploaded.url });
-      }
-
-      
-      
-      case "profile.listCharacterLooks": {
-        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
-        const rows = await db`select character_name, media_url from character_media where user_id = ${me} order by created_at desc`;
-        const seen = new Map<string, string>();
-        for (const r of rows) {
-          const name = String(r.character_name || "");
-          if (name && !seen.has(name)) seen.set(name, String(r.media_url || ""));
-        }
-        try {
-          const extra = await db`select name from velo_characters where user_id = ${me}`;
-          for (const r of extra) if (r.name && !seen.has(String(r.name))) seen.set(String(r.name), "");
-        } catch { /* table optional */ }
-        return NextResponse.json({ looks: [...seen].map(([name, image]) => ({ name, image })) });
-      }
-      case "profile.setCharacterLook": {
-        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
-        const name = clean(b.name, 80);
-        if (!name) return bad("Name required.");
-        await db`update users set look = ${"char:" + name}, updated_at = now() where id = ${me}`;
-        return NextResponse.json({ ok: true });
-      }
-      case "profile.listCharacters": {
-        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
-        try { await db`create table if not exists velo_characters (id uuid primary key default gen_random_uuid(), user_id uuid not null, name text not null, created_at timestamptz default now(), unique(user_id, name))`; } catch { /* optional */ }
-        const chars = await db`select distinct character_name as name from character_media where user_id = ${me}`;
-        const extra = await db`select name from velo_characters where user_id = ${me}`.catch(() => [] as { name: string }[]);
-        const names = [...new Set([...(chars || []).map((c: { character_name?: string; name?: string }) => String(c.character_name || c.name)), ...(extra || []).map((c: { name?: string }) => String(c.name))])].filter(Boolean).sort();
-        if (!names.includes("Velo")) names.unshift("Velo");
-        return NextResponse.json({ characters: names });
-      }
-      case "profile.createCharacter": {
-        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
-        const name = clean(b.name, 80);
-        if (!name) return bad("Name required.");
-        try { await db`create table if not exists velo_characters (id uuid primary key default gen_random_uuid(), user_id uuid not null, name text not null, created_at timestamptz default now(), unique(user_id, name))`; } catch { /* optional */ }
-        try { await db`insert into velo_characters (user_id, name) values (${me}, ${name}) on conflict (user_id, name) do nothing`; } catch { /* optional */ }
-        return NextResponse.json({ ok: true, name });
-      }
-      case "profile.deleteCharacter": {
-        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
-        const name = String(b.name || "");
-        if (!name) return bad("Name required.");
-        const rows = await db`select media_url from character_media where user_id = ${me} and character_name = ${name}`;
-        for (const r of rows) {
-          const url = String(r.media_url || "");
-          if (url.includes(".blob.vercel-storage.com")) { try { await del(url); } catch { /* gone */ } }
-        }
-        await db`delete from character_media where user_id = ${me} and character_name = ${name}`;
-        try { await db`delete from velo_characters where user_id = ${me} and name = ${name}`; } catch { /* optional */ }
-        try { await db`delete from velo_looks where user_id = ${me} and name = ${name}`; } catch { /* optional */ }
-        return NextResponse.json({ ok: true });
-      }
-      case "profile.renameCharacter": {
-        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
-        const from = String(b.from || "");
-        const to = String(b.to || "");
-        if (!from || !to) return bad("Names required.");
-        await db`update character_media set character_name = ${to} where user_id = ${me} and character_name = ${from}`;
-        try { await db`update velo_characters set name = ${to} where user_id = ${me} and name = ${from}`; } catch { /* optional */ }
-        try { await db`update velo_looks set name = ${to} where user_id = ${me} and name = ${from}`; } catch { /* optional */ }
-        return NextResponse.json({ ok: true });
-      }
-      case "profile.deleteMedia": {
-        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
-        const id = String(b.id || "");
-        const rows = await db`select media_url from character_media where id = ${id} and user_id = ${me}`;
-        const url = String(rows[0]?.media_url || "");
-        await db`delete from character_media where id = ${id} and user_id = ${me}`;
-        if (url) {
-          try { await db`delete from velo_looks where user_id = ${me} and image_url = ${url}`; } catch { /* optional */ }
-          if (url.includes(".blob.vercel-storage.com")) {
-            try { await del(url); } catch { /* blob already gone */ }
-          }
-        }
-        return NextResponse.json({ ok: true });
-      }
-
-      case "profile.listMedia": {
-        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
-        const name = String(b.character || "Velo");
-        const media = await db`select id, media_url, media_type, is_reference from character_media where user_id = ${me} and character_name = ${name} order by created_at desc`;
-        return NextResponse.json({ media });
-      }
-      case "profile.setReference": {
-        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
-        const id = String(b.id || "");
-        const on = Boolean(b.on);
-        await db`update character_media set is_reference = ${on} where id = ${id} and user_id = ${me}`;
-        return NextResponse.json({ ok: true });
-      }
-      case "profile.saveMedia": {
-        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
-        const name = String(b.character || "Velo");
-        const url = String(b.url || "");
-        const type = String(b.type || "image");
-        if (!url) return bad("No media.");
-        // Download and re-upload to Blob for permanence
-        const imgRes = await fetch(url);
-        if (!imgRes.ok) return bad("Couldn't download image. Check Blob token.");
-        const blob = await imgRes.blob();
-        const uploaded = await put(`velo-looks/${me}/${Date.now()}.jpg`, blob, { access: "public" });
-        await db`insert into character_media (user_id, character_name, media_url, media_type) values (${me}, ${name}, ${uploaded.url}, ${type})`;
-        return NextResponse.json({ ok: true, url: uploaded.url });
-      }
-
-      case "profile.generateLook": {
-        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
-        const provider = String(b.provider || "spicy");
-        const prompt = String(b.prompt || "");
-        const refs = Array.isArray(b.images) ? b.images.map(String).filter((u: string) => u.startsWith("http")).slice(0, 2) : [];
-        if (provider === "atlas" && process.env.ATLASCLOUD_API_KEY) {
-        const size = /\b(standing|full[- ]?body|full length|walking)\b/i.test(prompt) ? "1584*2816"
-          : /\b(lying|laying|reclining|horizontal|landscape|wide|bed)\b/i.test(prompt) ? "2496*1664"
-          : "1664*2496";
-          const body = refs.length
-            ? { model: "bytedance/seedream-v5.0-pro/edit", prompt, images: refs, size, output_format: "jpeg" }
-            : { model: "bytedance/seedream-v5.0-pro/text-to-image", prompt, size, output_format: "jpeg" };
-          const res = await fetch("https://api.atlascloud.ai/api/v1/model/generateImage", {
-            method: "POST",
-            headers: { Authorization: `Bearer ${process.env.ATLASCLOUD_API_KEY}`, "Content-Type": "application/json" },
-            body: JSON.stringify(body),
-          });
-          if (!res.ok) {
-            const err = await res.text().catch(() => "");
-            return bad(`Atlas failed: ${res.status} ${err.slice(0, 200)}`);
-          }
-          const data = await res.json();
-          const predId = data?.data?.id;
-          if (!predId) return bad("No prediction id.");
-          for (let i = 0; i < 30; i++) {
-            await new Promise(r => setTimeout(r, 3000));
-            const poll = await fetch(`https://api.atlascloud.ai/api/v1/model/prediction/${predId}`, {
-              headers: { Authorization: `Bearer ${process.env.ATLASCLOUD_API_KEY}` },
-            });
-            if (poll.ok) {
-              const p = await poll.json();
-              if (p?.data?.status === "completed" && p?.data?.outputs?.[0]) {
-                const url = await storeRemote(String(p.data.outputs[0]), String(b.character || "Velo"));
-                return NextResponse.json({ url });
-              }
-            }
-          }
-          return bad("Atlas timed out.");
-        } else {
-          const key = process.env.SPICY_API_KEY;
-          if (!key) return bad("Not set up.");
-          const res = await fetch("https://api.spicyapi.com/v1/images/generations", {
-            method: "POST",
-            headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ model: "spicy-image-1", prompt, size: "832*1216", n: 1 }),
-          });
-          if (!res.ok) return bad("Generation failed.");
-          const data = await res.json();
-          const raw = data?.data?.[0]?.url;
-          if (!raw) return NextResponse.json({ url: null });
-          return NextResponse.json({ url: await storeRemote(String(raw), String(b.character || "Velo")) });
-        }
       }
       case "profile.update": {
         if (typeof b.name === "string") await db`update users set name = ${clean(b.name, 80) || null}, updated_at = now() where id = ${me}`;
@@ -363,19 +45,9 @@ export async function POST(req: NextRequest) {
         if (isValidTimeZone(b.timeZone)) await db`update users set time_zone = ${b.timeZone} where id = ${me}`;
         // Romantic is for adults: picking it needs the 18+ confirmation (sent with it, or given before).
         if (b.adultConfirmed === true) await db`update users set adult_confirmed_at = coalesce(adult_confirmed_at, now()) where id = ${me}`;
-        if (typeof b.spicyVoice === "string" && ["secretvoice","fish","spicy"].includes(b.spicyVoice)) {
-          await db`update users set spicy_voice = ${b.spicyVoice}, updated_at = now() where id = ${me}`;
-        }
-        if (typeof b.secretVoice === "string" && ["velvet","whisper","angel","jade","honey","crystal","diamond","sunny","star","candy","bubbles"].includes(b.secretVoice)) {
-          await db`update users set secret_voice = ${b.secretVoice}, updated_at = now() where id = ${me}`;
-        }
-        if (typeof b.spicyApiVoice === "string") {
-          await db`update users set spicy_api_voice = ${b.spicyApiVoice}, updated_at = now() where id = ${me}`;
-        }
         if (PERSONALITIES.includes(b.personality)) {
           const [a] = await db`select adult_confirmed_at from users where id = ${me}`;
           if (b.personality === "romantic" && !a?.adult_confirmed_at) return bad("Romantic mode is for adults — confirm you're 18 or older.");
-          if (b.personality === "alternate" && c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Alternate personality is admin-only.");
           await db`update users set personality = ${b.personality}, updated_at = now() where id = ${me}`;
         }
         if (CHAT_MODELS.includes(b.chatModel) && availableModels().includes(b.chatModel as ChatModel)) await db`update users set chat_model = ${b.chatModel}, updated_at = now() where id = ${me}`;
@@ -383,86 +55,16 @@ export async function POST(req: NextRequest) {
       }
 
       case "messages.list": {
-        const character = String(b.character || "Velo").slice(0, 80);
-        try { await db`alter table velo_messages add column if not exists character text default 'Velo'`; } catch { /* already there */ }
-        const rows = character === "Velo"
-          ? await db`select role, content from velo_messages where user_id = ${me} and (character is null or character = 'Velo') order by created_at desc, id desc limit 60`
-          : await db`select role, content from velo_messages where user_id = ${me} and character = ${character} order by created_at desc, id desc limit 60`;
+        const rows = await db`select role, content from velo_messages where user_id = ${me} order by created_at desc, id desc limit 60`;
         return NextResponse.json({ messages: rows.reverse() });
       }
       case "messages.add": {
-        const character = String(b.character || "Velo").slice(0, 80);
-        try { await db`alter table velo_messages add column if not exists character text default 'Velo'`; } catch { /* already there */ }
         const list = (Array.isArray(b.messages) ? b.messages : []).slice(0, 4)
           .map((m: { role?: string; content?: unknown }) => ({ role: m.role === "assistant" ? "assistant" : "user", content: scrub(String(m.content || "").slice(0, 8000)) }))
           .filter((m: { content: string }) => m.content);
+        // A millisecond apart so they always sort in the order sent.
         const at = Date.now() - list.length;
-        for (const [i, m] of list.entries()) await db`insert into velo_messages (user_id, role, content, character, created_at) values (${me}, ${m.role}, ${m.content}, ${character}, ${new Date(at + i).toISOString()})`;
-        return NextResponse.json({ ok: true });
-      }
-      case "character.chat": {
-        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
-        const character = String(b.character || "").slice(0, 80);
-        if (!character || character.toLowerCase() === "velo") return bad("Pick a character.");
-        const marked = await db`select media_url from character_media where user_id = ${me} and character_name = ${character} and is_reference = true order by created_at desc limit 2`;
-        const fallback = marked.length ? marked : await db`select media_url from character_media where user_id = ${me} and character_name = ${character} order by created_at desc limit 2`;
-        const refs = fallback.map((r: { media_url?: string }) => String(r.media_url || "")).filter((u: string) => u.startsWith("http"));
-        const messages = Array.isArray(b.messages) ? b.messages : [];
-        const last = [...messages].reverse().find((m: { role?: string }) => m.role !== "assistant");
-        const ask = String(last?.content || "");
-        if (wantsPicture(ask)) {
-          try {
-            const url = await makePicture(ask || ("A photo of " + character), me, character, refs);
-            return NextResponse.json({ reply: spicyPicLine() + "\n\n" + url, changed: false, drafts: [] });
-          } catch (e) {
-            const msg = e instanceof Error ? e.message : "Image failed.";
-            return NextResponse.json({ reply: "Picture failed: " + msg, changed: false, drafts: [] });
-          }
-        }
-        try { await db`create table if not exists character_memories (id uuid primary key default gen_random_uuid(), user_id uuid not null, character_name text not null, text text not null, created_at timestamptz default now())`; } catch { /* optional */ }
-        const mems = await db`select text from character_memories where user_id = ${me} and character_name = ${character} order by created_at desc limit 12`.catch(() => [] as { text: string }[]);
-        const memory = mems.map((m: { text?: string }) => String(m.text || "")).filter(Boolean).join("\n");
-        if (memory) messages.unshift({ role: "user", content: `(${character}'s private memory, not Velo's: ${memory})` });
-        const result = await askVelo(c, { mode: "chat", messages, timeZone: b.timeZone, name: b.name, character, refs });
-        return NextResponse.json(result);
-      }
-      case "character.call": {
-        const character = String(b.character || "Velo").slice(0, 80) || "Velo";
-        const mine = character.toLowerCase() !== "velo";
-        if (mine && c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
-        const mode = b.mode === "recap" || b.mode === "remember" ? b.mode : "talk";
-        const marked = await db`select media_url from character_media where user_id = ${me} and character_name = ${character} and is_reference = true order by created_at desc limit 2`;
-        const fallback = marked.length ? marked : await db`select media_url from character_media where user_id = ${me} and character_name = ${character} order by created_at desc limit 2`;
-        const refs = fallback.map((r: { media_url?: string }) => String(r.media_url || "")).filter((u: string) => u.startsWith("http"));
-        try { await db`create table if not exists character_memories (id uuid primary key default gen_random_uuid(), user_id uuid not null, character_name text not null, text text not null, created_at timestamptz default now())`; } catch { /* optional */ }
-        const mems = await db`select text from character_memories where user_id = ${me} and character_name = ${character} order by created_at desc limit 12`.catch(() => [] as { text: string }[]);
-        const memory = mems.map((m: { text?: string }) => String(m.text || "")).filter(Boolean).join("\n");
-        try { await db`alter table velo_messages add column if not exists character text default 'Velo'`; } catch { /* already there */ }
-        const recent = mine
-          ? await db`select role, content from velo_messages where user_id = ${me} and character = ${character} order by created_at desc limit 10`.catch(() => [] as { role: string; content: string }[])
-          : [];
-        const chatBits = [...recent].reverse().map((m: { role?: string; content?: string }) => `${m.role}: ${String(m.content || "").slice(0, 240)}`).join("\n");
-        const messages = Array.isArray(b.messages) ? [...b.messages] : [];
-        const preface = [memory ? `${character}'s saved memory from chat and calls:\n${memory}` : "", chatBits ? `Recent chat with ${character}. Continue it. Do not read this list aloud:\n${chatBits}` : ""].filter(Boolean).join("\n\n");
-        if (preface) messages.unshift({ role: "user", content: `(Private context: ${preface})` });
-        if (mode === "remember" && mine) {
-          const said = (Array.isArray(b.messages) ? b.messages : []).filter((m: { content?: string }) => String(m.content || "").trim());
-          const note = said.slice(-6).map((m: { role?: string; content?: string }) => `${m.role}: ${String(m.content).slice(0, 160)}`).join(" | ").slice(0, 500);
-          if (note) await db`insert into character_memories (user_id, character_name, text) values (${me}, ${character}, ${"Call: " + note})`;
-          const at = Date.now() - said.length;
-          for (const [i, m] of said.entries()) await db`insert into velo_messages (user_id, role, content, character, created_at) values (${me}, ${m.role === "assistant" ? "assistant" : "user"}, ${String(m.content).slice(0, 4000)}, ${character}, ${new Date(at + i).toISOString()})`;
-          return NextResponse.json({ reply: "", changed: false });
-        }
-        const result = await askVelo(c, { mode, messages, timeZone: b.timeZone, name: b.name, character, refs });
-        return NextResponse.json(result);
-      }
-      case "character.remember": {
-        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
-        const character = String(b.character || "").slice(0, 80);
-        const text = clean(b.text, 600);
-        if (!character || !text) return bad("Need a character and a note.");
-        try { await db`create table if not exists character_memories (id uuid primary key default gen_random_uuid(), user_id uuid not null, character_name text not null, text text not null, created_at timestamptz default now())`; } catch { /* optional */ }
-        await db`insert into character_memories (user_id, character_name, text) values (${me}, ${character}, ${text})`;
+        for (const [i, m] of list.entries()) await db`insert into velo_messages (user_id, role, content, created_at) values (${me}, ${m.role}, ${m.content}, ${new Date(at + i).toISOString()})`;
         return NextResponse.json({ ok: true });
       }
       case "messages.clear":
