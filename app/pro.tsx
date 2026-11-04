@@ -261,7 +261,7 @@ function VeloLookGenerator({ profile, onChange }: { profile: Profile; onChange: 
     if (!genPrompt.trim()) return;
     setBusy(true); setMsg(""); setUrl("");
     try {
-      const r = await data<{ url?: string }>("profile.generateLook", { prompt: genPrompt.trim(), provider });
+      const r = await data<{ url?: string }>("profile.generateLook", { prompt: genPrompt.trim(), provider, character: lookName.trim() || "Velo" });
       if (r.url) setUrl(r.url);
       else setMsg("No image returned.");
       loadLooks();
@@ -281,8 +281,8 @@ function VeloLookGenerator({ profile, onChange }: { profile: Profile; onChange: 
   };
   return (
     <div className="card" data-testid="look-generator">
-      <div style={{ fontWeight: 700 }}>🖼️ Create Velo look (admin)</div>
-      <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>Generate an image of her, then save it so future pictures stay consistent.</div>
+      <div style={{ fontWeight: 700 }}>🖼️ Saved pictures (admin)</div>
+      <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>This does not replace Rachel, Tiffany, or the other built-in faces. Pictures here are extras saved under the name you type. Set as face puts that picture on that character in Your characters. Delete removes it from the app and from storage.</div>
       <div className="row" style={{ gap: 8, marginBottom: 8 }}>
         <input value={lookName} onChange={e => setLookName(e.target.value)} placeholder="Character name" style={{ width: 140 }} />
         <label style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 13 }}>
@@ -305,17 +305,33 @@ function VeloLookGenerator({ profile, onChange }: { profile: Profile; onChange: 
       {msg && <div style={{ color: "var(--bad)", fontSize: 13, marginTop: 8 }}>⚠️ {msg}</div>}
       {looks.length > 0 && (
         <div style={{ marginTop: 16 }}>
-          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>Character gallery — tap to set as reference (max 3)</div>
+          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>Saved pictures</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {looks.map(l => (
-              <div key={l.id} style={{ textAlign: "center", cursor: "pointer" }} onClick={async () => {
-                setBusy(true);
-                await data("profile.setReference", { id: l.id, on: !l.is_active });
-                loadLooks();
-                setBusy(false);
-              }}>
-                <img src={picSrc(l.image_url)} alt={l.name} style={{ width: 100, height: 100, objectFit: "contain", background: "#111", borderRadius: 8, border: l.is_active ? "2px solid var(--accent)" : "1px solid var(--border)" }} />
-                <div style={{ fontSize: 11, marginTop: 2 }}>{l.is_active ? "Reference" : ""}</div>
+              <div key={l.id} style={{ width: 110, textAlign: "center" }}>
+                <img src={picSrc(l.image_url)} alt={l.name} style={{ width: 100, height: 100, objectFit: "contain", background: "#111", borderRadius: 8, border: "1px solid var(--border)" }} />
+                <div style={{ fontSize: 11, marginTop: 2 }}>{l.name}</div>
+                <div style={{ display: "flex", gap: 4, justifyContent: "center", marginTop: 4 }}>
+                  <button disabled={busy} onClick={async () => {
+                    setBusy(true); setMsg("");
+                    try {
+                      await data("profile.setLookFace", { id: l.id });
+                      setMsg(l.name + " face updated. Reload to see it under Your characters.");
+                      onChange();
+                    } catch (e) { setMsg(e instanceof Error ? e.message : "Could not set face."); }
+                    setBusy(false);
+                  }} style={{ fontSize: 11 }}>Face</button>
+                  <button disabled={busy} onClick={async () => {
+                    if (!confirm("Delete this picture from the app and storage?")) return;
+                    setBusy(true); setMsg("");
+                    try {
+                      await data("profile.deleteLook", { id: l.id });
+                      setMsg("Deleted.");
+                      loadLooks();
+                    } catch (e) { setMsg(e instanceof Error ? e.message : "Delete failed."); }
+                    setBusy(false);
+                  }} style={{ fontSize: 11 }}>Delete</button>
+                </div>
               </div>
             ))}
           </div>
@@ -367,7 +383,7 @@ export function UpdateCard() {
   return (
     <div className="card">
       <div style={{ fontWeight: 700 }}>App</div>
-      <div className="muted" style={{ fontSize: 12, margin: "2px 0 8px" }}>v1.8 · Nov 4, 2026 2:31 AM CST</div>
+      <div className="muted" style={{ fontSize: 12, margin: "2px 0 8px" }}>v1.10 · Nov 4, 2026 2:38 AM CST</div>
       <button className="btn" onClick={update} style={{ marginTop: 8 }}>Update app</button>
     </div>
   );

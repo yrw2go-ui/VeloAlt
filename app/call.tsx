@@ -118,7 +118,7 @@ function pickVoice(kind: VeloVoice): { voice: SpeechSynthesisVoice | null; sure:
   return guess ? { voice: guess, sure: true } : { voice: us.find(v => v.localService) || us[0] || all[0] || null, sure: false };
 }
 // What's shown and read: no markdown or symbols.
-const speakable = (t: string) => t.replace(/\[\[[^\]]*\]\]/g, "").replace(/[*_#`>|]/g, "").replace(/\s+/g, " ").trim();
+const speakable = (t: string) => t.replace(/\[\[[^\]]*\]\]/g, "").replace(/https?:\/\/\S+/g, "").replace(/[*_#`>|]/g, "").replace(/\s+/g, " ").trim();
 // Said out loud: "Velo" is pronounced Vĕllō ("VEL-oh"), so the voice reads it as "Vello".
 const sayable = (t: string) => speakable(t).replace(/\bVelo\b/g, "Vello").replace(/\bVELO\b/g, "Vello");
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
@@ -454,6 +454,9 @@ export default function VeloCall({ request, onEnd, voice = "female", name, first
       </div>
 
       <div style={{ marginTop: small ? 14 : 22, width: "100%", maxWidth: 440, flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10 }}>
+        {phase !== "ended" && lastVelo && /https:\/\/\S+/.test(lastVelo) && (
+          <img src={"/api/pic?u=" + encodeURIComponent((lastVelo.match(/https:\/\/\S+/) || [""])[0])} alt="" style={{ width: "100%", maxHeight: 320, objectFit: "contain", borderRadius: 12, background: "#111" }} />
+        )}
         {phase !== "ended" && showText && lastVelo && (
           <div data-testid="velo-call-reply" aria-live="polite" style={{ background: "rgba(59,130,246,0.12)", border: "1px solid rgba(59,130,246,0.3)", borderRadius: 14, padding: "16px 18px", fontSize: 22, fontWeight: 600, lineHeight: 1.4, overflowWrap: "anywhere" }}>{speakable(lastVelo)}</div>
         )}
