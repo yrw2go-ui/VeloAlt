@@ -379,62 +379,134 @@ export function ModeCard({ profile, onChange }: { profile: Profile; onChange: ()
 
 export function CharacterGallery({ profile, onChange }: { profile: Profile; onChange: () => void }) {
   const [chars, setChars] = useState<string[]>([]);
-  const [active, setActive] = useState("Velo");
-  const [media, setMedia] = useState<{id:string; media_url:string; is_reference:boolean}[]>([]);
+  const [active, setActive] = useState<string | null>(null);
+  const [media, setMedia] = useState<{id:string; media_url:string; media_type?:string; is_reference:boolean}[]>([]);
   const [page, setPage] = useState(0);
   const [busy, setBusy] = useState(false);
   const [genPrompt, setGenPrompt] = useState("");
   const [note, setNote] = useState("");
+  const [newName, setNewName] = useState("");
+  const [createName, setCreateName] = useState("");
+  const [refs, setRefs] = useState<string[]>([]);
   const loadChars = async () => {
     try { const r = await data<{characters: string[]}>("profile.listCharacters"); setChars(r.characters || ["Velo"]); } catch { setChars(["Velo"]); }
   };
   const loadMedia = async (name: string) => {
     try { const r = await data<{media: typeof media}>("profile.listMedia", { character: name }); setMedia(r.media || []); } catch { setMedia([]); }
   };
-  useEffect(() => { loadChars(); loadMedia(active); }, [active]);
-  const [newName, setNewName] = useState("");
+  useEffect(() => { loadChars(); }, []);
+  useEffect(() => { if (active) { setPage(0); setRefs([]); loadMedia(active); setNewName(active); } }, [active]);
   const rename = async () => {
     const to = newName.trim();
-    if (!to || to === active) return;
+    if (!active || !to || to === active) return;
     setBusy(true);
     await data("profile.renameCharacter", { from: active, to });
     setActive(to);
-    setNewName("");
     loadChars();
     setBusy(false);
   };
+  const create = async () => {
+    const name = createName.trim();
+    if (!name) return;
+    setBusy(true);
+    await data("profile.createCharacter", { name });
+    setCreateName("");
+    await loadChars();
+    setActive(name);
+    setBusy(false);
+  };
+  const removeChar = async () => {
+    if (!active || !confirm("Delete " + active + " and all their media?")) return;
+    setBusy(true);
+    await data("profile.deleteCharacter", { name: active });
+    setActive(null);
+    loadChars();
+    setBusy(false);
+  };
+  const toggleRef = (url: string) => {
+    setRefs(r => r.includes(url) ? r.filter(x => x !== url) : r.length >= 2 ? r : [...r, url]);
+  };
   const gen = async () => {
-    if (!genPrompt.trim()) return;
+    if (!active || !genPrompt.trim()) return;
     setBusy(true); setNote("");
     try {
-      const r = await data<{url?: string}>("profile.generateLook", { prompt: genPrompt.trim(), provider: "atlas", character: active });
+      const r = await data<{url?: string}>("profile.generateLook", { prompt: genPrompt.trim(), provider: "atlas", character: active, images: refs });
       if (r.url) { setNote("Saved."); loadMedia(active); }
       else setNote("No image returned.");
     } catch (e) { setNote(e instanceof Error ? e.message : "Generate failed."); }
     setBusy(false);
   };
+  const upload = async (file: File) => {
+    if (!active) return;
+    setBusy(true); setNote("");
+    const reader = new FileReader();
+    const dataUrl = await new Promise<string>((res, rej) => { reader.onload = () => res(String(reader.result)); reader.onerror = () => rej(new Error("Read failed")); reader.readAsDataURL(file); });
+    try {
+      await data("profile.uploadLook", { imageData: dataUrl, name: active });
+      setNote("Uploaded.");
+      loadMedia(active);
+    } catch (e) { setNote(e instanceof Error ? e.message : "Upload failed."); }
+    setBusy(false);
+  };
+  const removeOne = async (id: string) => {
+    setNote("");
+    try {
+      await data("profile.deleteMedia", { id });
+      if (active) loadMedia(active);
+    } catch (e) { setNote(e instanceof Error ? e.message : "Delete failed."); }
+  };
   const pageSize = 40;
   const shown = media.slice(page * pageSize, (page + 1) * pageSize);
+  if (!active) {
+    return (
+      <div className="card">
+        <div style={{ fontWeight: 700, marginBottom: 8 }}>Characters</div>
+        <div className="row" style={{ gap: 8, marginBottom: 12 }}>
+          <input value={createName} onChange={e => setCreateName(e.target.value)} placeholder="New character name" style={{ flex: 1 }} />
+          <button className="btn" disabled={busy || !createName.trim()} onClick={create}>Create</button>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 8 }}>
+          {chars.map(c => (
+            <button key={c} onClick={() => setActive(c)} style={{ padding: 12, borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)", textAlign: "left", fontWeight: 600 }}>{c}</button>
+          ))}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="card">
-      <div style={{ fontWeight: 700, marginBottom: 8 }}>Characters</div>
-      <div className="row" style={{ gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-        {chars.map(c => (
-          <button key={c} onClick={() => setActive(c)} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid var(--border)", background: active === c ? "var(--accent)" : "var(--surface2)", color: "white", fontSize: 13 }}>{c}</button>
-        ))}
-        <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="New name" style={{ width: 100, fontSize: 13 }} />
-        <button onClick={rename} disabled={busy || !newName.trim()} style={{ padding: "6px 12px", fontSize: 13 }}>Rename</button>
+      <div className="row" style={{ justifyContent: "space-between", marginBottom: 10 }}>
+        <button className="ghost" onClick={() => setActive(null)}>Back</button>
+        <button className="ghost" onClick={removeChar} disabled={busy} style={{ color: "var(--bad)" }}>Delete character</button>
+      </div>
+      <div style={{ fontWeight: 700, marginBottom: 8 }}>{active}</div>
+      <div className="row" style={{ gap: 8, marginBottom: 12 }}>
+        <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Rename" style={{ flex: 1 }} />
+        <button onClick={rename} disabled={busy || !newName.trim() || newName.trim() === active}>Save name</button>
+      </div>
+      <div className="row" style={{ gap: 8, marginBottom: 8 }}>
+        <label className="btn" style={{ cursor: "pointer" }}>
+          Upload
+          <input type="file" accept="image/*,video/*" style={{ display: "none" }} onChange={e => e.target.files?.[0] && upload(e.target.files[0])} />
+        </label>
+        <span className="muted" style={{ fontSize: 12 }}>{refs.length ? refs.length + " reference selected (max 2)" : "Pick up to 2 photos as references"}</span>
       </div>
       <div className="row" style={{ gap: 8, marginBottom: 10 }}>
-        <input value={genPrompt} onChange={e => setGenPrompt(e.target.value)} placeholder="Generate more of her…" style={{ flex: 1 }} />
-        <button className="btn" disabled={busy || !genPrompt.trim()} onClick={gen}>Generate</button>
+        <input value={genPrompt} onChange={e => setGenPrompt(e.target.value)} placeholder={refs.length ? "Create more of her from the references…" : "Generate more of her…"} style={{ flex: 1 }} />
+        <button className="btn" disabled={busy || !genPrompt.trim()} onClick={gen}>Create</button>
       </div>
       {note && <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>{note}</div>}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))", gap: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 8 }}>
         {shown.map(m => (
-          <div key={m.id} style={{ position: "relative" }}>
-            <img src={picSrc(m.media_url)} alt="" style={{ width: "100%", aspectRatio: "1", objectFit: "contain", background: "#111", borderRadius: 6 }} />
-            <button onClick={async () => { await data("profile.deleteMedia", { id: m.id }); loadMedia(active); }} style={{ position: "absolute", top: 2, right: 2, background: "rgba(0,0,0,0.6)", color: "white", border: "none", borderRadius: 4, fontSize: 11, padding: "2px 6px" }}>✕</button>
+          <div key={m.id} style={{ position: "relative", border: refs.includes(m.media_url) ? "2px solid var(--accent)" : "1px solid transparent", borderRadius: 8 }}>
+            {String(m.media_type || "").startsWith("video") || /\.(mp4|webm|mov)(\?|$)/i.test(m.media_url)
+              ? <video src={picSrc(m.media_url)} controls style={{ width: "100%", aspectRatio: "1", objectFit: "contain", background: "#111", borderRadius: 6 }} />
+              : <img src={picSrc(m.media_url)} alt="" style={{ width: "100%", aspectRatio: "1", objectFit: "contain", background: "#111", borderRadius: 6 }} />}
+            <div style={{ display: "flex", gap: 4, marginTop: 4, fontSize: 11 }}>
+              <button onClick={() => toggleRef(m.media_url)}>{refs.includes(m.media_url) ? "Ref" : "Use"}</button>
+              <a href={picSrc(m.media_url)} download target="_blank" rel="noopener noreferrer">Save</a>
+              <button onClick={() => removeOne(m.id)}>Delete</button>
+            </div>
           </div>
         ))}
       </div>
