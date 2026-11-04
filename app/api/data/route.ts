@@ -77,6 +77,7 @@ export async function POST(req: NextRequest) {
         const uploaded = await put(`velo-looks/${me}/${Date.now()}.jpg`, blob, { access: "public" });
         await db`update velo_looks set is_active = false where user_id = ${me}`;
         await db`insert into velo_looks (user_id, name, image_url, is_active) values (${me}, ${name}, ${uploaded.url}, true)`;
+        await db`insert into character_media (user_id, character_name, media_url, media_type) values (${me}, ${name}, ${uploaded.url}, 'image')`;
         return NextResponse.json({ ok: true, url: uploaded.url });
       }
       case "profile.setActiveLook": {
@@ -99,6 +100,7 @@ export async function POST(req: NextRequest) {
         const uploaded = await put(`velo-looks/${me}/${Date.now()}.jpg`, blob, { access: "public" });
         await db`update velo_looks set is_active = false where user_id = ${me}`;
         await db`insert into velo_looks (user_id, name, image_url, is_active) values (${me}, ${name}, ${uploaded.url}, true)`;
+        await db`insert into character_media (user_id, character_name, media_url, media_type) values (${me}, ${name}, ${uploaded.url}, 'image')`;
         return NextResponse.json({ ok: true, url: uploaded.url });
       }
 
