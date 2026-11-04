@@ -217,6 +217,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         mode === "chat" || mode === "sms" || mode === "talk" || mode === "recap" ? PERSONALITY_PROMPT[personality] : "",
         modeText,
         isCharacter ? `YOU ARE ${character}, not Velo. This is her private chat. Stay in character as ${character}. Do not mention Velo. Your memories are only about this chat with them. When they ask to see you, call generate_image. The pictures must look like ${character}, matching her saved photos. Never write a URL yourself.` : "",
+        mode === "talk" && isSpicy ? "On this call you CAN send a picture. If they ask to see you or for a picture, call generate_image. Do not say the link. The app shows the picture on screen. Say a short line like 'Here you go' after the tool returns." : "",
       ].filter(Boolean).join("\n\n"),
     },
   ];
@@ -348,14 +349,14 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
     messages.push({ role: "user", content: results });
     if (round === 5) reply = "";
   }
-  if (reply && (mode === "chat" || mode === "sms")) {
+  if (reply && (mode === "chat" || mode === "sms" || mode === "talk")) {
     const allowed = new Set(images);
     for (const [u] of sources) allowed.add(u);
     reply = reply.replace(/https:\/\/[^\s<>"']+/g, (found) => {
       const clean = found.replace(/[.,;:!?)]+$/, "");
       return allowed.has(found) || allowed.has(clean) ? found : "";
     }).replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
-    if (images.length === 0) {
+    if (images.length === 0 && mode !== "talk") {
       reply = reply
         .replace(/[^.!?\n]*(sent|sending|here'?s|attached|generated|saved|uploaded|check your|in the gallery|the (picture|image|photo|video)|I (just )?(made|created|showed))[^.!?\n]*[.!?]?/gi, "")
         .replace(/\n{3,}/g, "\n\n")
