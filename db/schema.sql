@@ -241,3 +241,5 @@ alter table velo_media add column if not exists poster_url text check (poster_ur
 alter table velo_media add column if not exists kept boolean not null default false;
 alter table velo_media add column if not exists caption text check (caption is null or char_length(caption) <= 200);
 create index if not exists velo_media_gallery_idx on velo_media (user_id, character_id, created_at desc) where status = 'done';
+-- 🖼️ A small thumbnail for each uploaded photo (the chat shows it; the full photo opens on tap).
+alter table velo_files add column if not exists thumb_url text check (thumb_url is null or char_length(thumb_url) <= 1000);

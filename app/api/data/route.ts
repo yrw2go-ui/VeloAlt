@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
         // Velo's chat (no characterId) or one character's chat.
         const ch = b.characterId ? await getCharacter(String(b.characterId)) : null;
         if (b.characterId && !ch) return bad("That character wasn't found.");
-        const rows = await db`select m.role, m.content, f.id as file_id, f.url as file_url, f.name as file_name, f.content_type as file_type,
+        const rows = await db`select m.role, m.content, f.id as file_id, f.url as file_url, f.thumb_url as file_thumb, f.name as file_name, f.content_type as file_type,
             md.id as media_id, md.kind as media_kind, md.status as media_status, mf.url as media_url, coalesce(mt.url, md.poster_url) as media_thumb
           from velo_messages m left join velo_files f on f.id = m.file_id and f.user_id = m.user_id
           left join velo_media md on md.id = m.media_id and md.user_id = m.user_id
@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
           left join velo_files mt on mt.id = md.thumb_file_id
           where m.user_id = ${me} and m.character_id is not distinct from ${ch?.id || null} order by m.created_at desc, m.id desc limit 60`;
         return NextResponse.json({ messages: rows.reverse().map(r => ({ role: r.role, content: r.content,
-          ...(r.file_id ? { file: { id: r.file_id, url: r.file_url, name: r.file_name, type: r.file_type } } : {}),
+          ...(r.file_id ? { file: { id: r.file_id, url: r.file_url, thumb: r.file_thumb || null, name: r.file_name, type: r.file_type } } : {}),
           ...(r.media_id ? { media: { id: r.media_id, kind: r.media_kind, status: r.media_status, url: r.media_status === "done" ? r.media_url : null, thumb: r.media_thumb || null } } : {}) })) });
       }
       case "messages.add": {
@@ -191,7 +191,7 @@ export async function POST(req: NextRequest) {
       }
 
       case "files.list": {
-        const rows = await db`select id, url, name, content_type, size, created_at from velo_files where user_id = ${me} and kind = 'file' order by created_at desc limit 200`;
+        const rows = await db`select id, url, thumb_url, name, content_type, size, created_at from velo_files where user_id = ${me} and kind = 'file' order by created_at desc limit 200`;
         return NextResponse.json({ files: rows });
       }
       case "files.delete":

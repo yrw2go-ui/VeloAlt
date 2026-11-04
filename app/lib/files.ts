@@ -23,9 +23,9 @@ export async function ownFile(userId: string, id: string): Promise<VeloFile | nu
 
 /** Deletes a file's blob and row (the message keeps its text; its attachment goes). */
 export async function deleteFile(userId: string, id: string): Promise<boolean> {
-  const [f] = await sql()`delete from velo_files where id = ${id} and user_id = ${userId} returning url`;
+  const [f] = await sql()`delete from velo_files where id = ${id} and user_id = ${userId} returning url, thumb_url`;
   if (!f) return false;
-  try { await del(String(f.url)); } catch (e) { console.error("files: blob delete", e instanceof Error ? e.message : e); }
+  try { await del([String(f.url), ...(f.thumb_url ? [String(f.thumb_url)] : [])]); } catch (e) { console.error("files: blob delete", e instanceof Error ? e.message : e); }
   return true;
 }
 

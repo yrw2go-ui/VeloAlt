@@ -15,7 +15,7 @@ import { MediaView, type Media } from "./media";
 /** Who this chat is with: Velo (no character) or one of their characters. */
 export type ChatWith = { id: string; name: string; portrait_url: string | null };
 
-export type ChatFile = { id: string; url: string; name: string; type: string };
+export type ChatFile = { id: string; url: string; thumb?: string | null; name: string; type: string };
 export type ChatMsg = { role: "user" | "assistant"; content: string; draft?: Draft; file?: ChatFile; media?: Media };
 /** How a sent photo/video reads in the history the AI sees. */
 export const mediaNote = (m: Media) => `(sent a ${m.kind === "image" ? "photo" : "video"})`;
@@ -54,7 +54,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   const pick = async (f: File | undefined) => {
     if (!f) return;
     setUploading(true); setErr("");
-    try { const s = await uploadFile(f, "chat"); setAttach({ id: s.id, url: s.url, name: s.name, type: s.content_type }); }
+    try { const s = await uploadFile(f, "chat"); setAttach({ id: s.id, url: s.url, thumb: s.thumb_url || null, name: s.name, type: s.content_type }); }
     catch (e) { setErr(e instanceof Error ? e.message : "Upload didn't go through."); }
     finally { setUploading(false); if (picker.current) picker.current.value = ""; }
   };
@@ -230,13 +230,14 @@ function linkify(text: string) {
 }
 
 /** A saved file: photos show as a picture, anything else as a tappable file chip. Opens full size in a new tab. */
-export function FileThumb({ f, size }: { f: { url: string; name: string; type: string }; size: number }) {
+/** Shows the small thumbnail (light on data); the full photo opens on tap. */
+export function FileThumb({ f, size }: { f: { url: string; thumb?: string | null; name: string; type: string }; size: number }) {
   const isImage = f.type.startsWith("image/");
   return (
     <a href={f.url} target="_blank" rel="noopener noreferrer" style={{ display: "inline-block", color: "inherit", textDecoration: "none" }}>
       {isImage
         // eslint-disable-next-line @next/next/no-img-element
-        ? <img src={f.url} alt={f.name} style={{ display: "block", maxWidth: size, maxHeight: size, borderRadius: 10, objectFit: "cover" }} />
+        ? <img src={f.thumb || f.url} alt={f.name} loading="lazy" style={{ display: "block", maxWidth: size, maxHeight: size, borderRadius: 10, objectFit: "cover" }} />
         : <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: size < 60 ? "6px 8px" : "8px 12px", borderRadius: 10, background: "rgba(0,0,0,0.2)", fontSize: 13 }}>{f.type === "application/pdf" ? "📄" : "📝"} {size < 60 ? "" : f.name}</span>}
     </a>
   );

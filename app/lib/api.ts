@@ -12,7 +12,7 @@ export async function api<T = unknown>(path: string, body: unknown): Promise<T> 
 /** Reads and changes the person's own data (app/api/data). */
 export const data = <T = unknown>(action: string, args: Record<string, unknown> = {}) => api<T>("/api/data", { action, ...args });
 
-export type SavedFile = { id: string; url: string; name: string; content_type: string; size: number };
+export type SavedFile = { id: string; url: string; thumb_url?: string | null; name: string; content_type: string; size: number };
 
 /** Big photos are shrunk on the device first (longest side 2000px, JPEG) so uploads stay small and fast. */
 async function shrink(file: File): Promise<File> {

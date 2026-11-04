@@ -62,7 +62,7 @@ export default function Memory({ refresh }: { refresh: number }) {
         <div style={{ fontWeight: 800, marginBottom: 8 }}>📁 Files</div>
         {files === null ? <div className="muted">Loading…</div> : !files.length ? <div className="muted" style={{ fontSize: 14 }}>Photos and files you send Velo (📎 in the chat) are saved here.</div> : files.map(f => (
           <div key={f.id} className="row" style={{ padding: "8px 0", borderTop: "1px solid var(--border)" }}>
-            <FileThumb f={{ url: f.url, name: f.name, type: f.content_type }} size={48} />
+            <FileThumb f={{ url: f.url, thumb: f.thumb_url, name: f.name, type: f.content_type }} size={48} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</div>
               <div className="muted" style={{ fontSize: 12 }}>{Math.max(1, Math.round(f.size / 1024))} KB · {new Date(String((f as SavedFile & { created_at?: string }).created_at || Date.now())).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })}</div>

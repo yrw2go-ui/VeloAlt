@@ -4,10 +4,19 @@ import { randomUUID } from "node:crypto";
 import { sql } from "../../lib/db";
 import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
+import sharp from "sharp";
 import { IMAGE_TYPES, DOC_TYPES, MAX_BYTES, MAX_FILES, blobReady, deleteFile } from "../../lib/files";
+import { thumbOf } from "../../lib/media";
+
+/** 🔒 Re-saves a photo without its hidden data (GPS location, camera, date…), upright, same format. */
+async function cleanImage(buf: Buffer, type: string): Promise<Buffer> {
+  const img = sharp(buf, { animated: type === "image/gif" }).rotate().keepIccProfile();
+  return type === "image/png" ? img.png().toBuffer() : type === "image/webp" ? img.webp({ quality: 90 }).toBuffer() : type === "image/gif" ? img.gif().toBuffer() : img.jpeg({ quality: 90, mozjpeg: true }).toBuffer();
+}
 
 // 📎 Upload one file to Vercel Blob for the signed-in person.
-// POST multipart { file, purpose: "chat" | "face" } → { file: { id, url, name, content_type, size } }
+// POST multipart { file, purpose: "chat" | "face" } → { file: { id, url, thumb_url, name, content_type, size } }
+// Photos are cleaned first (location and camera data removed) and get a small thumbnail.
 // "face" also makes it Velo's face (replacing the last custom one).
 export async function POST(req: NextRequest) {
   try {
@@ -30,10 +39,20 @@ export async function POST(req: NextRequest) {
 
     const name = (file.name || "file").replace(/[^\w.\- ]+/g, "_").slice(-120) || "file";
     // Folder names are random, never the person's id or email; Blob adds a random suffix too.
-    const blob = await put(`velo/${purpose}/${randomUUID()}/${name}`, file, { access: "public", addRandomSuffix: true, contentType: type });
-    const [row] = await sql()`insert into velo_files (user_id, kind, url, pathname, name, content_type, size)
-      values (${c.userId}, ${purpose === "face" ? "face" : "file"}, ${blob.url}, ${blob.pathname}, ${name}, ${type}, ${file.size})
-      returning id, url, name, content_type, size, kind`;
+    let body: Buffer = Buffer.from(await file.arrayBuffer());
+    let thumbUrl: string | null = null;
+    const folder = `velo/${purpose}/${randomUUID()}`;
+    if (IMAGE_TYPES.includes(type)) {
+      // Never stored with its hidden data: if it can't be cleaned, it isn't saved.
+      try { body = await cleanImage(body, type); }
+      catch (e) { console.error("files: clean image", e instanceof Error ? e.message : e); return NextResponse.json({ error: "That picture couldn't be read. Try another one." }, { status: 400 }); }
+      const t = await thumbOf(body);
+      if (t) thumbUrl = (await put(`${folder}/thumb.webp`, t, { access: "public", addRandomSuffix: true, contentType: "image/webp" })).url;
+    }
+    const blob = await put(`${folder}/${name}`, body, { access: "public", addRandomSuffix: true, contentType: type });
+    const [row] = await sql()`insert into velo_files (user_id, kind, url, pathname, name, content_type, size, thumb_url)
+      values (${c.userId}, ${purpose === "face" ? "face" : "file"}, ${blob.url}, ${blob.pathname}, ${name}, ${type}, ${body.length}, ${thumbUrl})
+      returning id, url, thumb_url, name, content_type, size, kind`;
 
     if (purpose === "face") {
       // One custom face at a time: the old one is removed.
