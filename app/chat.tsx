@@ -8,7 +8,6 @@ import { VeloAvatar } from "./avatar";
 import DraftCard, { type Draft } from "./drafts";
 import { hideSecrets } from "./lib/secrets";
 import { timeZone } from "./lib/tz";
-import { useDictation } from "./dictate";
 
 export type ChatMsg = { role: "user" | "assistant"; content: string; draft?: Draft };
 /** What Velo sees: real messages only (draft cards are local to the screen). */
@@ -16,16 +15,12 @@ export type ChatMsg = { role: "user" | "assistant"; content: string; draft?: Dra
 const unsaved = { current: 0 };
 const realMsgs = (m: ChatMsg[]) => m.filter(x => !x.draft).map(({ role, content }) => ({ role, content }));
 const INTRO = "Hi, I'm Velo! 👋 I'm here for whatever you need — planning your day, reminders, to-dos, talking things through, or just keeping you company. What should I call you?";
-const HELLO = (n: string) => [`Hey${n ? ` ${n}` : ""}! What's on your mind?`, `Hi${n ? ` ${n}` : ""} — how's your day going?`, `Hey${n ? ` ${n}` : ""}, good to see you. What can I do for you?`];
+const HELLO = (n: string) => [`Hey${n ? ` \( {n}` : ""}! What's on your mind?`, `Hi \){n ? ` \( {n}` : ""} — how's your day going?`, `Hey \){n ? ` ${n}` : ""}, good to see you. What can I do for you?`];
 const SUGGESTIONS = ["Plan my day", "Remind me to call Mom tomorrow at 6pm", "I need to vent", "Help me set a goal"];
 
 export default function Chat({ userId, name, onChanged, added }: { userId: string; name: string; onChanged: () => void; added: ChatMsg | null }) {
   const [msgs, setMsgs] = useState<ChatMsg[] | null>(null);
   const [text, setText] = useState("");
-  const mic = useDictation(setText);
-  // The box grows with the message (typed or spoken), up to about 5 lines.
-  const box = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => { const el = box.current; if (!el) return; el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, 140)}px`; }, [text]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   // A call finished: Velo's report landed in the chat (draft cards stay where they are).
@@ -76,7 +71,6 @@ export default function Chat({ userId, name, onChanged, added }: { userId: strin
   }, [name]);
 
   const send = async (raw: string) => {
-    if (mic.listening) mic.stop();
     // 🔒 Passwords and codes are hidden right here, before anything leaves the phone.
     const t = hideSecrets(raw.trim()).text;
     if (!t || busy || !msgs) return;
@@ -114,26 +108,11 @@ export default function Chat({ userId, name, onChanged, added }: { userId: strin
         <div ref={end} />
       </div>
       <form onSubmit={e => { e.preventDefault(); send(text); }} className="row" style={{ padding: "10px 12px", borderTop: "1px solid var(--border)" }}>
-        <textarea ref={box} rows={1} value={text} onChange={e => setText(e.target.value)} placeholder={msgs ? "Message Velo…" : "Loading…"} aria-label="Message Velo" disabled={!msgs}
+        <textarea rows={1} value={text} onChange={e => setText(e.target.value)} placeholder={msgs ? "Message Velo…" : "Loading…"} aria-label="Message Velo" disabled={!msgs}
           onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(text); } }}
           style={{ resize: "none", maxHeight: 140, borderRadius: 20 }} />
-        {mic.supported && (
-          <button type="button" onClick={() => (mic.listening ? mic.stop() : mic.start(text))} disabled={!msgs || busy}
-            aria-label={mic.listening ? "Stop listening" : "Talk instead of typing"} aria-pressed={mic.listening} data-testid="chat-mic"
-            style={{ borderRadius: 999, width: 46, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 20,
-              border: `1px solid ${mic.listening ? "var(--bad)" : "var(--border)"}`, background: mic.listening ? "rgba(248,113,113,0.18)" : "var(--surface2)", color: "var(--text)",
-              animation: mic.listening ? "micPulse 1.4s infinite" : undefined }}>
-            {mic.listening ? "⏹" : "🎙️"}
-          </button>
-        )}
         <button className="btn" disabled={!text.trim() || busy} aria-label="Send" style={{ borderRadius: 999, width: 46, height: 46, padding: 0, flexShrink: 0 }}>➤</button>
       </form>
-      {(mic.listening || mic.error) && (
-        <div style={{ padding: "0 14px 8px", fontSize: 12, color: mic.error ? "var(--bad)" : "var(--muted)" }}>
-          {mic.error ? `⚠️ ${mic.error}` : "Listening… tap ⏹ when you're done, then Send."}
-        </div>
-      )}
-      <style>{`@keyframes micPulse { 0% { box-shadow: 0 0 0 0 rgba(248,113,113,.5) } 70% { box-shadow: 0 0 0 10px rgba(248,113,113,0) } 100% { box-shadow: 0 0 0 0 rgba(248,113,113,0) } }`}</style>
     </div>
   );
 }
@@ -145,14 +124,29 @@ function Bubble({ m }: { m: ChatMsg }) {
       {!mine && <VeloAvatar size={28} />}
       <div style={{ maxWidth: "80%", padding: "10px 14px", borderRadius: 18, borderBottomLeftRadius: mine ? 18 : 4, borderBottomRightRadius: mine ? 4 : 18,
         background: mine ? "linear-gradient(135deg, var(--accent), var(--accent2))" : "var(--surface2)", color: "var(--text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", lineHeight: 1.45, fontSize: 15 }}>
-        {linkify(m.content.replace(/\*\*(.+?)\*\*/g, "$1"))}
+        {renderRich(m.content.replace(/\*\*(.+?)\*\*/g, "$1"))}
       </div>
     </div>
   );
 }
 
-/** Web links in a message become tappable (https only; they open in a new tab). */
-function linkify(text: string) {
-  return text.split(/(https:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]])/g).map((part, i) =>
-    i % 2 ? <a key={i} href={part} target="_blank" rel="noopener noreferrer nofollow" style={{ color: "var(--accent)", wordBreak: "break-all" }}>{part.replace(/^https:\/\/(www\.)?/, "").slice(0, 60)}</a> : part);
+const URL_RE = /(https:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]])/g;
+const isImageUrl = (url: string) =>
+  /\.(png|jpe?g|webp|gif|avif)(\?|#|$)/i.test(url) ||
+  /blob\.vercel-storage\.com|volces\.com|cloudfront\.net|r2\.dev|spicyapi|\/images?\//i.test(url);
+
+/** Web links become tappable. Image links render in the bubble. */
+function renderRich(text: string) {
+  const parts = text.split(URL_RE);
+  return parts.map((part, i) => {
+    if (i % 2 === 0) return part;
+    if (isImageUrl(part)) {
+      return (
+        <a key={i} href={part} target="_blank" rel="noopener noreferrer nofollow" style={{ display: "block", marginTop: 8 }}>
+          <img src={part} alt="" referrerPolicy="no-referrer" style={{ width: "100%", maxHeight: 420, objectFit: "contain", borderRadius: 12, background: "#111", display: "block" }} />
+        </a>
+      );
+    }
+    return <a key={i} href={part} target="_blank" rel="noopener noreferrer nofollow" style={{ color: "var(--accent)", wordBreak: "break-all" }}>{part.replace(/^https:\/\/(www\.)?/, "").slice(0, 60)}</a>;
+  });
 }
