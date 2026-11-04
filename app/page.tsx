@@ -79,7 +79,13 @@ type DueReminder = { id: string; text: string };
 
 function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   // Back from Stripe checkout / billing: open Settings.
-  const [tab, setTab] = useState<Tab>(() => (typeof location !== "undefined" && new URLSearchParams(location.search).get("tab") === "settings" ? "settings" : "chat"));
+  const [tab, setTab] = useState<Tab>(() => {
+    if (typeof window === "undefined") return "chat";
+    const saved = localStorage.getItem("velo-tab") as Tab;
+    const urlTab = new URLSearchParams(location.search).get("tab");
+    return (urlTab === "settings" ? "settings" : saved) || "chat";
+  });
+  useEffect(() => { localStorage.setItem("velo-tab", tab); }, [tab]);
   const [name, setName] = useState("");
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profileTick, setProfileTick] = useState(0);
