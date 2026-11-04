@@ -121,27 +121,28 @@ function pickVoice(kind: VeloVoice): { voice: SpeechSynthesisVoice | null; sure:
 const speakable = (t: string) => t.replace(/\[\[[^\]]*\]\]/g, "").replace(/https?:\/\/\S+/g, "").replace(/[*_#`>|]/g, "").replace(/\s+/g, " ").trim();
 // Said out loud: "Velo" is pronounced Vĕllō ("VEL-oh"), so the voice reads it as "Vello".
 const sayable = (t: string) => speakable(t).replace(/\bVelo\b/g, "Vello").replace(/\bVELO\b/g, "Vello");
-const clock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+const clock = (s: number) => `\( {Math.floor(s / 60)}: \){String(s % 60).padStart(2, "0")}`;
 /** Velo answers by first name, a little differently each time. On the very
  *  first call she introduces herself and what she's there for. */
-const greetingFor = (name?: string, first = false) => {
+const greetingFor = (name?: string, first = false, who = "Velo") => {
   const n = (name || "").trim().split(/\s+/)[0];
+  if (who && who.toLowerCase() !== "velo") return `Hey${n ? ` ${n}` : ""}, it's ${who}.`;
   if (first) return `Hi${n ? ` ${n}` : ""}, I'm Velo! I'm here to help with any questions, your schedule, and whatever else you need. What can I do for you?`;
   const h = new Date().getHours();
   const tod = h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
   const say = (named: string, plain: string) => (n ? named : plain);
   const options = [
     say(`Hey ${n}, what's up?`, "Hey, what's up?"),
-    say(`${tod} ${n}!`, `${tod}!`),
+    say(`${tod} \( {n}!`, ` \){tod}!`),
     say(`Hi ${n}, how can I help?`, "Hi, how can I help?"),
     say(`Hey ${n}! What's on your mind?`, "Hey! What's on your mind?"),
-    say(`${tod} ${n}, what are we working on?`, `${tod}, what are we working on?`),
+    say(`${tod} \( {n}, what are we working on?`, ` \){tod}, what are we working on?`),
     say(`Hi ${n}! Good to hear from you. What's going on?`, "Hi! Good to hear from you. What's going on?"),
   ];
   return options[Math.floor(Math.random() * options.length)];
 };
 
-export default function VeloCall({ request, onEnd, voice = "female", name, firstCall = false, fetchVoice, opener, startPrivate = false }: {
+export default function VeloCall({ request, onEnd, voice = "female", name, who = "Velo", faceUrl = "", firstCall = false, fetchVoice, opener, startPrivate = false }: {
   /** 📞 Check-in call: what Velo says first (instead of her usual hello). */
   opener?: string;
   /** Start like a normal phone call: on the earpiece (📱 Private), with a 🔊 Speaker button. */
@@ -149,6 +150,10 @@ export default function VeloCall({ request, onEnd, voice = "female", name, first
   voice?: VeloVoice;
   /** The account owner's name, for the greeting. */
   name?: string;
+  /** Who is on the call. A created character, or Velo. */
+  who?: string;
+  /** Her photo, if one is saved. */
+  faceUrl?: string;
   /** Their first call ever: Velo introduces herself. */
   firstCall?: boolean;
   /** Sends the conversation to Velo; returns its reply. */
@@ -159,7 +164,7 @@ export default function VeloCall({ request, onEnd, voice = "female", name, first
   fetchVoice?: (text: string, voice: VeloVoice, look: string) => Promise<Blob | null>;
 }) {
   const [phase, setPhase] = useState<Phase>("speaking");
-  const [greeting] = useState(() => opener?.trim() || greetingFor(name, firstCall));
+  const [greeting] = useState(() => opener?.trim() || greetingFor(name, firstCall, who));
   const [turns, setTurns] = useState<Turn[]>([{ role: "assistant", content: greeting }]);
   const [heard, setHeard] = useState("");
   const [secs, setSecs] = useState(0);
@@ -173,7 +178,7 @@ export default function VeloCall({ request, onEnd, voice = "female", name, first
   turnsRef.current = turns;
   // Her chosen face also picks her voice (the server maps the look to a voice).
   const look = useVeloLook();
-  const [face, setFace] = useState("");
+  const [face, setFace] = useState(faceUrl);
   useEffect(() => {
     const on = (e: Event) => setFace(String((e as CustomEvent).detail?.image || ""));
     window.addEventListener("velo:character", on);
@@ -439,7 +444,7 @@ export default function VeloCall({ request, onEnd, voice = "female", name, first
   };
 
   const ring = phase === "listening" ? "#10b981" : phase === "speaking" ? "#3b82f6" : phase === "thinking" ? "#f97316" : "#6b7280";
-  const label = { listening: "Listening…", thinking: "Thinking…", speaking: "Velo is talking — tap to cut in", muted: "Muted — tap 🎙️ to talk", ended: "Call ended" }[phase];
+  const label = { listening: "Listening…", thinking: "Thinking…", speaking: `${who} is talking — tap to cut in`, muted: "Muted — tap 🎙️ to talk", ended: "Call ended" }[phase];
   const lastVelo = said;
   const small = showText;
   const pill = (on: boolean) => ({ flexShrink: 0, background: on ? "#3b82f6" : "#1f2937", color: "#fff", border: `1px solid ${on ? "#60a5fa" : "#374151"}`, borderRadius: 999, padding: "8px 12px", fontSize: 14, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" } as const);
@@ -454,7 +459,7 @@ export default function VeloCall({ request, onEnd, voice = "female", name, first
       <div style={{ marginTop: small ? 12 : 34, width: small ? 84 : 150, height: small ? 84 : 150, flexShrink: 0, borderRadius: "50%", background: "#111827", border: `3px solid ${ring}`, display: "flex", alignItems: "center", justifyContent: "center", animation: phase === "ended" || phase === "muted" ? undefined : "vcRing 1.6s infinite" }}>
         {face ? <img src={"/api/pic?u=" + encodeURIComponent(face)} alt="" style={{ width: small ? 78 : 144, height: small ? 78 : 144, borderRadius: "50%", objectFit: "cover" }} /> : <VeloAvatar size={small ? 78 : 144} />}
       </div>
-      <div style={{ marginTop: small ? 10 : 18, fontSize: small ? 22 : 26, fontWeight: 800 }}>Velo</div>
+      <div style={{ marginTop: small ? 10 : 18, fontSize: small ? 22 : 26, fontWeight: 800 }}>{who}</div>
       <div style={{ marginTop: 6, fontSize: 14, color: ring, fontWeight: 700, minHeight: 20 }}>
         {phase === "thinking" ? <span>Thinking<span style={{ animation: "vcDot 1.2s infinite" }}>.</span><span style={{ animation: "vcDot 1.2s .2s infinite" }}>.</span><span style={{ animation: "vcDot 1.2s .4s infinite" }}>.</span></span> : label}
       </div>
