@@ -154,7 +154,7 @@ async function generateImage(prompt: string, provider = "atlas", userId?: string
     };
     if (useRefs.length) {
       const size = pictureSize(prompt);
-      const facePrompt = `The woman in the reference photo is ${character}. Keep her exact face, hair, and identity. ${prompt}`;
+      const facePrompt = `The female in the reference photo is ${character}. Keep her exact face, hair, and identity. ${prompt}`;
       // Prefer public URLs first — Seedream can fetch them. Fall back to base64 only if that fails.
       try {
         return await poll({
