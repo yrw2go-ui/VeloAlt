@@ -122,7 +122,7 @@ async function generateImage(prompt: string, provider = "atlas", userId?: string
   const data = await res.json();
   const url = data?.data?.[0]?.url || "No image returned.";
   if (userId && url.startsWith("http")) {
-    await sql`insert into character_media (user_id, character_name, media_url, media_type) values (${userId}, ${character}, ${url}, 'image')`.catch(() => {});
+    try { await sql()`insert into character_media (user_id, character_name, media_url, media_type) values (${userId}, ${character}, ${url}, 'image')`; } catch {}
   }
   return url;
 }
