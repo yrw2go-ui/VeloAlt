@@ -88,12 +88,12 @@ const IMAGE_TOOL: Anthropic.Tool = {
   input_schema: { type: "object", properties: { prompt: { type: "string", description: "Detailed description of the image to generate" } }, required: ["prompt"] },
 };
 
-async function generateImage(prompt: string, provider = "atlas"): Promise<string> {
+async function generateImage(prompt: string, provider = "atlas", userId?: string, character = "Velo"): Promise<string> {
   if (provider === "atlas" && process.env.ATLASCLOUD_API_KEY) {
     const res = await fetch("https://api.atlascloud.ai/api/v1/model/generateImage", {
       method: "POST",
       headers: { Authorization: `Bearer ${process.env.ATLASCLOUD_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "bytedance/seedream-v5.0-pro/text-to-image", prompt }),
+      body: JSON.stringify({ model: "bytedance/seedream-v5.0-pro/text-to-image", prompt, size: "1536*1536" }),
     });
     if (!res.ok) throw new Error("Atlas failed.");
     const data = await res.json();
@@ -120,7 +120,11 @@ async function generateImage(prompt: string, provider = "atlas"): Promise<string
   });
   if (!res.ok) throw new Error("Image generation failed.");
   const data = await res.json();
-  return data?.data?.[0]?.url || "No image returned.";
+  const url = data?.data?.[0]?.url || "No image returned.";
+  if (userId && url.startsWith("http")) {
+    await sql`insert into character_media (user_id, character_name, media_url, media_type) values (${userId}, ${character}, ${url}, 'image')`.catch(() => {});
+  }
+  return url;
 }
 
 import { sql } from "./db";
@@ -223,7 +227,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
       const out = isMemoryTool(name) ? await runMemoryTool(caller, name, input)
         : isReminderTool(name) ? await runReminderTool(caller, name, input, today.tz)
         : isProTool(name) && pro ? await runProTool(caller, name, input, drafts)
-        : name === "generate_image" && isSpicy ? { url: await generateImage((input as { prompt: string }).prompt, (input as { provider?: string }).provider || "atlas") }
+        : name === "generate_image" && isSpicy ? { url: await generateImage((input as { prompt: string }).prompt, (input as { provider?: string }).provider || "atlas", caller.userId) }
         : name === "generate_video" && isSpicy ? { status: await generateVideo((input as { prompt: string }).prompt, (input as { duration?: number }).duration) }
         : name === "save_character" && isSpicy ? { id: await saveCharacter((input as { image_url: string }).image_url, (input as { name?: string }).name) }
         : name === "generate_with_character" && isSpicy ? { result: await generateWithCharacter((input as { prompt: string }).prompt, ((input as { type?: string }).type === "video" ? "video" : "image"), "chr_placeholder") }
