@@ -9,6 +9,7 @@ import VeloCall, { canCallVelo, primeSpeech } from "./call";
 import Chat, { type ChatAdd } from "./chat";
 import { CallMedia, type Media } from "./media";
 import { CharacterStrip, CharacterEditor, CharacterFace, type Character } from "./characters";
+import Gallery from "./gallery";
 import Today from "./today";
 import Memory from "./memory";
 import { timeZone } from "./lib/tz";
@@ -97,6 +98,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   const [admin, setAdmin] = useState(false);
   const [withId, setWithId] = useState<string | null>(null);
   const [editing, setEditing] = useState<Character | "new" | null>(null);
+  const [gallery, setGallery] = useState(false);
   useEffect(() => {
     api<{ characters: Character[]; portraits: boolean; admin: boolean }>("/api/characters", { action: "list" })
       .then(r => { setChars(r.characters); setPortraits(r.portraits); setAdmin(r.admin); }).catch(() => {});
@@ -192,7 +194,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       )}
 
       <main style={{ flex: 1, minHeight: 0, overflowY: tab === "chat" ? "hidden" : "auto", display: "flex", flexDirection: "column" }}>
-        {tab === "chat" && <CharacterStrip characters={chars} active={withChar?.id || null} admin={admin} onPick={setWithId} onNew={() => setEditing("new")} onEdit={setEditing} />}
+        {tab === "chat" && <CharacterStrip characters={chars} active={withChar?.id || null} admin={admin} onPick={setWithId} onNew={() => setEditing("new")} onEdit={setEditing} onGallery={() => setGallery(true)} />}
         {tab === "chat" && <Chat key={withChar?.id || "velo"} userId={userId} name={name} onChanged={bump} added={chatAdd} onAdded={() => setChatAdd(null)} character={withChar} />}
         {tab === "today" && <Today refresh={refresh} />}
         {tab === "memory" && <Memory refresh={refresh} />}
@@ -219,6 +221,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
           }} />
       )}
       {calling && <CallMedia items={callMedia} name={callWith?.name || "Velo"} />}
+      {gallery && <Gallery key={withChar?.id || "velo"} characterId={withChar?.id || null} name={withChar?.name || "Velo"} onClose={() => setGallery(false)} />}
       {editing && (
         <CharacterEditor key={editing === "new" ? "new" : editing.id} initial={editing === "new" ? null : editing} portraits={portraits}
           onClose={() => setEditing(null)} onSaved={savedChar}
@@ -266,7 +269,7 @@ function ConfirmHost() {
   const ask = useSyncExternalStore(subscribeAsk, currentAsk, () => null);
   if (!ask) return null;
   return (
-    <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 3000 }}>
+    <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 5000 }}>
       <div className="card" style={{ maxWidth: 360, width: "100%" }}>
         <div style={{ fontWeight: 700, marginBottom: 14 }}>{ask.text}</div>
         <div className="row" style={{ justifyContent: "flex-end" }}>

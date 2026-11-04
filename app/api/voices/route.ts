@@ -4,12 +4,14 @@ import { allow } from "../../lib/rateLimit";
 import { isAdmin } from "../../lib/characters";
 import { CHARACTER_VOICES } from "../../lib/voices";
 
-// 🔊 Voices to choose from for a character (admins). POST { q } → { voices, source }
+// 🔊 Voices to choose from for a character (admins). POST { provider: "elevenlabs" | "fish", q } → { voices, source }
+// Fish Audio: female voices from its public library (needs FISH_AUDIO_API_KEY).
 // Their ElevenLabs voices plus a search of ElevenLabs' shared voice library (thousands of
 // voices); a shared voice is added to their ElevenLabs account when the character is saved.
 // If ElevenLabs can't be reached (or the key can't list voices), the built-in list.
 type VoiceOption = { id: string; name: string; kind: "female" | "male"; about: string; preview: string; owner?: string };
 const API = () => process.env.ELEVENLABS_API_URL || "https://api.elevenlabs.io";
+const FISH = () => process.env.FISH_AUDIO_API_URL || "https://api.fish.audio";
 const kindOf = (g: unknown): "female" | "male" => (String(g || "").toLowerCase() === "male" ? "male" : "female");
 const about = (...parts: unknown[]) => parts.map(p => String(p || "").trim()).filter(Boolean).join(", ").slice(0, 120);
 
@@ -20,6 +22,21 @@ export async function POST(req: NextRequest) {
   if (!allow(`voices:${c.userId}`, [{ ms: 60_000, max: 30 }])) return NextResponse.json({ error: "Too many searches — try again in a moment." }, { status: 429 });
   const body = await req.json().catch(() => ({}));
   const q = String(body?.q || "").replace(/[^\w\s'-]/g, " ").trim().slice(0, 60);
+  if (body?.provider === "fish") {
+    const key = process.env.FISH_AUDIO_API_KEY;
+    if (!key) return NextResponse.json({ error: "Fish Audio isn't set up yet — add FISH_AUDIO_API_KEY in Vercel." }, { status: 503 });
+    try {
+      const r = await fetch(`${FISH()}/model?page_size=40&page_number=1&sort_by=score&tag=female${q ? `&title=${encodeURIComponent(q)}` : ""}`, { headers: { Authorization: `Bearer ${key}` } });
+      if (!r.ok) { console.error(`voices: Fish Audio list ${r.status} ${(await r.text().catch(() => "")).slice(0, 200)}`); return NextResponse.json({ error: "Fish Audio didn't answer. Try again." }, { status: 502 }); }
+      const j = await r.json();
+      const voices: VoiceOption[] = (j?.items || []).filter((v: { _id?: string }) => /^[A-Za-z0-9]{16,64}$/.test(String(v._id || ""))).map((v: { _id: string; title?: string; description?: string; tags?: string[]; languages?: string[]; samples?: { audio?: string }[] }) => ({
+        id: `fish:${v._id}`, name: String(v.title || "Voice").slice(0, 60), kind: "female" as const,
+        about: about(v.description, (v.tags || []).slice(0, 4).join(" "), (v.languages || []).join("/")),
+        preview: /^https:\/\//.test(String(v.samples?.[0]?.audio || "")) ? String(v.samples![0].audio) : "",
+      }));
+      return NextResponse.json({ voices, source: "fish" });
+    } catch (e) { console.error("voices: fish", e instanceof Error ? e.message : e); return NextResponse.json({ error: "Fish Audio didn't answer. Try again." }, { status: 502 }); }
+  }
   const builtIn: VoiceOption[] = CHARACTER_VOICES.map(v => ({ id: v.voiceId, name: v.name, kind: v.kind, about: v.about, preview: "" }));
   const match = (v: VoiceOption) => !q || `${v.name} ${v.about} ${v.kind}`.toLowerCase().includes(q.toLowerCase());
   const key = process.env.ELEVENLABS_API_KEY;

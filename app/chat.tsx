@@ -135,13 +135,23 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     } finally { setBusy(false); }
   };
 
+  // 💬 A photo/video arrived: they say something about it ("What do you think?"), right under it.
+  const mediaArrived = (x: Media) => {
+    if (x.caption) setMsgs(list => {
+      const all = list || [];
+      const at = all.findIndex(y => y.media?.id === x.id);
+      if (at < 0 || all[at + 1]?.content === x.caption) return all;
+      return [...all.slice(0, at + 1), { role: "assistant", content: x.caption! }, ...all.slice(at + 1)];
+    });
+    setTimeout(() => end.current?.scrollIntoView({ block: "end" }), 50);
+  };
   const openingLine = msgs && !msgs.length && !name ? INTRO : HELLO(name.split(" ")[0])[hello];
   const shown: ChatMsg[] = msgs && !msgs.length && !cid ? [{ role: "assistant", content: openingLine }] : msgs || [];
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <div data-testid="chat-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-        {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={m.media?.id || i} m={m} face={face(28)} onMedia={() => end.current?.scrollIntoView({ block: "end" })} />)}
+        {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={m.media?.id || i} m={m} face={face(28)} onMedia={mediaArrived} />)}
         {character && msgs && !msgs.length && (
           <div className="muted" style={{ textAlign: "center", fontSize: 14, marginTop: 24, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
             {face(72)}<div>Say hi to {character.name} 👋</div>
@@ -193,7 +203,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   );
 }
 
-function Bubble({ m, face, onMedia }: { m: ChatMsg; face: React.ReactNode; onMedia: () => void }) {
+function Bubble({ m, face, onMedia }: { m: ChatMsg; face: React.ReactNode; onMedia: (x: Media) => void }) {
   const mine = m.role === "user";
   if (m.media) return (
     <div data-testid="chat-media" style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>

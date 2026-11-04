@@ -3,11 +3,13 @@ import { sql } from "../../lib/db";
 import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import { scrub } from "../../lib/secrets";
+import { listGallery } from "../../lib/media";
 import { MAX_CHARACTERS, DAILY_PORTRAITS, isAdmin, listCharacters, getCharacter, screenCharacter, startPortrait, checkPortrait, deleteCharacter, portraitsReady, chooseVoice, VoiceError } from "../../lib/characters";
 
 // 🎭 Characters. Everyone can list them and chat; only admins create and edit. POST { action, ... }:
 //   list                     → { characters, portraits, admin }
-//   create / update { id?, name, personality, backstory, relation, appearance, voice } → { character }   (admin)
+//   create / update { id?, name, personality, backstory, relation, appearance, voice, romantic, referenceIds } → { character }   (admin)
+//   gallery { id } → { items }   the admin's pictures of this character, to pick references from
 //   delete { id }            (admin; everyone's chats and memories with it go too)
 //   portrait.start { id }    (admin) starts an Atlas Cloud portrait from the appearance
 //   portrait.check { id }    (admin) → { status: working | done | failed, character }
@@ -37,15 +39,26 @@ export async function POST(req: NextRequest) {
           const [{ n }] = await sql()`select count(*)::int as n from chat_characters`;
           if (n >= MAX_CHARACTERS) return bad(`There can be up to ${MAX_CHARACTERS} characters — delete one first.`);
         }
-        const problem = await screenCharacter(f);
+        const romantic = b.romantic === true;
+        // Up to 4 reference pictures: finished photos of this character from the admin's gallery.
+        const want = (Array.isArray(b.referenceIds) ? b.referenceIds : []).map(String).filter((x: string) => /^[0-9a-f-]{36}$/i.test(x)).slice(0, 4);
+        const refs = action === "update" && want.length
+          ? (await sql()`select id from velo_media where id = any(${want}::uuid[]) and user_id = ${me} and character_id = ${id} and kind = 'image' and status = 'done'`).map(r => String(r.id))
+          : [];
+        const problem = await screenCharacter({ ...f, relation: f.relation + (romantic ? " (romantic, PG-13)" : "") });
         if (problem) return bad(problem);
         const prev = action === "update" ? await getCharacter(id) : null;
         // Same voice as before: keep it (no trip to ElevenLabs).
         const v = prev && (b.voice?.id ?? b.voice) === prev.voice ? { id: prev.voice, name: prev.voice_name, kind: prev.voice_kind } : await chooseVoice(b.voice);
         const [row] = action === "create"
-          ? await sql()`insert into chat_characters (created_by, name, personality, backstory, relation, appearance, voice, voice_name, voice_kind) values (${me}, ${f.name}, ${f.personality}, ${f.backstory}, ${f.relation}, ${f.appearance}, ${v.id}, ${v.name}, ${v.kind}) returning id`
-          : await sql()`update chat_characters set name = ${f.name}, personality = ${f.personality}, backstory = ${f.backstory}, relation = ${f.relation}, appearance = ${f.appearance}, voice = ${v.id}, voice_name = ${v.name}, voice_kind = ${v.kind}, updated_at = now() where id = ${id} returning id`;
+          ? await sql()`insert into chat_characters (created_by, name, personality, backstory, relation, appearance, voice, voice_name, voice_kind, romantic) values (${me}, ${f.name}, ${f.personality}, ${f.backstory}, ${f.relation}, ${f.appearance}, ${v.id}, ${v.name}, ${v.kind}, ${romantic}) returning id`
+          : await sql()`update chat_characters set name = ${f.name}, personality = ${f.personality}, backstory = ${f.backstory}, relation = ${f.relation}, appearance = ${f.appearance}, voice = ${v.id}, voice_name = ${v.name}, voice_kind = ${v.kind}, romantic = ${romantic}, reference_ids = ${want.filter((x: string) => refs.includes(x))}::uuid[], updated_at = now() where id = ${id} returning id`;
         return NextResponse.json({ character: await getCharacter(String(row.id)) });
+      }
+
+      case "gallery": {
+        if (!(await getCharacter(id))) return bad("That character wasn't found.");
+        return NextResponse.json({ items: (await listGallery(me, id, null, 60)).filter(x => x.kind === "image") });
       }
 
       case "delete":

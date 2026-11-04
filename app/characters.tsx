@@ -10,7 +10,7 @@ import { CHARACTER_VOICES } from "./lib/voices";
 
 type VoiceOption = { id: string; name: string; kind: "female" | "male"; about: string; preview: string; owner?: string };
 
-export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; voice: string; voice_name: string; voice_kind: "female" | "male"; portrait_url: string | null; portrait_job: string | null };
+export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; reference_ids: string[]; portrait_url: string | null; portrait_job: string | null };
 
 /** A character's picture in a circle (their initial until a portrait exists). */
 export function CharacterFace({ c, size }: { c: Pick<Character, "name" | "portrait_url">; size: number }) {
@@ -25,10 +25,9 @@ const chip = (on: boolean) => ({ display: "flex", alignItems: "center", gap: 6, 
   border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, background: on ? "rgba(124,140,255,0.15)" : "var(--surface2)", color: "var(--text)" } as const);
 
 /** The chips above the chat. Tap a chip to switch chats; admins tap the open one again to edit it. */
-export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdit }: {
-  characters: Character[]; active: string | null; admin: boolean; onPick: (id: string | null) => void; onNew: () => void; onEdit: (c: Character) => void;
+export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdit, onGallery }: {
+  characters: Character[]; active: string | null; admin: boolean; onPick: (id: string | null) => void; onNew: () => void; onEdit: (c: Character) => void; onGallery: () => void;
 }) {
-  if (!characters.length && !admin) return null;
   return (
     <div data-testid="character-strip" style={{ display: "flex", gap: 8, overflowX: "auto", padding: "8px 12px", borderBottom: "1px solid var(--border)" }}>
       <button style={chip(active === null)} onClick={() => onPick(null)} aria-pressed={active === null}><VeloAvatar size={26} /> Velo</button>
@@ -38,6 +37,7 @@ export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdi
         </button>
       ))}
       {admin && <button style={{ ...chip(false), padding: "4px 12px" }} onClick={onNew} data-testid="character-new">＋ New</button>}
+      <button style={{ ...chip(false), padding: "4px 12px", marginLeft: "auto" }} onClick={onGallery} data-testid="gallery-open" aria-label="Gallery">🖼️ Gallery</button>
     </div>
   );
 }
@@ -53,11 +53,14 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
   const [relation, setRelation] = useState(initial?.relation || "");
   const [appearance, setAppearance] = useState(initial?.appearance || "");
   const first = CHARACTER_VOICES[0];
+  const [romantic, setRomantic] = useState(!!initial?.romantic);
+  const [shots, setShots] = useState(0); // finished portraits (refreshes the reference picker)
+  const [refIds, setRefIds] = useState<string[]>(initial?.reference_ids || []);
   const [voice, setVoice] = useState<VoiceOption>(initial ? { id: initial.voice, name: initial.voice_name || "Voice", kind: initial.voice_kind, about: "", preview: "" } : { id: first.voiceId, name: first.name, kind: first.kind, about: first.about, preview: "" });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const working = !!c?.portrait_job;
-  const dirty = !c || name !== c.name || personality !== c.personality || backstory !== c.backstory || relation !== c.relation || appearance !== c.appearance || voice.id !== c.voice;
+  const dirty = !c || name !== c.name || personality !== c.personality || backstory !== c.backstory || relation !== c.relation || appearance !== c.appearance || voice.id !== c.voice || romantic !== !!c.romantic || refIds.join() !== (c.reference_ids || []).join();
 
   // A portrait in progress: check back every few seconds until it's ready.
   useEffect(() => {
@@ -65,7 +68,7 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
     const t = setInterval(async () => {
       try {
         const r = await api<{ status: string; character: Character }>("/api/characters", { action: "portrait.check", id: c.id });
-        if (r.status !== "working") { setC(r.character); onSaved(r.character); if (r.status === "failed") setMsg("The portrait didn't work out — try again or change the description."); }
+        if (r.status !== "working") { setC(r.character); onSaved(r.character); setShots(n => n + 1); if (r.status === "failed") setMsg("The portrait didn't work out — try again or change the description."); }
       } catch { /* keep checking */ }
     }, 4000);
     return () => clearInterval(t);
@@ -74,7 +77,7 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
   const save = async () => {
     setBusy(true); setMsg("");
     try {
-      const r = await api<{ character: Character }>("/api/characters", { action: c ? "update" : "create", id: c?.id, name, personality, backstory, relation, appearance, voice: { id: voice.id, name: voice.name, kind: voice.kind, owner: voice.owner } });
+      const r = await api<{ character: Character }>("/api/characters", { action: c ? "update" : "create", id: c?.id, name, personality, backstory, relation, appearance, voice: { id: voice.id, name: voice.name, kind: voice.kind, owner: voice.owner }, romantic, referenceIds: refIds });
       setC(r.character); onSaved(r.character);
       // A library voice is saved as a copy in their ElevenLabs account: follow its new id.
       setVoice(v => ({ ...v, id: r.character.voice, owner: undefined }));
@@ -124,6 +127,11 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
           <textarea value={relation} onChange={e => setRelation(e.target.value)} maxLength={600} rows={2} placeholder="Who they are to the person chatting, e.g. an old friend from the navy, a mentor, a big sister" aria-label="Relation to the user" style={{ marginTop: 4, resize: "vertical" }} />
         </label>
         <VoicePicker value={voice} onChange={setVoice} />
+        <label className="row" style={{ gap: 10, fontSize: 13, fontWeight: 700, alignItems: "flex-start" }}>
+          <input type="checkbox" checked={romantic} onChange={e => setRomantic(e.target.checked)} aria-label="Romantic" style={{ width: 20, height: 20, marginTop: 1, flexShrink: 0 }} />
+          <span>💕 Romantic (PG-13) <span className="muted" style={{ fontWeight: 500, display: "block" }}>Flirty and affectionate with adults who confirmed they&apos;re 18+, never explicit. Others get a friendly, platonic version.</span></span>
+        </label>
+        {c && <ReferencePicker characterId={c.id} value={refIds} onChange={setRefIds} refresh={shots} />}
         <label style={{ fontSize: 13, fontWeight: 700 }}>Appearance (for the portrait)
           <textarea value={appearance} onChange={e => setAppearance(e.target.value)} maxLength={600} rows={2} placeholder="e.g. weathered sea captain, silver braid, navy coat, warm smile" aria-label="Appearance" style={{ marginTop: 4, resize: "vertical" }} />
         </label>
@@ -144,15 +152,16 @@ function VoicePicker({ value, onChange }: { value: VoiceOption; onChange: (v: Vo
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [list, setList] = useState<VoiceOption[] | null>(null);
+  const [provider, setProvider] = useState<"elevenlabs" | "fish">(value.id.startsWith("fish:") ? "fish" : "elevenlabs");
   const [err, setErr] = useState("");
   const [playing, setPlaying] = useState("");
   const audio = useRef<HTMLAudioElement | null>(null);
   const search = async (text: string) => {
     setErr("");
-    try { setList((await api<{ voices: VoiceOption[] }>("/api/voices", { q: text })).voices); }
+    try { setList((await api<{ voices: VoiceOption[] }>("/api/voices", { provider, q: text })).voices); }
     catch (e) { setErr(e instanceof Error ? e.message : "Couldn't load voices."); setList([]); }
   };
-  useEffect(() => { if (open && !list) search(""); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (open) { setList(null); search(q); } }, [open, provider]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => { audio.current?.pause(); }, []);
   const play = (v: VoiceOption) => {
     audio.current?.pause();
@@ -171,6 +180,12 @@ function VoicePicker({ value, onChange }: { value: VoiceOption; onChange: (v: Vo
       </div>
       {open && (
         <div style={{ marginTop: 8, border: "1px solid var(--border)", borderRadius: 12, padding: 8 }}>
+          <div role="tablist" className="row" style={{ gap: 6, marginBottom: 8 }}>
+            {([["elevenlabs", "ElevenLabs"], ["fish", "🐟 Fish Audio (female)"]] as const).map(([id, label]) => (
+              <button key={id} type="button" role="tab" aria-selected={provider === id} onClick={() => setProvider(id)} data-testid={`voices-${id}`}
+                style={{ borderRadius: 999, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", border: `1px solid ${provider === id ? "var(--accent)" : "var(--border)"}`, background: provider === id ? "rgba(124,140,255,0.15)" : "transparent", color: "var(--text)" }}>{label}</button>
+            ))}
+          </div>
           <form onSubmit={e => { e.preventDefault(); search(q); }} className="row" style={{ gap: 8 }}>
             <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search voices: deep, British, old, cheerful…" aria-label="Search voices" />
             <button className="ghost" type="submit">Search</button>
@@ -185,7 +200,7 @@ function VoicePicker({ value, onChange }: { value: VoiceOption; onChange: (v: Vo
                   <div key={v.id} className="row" style={{ gap: 8, padding: "6px 8px", borderRadius: 10, background: on ? "rgba(124,140,255,0.15)" : "transparent" }}>
                     {v.preview ? <button type="button" className="ghost" onClick={() => play(v)} aria-label={`Play ${v.name}`} style={{ padding: "4px 10px" }}>{playing === v.id ? "⏸" : "▶"}</button> : <span style={{ width: 38 }} />}
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div>{v.name} <span className="muted" style={{ fontWeight: 500 }}>· {v.kind}{v.owner ? " · library" : ""}</span></div>
+                      <div>{v.name} <span className="muted" style={{ fontWeight: 500 }}>· {v.kind}{v.owner ? " · library" : v.id.startsWith("fish:") ? " · Fish Audio" : ""}</span></div>
                       {v.about && <div className="muted" style={{ fontWeight: 500, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.about}</div>}
                     </div>
                     <button type="button" className={on ? "btn" : "ghost"} onClick={() => onChange(v)} disabled={on} style={{ padding: "4px 12px" }}>{on ? "✓" : "Use"}</button>
@@ -195,6 +210,37 @@ function VoicePicker({ value, onChange }: { value: VoiceOption; onChange: (v: Vo
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** 🖼️ Pick 2–4 pictures of this character (portraits or photos it sent you) that keep it looking the same in new photos and videos. */
+function ReferencePicker({ characterId, value, onChange, refresh }: { characterId: string; value: string[]; onChange: (ids: string[]) => void; refresh: number }) {
+  const [items, setItems] = useState<{ id: string; thumb: string | null; url: string }[] | null>(null);
+  useEffect(() => {
+    api<{ items: { id: string; thumb: string | null; url: string }[] }>("/api/characters", { action: "gallery", id: characterId }).then(r => setItems(r.items)).catch(() => setItems([]));
+  }, [characterId, refresh]);
+  const toggle = (id: string) => onChange(value.includes(id) ? value.filter(x => x !== id) : value.length >= 4 ? value : [...value, id]);
+  return (
+    <div style={{ fontSize: 13, fontWeight: 700 }}>
+      Reference pictures <span className="muted" style={{ fontWeight: 500 }}>· {value.length}/4 picked (2–4 keeps them looking the same)</span>
+      {!items ? <div className="muted" style={{ fontWeight: 500, marginTop: 6 }}>Loading…</div>
+        : !items.length ? <div className="muted" style={{ fontWeight: 500, marginTop: 6 }}>Generate a few portraits (or ask them for selfies in chat), then pick the best 2–4 here.</div>
+        : (
+          <div data-testid="reference-picker" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginTop: 6, maxHeight: 230, overflowY: "auto" }}>
+            {items.map(it => {
+              const on = value.includes(it.id);
+              return (
+                <button key={it.id} type="button" onClick={() => toggle(it.id)} aria-pressed={on} data-testid="reference-item"
+                  style={{ position: "relative", padding: 0, borderRadius: 10, overflow: "hidden", aspectRatio: "2 / 3", cursor: "pointer", border: `3px solid ${on ? "var(--accent)" : "transparent"}`, background: "var(--surface2)" }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={it.thumb || it.url} alt="" loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", opacity: on ? 1 : 0.75 }} />
+                  {on && <span style={{ position: "absolute", top: 3, right: 3, background: "var(--accent)", color: "#fff", borderRadius: 999, width: 20, height: 20, fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>{value.indexOf(it.id) + 1}</span>}
+                </button>
+              );
+            })}
+          </div>
+        )}
     </div>
   );
 }

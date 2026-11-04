@@ -394,6 +394,18 @@ export default function VeloCall({ request, onEnd, voice = "female", name, first
     }
   };
 
+  // ⌨️ Type instead of talking: the reply is still spoken. (Passwords and codes are hidden on the server.)
+  const [typing, setTyping] = useState(false);
+  const [typed, setTyped] = useState("");
+  const sendTyped = () => {
+    const t = typed.trim();
+    if (!t || !live.current || phase === "thinking") return;
+    setTyped("");
+    if (phase === "speaking") stopTalking();
+    const r = rec.current; rec.current = null;
+    try { r?.abort(); } catch { /* fine */ }
+    think(t);
+  };
   // Tap while Velo is talking: cut in and talk.
   const interrupt = () => { if (phase === "speaking") { stopTalking(); listen(); } };
   const toggleMute = () => {
@@ -465,6 +477,10 @@ export default function VeloCall({ request, onEnd, voice = "female", name, first
 
       {phase !== "ended" && (
         <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 440, marginTop: 14, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", justifyContent: "center" }}>
+          <button role="switch" aria-checked={typing} onClick={() => setTyping(t => !t)} data-testid="velo-call-type"
+            title="Type: type a message and hear the answer" style={pill(typing)}>
+            ⌨️ Type
+          </button>
           <button role="switch" aria-checked={showText} onClick={() => setShowText(t => !t)} data-testid="velo-call-text"
             title="Text: show the conversation on screen" style={pill(showText)}>
             📝 Text{showText ? " · on" : ""}
@@ -491,6 +507,13 @@ export default function VeloCall({ request, onEnd, voice = "female", name, first
                 style={{ flex: 1, minWidth: 0, accentColor: "#3b82f6" }} />
               <span style={{ fontSize: 12, color: "#9ca3af", width: 34, textAlign: "right" }}>{Math.round(vol * 100)}%</span>
             </label>
+          )}
+          {typing && (
+            <form onSubmit={e => { e.preventDefault(); sendTyped(); }} style={{ width: "100%", display: "flex", gap: 8 }}>
+              <input value={typed} onChange={e => setTyped(e.target.value)} placeholder={`Type to ${who?.name || "Velo"}…`} aria-label="Type a message" data-testid="velo-call-input" autoFocus
+                style={{ flex: 1, minWidth: 0, background: "#111827", color: "#f1f1f3", border: "1px solid #374151", borderRadius: 999, padding: "10px 14px", fontSize: 16 }} />
+              <button type="submit" disabled={!typed.trim() || phase === "thinking"} aria-label="Send" style={{ ...pill(true), padding: "8px 16px" }}>➤</button>
+            </form>
           )}
           {priv && (
             <div data-testid="velo-call-private-note" style={{ width: "100%", textAlign: "center", fontSize: 12, color: "#9ca3af" }}>

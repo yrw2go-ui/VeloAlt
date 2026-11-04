@@ -27,5 +27,8 @@ export const CHARACTER_VOICES: CharacterVoice[] = [
   { id: "bill", name: "Bill", kind: "male", voiceId: "pqHfZKP75CvOlQylNhV4", about: "wise, older" },
 ];
 export const VOICE_ID = /^[A-Za-z0-9]{8,40}$/;
+// 🐟 Fish Audio voices are saved as "fish:<model id>".
+export const FISH_ID = /^fish:[A-Za-z0-9]{16,64}$/;
+export const isFish = (v?: string | null) => !!v && FISH_ID.test(v);
 /** The ElevenLabs voice_id for a character's saved voice (a built-in key or a voice_id). */
-export const voiceIdFor = (v?: string | null) => CHARACTER_VOICES.find(x => x.id === v)?.voiceId || (v && VOICE_ID.test(v) ? v : CHARACTER_VOICES[0].voiceId);
+export const voiceIdFor = (v?: string | null) => isFish(v) ? v! : CHARACTER_VOICES.find(x => x.id === v)?.voiceId || (v && VOICE_ID.test(v) ? v : CHARACTER_VOICES[0].voiceId);

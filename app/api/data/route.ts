@@ -10,7 +10,7 @@ import { availableModels, CHAT_MODELS, MODEL_INFO, type ChatModel } from "../../
 import { PERSONALITIES } from "../../lib/persona";
 import { deleteFile, ownFile } from "../../lib/files";
 import { getCharacter } from "../../lib/characters";
-import { checkMedia, sweepMedia, getMedia, VIDEO_MODELS, DEFAULT_VIDEO_MODEL } from "../../lib/media";
+import { checkMedia, sweepMedia, getMedia, listGallery, deleteMedia, VIDEO_MODELS, DEFAULT_VIDEO_MODEL } from "../../lib/media";
 
 // 📦 Everything the app reads and changes, for the signed-in person only.
 // POST { action, ...args } → { ... }. Every query is scoped to their user_id.
@@ -69,14 +69,15 @@ export async function POST(req: NextRequest) {
         const ch = b.characterId ? await getCharacter(String(b.characterId)) : null;
         if (b.characterId && !ch) return bad("That character wasn't found.");
         const rows = await db`select m.role, m.content, f.id as file_id, f.url as file_url, f.name as file_name, f.content_type as file_type,
-            md.id as media_id, md.kind as media_kind, md.status as media_status, mf.url as media_url
+            md.id as media_id, md.kind as media_kind, md.status as media_status, mf.url as media_url, coalesce(mt.url, md.poster_url) as media_thumb
           from velo_messages m left join velo_files f on f.id = m.file_id and f.user_id = m.user_id
           left join velo_media md on md.id = m.media_id and md.user_id = m.user_id
           left join velo_files mf on mf.id = md.file_id
+          left join velo_files mt on mt.id = md.thumb_file_id
           where m.user_id = ${me} and m.character_id is not distinct from ${ch?.id || null} order by m.created_at desc, m.id desc limit 60`;
         return NextResponse.json({ messages: rows.reverse().map(r => ({ role: r.role, content: r.content,
           ...(r.file_id ? { file: { id: r.file_id, url: r.file_url, name: r.file_name, type: r.file_type } } : {}),
-          ...(r.media_id ? { media: { id: r.media_id, kind: r.media_kind, status: r.media_status, url: r.media_status === "done" ? r.media_url : null } } : {}) })) });
+          ...(r.media_id ? { media: { id: r.media_id, kind: r.media_kind, status: r.media_status, url: r.media_status === "done" ? r.media_url : null, thumb: r.media_thumb || null } } : {}) })) });
       }
       case "messages.add": {
         const ch = b.characterId ? await getCharacter(String(b.characterId)) : null;
@@ -106,6 +107,19 @@ export async function POST(req: NextRequest) {
         const m = needId() ? await checkMedia(me, id) : null;
         return m ? NextResponse.json({ media: m }) : bad("Unknown media.");
       }
+      // 🖼️ Gallery for one chat (Velo's or a character's): newest first, 30 at a time.
+      case "gallery.list": {
+        const ch = b.characterId ? await getCharacter(String(b.characterId)) : null;
+        if (b.characterId && !ch) return bad("That character wasn't found.");
+        const before = typeof b.before === "string" && !Number.isNaN(Date.parse(b.before)) ? b.before : null;
+        return NextResponse.json({ items: await listGallery(me, ch?.id || null, before) });
+      }
+      case "gallery.keep":
+        if (!needId()) return bad("Unknown picture.");
+        await db`update velo_media set kept = ${!!b.kept} where id = ${id} and user_id = ${me}`;
+        return NextResponse.json({ ok: true });
+      case "gallery.delete":
+        return needId() && (await deleteMedia(me, id)) ? NextResponse.json({ ok: true }) : bad("Unknown picture.");
       case "media.sweep":
         return NextResponse.json({ media: await sweepMedia(me) });
 

@@ -60,8 +60,14 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   const canSend = mediaReady() && (mode === "chat" || mode === "talk");
   // Who's in a selfie: a character's portrait, or Velo's preset face (never a photo someone uploaded).
   const look = String(u?.look || "");
-  const ref = ch ? (ch.portrait_url && /^https:\/\//.test(ch.portrait_url) ? ch.portrait_url : null)
-    : look !== "custom" && veloLook(look).round !== false && opts.origin ? `${opts.origin}${veloLook(look).src256}` : null;
+  // A character's 2–4 chosen reference images keep it looking the same (else its portrait).
+  const chRefs = ch && canSend && ch.reference_ids?.length
+    ? (await sql()`select f.url from velo_media m join velo_files f on f.id = m.file_id where m.id = any(${ch.reference_ids}::uuid[]) and m.status = 'done' and m.kind = 'image'`).map(r => String(r.url))
+    : [];
+  const refs = (ch ? (chRefs.length ? chRefs : ch.portrait_url ? [ch.portrait_url] : [])
+    : look !== "custom" && veloLook(look).round !== false && opts.origin ? [`${opts.origin}${veloLook(look).src256}`] : []).filter(u => /^https?:\/\//.test(u));
+  // 💕 PG-13 romance: adults only, with Velo's romantic personality or a romantic character.
+  const romantic = !!u?.adult_confirmed_at && (ch ? !!ch.romantic : personality === "romantic");
 
   // On a call Velo makes for them, the other person never hears their private memory.
   const errand = !ch && (mode === "errand" || mode === "errandsum");
@@ -119,8 +125,8 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   // Tools: none on wrap-ups or errands; Pro adds contacts, drafts, Amazon carts and 🔎 web search
   // (Anthropic runs the searches; results come back in the same response).
   const search = !!proTools && (mode === "chat" || mode === "sms" || mode === "talk");
-  const tools: Anthropic.ToolUnion[] | undefined = wrapUp || errand ? undefined : ch ? [...MEMORY_TOOLS, ...(canSend ? [SEND_MEDIA_TOOL(ch.name)] : [])] : [
-    ...(canSend ? [SEND_MEDIA_TOOL("Velo")] : []),
+  const tools: Anthropic.ToolUnion[] | undefined = wrapUp || errand ? undefined : ch ? [...MEMORY_TOOLS, ...(canSend ? [SEND_MEDIA_TOOL(ch.name, romantic)] : [])] : [
+    ...(canSend ? [SEND_MEDIA_TOOL("Velo", romantic)] : []),
     ...MEMORY_TOOLS, ...REMINDER_TOOLS, ...(proTools?.tools || []),
     ...(search ? [{ type: "web_search_20260209" as const, name: "web_search" as const, max_uses: 5, user_location: { type: "approximate" as const, timezone: today.tz } }] : []),
   ];
@@ -133,7 +139,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   const runTool = async (name: string, input: unknown): Promise<{ content: string; isError?: boolean }> => {
     try {
       const out = name === "send_media" && canSend ? await (async () => {
-          const m = await startMedia(caller.userId, input, { characterId: cid, who: ch?.name || "Velo", appearance: ch?.appearance || "", ref });
+          const m = await startMedia(caller.userId, input, { characterId: cid, who: ch?.name || "Velo", appearance: ch?.appearance || "", refs, romantic });
           media.push(m);
           if (m.status === "failed") throw new MediaError("The picture service wouldn't make that one. Say so briefly and offer something else.");
           return { ok: true, tell_them: `It's on its way (${m.kind === "image" ? "about half a minute" : "a few minutes"}); it'll show up for them when ready. Mention you're sending it, then keep the conversation going.` };
