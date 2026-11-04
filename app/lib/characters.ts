@@ -39,7 +39,7 @@ export async function listCharacters(): Promise<Character[]> {
  *  library (owner set) is added to their ElevenLabs account first, so calls can use it. */
 export async function chooseVoice(v: unknown): Promise<{ id: string; name: string; kind: "female" | "male" }> {
   const o = v && typeof v === "object" ? (v as Record<string, unknown>) : { id: v };
-  const builtIn = CHARACTER_VOICES.find(x => x.id === o.id || x.voiceId === o.id);
+  const builtIn = CHARACTER_VOICES.find(x => x.id === o.id || x.voiceId === o.id) || (!o.id ? CHARACTER_VOICES[0] : undefined);
   if (builtIn) return { id: builtIn.voiceId, name: builtIn.name, kind: builtIn.kind };
   const id = String(o.id || ""), owner = String(o.owner || "");
   const name = String(o.name || "Voice").replace(/[^\w '\-]/g, "").trim().slice(0, 60) || "Voice";
