@@ -384,12 +384,14 @@ export function CharacterGallery({ profile, onChange }: { profile: Profile; onCh
     try { const r = await data<{media: typeof media}>("profile.listMedia", { character: name }); setMedia(r.media || []); } catch { setMedia([]); }
   };
   useEffect(() => { loadChars(); loadMedia(active); }, [active]);
+  const [newName, setNewName] = useState("");
   const rename = async () => {
-    const to = prompt("New name for " + active);
-    if (!to) return;
+    const to = newName.trim();
+    if (!to || to === active) return;
     setBusy(true);
     await data("profile.renameCharacter", { from: active, to });
     setActive(to);
+    setNewName("");
     loadChars();
     setBusy(false);
   };
@@ -414,7 +416,8 @@ export function CharacterGallery({ profile, onChange }: { profile: Profile; onCh
         {chars.map(c => (
           <button key={c} onClick={() => setActive(c)} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid var(--border)", background: active === c ? "var(--accent)" : "var(--surface2)", color: "white", fontSize: 13 }}>{c}</button>
         ))}
-        <button onClick={rename} disabled={busy} style={{ padding: "6px 12px", fontSize: 13 }}>Rename</button>
+        <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="New name" style={{ width: 100, fontSize: 13 }} />
+        <button onClick={rename} disabled={busy || !newName.trim()} style={{ padding: "6px 12px", fontSize: 13 }}>Rename</button>
       </div>
       <div className="row" style={{ gap: 8, marginBottom: 10 }}>
         <input value={genPrompt} onChange={e => setGenPrompt(e.target.value)} placeholder="Generate more of her…" style={{ flex: 1 }} />
