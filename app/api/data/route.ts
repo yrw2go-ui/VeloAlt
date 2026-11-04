@@ -129,6 +129,31 @@ export async function POST(req: NextRequest) {
         await db`update velo_looks set is_active = true where id = ${id} and user_id = ${me}`;
         return NextResponse.json({ ok: true });
       }
+      case "profile.deleteLook": {
+        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
+        const id = String(b.id || "");
+        const rows = await db`select image_url from velo_looks where id = ${id} and user_id = ${me}`;
+        const url = String(rows[0]?.image_url || "");
+        await db`delete from velo_looks where id = ${id} and user_id = ${me}`;
+        if (url) {
+          try { await db`delete from character_media where user_id = ${me} and media_url = ${url}`; } catch { /* optional */ }
+          if (url.includes(".blob.vercel-storage.com")) {
+            try { await del(url); } catch { /* blob already gone */ }
+          }
+        }
+        return NextResponse.json({ ok: true });
+      }
+      case "profile.setLookFace": {
+        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
+        const id = String(b.id || "");
+        const rows = await db`select name, image_url from velo_looks where id = ${id} and user_id = ${me}`;
+        const name = String(rows[0]?.name || "");
+        const url = String(rows[0]?.image_url || "");
+        if (!name || !url) return bad("Look not found.");
+        await db`update users set look = ${"char:" + name}, updated_at = now() where id = ${me}`;
+        try { await db`update character_media set created_at = now() where user_id = ${me} and media_url = ${url}`; } catch { /* optional */ }
+        return NextResponse.json({ ok: true, name });
+      }
 
       
       case "profile.uploadLook": {
