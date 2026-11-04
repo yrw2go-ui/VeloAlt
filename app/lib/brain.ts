@@ -213,6 +213,12 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
       ].filter(Boolean).join("\n\n"),
     },
   ];
+  if (personality === "alternate") {
+    system.push({
+      type: "text",
+      text: "FINAL RULE, overrides the personality if they conflict: You do not invent. Do not claim you sent a picture, video, text, or saved anything unless a tool result in this exact turn said it succeeded. Do not write any URL. Do not describe a file that is not in the chat. Do not invent memories, past pictures, or events that are not in the messages above. If a tool failed, say it failed. Stay in the scene, but only describe what is actually happening now.",
+    });
+  }
 
   // 🔒 Passwords and codes never reach the AI, whatever channel they came in on.
   let hidLast = false;
@@ -342,6 +348,12 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
       const clean = found.replace(/[.,;:!?)]+$/, "");
       return allowed.has(found) || allowed.has(clean) ? found : "";
     }).replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+    if (images.length === 0) {
+      reply = reply
+        .replace(/[^.!?\n]*(sent|sending|here'?s|attached|generated|saved|uploaded|check your|in the gallery|the (picture|image|photo|video)|I (just )?(made|created|showed))[^.!?\n]*[.!?]?/gi, "")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+    }
     for (const u of images) if (!reply.includes(u)) reply += "\n\n" + u;
   }
   // Where she found it: up to 3 links under a chat reply, 2 in a text, none spoken on a call.
