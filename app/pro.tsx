@@ -297,18 +297,58 @@ function VeloLookGenerator({ profile, onChange }: { profile: Profile; onChange: 
       {msg && <div style={{ color: "var(--bad)", fontSize: 13, marginTop: 8 }}>⚠️ {msg}</div>}
       {looks.length > 0 && (
         <div style={{ marginTop: 16 }}>
-          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>Saved looks</div>
+          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>Character gallery — tap to set as reference (max 3)</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {looks.map(l => (
-              <div key={l.id} style={{ textAlign: "center" }}>
-                <img src={l.image_url} alt={l.name} style={{ width: 80, height: 80, objectFit: "cover", borderRadius: 8, border: l.is_active ? "2px solid var(--accent)" : "1px solid var(--border)" }} />
-                <div style={{ fontSize: 11, marginTop: 2 }}>{l.is_active ? "Active" : ""}</div>
-                {!l.is_active && <button disabled={busy} onClick={async () => { setBusy(true); await data("profile.setActiveLook", { id: l.id }); loadLooks(); setBusy(false); }} style={{ fontSize: 11, marginTop: 2 }}>Set active</button>}
+              <div key={l.id} style={{ textAlign: "center", cursor: "pointer" }} onClick={async () => {
+                setBusy(true);
+                await data("profile.setReference", { id: l.id, on: !l.is_active });
+                loadLooks();
+                setBusy(false);
+              }}>
+                <img src={l.image_url} alt={l.name} style={{ width: 100, height: 100, objectFit: "contain", background: "#111", borderRadius: 8, border: l.is_active ? "2px solid var(--accent)" : "1px solid var(--border)" }} />
+                <div style={{ fontSize: 11, marginTop: 2 }}>{l.is_active ? "Reference" : ""}</div>
               </div>
             ))}
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+
+export function ModeCard({ profile, onChange }: { profile: Profile; onChange: () => void }) {
+  const [mode, setMode] = useState(profile.mode || "productivity");
+  const [notifySpicy, setNotifySpicy] = useState(profile.notifySpicy || false);
+  const [notifyProd, setNotifyProd] = useState(profile.notifyProductivity !== false);
+  const set = async (m: string) => {
+    setMode(m);
+    await data("profile.setMode", { mode: m });
+    onChange();
+  };
+  const setNotify = async (side: string, on: boolean) => {
+    if (side === "spicy") setNotifySpicy(on); else setNotifyProd(on);
+    await data("profile.setNotify", { side, on });
+    onChange();
+  };
+  return (
+    <div className="card">
+      <div style={{ fontWeight: 700 }}>App mode</div>
+      <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>Switch between spicy and productivity.</div>
+      <div className="row" style={{ gap: 8, marginBottom: 12 }}>
+        <button disabled={mode === "productivity"} onClick={() => set("productivity")} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid var(--border)", background: mode === "productivity" ? "var(--accent)" : "var(--surface2)", color: "white" }}>Productivity</button>
+        <button disabled={mode === "spicy"} onClick={() => set("spicy")} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid var(--border)", background: mode === "spicy" ? "var(--accent)" : "var(--surface2)", color: "white" }}>Spicy</button>
+      </div>
+      <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 6 }}>Push notifications</div>
+      <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+        <input type="checkbox" checked={notifyProd} onChange={e => setNotify("productivity", e.target.checked)} />
+        Productivity alerts
+      </label>
+      <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <input type="checkbox" checked={notifySpicy} onChange={e => setNotify("spicy", e.target.checked)} />
+        Spicy alerts
+      </label>
     </div>
   );
 }
