@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
       }
 
       case "profile.get": {
-        const [u] = await db`select name, look, time_zone, plan, phone, phone_verified_at, chat_model, personality, adult_confirmed_at, spicy_voice, secret_voice, spicy_api_voice from users where id = ${me}`;
+        const [u] = await db`select name, look, time_zone, plan, phone, phone_verified_at, chat_model, personality, adult_confirmed_at, spicy_voice, secret_voice, spicy_api_voice, mode, notify_spicy, notify_productivity from users where id = ${me}`;
         const [{ n }] = await db`select count(*)::int as n from velo_memories where user_id = ${me} and kind = 'call'`;
         return NextResponse.json({
           name: u?.name || "", look: u?.look || "default", timeZone: u?.time_zone || null, hadCall: n > 0,
@@ -52,6 +52,9 @@ export async function POST(req: NextRequest) {
           models: availableModels().map(id => ({ id, ...MODEL_INFO[id] })),
           personality: (u?.personality === "romantic" && !u?.adult_confirmed_at) || (u?.personality === "alternate" && c.email.toLowerCase() !== "yrw2go@gmail.com") ? "friend" : (u?.personality || "friend"),
           adultConfirmed: !!u?.adult_confirmed_at,
+          mode: u?.mode || 'productivity',
+          notifySpicy: !!u?.notify_spicy,
+          notifyProductivity: u?.notify_productivity !== false,
           isAdmin: c.email.toLowerCase() === "yrw2go@gmail.com",
           spicyVoice: u?.spicy_voice || "secretvoice",
           secretVoice: u?.secret_voice || "velvet",
@@ -75,6 +78,7 @@ export async function POST(req: NextRequest) {
         if (!imgRes.ok) return bad("Couldn't download image.");
         const blob = await imgRes.blob();
         const uploaded = await put(`velo-looks/${me}/${Date.now()}.jpg`, blob, { access: "public" });
+        if (!uploaded.url) return bad("Blob upload failed. Check token.");
         await db`update velo_looks set is_active = false where user_id = ${me}`;
         await db`insert into velo_looks (user_id, name, image_url, is_active) values (${me}, ${name}, ${uploaded.url}, true)`;
         await db`insert into character_media (user_id, character_name, media_url, media_type) values (${me}, ${name}, ${uploaded.url}, 'image')`;
@@ -98,6 +102,7 @@ export async function POST(req: NextRequest) {
         const buf = Buffer.from(imageData.split(",")[1] || imageData, "base64");
         const blob = new Blob([buf], { type: "image/jpeg" });
         const uploaded = await put(`velo-looks/${me}/${Date.now()}.jpg`, blob, { access: "public" });
+        if (!uploaded.url) return bad("Blob upload failed. Check token.");
         await db`update velo_looks set is_active = false where user_id = ${me}`;
         await db`insert into velo_looks (user_id, name, image_url, is_active) values (${me}, ${name}, ${uploaded.url}, true)`;
         await db`insert into character_media (user_id, character_name, media_url, media_type) values (${me}, ${name}, ${uploaded.url}, 'image')`;
