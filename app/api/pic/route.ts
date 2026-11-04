@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+// Loads a generated picture on the server and sends the bytes to the app.
+// The image hosts block the phone, so the chat asks this route instead.
 export async function GET(req: NextRequest) {
   const raw = req.nextUrl.searchParams.get("u") || "";
   let target = "";
