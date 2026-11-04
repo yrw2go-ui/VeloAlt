@@ -101,7 +101,7 @@ async function persistImage(remoteUrl: string, userId?: string, character = "Vel
     if (buf.length < 32) throw new Error("Image download was empty.");
     const type = (imgRes.headers.get("content-type") || "image/jpeg").split(";")[0];
     const ext = type.includes("png") ? "png" : type.includes("webp") ? "webp" : "jpg";
-    const uploaded = await put(`velo-looks/\( {userId || "anon"}/ \){Date.now()}.${ext}`, buf, { access: "public", contentType: type });
+    const uploaded = await put(`velo-looks/${userId || "anon"}/${Date.now()}.${ext}`, buf, { access: "public", contentType: type });
     if (!uploaded.url) throw new Error("Blob upload failed. Check BLOB_READ_WRITE_TOKEN.");
     stored = uploaded.url;
   }
@@ -124,7 +124,7 @@ async function atlasImage(url: string): Promise<string> {
   const buf = Buffer.from(await res.arrayBuffer());
   if (buf.length < 32) throw new Error("Her photo was empty.");
   const type = (res.headers.get("content-type") || "image/jpeg").split(";")[0];
-  return `data:\( {type};base64, \){buf.toString("base64")}`;
+  return `data:${type};base64,${buf.toString("base64")}`;
 }
 
 async function generateImage(prompt: string, provider = "atlas", userId?: string, character = "Velo", refs: string[] = []): Promise<string> {
@@ -236,7 +236,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
       type: "text",
       text: [
         errand ? "" : name ? `Their first name is ${name}.` : "You don't know their name yet — if it comes up naturally, ask, and remember it.",
-        `Right now it is \( {today.label} \){errand ? "" : " where they are"}.`,
+        `Right now it is ${today.label}${errand ? "" : " where they are"}.`,
         errand ? "" : pro ? SEARCH_INFO + "\n\n" + PRO_INFO + (proTools?.page ? `\nTheir Facebook Page "${proTools.page}" is connected: you can draft posts for it (draft_post).` : "\nNo Facebook Page is connected; if they want you to post, tell them to connect one in Settings → Velo Pro (Facebook only allows Pages, not personal profiles).") : FREE_INFO,
         memory ? `${memory}\n\nYou two have talked before — never introduce yourself; talk like someone who knows them.` : "",
         mode === "chat" || mode === "sms" || mode === "talk" || mode === "recap" ? PERSONALITY_PROMPT[personality] : "",
@@ -392,7 +392,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   // Where she found it: up to 3 links under a chat reply, 2 in a text, none spoken on a call.
   if (sources.size && reply && (mode === "chat" || mode === "sms")) {
     const list = [...sources].slice(0, mode === "sms" ? 2 : 3);
-    reply += mode === "sms" ? `\n\n\( {list.map(([u]) => u).join("\n")}` : `\n\nSources:\n \){list.map(([u, t]) => `• ${t.slice(0, 80)} — ${u}`).join("\n")}`;
+    reply += mode === "sms" ? `\n\n${list.map(([u]) => u).join("\n")}` : `\n\nSources:\n${list.map(([u, t]) => `• ${t.slice(0, 80)} — ${u}`).join("\n")}`;
   }
 
   if (mode === "remember" || mode === "memo") {
