@@ -153,7 +153,7 @@ export async function POST(req: NextRequest) {
         try { await db`create table if not exists velo_characters (id uuid primary key default gen_random_uuid(), user_id uuid not null, name text not null, created_at timestamptz default now(), unique(user_id, name))`; } catch { /* optional */ }
         const chars = await db`select distinct character_name as name from character_media where user_id = ${me}`;
         const extra = await db`select name from velo_characters where user_id = ${me}`.catch(() => [] as { name: string }[]);
-        const names = [...new Set([...(chars || []).map(c => String(c.character_name || c.name)), ...(extra || []).map(c => String(c.name))])].filter(Boolean).sort();
+        const names = [...new Set([...(chars || []).map((c: { character_name?: string; name?: string }) => String(c.character_name || c.name)), ...(extra || []).map((c: { name?: string }) => String(c.name))])].filter(Boolean).sort();
         if (!names.includes("Velo")) names.unshift("Velo");
         return NextResponse.json({ characters: names });
       }
@@ -236,7 +236,7 @@ export async function POST(req: NextRequest) {
         if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
         const provider = String(b.provider || "spicy");
         const prompt = String(b.prompt || "");
-        const refs = Array.isArray(b.images) ? b.images.map(String).filter(u => u.startsWith("http")).slice(0, 2) : [];
+        const refs = Array.isArray(b.images) ? b.images.map(String).filter((u: string) => u.startsWith("http")).slice(0, 2) : [];
         if (provider === "atlas" && process.env.ATLASCLOUD_API_KEY) {
           const body = refs.length
             ? { model: "bytedance/seedream-v5.0-pro/edit", prompt, images: refs, size: "1536*1536" }
