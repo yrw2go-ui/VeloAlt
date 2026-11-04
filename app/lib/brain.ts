@@ -112,12 +112,16 @@ async function persistImage(remoteUrl: string, userId?: string, character = "Vel
   return stored;
 }
 
-async function generateImage(prompt: string, provider = "atlas", userId?: string, character = "Velo"): Promise<string> {
+async function generateImage(prompt: string, provider = "atlas", userId?: string, character = "Velo", refs: string[] = []): Promise<string> {
+  const useRefs = refs.filter(u => u.startsWith("http")).slice(0, 2);
   if (provider === "atlas" && process.env.ATLASCLOUD_API_KEY) {
+    const body = useRefs.length
+      ? { model: "bytedance/seedream-v5.0-pro/edit", prompt: `This is ${character}. ${prompt}`, images: useRefs, size: "1536*1536" }
+      : { model: "bytedance/seedream-v5.0-pro/text-to-image", prompt: `Portrait of ${character}. ${prompt}`, size: "1536*1536" };
     const res = await fetch("https://api.atlascloud.ai/api/v1/model/generateImage", {
       method: "POST",
       headers: { Authorization: `Bearer ${process.env.ATLASCLOUD_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "bytedance/seedream-v5.0-pro/text-to-image", prompt, size: "1536*1536" }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error("Atlas failed.");
     const data = await res.json();
@@ -177,10 +181,12 @@ export function localNow(rawTz: unknown) {
 
 export interface AskResult { reply: string; changed: boolean; drafts: Draft[]; saved?: boolean }
 
-export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn[]; timeZone?: unknown; name?: string; goal?: string; toName?: string }): Promise<AskResult> {
+export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn[]; timeZone?: unknown; name?: string; goal?: string; toName?: string; character?: string; refs?: string[] }): Promise<AskResult> {
   const { mode } = opts;
   const today = localNow(opts.timeZone);
   const name = String(opts.name || "").trim().split(/\s+/)[0].slice(0, 40);
+  const character = String(opts.character || "Velo").slice(0, 80);
+  const isCharacter = character && character.toLowerCase() !== "velo";
   const [u] = await sql()`select plan, chat_model, personality, adult_confirmed_at from users where id = ${caller.userId}`;
   // 💬 Their chosen personality (romantic only after the adult confirmation). Calls Velo makes
   // to other people and memory notes always use her plain voice.
@@ -210,6 +216,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         memory ? `${memory}\n\nYou two have talked before — never introduce yourself; talk like someone who knows them.` : "",
         mode === "chat" || mode === "sms" || mode === "talk" || mode === "recap" ? PERSONALITY_PROMPT[personality] : "",
         modeText,
+        isCharacter ? `YOU ARE ${character}, not Velo. This is her private chat. Stay in character as ${character}. Do not mention Velo. Your memories are only about this chat with them. When they ask to see you, call generate_image. The pictures must look like ${character}, matching her saved photos. Never write a URL yourself.` : "",
       ].filter(Boolean).join("\n\n"),
     },
   ];
@@ -258,7 +265,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
       const out = isMemoryTool(name) ? await runMemoryTool(caller, name, input)
         : isReminderTool(name) ? await runReminderTool(caller, name, input, today.tz)
         : isProTool(name) && pro ? await runProTool(caller, name, input, drafts)
-        : name === "generate_image" && isSpicy ? { url: await generateImage((input as { prompt: string }).prompt, (input as { provider?: string }).provider || "atlas", caller.userId) }
+        : name === "generate_image" && isSpicy ? { url: await generateImage((input as { prompt: string }).prompt, (input as { provider?: string }).provider || "atlas", caller.userId, isCharacter ? character : "Velo", isCharacter ? opts.refs || [] : []) }
         : name === "generate_video" && isSpicy ? { status: await generateVideo((input as { prompt: string }).prompt, (input as { duration?: number }).duration) }
         : name === "save_character" && isSpicy ? { id: await saveCharacter((input as { image_url: string }).image_url, (input as { name?: string }).name) }
         : name === "generate_with_character" && isSpicy ? { result: await generateWithCharacter((input as { prompt: string }).prompt, ((input as { type?: string }).type === "video" ? "video" : "image"), "chr_placeholder", caller.userId) }
