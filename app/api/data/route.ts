@@ -10,6 +10,7 @@ import { availableModels, CHAT_MODELS, MODEL_INFO, type ChatModel } from "../../
 import { PERSONALITIES } from "../../lib/persona";
 import { deleteFile, ownFile } from "../../lib/files";
 import { getCharacter } from "../../lib/characters";
+import { checkMedia, sweepMedia, getMedia, VIDEO_MODELS, DEFAULT_VIDEO_MODEL } from "../../lib/media";
 
 // 📦 Everything the app reads and changes, for the signed-in person only.
 // POST { action, ...args } → { ... }. Every query is scoped to their user_id.
@@ -28,7 +29,7 @@ export async function POST(req: NextRequest) {
 
     switch (String(b.action || "")) {
       case "profile.get": {
-        const [u] = await db`select name, look, time_zone, plan, phone, phone_verified_at, chat_model, personality, adult_confirmed_at from users where id = ${me}`;
+        const [u] = await db`select name, look, time_zone, plan, phone, phone_verified_at, chat_model, personality, adult_confirmed_at, video_model from users where id = ${me}`;
         const [{ n }] = await db`select count(*)::int as n from velo_memories where user_id = ${me} and kind = 'call' and character_id is null`;
         const [face] = await db`select url from velo_files where user_id = ${me} and kind = 'face' order by created_at desc limit 1`;
         return NextResponse.json({
@@ -38,6 +39,8 @@ export async function POST(req: NextRequest) {
           phone: u?.phone ? showPhone(String(u.phone)) : "", phoneVerified: !!u?.phone_verified_at, veloNumber: veloNumber(),
           chatModel: availableModels().includes(u?.chat_model) ? u?.chat_model : "claude",
           models: availableModels().map(id => ({ id, ...MODEL_INFO[id] })),
+          videoModel: VIDEO_MODELS.some(m => m.id === u?.video_model) ? u?.video_model : DEFAULT_VIDEO_MODEL,
+          videoModels: VIDEO_MODELS.map(m => ({ id: m.id, label: m.label })),
           // Anything unknown (or romantic without the 18+ confirmation) shows as Friend.
           personality: !PERSONALITIES.includes(u?.personality) || (u?.personality === "romantic" && !u?.adult_confirmed_at) ? "friend" : u?.personality,
           adultConfirmed: !!u?.adult_confirmed_at,
@@ -57,6 +60,7 @@ export async function POST(req: NextRequest) {
           await db`update users set personality = ${b.personality}, updated_at = now() where id = ${me}`;
         }
         if (CHAT_MODELS.includes(b.chatModel) && availableModels().includes(b.chatModel as ChatModel)) await db`update users set chat_model = ${b.chatModel}, updated_at = now() where id = ${me}`;
+        if (VIDEO_MODELS.some(m => m.id === b.videoModel)) await db`update users set video_model = ${b.videoModel}, updated_at = now() where id = ${me}`;
         return NextResponse.json({ ok: true });
       }
 
@@ -64,24 +68,31 @@ export async function POST(req: NextRequest) {
         // Velo's chat (no characterId) or one character's chat.
         const ch = b.characterId ? await getCharacter(String(b.characterId)) : null;
         if (b.characterId && !ch) return bad("That character wasn't found.");
-        const rows = await db`select m.role, m.content, f.id as file_id, f.url as file_url, f.name as file_name, f.content_type as file_type
+        const rows = await db`select m.role, m.content, f.id as file_id, f.url as file_url, f.name as file_name, f.content_type as file_type,
+            md.id as media_id, md.kind as media_kind, md.status as media_status, mf.url as media_url
           from velo_messages m left join velo_files f on f.id = m.file_id and f.user_id = m.user_id
+          left join velo_media md on md.id = m.media_id and md.user_id = m.user_id
+          left join velo_files mf on mf.id = md.file_id
           where m.user_id = ${me} and m.character_id is not distinct from ${ch?.id || null} order by m.created_at desc, m.id desc limit 60`;
         return NextResponse.json({ messages: rows.reverse().map(r => ({ role: r.role, content: r.content,
-          ...(r.file_id ? { file: { id: r.file_id, url: r.file_url, name: r.file_name, type: r.file_type } } : {}) })) });
+          ...(r.file_id ? { file: { id: r.file_id, url: r.file_url, name: r.file_name, type: r.file_type } } : {}),
+          ...(r.media_id ? { media: { id: r.media_id, kind: r.media_kind, status: r.media_status, url: r.media_status === "done" ? r.media_url : null } } : {}) })) });
       }
       case "messages.add": {
         const ch = b.characterId ? await getCharacter(String(b.characterId)) : null;
         if (b.characterId && !ch) return bad("That character wasn't found.");
         const list = (Array.isArray(b.messages) ? b.messages : []).slice(0, 4)
-          .map((m: { role?: string; content?: unknown; fileId?: unknown }) => ({ role: m.role === "assistant" ? "assistant" : "user", content: scrub(String(m.content || "").slice(0, 8000)), fileId: String(m.fileId || "") }))
-          .filter((m: { content: string; fileId: string }) => m.content || m.fileId);
+          .map((m: { role?: string; content?: unknown; fileId?: unknown; mediaId?: unknown }) => ({ role: m.role === "assistant" ? "assistant" : "user", content: scrub(String(m.content || "").slice(0, 8000)), fileId: String(m.fileId || ""), mediaId: String(m.mediaId || "") }))
+          .filter((m: { content: string; fileId: string; mediaId: string }) => m.content || m.fileId || m.mediaId);
         // A millisecond apart so they always sort in the order sent.
         const at = Date.now() - list.length;
         for (const [i, m] of list.entries()) {
           // Only their own file can be attached.
           const f = m.fileId && m.role === "user" && !ch ? await ownFile(me, m.fileId) : null;
-          await db`insert into velo_messages (user_id, role, content, file_id, character_id, created_at) values (${me}, ${m.role}, ${m.content || "📎"}, ${f?.id || null}, ${ch?.id || null}, ${new Date(at + i).toISOString()})`;
+          // A photo/video sent in this same chat (theirs, and from this Velo/character).
+          const md = m.mediaId && m.role === "assistant" ? await getMedia(me, m.mediaId) : null;
+          const mediaId = md && md.character_id === (ch?.id || null) ? md.id : null;
+          await db`insert into velo_messages (user_id, role, content, file_id, media_id, character_id, created_at) values (${me}, ${m.role}, ${m.content || (mediaId ? "(sent a photo)" : "📎")}, ${f?.id || null}, ${mediaId}, ${ch?.id || null}, ${new Date(at + i).toISOString()})`;
         }
         return NextResponse.json({ ok: true });
       }
@@ -89,6 +100,14 @@ export async function POST(req: NextRequest) {
         // Velo's chat only; each character's chat goes when the character is deleted.
         await db`delete from velo_messages where user_id = ${me} and character_id is null`;
         return NextResponse.json({ ok: true });
+
+      // 🎨 Photos/videos: check one (saves it once ready), or sweep all unfinished ones.
+      case "media.check": {
+        const m = needId() ? await checkMedia(me, id) : null;
+        return m ? NextResponse.json({ media: m }) : bad("Unknown media.");
+      }
+      case "media.sweep":
+        return NextResponse.json({ media: await sweepMedia(me) });
 
       case "reminders.list": {
         const rows = await db`select id, text, remind_at, status from velo_reminders where user_id = ${me} and status in ('pending', 'sent') order by remind_at limit 50`;

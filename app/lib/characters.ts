@@ -9,13 +9,13 @@ import Anthropic from "@anthropic-ai/sdk";
 import { put, del } from "@vercel/blob";
 import { randomUUID } from "node:crypto";
 import { sql } from "./db";
-import { CHARACTER_VOICES } from "./voices";
+import { CHARACTER_VOICES, VOICE_ID } from "./voices";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, authToken: null });
 export const MAX_CHARACTERS = 50;
 export const DAILY_PORTRAITS = 30;
 
-export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; voice: string; portrait_url: string | null; portrait_job: string | null };
+export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; voice: string; voice_name: string; voice_kind: "female" | "male"; portrait_url: string | null; portrait_job: string | null };
 
 export async function isAdmin(userId: string): Promise<boolean> {
   const [u] = await sql()`select is_admin from users where id = ${userId}`;
@@ -24,17 +24,38 @@ export async function isAdmin(userId: string): Promise<boolean> {
 
 export async function getCharacter(id: string): Promise<Character | null> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
-  const [c] = await sql()`select c.id, c.name, c.personality, c.backstory, c.relation, c.appearance, c.voice, c.portrait_job, f.url as portrait_url
+  const [c] = await sql()`select c.id, c.name, c.personality, c.backstory, c.relation, c.appearance, c.voice, c.voice_name, c.voice_kind, c.portrait_job, f.url as portrait_url
     from chat_characters c left join velo_files f on f.id = c.portrait_file_id where c.id = ${id}`;
   return (c as Character) || null;
 }
 
 export async function listCharacters(): Promise<Character[]> {
-  return (await sql()`select c.id, c.name, c.personality, c.backstory, c.relation, c.appearance, c.voice, c.portrait_job, f.url as portrait_url
+  return (await sql()`select c.id, c.name, c.personality, c.backstory, c.relation, c.appearance, c.voice, c.voice_name, c.voice_kind, c.portrait_job, f.url as portrait_url
     from chat_characters c left join velo_files f on f.id = c.portrait_file_id order by c.created_at`) as Character[];
 }
 
-export const validVoice = (v: unknown) => (CHARACTER_VOICES.some(x => x.id === v) ? String(v) : CHARACTER_VOICES[0].id);
+/** The voice chosen in the editor: { id, name, kind, owner? }. A voice from ElevenLabs' shared
+ *  library (owner set) is added to their ElevenLabs account first, so calls can use it. */
+export async function chooseVoice(v: unknown): Promise<{ id: string; name: string; kind: "female" | "male" }> {
+  const o = v && typeof v === "object" ? (v as Record<string, unknown>) : { id: v };
+  const builtIn = CHARACTER_VOICES.find(x => x.id === o.id || x.voiceId === o.id);
+  if (builtIn) return { id: builtIn.voiceId, name: builtIn.name, kind: builtIn.kind };
+  const id = String(o.id || ""), owner = String(o.owner || "");
+  const name = String(o.name || "Voice").replace(/[^\w '\-]/g, "").trim().slice(0, 60) || "Voice";
+  const kind = o.kind === "male" ? "male" : "female";
+  if (!VOICE_ID.test(id)) throw new VoiceError("Pick a voice from the list.");
+  if (!owner) return { id, name, kind };
+  if (!/^[A-Za-z0-9]{8,80}$/.test(owner) || !process.env.ELEVENLABS_API_KEY) throw new VoiceError("That voice can't be added right now.");
+  const res = await fetch(`${process.env.ELEVENLABS_API_URL || "https://api.elevenlabs.io"}/v1/voices/add/${owner}/${id}`, {
+    method: "POST", headers: { "xi-api-key": process.env.ELEVENLABS_API_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ new_name: name }),
+  });
+  const raw = await res.text();
+  if (!res.ok) { console.error(`characters: add shared voice ${res.status} ${raw.slice(0, 300)}`); throw new VoiceError(/limit|quota/i.test(raw) ? "Your ElevenLabs plan is out of voice slots — remove a voice in ElevenLabs or pick one of yours." : "ElevenLabs didn't add that voice. Try another one."); }
+  let added = id;
+  try { added = String(JSON.parse(raw)?.voice_id || id); } catch { /* keep id */ }
+  return { id: VOICE_ID.test(added) ? added : id, name, kind };
+}
+export class VoiceError extends Error {}
 
 /** The character's voice and rules, for the system prompt of its chats and calls. */
 export function characterPrompt(c: Character, ownerName: string, adult: boolean): string {
@@ -129,6 +150,9 @@ export async function checkPortrait(adminId: string, c: Character): Promise<"wor
 /** Deletes a character, everyone's chats and memories with it, and its portrait. */
 export async function deleteCharacter(id: string): Promise<boolean> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return false;
+  // The photos/videos it sent to anyone go too.
+  const sent = await sql()`delete from velo_files where id in (select file_id from velo_media where character_id = ${id} and file_id is not null) returning url`;
+  for (const f of sent) { try { await del(String(f.url)); } catch { /* already gone */ } }
   const [row] = await sql()`delete from chat_characters where id = ${id} returning portrait_file_id`;
   if (!row) return false;
   if (row.portrait_file_id) {

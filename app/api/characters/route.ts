@@ -3,7 +3,7 @@ import { sql } from "../../lib/db";
 import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import { scrub } from "../../lib/secrets";
-import { MAX_CHARACTERS, DAILY_PORTRAITS, isAdmin, listCharacters, getCharacter, screenCharacter, startPortrait, checkPortrait, deleteCharacter, portraitsReady, validVoice } from "../../lib/characters";
+import { MAX_CHARACTERS, DAILY_PORTRAITS, isAdmin, listCharacters, getCharacter, screenCharacter, startPortrait, checkPortrait, deleteCharacter, portraitsReady, chooseVoice, VoiceError } from "../../lib/characters";
 
 // 🎭 Characters. Everyone can list them and chat; only admins create and edit. POST { action, ... }:
 //   list                     → { characters, portraits, admin }
@@ -30,7 +30,6 @@ export async function POST(req: NextRequest) {
       case "create":
       case "update": {
         const f = { name: clean(b.name, 60), personality: clean(b.personality, 2000), backstory: clean(b.backstory, 3000), relation: clean(b.relation, 600), appearance: clean(b.appearance, 600) };
-        const voice = validVoice(b.voice);
         if (!f.name) return bad("Give your character a name.");
         if (!allow(`chars:${me}`, [{ ms: 60_000, max: 10 }, { ms: 86_400_000, max: 200 }])) return bad("That's a lot of changes — try again in a bit.", 429);
         if (action === "update" && !(await getCharacter(id))) return bad("That character wasn't found.");
@@ -40,9 +39,12 @@ export async function POST(req: NextRequest) {
         }
         const problem = await screenCharacter(f);
         if (problem) return bad(problem);
+        const prev = action === "update" ? await getCharacter(id) : null;
+        // Same voice as before: keep it (no trip to ElevenLabs).
+        const v = prev && (b.voice?.id ?? b.voice) === prev.voice ? { id: prev.voice, name: prev.voice_name, kind: prev.voice_kind } : await chooseVoice(b.voice);
         const [row] = action === "create"
-          ? await sql()`insert into chat_characters (created_by, name, personality, backstory, relation, appearance, voice) values (${me}, ${f.name}, ${f.personality}, ${f.backstory}, ${f.relation}, ${f.appearance}, ${voice}) returning id`
-          : await sql()`update chat_characters set name = ${f.name}, personality = ${f.personality}, backstory = ${f.backstory}, relation = ${f.relation}, appearance = ${f.appearance}, voice = ${voice}, updated_at = now() where id = ${id} returning id`;
+          ? await sql()`insert into chat_characters (created_by, name, personality, backstory, relation, appearance, voice, voice_name, voice_kind) values (${me}, ${f.name}, ${f.personality}, ${f.backstory}, ${f.relation}, ${f.appearance}, ${v.id}, ${v.name}, ${v.kind}) returning id`
+          : await sql()`update chat_characters set name = ${f.name}, personality = ${f.personality}, backstory = ${f.backstory}, relation = ${f.relation}, appearance = ${f.appearance}, voice = ${v.id}, voice_name = ${v.name}, voice_kind = ${v.kind}, updated_at = now() where id = ${id} returning id`;
         return NextResponse.json({ character: await getCharacter(String(row.id)) });
       }
 
@@ -71,6 +73,7 @@ export async function POST(req: NextRequest) {
         return bad("Unknown action.");
     }
   } catch (e) {
+    if (e instanceof VoiceError) return bad(e.message);
     console.error("characters", e instanceof Error ? e.message : e);
     return bad(e instanceof Error && /picture service/.test(e.message) ? e.message : "Something went wrong. Please try again.", 500);
   }

@@ -21,6 +21,8 @@ import { ownFile, fileForAi } from "./files";
 import { characterPrompt, type Character } from "./characters";
 import { provider, type ChatModel } from "./models";
 import { oaChat, toOaTools, ProviderError, type OaMessage } from "./openai";
+import { SEND_MEDIA_TOOL, startMedia, mediaReady, MediaError, type Media } from "./media";
+import { veloLook } from "./veloAvatars";
 
 // Only ever the app's own key (never another credential in the environment).
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, authToken: null });
@@ -35,17 +37,17 @@ export function localNow(rawTz: unknown) {
   return { date, tz, label: `${weekdayOf(date)}, ${date}, ${formatClock(now, tz)} (time zone ${tz})` };
 }
 
-export interface AskResult { reply: string; changed: boolean; drafts: Draft[]; saved?: boolean }
+export interface AskResult { reply: string; changed: boolean; drafts: Draft[]; media: Media[]; saved?: boolean }
 
 /** Velo, or (with `character`) one of the characters: same chats, calls and memory flow, but in the
  *  character's own voice, with only their own memory of this person and no Velo tools. */
-export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn[]; timeZone?: unknown; name?: string; goal?: string; toName?: string; character?: Character | null }): Promise<AskResult> {
+export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn[]; timeZone?: unknown; name?: string; goal?: string; toName?: string; character?: Character | null; origin?: string }): Promise<AskResult> {
   const { mode } = opts;
   const ch = opts.character || null;
   const cid = ch?.id || null;
   const today = localNow(opts.timeZone);
   const name = String(opts.name || "").trim().split(/\s+/)[0].slice(0, 40);
-  const [u] = await sql()`select plan, chat_model, personality, adult_confirmed_at from users where id = ${caller.userId}`;
+  const [u] = await sql()`select plan, chat_model, personality, adult_confirmed_at, look from users where id = ${caller.userId}`;
   // 💬 Their chosen personality (romantic only after the adult confirmation). Calls Velo makes
   // to other people and memory notes always use her plain voice.
   let personality: Personality = PERSONALITIES.includes(u?.personality) ? u.personality : "friend";
@@ -53,6 +55,13 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   const pro = !ch && u?.plan === "pro" && twilioReady();
   const proTools = pro ? await proToolsFor(caller.userId) : null;
   const drafts: Draft[] = [];
+  const media: Media[] = [];
+  // 🎨 Photos/videos in chats and calls (not texts or calls Velo makes for them).
+  const canSend = mediaReady() && (mode === "chat" || mode === "talk");
+  // Who's in a selfie: a character's portrait, or Velo's preset face (never a photo someone uploaded).
+  const look = String(u?.look || "");
+  const ref = ch ? (ch.portrait_url && /^https:\/\//.test(ch.portrait_url) ? ch.portrait_url : null)
+    : look !== "custom" && veloLook(look).round !== false && opts.origin ? `${opts.origin}${veloLook(look).src256}` : null;
 
   // On a call Velo makes for them, the other person never hears their private memory.
   const errand = !ch && (mode === "errand" || mode === "errandsum");
@@ -110,7 +119,8 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   // Tools: none on wrap-ups or errands; Pro adds contacts, drafts, Amazon carts and 🔎 web search
   // (Anthropic runs the searches; results come back in the same response).
   const search = !!proTools && (mode === "chat" || mode === "sms" || mode === "talk");
-  const tools: Anthropic.ToolUnion[] | undefined = wrapUp || errand ? undefined : ch ? [...MEMORY_TOOLS] : [
+  const tools: Anthropic.ToolUnion[] | undefined = wrapUp || errand ? undefined : ch ? [...MEMORY_TOOLS, ...(canSend ? [SEND_MEDIA_TOOL(ch.name)] : [])] : [
+    ...(canSend ? [SEND_MEDIA_TOOL("Velo")] : []),
     ...MEMORY_TOOLS, ...REMINDER_TOOLS, ...(proTools?.tools || []),
     ...(search ? [{ type: "web_search_20260209" as const, name: "web_search" as const, max_uses: 5, user_location: { type: "approximate" as const, timezone: today.tz } }] : []),
   ];
@@ -122,14 +132,20 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   // Runs one of Velo's own tools (the same for every model).
   const runTool = async (name: string, input: unknown): Promise<{ content: string; isError?: boolean }> => {
     try {
-      const out = isMemoryTool(name) ? await runMemoryTool(caller, name, input, cid)
+      const out = name === "send_media" && canSend ? await (async () => {
+          const m = await startMedia(caller.userId, input, { characterId: cid, who: ch?.name || "Velo", appearance: ch?.appearance || "", ref });
+          media.push(m);
+          if (m.status === "failed") throw new MediaError("The picture service wouldn't make that one. Say so briefly and offer something else.");
+          return { ok: true, tell_them: `It's on its way (${m.kind === "image" ? "about half a minute" : "a few minutes"}); it'll show up for them when ready. Mention you're sending it, then keep the conversation going.` };
+        })()
+        : isMemoryTool(name) ? await runMemoryTool(caller, name, input, cid)
         : isReminderTool(name) && !ch ? await runReminderTool(caller, name, input, today.tz)
         : isProTool(name) && pro ? await runProTool(caller, name, input, drafts)
         : (() => { throw new ReminderError(isProTool(name) ? "That's a Velo Pro feature." : `Unknown tool ${name}`); })();
       if (isReminderTool(name) && !name.startsWith("list_")) changed = true;
       return { content: JSON.stringify(out).slice(0, 12000) };
     } catch (e) {
-      const msg = e instanceof MemoryError || e instanceof ReminderError || e instanceof ProError ? e.message : "That didn't save. Tell them it didn't go through and to try again — don't say it's done.";
+      const msg = e instanceof MemoryError || e instanceof ReminderError || e instanceof ProError || e instanceof MediaError ? e.message : "That didn't save. Tell them it didn't go through and to try again — don't say it's done.";
       return { content: msg, isError: true };
     }
   };
@@ -212,9 +228,9 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
       const list = (v: unknown) => (Array.isArray(v) ? v.map(String) : []);
       if (typeof j.summary === "string") { await saveConversationMemory(caller, mode === "memo" ? "chat" : "call", j.summary, list(j.goals), list(j.facts), cid); saved = true; }
     } catch (e) { console.error("velo: memory", e); }
-    return { reply: "", changed: false, drafts, saved };
+    return { reply: "", changed: false, drafts, media, saved };
   }
-  return { reply: reply || (errand ? "Sorry, could you say that again?" : "Sorry, I lost my train of thought — could you say that again?"), changed, drafts };
+  return { reply: reply || (errand ? "Sorry, could you say that again?" : "Sorry, I lost my train of thought — could you say that again?"), changed, drafts, media };
 }
 
 // 🔎 For Qwen / DeepSeek: web search is a tool they call, answered by Claude with

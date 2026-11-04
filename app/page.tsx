@@ -7,12 +7,12 @@ import { currentAsk, subscribeAsk } from "./lib/dialog";
 import { VeloLogo, VeloLookPicker, applyVeloLook, useVeloLook } from "./avatar";
 import VeloCall, { canCallVelo, primeSpeech } from "./call";
 import Chat, { type ChatAdd } from "./chat";
+import { CallMedia, type Media } from "./media";
 import { CharacterStrip, CharacterEditor, CharacterFace, type Character } from "./characters";
-import { characterVoice } from "./lib/voices";
 import Today from "./today";
 import Memory from "./memory";
 import { timeZone } from "./lib/tz";
-import ProCard, { BrainCard, PersonalityCard, type Profile } from "./pro";
+import ProCard, { BrainCard, PersonalityCard, VideoCard, type Profile } from "./pro";
 
 type Tab = "chat" | "today" | "memory" | "settings";
 const TABS: { id: Tab; icon: string; label: string }[] = [
@@ -143,10 +143,22 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
 
   // 📞 Calls whoever's chat is open: Velo, or that character (in their own voice, with their own memory).
   const [callWith, setCallWith] = useState<Character | null>(null);
-  const startCall = () => { primeSpeech(); setCallWith(tab === "chat" ? withChar : null); setCalling(true); };
+  // 🎨 Photos/videos sent during the call: shown on the call screen, and saved to that chat.
+  const [callMedia, setCallMedia] = useState<Media[]>([]);
+  const startCall = () => { primeSpeech(); setCallWith(tab === "chat" ? withChar : null); setCallMedia([]); setCalling(true); };
+  // Unfinished photos/videos keep getting finished in the background while the app is open.
+  useEffect(() => {
+    const sweep = () => { if (document.visibilityState === "visible") data("media.sweep").catch(() => {}); };
+    const t = setInterval(sweep, 30_000);
+    sweep();
+    return () => clearInterval(t);
+  }, [userId]);
   const callRequest = async (turns: { role: "user" | "assistant"; content: string }[], mode: "talk" | "recap" | "remember") => {
-    const r = await api<{ reply: string; changed?: boolean }>("/api/velo", { mode, messages: turns, timeZone: timeZone(), name, ...(callWith ? { characterId: callWith.id } : {}) });
+    const thread = callWith ? { characterId: callWith.id } : {};
+    const r = await api<{ reply: string; changed?: boolean; media?: Media[] }>("/api/velo", { mode, messages: turns, timeZone: timeZone(), name, ...thread });
     if (r.changed) bump();
+    const sent = (r.media || []).filter(m => m.status !== "failed");
+    if (sent.length) setCallMedia(list => [...list, ...sent]);
     return r.reply;
   };
   const fetchVoice = async (text: string, _voice: string, lookId: string) => {
@@ -198,7 +210,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
 
       {calling && (
         <VeloCall key={look + (callWith?.id || "")} name={name} firstCall={!callWith && firstCall} request={callRequest} fetchVoice={fetchVoice}
-          voice={callWith ? characterVoice(callWith.voice).kind : undefined}
+          voice={callWith ? callWith.voice_kind : undefined}
           opener={callWith ? `Hey${name ? ` ${name.split(" ")[0]}` : ""}, it's ${callWith.name}! What's going on?` : undefined}
           who={callWith ? { name: callWith.name, face: (size: number) => <CharacterFace c={callWith} size={size} /> } : undefined}
           onEnd={(recap) => {
@@ -206,6 +218,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
             if (recap) { setChatAdd({ msg: { role: "assistant", content: recap }, cid: callWith?.id || null }); setWithId(callWith?.id || null); setTab("chat"); }
           }} />
       )}
+      {calling && <CallMedia items={callMedia} name={callWith?.name || "Velo"} />}
       {editing && (
         <CharacterEditor key={editing === "new" ? "new" : editing.id} initial={editing === "new" ? null : editing} portraits={portraits}
           onClose={() => setEditing(null)} onSaved={savedChar}
@@ -242,6 +255,7 @@ function Settings({ name, setName, onOut, profile, onProfile }: { name: string; 
       </div>
       {profile && <PersonalityCard profile={profile} onChange={onProfile} />}
       {profile && <BrainCard profile={profile} onChange={onProfile} />}
+      {profile && <VideoCard profile={profile} onChange={onProfile} />}
       {profile && <ProCard profile={profile} onChange={onProfile} />}
       <button className="ghost" onClick={() => api("/api/auth", { action: "signout" }).finally(onOut)}>Sign out</button>
     </div>

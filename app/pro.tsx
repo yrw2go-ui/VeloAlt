@@ -11,6 +11,7 @@ export type Profile = {
   name: string; look: string; plan: "free" | "pro"; proForSale: boolean; phone: string; phoneVerified: boolean; veloNumber: string;
   chatModel: string; models: { id: string; label: string; by: string; where: string }[];
   personality: string; adultConfirmed: boolean; customFace?: string;
+  videoModel?: string; videoModels?: { id: string; label: string }[];
 };
 type Contact = { id: string; name: string; phone: string };
 
@@ -203,6 +204,36 @@ export function BrainCard({ profile, onChange }: { profile: Profile; onChange: (
               style={{ textAlign: "left", background: on ? "rgba(124,140,255,0.12)" : "var(--surface2)", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, borderRadius: 12, padding: "10px 12px", color: "var(--text)", cursor: on ? "default" : "pointer" }}>
               <div style={{ fontWeight: 700 }}>{on ? "✓ " : ""}{m.label} <span className="muted" style={{ fontWeight: 400, fontSize: 13 }}>by {m.by}{m.id === "claude" ? " · default" : ""}</span></div>
               <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{m.where}</div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** 🎬 Which model makes the short videos Velo and characters send. */
+export function VideoCard({ profile, onChange }: { profile: Profile; onChange: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const list = profile.videoModels || [];
+  if (!list.length) return null;
+  const pick = async (id: string) => {
+    if (id === profile.videoModel) return;
+    setBusy(true);
+    await data("profile.update", { videoModel: id }).catch(() => {});
+    setBusy(false); onChange();
+  };
+  return (
+    <div className="card" data-testid="video-model">
+      <div style={{ fontWeight: 700 }}>🎬 Videos</div>
+      <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>The model that makes the short videos Velo and your characters send you. Photos are made with Seedream.</div>
+      <div role="radiogroup" aria-label="Video model" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        {list.map(m => {
+          const on = m.id === profile.videoModel;
+          return (
+            <button key={m.id} role="radio" aria-checked={on} disabled={busy} onClick={() => pick(m.id)}
+              style={{ background: on ? "rgba(124,140,255,0.12)" : "var(--surface2)", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, borderRadius: 999, padding: "8px 14px", color: "var(--text)", fontWeight: 700, cursor: on ? "default" : "pointer" }}>
+              {on ? "✓ " : ""}{m.label}{m.id === "wan-2.6" ? " · default" : ""}
             </button>
           );
         })}

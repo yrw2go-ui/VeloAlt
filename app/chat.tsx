@@ -10,12 +10,15 @@ import { hideSecrets } from "./lib/secrets";
 import { timeZone } from "./lib/tz";
 import { useDictation } from "./dictate";
 import { CharacterFace } from "./characters";
+import { MediaView, type Media } from "./media";
 
 /** Who this chat is with: Velo (no character) or one of their characters. */
 export type ChatWith = { id: string; name: string; portrait_url: string | null };
 
 export type ChatFile = { id: string; url: string; name: string; type: string };
-export type ChatMsg = { role: "user" | "assistant"; content: string; draft?: Draft; file?: ChatFile };
+export type ChatMsg = { role: "user" | "assistant"; content: string; draft?: Draft; file?: ChatFile; media?: Media };
+/** How a sent photo/video reads in the history the AI sees. */
+export const mediaNote = (m: Media) => `(sent a ${m.kind === "image" ? "photo" : "video"})`;
 const ACCEPT = "image/jpeg,image/png,image/webp,image/gif,application/pdf,text/plain";
 /** What Velo sees: real messages only (draft cards are local to the screen). */
 // Their messages since the last memo. Kept outside the component so switching tabs doesn't reset it.
@@ -89,7 +92,8 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   useEffect(() => {
     if (!added || added.cid !== cid) return;
     setMsgs(m => [...(m || []), added.msg]);
-    data("messages.add", { ...thread, messages: [added.msg] }).catch(() => {});
+    // Saved, then the chat refreshes (brings in photos/videos sent during a call).
+    data("messages.add", { ...thread, messages: [added.msg] }).then(() => reload()).catch(() => {});
     onAdded?.();
   }, [added, userId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -118,8 +122,10 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     unsaved.current++;
     await data("messages.add", { ...thread, messages: [...opener, { role: "user", content: mine.content, ...(file ? { fileId: file.id } : {}) }] }).catch(() => {});
     try {
-      const r = await api<{ reply: string; changed?: boolean; drafts?: Draft[] }>("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name, ...thread });
-      setMsgs(m => [...(m || []), { role: "assistant", content: r.reply }, ...(r.drafts || []).map(draft => ({ role: "assistant" as const, content: "", draft }))]);
+      const r = await api<{ reply: string; changed?: boolean; drafts?: Draft[]; media?: Media[] }>("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name, ...thread });
+      // 🎨 Photos/videos being made show up right under the reply and fill in when ready.
+      const sent: ChatMsg[] = (r.media || []).filter(x => x.status !== "failed").map(media => ({ role: "assistant", content: mediaNote(media), media }));
+      setMsgs(m => [...(m || []), { role: "assistant", content: r.reply }, ...sent, ...(r.drafts || []).map(draft => ({ role: "assistant" as const, content: "", draft }))]);
       // Free the box as soon as her reply shows; saving it can finish in the background.
       setBusy(false);
       await data("messages.add", { ...thread, messages: [{ role: "assistant", content: r.reply }] }).catch(() => {});
@@ -135,7 +141,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <div data-testid="chat-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-        {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={i} m={m} face={face(28)} />)}
+        {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={m.media?.id || i} m={m} face={face(28)} onMedia={() => end.current?.scrollIntoView({ block: "end" })} />)}
         {character && msgs && !msgs.length && (
           <div className="muted" style={{ textAlign: "center", fontSize: 14, marginTop: 24, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
             {face(72)}<div>Say hi to {character.name} 👋</div>
@@ -187,8 +193,14 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   );
 }
 
-function Bubble({ m, face }: { m: ChatMsg; face: React.ReactNode }) {
+function Bubble({ m, face, onMedia }: { m: ChatMsg; face: React.ReactNode; onMedia: () => void }) {
   const mine = m.role === "user";
+  if (m.media) return (
+    <div data-testid="chat-media" style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+      {face}
+      <div style={{ maxWidth: "min(80%, 380px)" }}><MediaView media={m.media} onReady={onMedia} /></div>
+    </div>
+  );
   return (
     <div style={{ display: "flex", gap: 8, alignItems: "flex-end", justifyContent: mine ? "flex-end" : "flex-start" }}>
       {!mine && face}

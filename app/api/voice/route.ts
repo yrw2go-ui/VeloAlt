@@ -3,7 +3,7 @@ import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import { VELO_LOOKS } from "../../lib/veloAvatars";
 import { getCharacter } from "../../lib/characters";
-import { characterVoice } from "../../lib/voices";
+import { voiceIdFor } from "../../lib/voices";
 
 // 🔊 Velo's natural voice on calls (ElevenLabs): one spoken reply → MP3.
 // If that voice is refused, it retries once with Sarah (a built-in voice every
@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
     if (!text) return NextResponse.json({ error: "Nothing to say." }, { status: 400 });
     // A character speaks in its own voice; Velo in her look's voice.
     const ch = body?.characterId ? await getCharacter(String(body.characterId)) : null;
-    const chosen = ch ? characterVoice(ch.voice).voiceId : (VELO_LOOKS.find(l => l.id === body?.look) || VELO_LOOKS[0]).voiceId || FALLBACK_VOICE;
+    const chosen = ch ? voiceIdFor(ch.voice) : (VELO_LOOKS.find(l => l.id === body?.look) || VELO_LOOKS[0]).voiceId || FALLBACK_VOICE;
     for (const voiceId of chosen === FALLBACK_VOICE ? [chosen] : [chosen, FALLBACK_VOICE]) {
       const res = await fetch(`${API()}/v1/text-to-speech/${voiceId}/stream?output_format=mp3_44100_64`, {
         method: "POST",

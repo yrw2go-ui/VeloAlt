@@ -2,13 +2,15 @@
 // 🎭 Characters: a row of chips above the chat (Velo + each character, and New for admins),
 // and the admin editor: personality, backstory, relation to the user, call voice, and a
 // portrait (Atlas Cloud Seedream). Every character follows Velo's safety rules.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "./lib/api";
 import { confirmAsk } from "./lib/dialog";
 import { VeloAvatar } from "./avatar";
 import { CHARACTER_VOICES } from "./lib/voices";
 
-export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; voice: string; portrait_url: string | null; portrait_job: string | null };
+type VoiceOption = { id: string; name: string; kind: "female" | "male"; about: string; preview: string; owner?: string };
+
+export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; voice: string; voice_name: string; voice_kind: "female" | "male"; portrait_url: string | null; portrait_job: string | null };
 
 /** A character's picture in a circle (their initial until a portrait exists). */
 export function CharacterFace({ c, size }: { c: Pick<Character, "name" | "portrait_url">; size: number }) {
@@ -50,11 +52,12 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
   const [backstory, setBackstory] = useState(initial?.backstory || "");
   const [relation, setRelation] = useState(initial?.relation || "");
   const [appearance, setAppearance] = useState(initial?.appearance || "");
-  const [voice, setVoice] = useState(initial?.voice || CHARACTER_VOICES[0].id);
+  const first = CHARACTER_VOICES[0];
+  const [voice, setVoice] = useState<VoiceOption>(initial ? { id: initial.voice, name: initial.voice_name || "Voice", kind: initial.voice_kind, about: "", preview: "" } : { id: first.voiceId, name: first.name, kind: first.kind, about: first.about, preview: "" });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const working = !!c?.portrait_job;
-  const dirty = !c || name !== c.name || personality !== c.personality || backstory !== c.backstory || relation !== c.relation || appearance !== c.appearance || voice !== c.voice;
+  const dirty = !c || name !== c.name || personality !== c.personality || backstory !== c.backstory || relation !== c.relation || appearance !== c.appearance || voice.id !== c.voice;
 
   // A portrait in progress: check back every few seconds until it's ready.
   useEffect(() => {
@@ -71,8 +74,10 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
   const save = async () => {
     setBusy(true); setMsg("");
     try {
-      const r = await api<{ character: Character }>("/api/characters", { action: c ? "update" : "create", id: c?.id, name, personality, backstory, relation, appearance, voice });
+      const r = await api<{ character: Character }>("/api/characters", { action: c ? "update" : "create", id: c?.id, name, personality, backstory, relation, appearance, voice: { id: voice.id, name: voice.name, kind: voice.kind, owner: voice.owner } });
       setC(r.character); onSaved(r.character);
+      // A library voice is saved as a copy in their ElevenLabs account: follow its new id.
+      setVoice(v => ({ ...v, id: r.character.voice, owner: undefined }));
       return r.character;
     } catch (e) { setMsg(e instanceof Error ? e.message : "Couldn't save."); return null; }
     finally { setBusy(false); }
@@ -118,11 +123,7 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
         <label style={{ fontSize: 13, fontWeight: 700 }}>Relation to the user
           <textarea value={relation} onChange={e => setRelation(e.target.value)} maxLength={600} rows={2} placeholder="Who they are to the person chatting, e.g. an old friend from the navy, a mentor, a big sister" aria-label="Relation to the user" style={{ marginTop: 4, resize: "vertical" }} />
         </label>
-        <label style={{ fontSize: 13, fontWeight: 700 }}>Voice on calls
-          <select value={voice} onChange={e => setVoice(e.target.value)} aria-label="Voice on calls" style={{ marginTop: 4, display: "block", width: "100%" }}>
-            {CHARACTER_VOICES.map(v => <option key={v.id} value={v.id}>{v.name} — {v.kind}, {v.about}</option>)}
-          </select>
-        </label>
+        <VoicePicker value={voice} onChange={setVoice} />
         <label style={{ fontSize: 13, fontWeight: 700 }}>Appearance (for the portrait)
           <textarea value={appearance} onChange={e => setAppearance(e.target.value)} maxLength={600} rows={2} placeholder="e.g. weathered sea captain, silver braid, navy coat, warm smile" aria-label="Appearance" style={{ marginTop: 4, resize: "vertical" }} />
         </label>
@@ -134,6 +135,66 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
           {c && <button className="ghost" disabled={busy} onClick={remove} style={{ marginLeft: "auto", color: "var(--bad)" }}>Delete</button>}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** 🔊 Pick a call voice: their ElevenLabs voices plus a search of ElevenLabs' shared library, with ▶ samples. */
+function VoicePicker({ value, onChange }: { value: VoiceOption; onChange: (v: VoiceOption) => void }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [list, setList] = useState<VoiceOption[] | null>(null);
+  const [err, setErr] = useState("");
+  const [playing, setPlaying] = useState("");
+  const audio = useRef<HTMLAudioElement | null>(null);
+  const search = async (text: string) => {
+    setErr("");
+    try { setList((await api<{ voices: VoiceOption[] }>("/api/voices", { q: text })).voices); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't load voices."); setList([]); }
+  };
+  useEffect(() => { if (open && !list) search(""); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => { audio.current?.pause(); }, []);
+  const play = (v: VoiceOption) => {
+    audio.current?.pause();
+    if (playing === v.id) { setPlaying(""); return; }
+    const a = new Audio(v.preview); audio.current = a; setPlaying(v.id);
+    a.onended = () => setPlaying(""); a.play().catch(() => setPlaying(""));
+  };
+  return (
+    <div style={{ fontSize: 13, fontWeight: 700 }}>
+      Voice on calls
+      <div className="row" style={{ marginTop: 4, gap: 8 }}>
+        <div data-testid="voice-current" style={{ flex: 1, fontWeight: 600, padding: "10px 12px", borderRadius: 12, background: "var(--surface2)", border: "1px solid var(--border)" }}>
+          {value.name} <span className="muted" style={{ fontWeight: 500 }}>· {value.kind}</span>
+        </div>
+        <button type="button" className="ghost" onClick={() => setOpen(o => !o)} data-testid="voice-change">{open ? "Done" : "Change"}</button>
+      </div>
+      {open && (
+        <div style={{ marginTop: 8, border: "1px solid var(--border)", borderRadius: 12, padding: 8 }}>
+          <form onSubmit={e => { e.preventDefault(); search(q); }} className="row" style={{ gap: 8 }}>
+            <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search voices: deep, British, old, cheerful…" aria-label="Search voices" />
+            <button className="ghost" type="submit">Search</button>
+          </form>
+          {err && <div style={{ color: "var(--bad)", fontWeight: 500, marginTop: 6 }}>⚠️ {err}</div>}
+          <div data-testid="voice-list" style={{ maxHeight: 260, overflowY: "auto", marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
+            {!list ? <div className="muted" style={{ fontWeight: 500 }}>Loading voices…</div>
+              : !list.length ? <div className="muted" style={{ fontWeight: 500 }}>No voices found.</div>
+              : list.map(v => {
+                const on = v.id === value.id;
+                return (
+                  <div key={v.id} className="row" style={{ gap: 8, padding: "6px 8px", borderRadius: 10, background: on ? "rgba(124,140,255,0.15)" : "transparent" }}>
+                    {v.preview ? <button type="button" className="ghost" onClick={() => play(v)} aria-label={`Play ${v.name}`} style={{ padding: "4px 10px" }}>{playing === v.id ? "⏸" : "▶"}</button> : <span style={{ width: 38 }} />}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div>{v.name} <span className="muted" style={{ fontWeight: 500 }}>· {v.kind}{v.owner ? " · library" : ""}</span></div>
+                      {v.about && <div className="muted" style={{ fontWeight: 500, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.about}</div>}
+                    </div>
+                    <button type="button" className={on ? "btn" : "ghost"} onClick={() => onChange(v)} disabled={on} style={{ padding: "4px 12px" }}>{on ? "✓" : "Use"}</button>
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
