@@ -369,6 +369,76 @@ export function ModeCard({ profile, onChange }: { profile: Profile; onChange: ()
   );
 }
 
+
+export function CharacterGallery({ profile, onChange }: { profile: Profile; onChange: () => void }) {
+  const [chars, setChars] = useState<string[]>([]);
+  const [active, setActive] = useState("Velo");
+  const [media, setMedia] = useState<{id:string; media_url:string; is_reference:boolean}[]>([]);
+  const [page, setPage] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [prompt, setPrompt] = useState("");
+  const loadChars = async () => {
+    try { const r = await data<{characters: string[]}>("profile.listCharacters"); setChars(r.characters || ["Velo"]); } catch { setChars(["Velo"]); }
+  };
+  const loadMedia = async (name: string) => {
+    try { const r = await data<{media: typeof media}>("profile.listMedia", { character: name }); setMedia(r.media || []); } catch { setMedia([]); }
+  };
+  useEffect(() => { loadChars(); loadMedia(active); }, [active]);
+  const rename = async () => {
+    const to = prompt("New name for " + active);
+    if (!to) return;
+    setBusy(true);
+    await data("profile.renameCharacter", { from: active, to });
+    setActive(to);
+    loadChars();
+    setBusy(false);
+  };
+  const gen = async () => {
+    if (!prompt.trim()) return;
+    setBusy(true);
+    try {
+      const r = await data<{url?: string}>("profile.generateLook", { prompt: prompt.trim(), provider: "atlas" });
+      if (r.url) {
+        await data("profile.saveMedia", { character: active, url: r.url, type: "image" });
+        loadMedia(active);
+      }
+    } catch {}
+    setBusy(false);
+  };
+  const pageSize = 40;
+  const shown = media.slice(page * pageSize, (page + 1) * pageSize);
+  return (
+    <div className="card">
+      <div style={{ fontWeight: 700, marginBottom: 8 }}>Characters</div>
+      <div className="row" style={{ gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+        {chars.map(c => (
+          <button key={c} onClick={() => setActive(c)} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid var(--border)", background: active === c ? "var(--accent)" : "var(--surface2)", color: "white", fontSize: 13 }}>{c}</button>
+        ))}
+        <button onClick={rename} disabled={busy} style={{ padding: "6px 12px", fontSize: 13 }}>Rename</button>
+      </div>
+      <div className="row" style={{ gap: 8, marginBottom: 10 }}>
+        <input value={prompt} onChange={e => setPrompt(e.target.value)} placeholder="Generate more of her…" style={{ flex: 1 }} />
+        <button className="btn" disabled={busy || !prompt.trim()} onClick={gen}>Generate</button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))", gap: 8 }}>
+        {shown.map(m => (
+          <div key={m.id} style={{ position: "relative" }}>
+            <img src={m.media_url} alt="" style={{ width: "100%", aspectRatio: "1", objectFit: "contain", background: "#111", borderRadius: 6 }} />
+            <button onClick={async () => { await data("profile.deleteMedia", { id: m.id }); loadMedia(active); }} style={{ position: "absolute", top: 2, right: 2, background: "rgba(0,0,0,0.6)", color: "white", border: "none", borderRadius: 4, fontSize: 11, padding: "2px 6px" }}>✕</button>
+          </div>
+        ))}
+      </div>
+      {media.length > pageSize && (
+        <div className="row" style={{ justifyContent: "center", gap: 8, marginTop: 10 }}>
+          <button disabled={page === 0} onClick={() => setPage(p => p - 1)}>Prev</button>
+          <span style={{ fontSize: 13 }}>{page + 1} / {Math.ceil(media.length / pageSize)}</span>
+          <button disabled={(page + 1) * pageSize >= media.length} onClick={() => setPage(p => p + 1)}>Next</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function LookGenerator(props: { profile: Profile; onChange: () => void }) { return <VeloLookGenerator {...props} />; }
 export function PersonalityCard({ profile, onChange }: { profile: Profile; onChange: () => void }) {
   const [busy, setBusy] = useState(false);
