@@ -329,6 +329,7 @@ export function UpdateCard() {
   return (
     <div className="card">
       <div style={{ fontWeight: 700 }}>App</div>
+      <div className="muted" style={{ fontSize: 12, margin: "2px 0 8px" }}>v1.4 · Nov 4, 2026 12:40 AM</div>
       <button className="btn" onClick={update} style={{ marginTop: 8 }}>Update app</button>
     </div>
   );
