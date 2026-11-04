@@ -128,12 +128,13 @@ function Bubble({ m }: { m: ChatMsg }) {
 
 function Pic({ url }: { url: string }) {
   const [ok, setOk] = useState(true);
+  const src = "/api/pic?u=" + encodeURIComponent(url);
   if (!ok) {
-    return <a href={url} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)", wordBreak: "break-all" }}>{url.slice(0, 80)}</a>;
+    return <a href={src} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)", wordBreak: "break-all" }}>{url.slice(0, 80)}</a>;
   }
   return (
-    <a href={url} target="_blank" rel="noopener noreferrer" style={{ display: "block", marginTop: 8 }}>
-      <img src={url} alt="" referrerPolicy="no-referrer" onError={() => setOk(false)} style={{ width: "100%", maxHeight: 480, objectFit: "contain", borderRadius: 12, background: "#111", display: "block" }} />
+    <a href={src} target="_blank" rel="noopener noreferrer" style={{ display: "block", marginTop: 8 }}>
+      <img src={src} alt="" onError={() => setOk(false)} style={{ width: "100%", maxHeight: 480, objectFit: "contain", borderRadius: 12, background: "#111", display: "block" }} />
     </a>
   );
 }
