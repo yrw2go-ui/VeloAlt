@@ -138,12 +138,12 @@ async function generateImage(prompt: string, provider = "atlas", userId?: string
         body: JSON.stringify(body),
       });
       const raw = await res.text();
-      if (!res.ok) throw new Error("Atlas " + res.status + ": " + raw.slice(0, 180));
+      if (!res.ok) throw new Error("Atlas " + res.status + ": " + raw.slice(0, 240));
       const data = JSON.parse(raw);
       const predId = data?.data?.id;
-      if (!predId) throw new Error("No prediction id.");
-      for (let i = 0; i < 18; i++) {
-        await new Promise(r => setTimeout(r, 2000));
+      if (!predId) throw new Error("No prediction id: " + raw.slice(0, 160));
+      for (let i = 0; i < 24; i++) {
+        await new Promise(r => setTimeout(r, 2500));
         const pRes = await fetch(`https://api.atlascloud.ai/api/v1/model/prediction/${predId}`, { headers: { Authorization: `Bearer ${key}` } });
         if (!pRes.ok) continue;
         const p = await pRes.json();
@@ -153,15 +153,34 @@ async function generateImage(prompt: string, provider = "atlas", userId?: string
       throw new Error("Atlas timed out.");
     };
     if (useRefs.length) {
-      const images = [];
-      for (const u of useRefs) images.push(await atlasImage(u));
-      return poll({
-        model: "bytedance/seedream-v5.0-pro/edit",
-        prompt: `The person in the reference photo is ${character}. Keep her face the same. ${prompt}`,
-        images,
-        size: pictureSize(prompt),
-        output_format: "jpeg",
-      });
+      const size = pictureSize(prompt);
+      const facePrompt = `The woman in the reference photo is ${character}. Keep her exact face, hair, and identity. ${prompt}`;
+      // Prefer public URLs first — Seedream can fetch them. Fall back to base64 only if that fails.
+      try {
+        return await poll({
+          model: "bytedance/seedream-v5.0-pro/edit",
+          prompt: facePrompt,
+          images: useRefs,
+          size,
+          output_format: "jpeg",
+        });
+      } catch (urlErr) {
+        const images = [];
+        for (const u of useRefs) images.push(await atlasImage(u));
+        try {
+          return await poll({
+            model: "bytedance/seedream-v5.0-pro/edit",
+            prompt: facePrompt,
+            images,
+            size,
+            output_format: "jpeg",
+          });
+        } catch (b64Err) {
+          const a = urlErr instanceof Error ? urlErr.message : "url failed";
+          const b = b64Err instanceof Error ? b64Err.message : "base64 failed";
+          throw new Error("Image edit failed. URL attempt: " + a + " | Base64 attempt: " + b);
+        }
+      }
     }
     return poll({ model: "bytedance/seedream-v5.0-pro/text-to-image", prompt: `Portrait of ${character}. ${prompt}`, size: pictureSize(prompt), output_format: "jpeg" });
   }
