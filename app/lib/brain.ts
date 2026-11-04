@@ -198,6 +198,19 @@ async function generateImage(prompt: string, provider = "atlas", userId?: string
   return persistImage(url, userId, character);
 }
 
+export function wantsPicture(text: string) {
+  const t = text.toLowerCase();
+  if (/\b(pic|pics|picture|pictures|photo|photos|image|images|selfie|nude|nudes)\b/.test(t)) return true;
+  if (/\b(show|send|see)\b/.test(t) && /\b(you|her|yourself|body|face|look)\b/.test(t)) return true;
+  if (/what do you look like|let me see/.test(t)) return true;
+  return false;
+}
+
+/** Same Atlas call Velo's chat uses. */
+export async function makePicture(prompt: string, userId: string | undefined, character: string, refs: string[] = []) {
+  return generateImage(prompt, "atlas", userId, character, refs);
+}
+
 import { sql } from "./db";
 import { VELO_SYSTEM, CALL_TALK, CALL_RECAP, CALL_REMEMBER, CHAT_REMEMBER, SMS_TALK, PRO_INFO, FREE_INFO, SEARCH_INFO, errandPrompt, ERRAND_SUMMARY, PERSONALITY_PROMPT, PERSONALITIES, type Personality } from "./persona";
 import { MEMORY_TOOLS, isMemoryTool, runMemoryTool, MemoryError, memoryBlock, saveConversationMemory } from "./memory";
@@ -240,6 +253,22 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   const pro = u?.plan === "pro" && twilioReady();
   const proTools = pro ? await proToolsFor(caller.userId) : null;
   const drafts: Draft[] = [];
+
+  // Picture requests hit Atlas immediately, same function as Velo's chat.
+  // Don't wait for the model to decide to call the tool.
+  if ((isSpicy || isCharacter) && (mode === "chat" || mode === "talk")) {
+    const lastUser = [...opts.messages].reverse().find(m => m.role === "user");
+    const ask = String(lastUser?.content || "");
+    if (wantsPicture(ask)) {
+      try {
+        const url = await generateImage(ask, "atlas", caller.userId, character, opts.refs || []);
+        return { reply: "Here.\n\n" + url, changed: false, drafts };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Atlas error";
+        return { reply: "Picture failed: " + msg, changed: false, drafts };
+      }
+    }
+  }
 
   // On a call Velo makes for them, the other person never hears their private memory.
   const errand = mode === "errand" || mode === "errandsum";
