@@ -10,14 +10,14 @@ export type ChatMsg = { role: "user" | "assistant"; content: string; draft?: Dra
 const unsaved = { current: 0 };
 const realMsgs = (m: ChatMsg[]) => m.filter(x => !x.draft).map(({ role, content }) => ({ role, content }));
 const INTRO = "Hi, I'm Velo! I'm here for whatever you need — planning your day, reminders, to-dos, talking things through, or just keeping you company. What should I call you?";
-function helloLine(n: string) {
+function helloLine(n: string, pick: number) {
   const who = n ? " " + n : "";
   const lines = [
     "Hey" + who + "! What's on your mind?",
     "Hi" + who + " — how's your day going?",
     "Hey" + who + ", good to see you. What can I do for you?",
   ];
-  return lines[Math.floor(Math.random() * lines.length)];
+  return lines[pick] || lines[0];
 }
 const SUGGESTIONS = ["Plan my day", "Remind me to call Mom tomorrow at 6pm", "I need to vent", "Help me set a goal"];
 
@@ -41,7 +41,7 @@ export default function Chat({ userId, name, onChanged, added }: { userId: strin
   }, []);
   const end = useRef<HTMLDivElement>(null);
   const msgsRef = useRef<ChatMsg[]>([]);
-  const [hello] = useState(() => helloLine(name.split(" ")[0] || ""));
+  const [hello] = useState(() => Math.floor(Math.random() * 3));
   msgsRef.current = msgs || [];
 
   useEffect(() => {
@@ -87,7 +87,8 @@ export default function Chat({ userId, name, onChanged, added }: { userId: strin
     } finally { setBusy(false); }
   };
 
-  const openingLine = msgs && !msgs.length && !name ? INTRO : hello;
+  const first = (name || "").split(" ")[0];
+  const openingLine = msgs && !msgs.length && !name ? INTRO : helloLine(first, hello);
   const shown: ChatMsg[] = msgs && !msgs.length ? [{ role: "assistant", content: openingLine }] : msgs || [];
 
   return (
@@ -95,7 +96,7 @@ export default function Chat({ userId, name, onChanged, added }: { userId: strin
       <div data-testid="chat-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
         {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={i} m={m} />)}
         {busy && <div className="row"><VeloAvatar size={28} /><div className="muted" style={{ fontSize: 14 }}>Velo is typing…</div></div>}
-        {err && <div style={{ color: "var(--bad)", fontSize: 14 }}>⚠️ {err}</div>}
+        {err && <div style={{ color: "var(--bad)", fontSize: 14 }}>Could not send.</div>}
         {msgs && msgs.length === 0 && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
             {SUGGESTIONS.map(s => <button key={s} className="ghost" onClick={() => send(s)} style={{ borderRadius: 999, fontSize: 14, padding: "8px 12px" }}>{s}</button>)}
@@ -107,7 +108,7 @@ export default function Chat({ userId, name, onChanged, added }: { userId: strin
         <textarea rows={1} value={text} onChange={e => setText(e.target.value)} placeholder={msgs ? "Message Velo…" : "Loading…"} aria-label="Message Velo" disabled={!msgs}
           onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(text); } }}
           style={{ resize: "none", maxHeight: 140, borderRadius: 20 }} />
-        <button className="btn" disabled={!text.trim() || busy} aria-label="Send" style={{ borderRadius: 999, width: 46, height: 46, padding: 0, flexShrink: 0 }}>➤</button>
+        <button className="btn" disabled={!text.trim() || busy} aria-label="Send" style={{ borderRadius: 999, width: 46, height: 46, padding: 0, flexShrink: 0 }}>Send</button>
       </form>
     </div>
   );
@@ -125,22 +126,19 @@ function Bubble({ m }: { m: ChatMsg }) {
   );
 }
 
-const URL_RE = /(https:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]])/g;
-function isImageUrl(url: string) {
-  return /\.(png|jpe?g|webp|gif|avif)(\?|#|$)/i.test(url) || /blob\.vercel-storage\.com|volces\.com|cloudfront\.net|r2\.dev|spicyapi|\/images?\//i.test(url);
+function Pic({ url }: { url: string }) {
+  const [ok, setOk] = useState(true);
+  if (!ok) {
+    return <a href={url} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)", wordBreak: "break-all" }}>{url.slice(0, 80)}</a>;
+  }
+  return (
+    <a href={url} target="_blank" rel="noopener noreferrer" style={{ display: "block", marginTop: 8 }}>
+      <img src={url} alt="" referrerPolicy="no-referrer" onError={() => setOk(false)} style={{ width: "100%", maxHeight: 480, objectFit: "contain", borderRadius: 12, background: "#111", display: "block" }} />
+    </a>
+  );
 }
 
 function renderRich(text: string) {
-  const parts = text.split(URL_RE);
-  return parts.map((part, i) => {
-    if (i % 2 === 0) return part;
-    if (isImageUrl(part)) {
-      return (
-        <a key={i} href={part} target="_blank" rel="noopener noreferrer" style={{ display: "block", marginTop: 8 }}>
-          <img src={part} alt="" referrerPolicy="no-referrer" style={{ width: "100%", maxHeight: 420, objectFit: "contain", borderRadius: 12, background: "#111", display: "block" }} />
-        </a>
-      );
-    }
-    return <a key={i} href={part} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)", wordBreak: "break-all" }}>{part.replace(/^https:\/\/(www\.)?/, "").slice(0, 60)}</a>;
-  });
+  const parts = text.split(/(https:\/\/[^\s<>"']+)/g);
+  return parts.map((part, i) => (i % 2 ? <Pic key={i} url={part.replace(/[.,;:!?)]+$/, "")} /> : part));
 }
