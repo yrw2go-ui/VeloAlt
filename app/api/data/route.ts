@@ -9,7 +9,7 @@ import { scrub } from "../../lib/secrets";
 import { availableModels, CHAT_MODELS, MODEL_INFO, type ChatModel } from "../../lib/models";
 import { PERSONALITIES } from "../../lib/persona";
 import { deleteFile, ownFile } from "../../lib/files";
-import { ownCharacter } from "../../lib/characters";
+import { getCharacter } from "../../lib/characters";
 
 // 📦 Everything the app reads and changes, for the signed-in person only.
 // POST { action, ...args } → { ... }. Every query is scoped to their user_id.
@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
     switch (String(b.action || "")) {
       case "profile.get": {
         const [u] = await db`select name, look, time_zone, plan, phone, phone_verified_at, chat_model, personality, adult_confirmed_at from users where id = ${me}`;
-        const [{ n }] = await db`select count(*)::int as n from velo_memories where user_id = ${me} and kind = 'call'`;
+        const [{ n }] = await db`select count(*)::int as n from velo_memories where user_id = ${me} and kind = 'call' and character_id is null`;
         const [face] = await db`select url from velo_files where user_id = ${me} and kind = 'face' order by created_at desc limit 1`;
         return NextResponse.json({
           name: u?.name || "", look: u?.look === "custom" && !face ? "default" : u?.look || "default", customFace: face ? String(face.url) : "",
@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
 
       case "messages.list": {
         // Velo's chat (no characterId) or one character's chat.
-        const ch = b.characterId ? await ownCharacter(me, String(b.characterId)) : null;
+        const ch = b.characterId ? await getCharacter(String(b.characterId)) : null;
         if (b.characterId && !ch) return bad("That character wasn't found.");
         const rows = await db`select m.role, m.content, f.id as file_id, f.url as file_url, f.name as file_name, f.content_type as file_type
           from velo_messages m left join velo_files f on f.id = m.file_id and f.user_id = m.user_id
@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
           ...(r.file_id ? { file: { id: r.file_id, url: r.file_url, name: r.file_name, type: r.file_type } } : {}) })) });
       }
       case "messages.add": {
-        const ch = b.characterId ? await ownCharacter(me, String(b.characterId)) : null;
+        const ch = b.characterId ? await getCharacter(String(b.characterId)) : null;
         if (b.characterId && !ch) return bad("That character wasn't found.");
         const list = (Array.isArray(b.messages) ? b.messages : []).slice(0, 4)
           .map((m: { role?: string; content?: unknown; fileId?: unknown }) => ({ role: m.role === "assistant" ? "assistant" : "user", content: scrub(String(m.content || "").slice(0, 8000)), fileId: String(m.fileId || "") }))
@@ -126,7 +126,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true });
 
       case "memories.list": {
-        const rows = await db`select id, kind, text, status, created_at from velo_memories where user_id = ${me} order by created_at desc limit 300`;
+        const rows = await db`select id, kind, text, status, created_at from velo_memories where user_id = ${me} and character_id is null order by created_at desc limit 300`;
         return NextResponse.json({ memories: rows });
       }
       case "memories.delete":

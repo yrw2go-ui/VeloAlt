@@ -1,7 +1,8 @@
 // 🧠 Velo's long-term memory: goals (and when they're hit), facts about their
 // life, and a short summary of every chat and call. Velo reads them on every
 // chat and call so she can follow up like someone who knows them.
-// Every query is scoped to the caller's user_id. People can see and forget everything
+// Every query is scoped to the caller's user_id AND the thread: Velo's memories
+// (character_id null) or one character's, so nothing crosses between them. People can see and forget everything
 // on the 🧠 Memory tab.
 import type Anthropic from "@anthropic-ai/sdk";
 import type { Caller } from "./caller";
@@ -47,16 +48,16 @@ export const MEMORY_TOOLS: Anthropic.Tool[] = [
   },
 ];
 
-export async function runMemoryTool(c: Caller, name: string, input: unknown): Promise<unknown> {
+export async function runMemoryTool(c: Caller, name: string, input: unknown, cid: string | null = null): Promise<unknown> {
   const a = input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>) : {};
   const db = sql();
   if (name === "remember") {
     const kind = a.kind === "goal" ? "goal" : "fact";
     const text = clean(a.text, 300);
     if (text.length < 3) throw new MemoryError("Say what to remember in a few words.");
-    const [{ n }] = await db`select count(*)::int as n from velo_memories where user_id = ${c.userId} and kind in ('goal', 'fact')`;
+    const [{ n }] = await db`select count(*)::int as n from velo_memories where user_id = ${c.userId} and character_id is not distinct from ${cid} and kind in ('goal', 'fact')`;
     if (n >= MAX_ACTIVE) throw new MemoryError("Memory is full. Ask them to clear some old memories on the 🧠 Memory tab.");
-    const [row] = await db`insert into velo_memories (user_id, kind, text) values (${c.userId}, ${kind}, ${text}) returning id`;
+    const [row] = await db`insert into velo_memories (user_id, character_id, kind, text) values (${c.userId}, ${cid}, ${kind}, ${text}) returning id`;
     return { ok: true, memory_id: row.id, tell_them: kind === "goal" ? "Say briefly that you'll keep that goal in mind and check in on it." : "Say briefly that you'll remember that (or just carry on naturally)." };
   }
   const id = String(a.memory_id || "");
@@ -64,12 +65,12 @@ export async function runMemoryTool(c: Caller, name: string, input: unknown): Pr
   if (name === "update_goal") {
     const status = a.status === "hit" || a.status === "dropped" ? a.status : "active";
     const rows = await db`update velo_memories set status = ${status}, updated_at = now(), hit_at = ${status === "hit" ? new Date().toISOString() : null}
-      where id = ${id} and user_id = ${c.userId} and kind = 'goal' returning text`;
+      where id = ${id} and user_id = ${c.userId} and character_id is not distinct from ${cid} and kind = 'goal' returning text`;
     if (!rows.length) throw new MemoryError("That goal isn't in the list.");
     return { ok: true, goal: rows[0].text, status };
   }
   if (name === "forget_memory") {
-    const rows = await db`delete from velo_memories where id = ${id} and user_id = ${c.userId} returning id`;
+    const rows = await db`delete from velo_memories where id = ${id} and user_id = ${c.userId} and character_id is not distinct from ${cid} returning id`;
     if (!rows.length) throw new MemoryError("That memory isn't in the list.");
     return { ok: true, tell_them: "Say it's forgotten." };
   }
@@ -77,15 +78,16 @@ export async function runMemoryTool(c: Caller, name: string, input: unknown): Pr
 }
 
 const day = (ts: string) => ts.slice(0, 10);
-const ms = (ts: string) => Date.parse(ts.replace(" ", "T"));
+// Postgres text timestamps look like "2026-11-04 22:01:02.12+00"; "+00" needs to be "+00:00" to parse.
+const ms = (ts: string) => Date.parse(ts.replace(" ", "T").replace(/([+-]\d\d)$/, "$1:00"));
 
 /** What Velo remembers about this person, for the system prompt (empty when nothing yet). */
-export async function memoryBlock(c: Caller, today: { date: string; tz: string | null }): Promise<string> {
+export async function memoryBlock(c: Caller, today: { date: string; tz: string | null }, cid: string | null = null): Promise<string> {
   const db = sql();
   const [goals, facts, talks] = await Promise.all([
-    db`select id, text, status, created_at::text, hit_at::text from velo_memories where user_id = ${c.userId} and kind = 'goal' order by created_at desc limit 30`,
-    db`select id, text, created_at::text from velo_memories where user_id = ${c.userId} and kind = 'fact' order by created_at desc limit 60`,
-    db`select id, kind, text, created_at::text from velo_memories where user_id = ${c.userId} and kind in ('call', 'chat') order by created_at desc limit 8`,
+    db`select id, text, status, created_at::text, hit_at::text from velo_memories where user_id = ${c.userId} and character_id is not distinct from ${cid} and kind = 'goal' order by created_at desc limit 30`,
+    db`select id, text, created_at::text from velo_memories where user_id = ${c.userId} and character_id is not distinct from ${cid} and kind = 'fact' order by created_at desc limit 60`,
+    db`select id, kind, text, created_at::text from velo_memories where user_id = ${c.userId} and character_id is not distinct from ${cid} and kind in ('call', 'chat') order by created_at desc limit 8`,
   ]);
   const g = goals as unknown as { id: string; text: string; status: string; created_at: string; hit_at: string | null }[];
   const active = g.filter(x => x.status === "active"), hit = g.filter(x => x.status === "hit").slice(0, 8);
@@ -104,21 +106,21 @@ export async function memoryBlock(c: Caller, today: { date: string; tz: string |
 }
 
 /** After a call or chat: keep a short summary, plus new goals and facts that aren't saved yet. */
-export async function saveConversationMemory(c: Caller, kind: "call" | "chat", summary: string, goals: string[], facts: string[]) {
+export async function saveConversationMemory(c: Caller, kind: "call" | "chat", summary: string, goals: string[], facts: string[], cid: string | null = null) {
   const db = sql();
   const text = clean(summary, 500);
-  if (text.length >= 10) await db`insert into velo_memories (user_id, kind, text) values (${c.userId}, ${kind}, ${text})`;
-  const have = await db`select text from velo_memories where user_id = ${c.userId} and kind in ('goal', 'fact') limit ${MAX_ACTIVE}`;
+  if (text.length >= 10) await db`insert into velo_memories (user_id, character_id, kind, text) values (${c.userId}, ${cid}, ${kind}, ${text})`;
+  const have = await db`select text from velo_memories where user_id = ${c.userId} and character_id is not distinct from ${cid} and kind in ('goal', 'fact') limit ${MAX_ACTIVE}`;
   const known = new Set(have.map(h => String(h.text).toLowerCase()));
   let room = MAX_ACTIVE - have.length;
   for (const [k, list] of [["goal", goals], ["fact", facts]] as const) {
     for (const t of list.slice(0, 5).map(x => clean(x, 300)).filter(x => x.length >= 3)) {
       if (room <= 0 || known.has(t.toLowerCase())) continue;
-      await db`insert into velo_memories (user_id, kind, text) values (${c.userId}, ${k}, ${t})`;
+      await db`insert into velo_memories (user_id, character_id, kind, text) values (${c.userId}, ${cid}, ${k}, ${t})`;
       known.add(t.toLowerCase()); room--;
     }
   }
   // Keep the last 60 summaries of each kind.
-  await db`delete from velo_memories where user_id = ${c.userId} and kind = ${kind} and id not in
-    (select id from velo_memories where user_id = ${c.userId} and kind = ${kind} order by created_at desc limit 60)`;
+  await db`delete from velo_memories where user_id = ${c.userId} and character_id is not distinct from ${cid} and kind = ${kind} and id not in
+    (select id from velo_memories where user_id = ${c.userId} and character_id is not distinct from ${cid} and kind = ${kind} order by created_at desc limit 60)`;
 }

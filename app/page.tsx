@@ -6,8 +6,9 @@ import { api, data } from "./lib/api";
 import { currentAsk, subscribeAsk } from "./lib/dialog";
 import { VeloLogo, VeloLookPicker, applyVeloLook, useVeloLook } from "./avatar";
 import VeloCall, { canCallVelo, primeSpeech } from "./call";
-import Chat, { type ChatMsg } from "./chat";
-import { CharacterStrip, CharacterEditor, type Character } from "./characters";
+import Chat, { type ChatAdd } from "./chat";
+import { CharacterStrip, CharacterEditor, CharacterFace, type Character } from "./characters";
+import { characterVoice } from "./lib/voices";
 import Today from "./today";
 import Memory from "./memory";
 import { timeZone } from "./lib/tz";
@@ -88,16 +89,17 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   const [firstCall, setFirstCall] = useState(false);
   const [due, setDue] = useState<DueReminder[]>([]);
   const [refresh, setRefresh] = useState(0);
-  const [chatAdd, setChatAdd] = useState<ChatMsg | null>(null);
+  const [chatAdd, setChatAdd] = useState<ChatAdd | null>(null);
   const look = useVeloLook();
   // 🎭 Their characters: a chip row above the chat; the open chat is Velo (null) or one character.
   const [chars, setChars] = useState<Character[]>([]);
   const [portraits, setPortraits] = useState(false);
+  const [admin, setAdmin] = useState(false);
   const [withId, setWithId] = useState<string | null>(null);
   const [editing, setEditing] = useState<Character | "new" | null>(null);
   useEffect(() => {
-    api<{ characters: Character[]; portraits: boolean }>("/api/characters", { action: "list" })
-      .then(r => { setChars(r.characters); setPortraits(r.portraits); }).catch(() => {});
+    api<{ characters: Character[]; portraits: boolean; admin: boolean }>("/api/characters", { action: "list" })
+      .then(r => { setChars(r.characters); setPortraits(r.portraits); setAdmin(r.admin); }).catch(() => {});
   }, [userId]);
   const withChar = chars.find(c => c.id === withId) || null;
   const savedChar = (c: Character) => { setChars(cs => (cs.some(x => x.id === c.id) ? cs.map(x => (x.id === c.id ? c : x)) : [...cs, c])); setWithId(c.id); };
@@ -139,15 +141,17 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
     bump();
   };
 
-  const startCall = () => { primeSpeech(); setCalling(true); };
+  // 📞 Calls whoever's chat is open: Velo, or that character (in their own voice, with their own memory).
+  const [callWith, setCallWith] = useState<Character | null>(null);
+  const startCall = () => { primeSpeech(); setCallWith(tab === "chat" ? withChar : null); setCalling(true); };
   const callRequest = async (turns: { role: "user" | "assistant"; content: string }[], mode: "talk" | "recap" | "remember") => {
-    const r = await api<{ reply: string; changed?: boolean }>("/api/velo", { mode, messages: turns, timeZone: timeZone(), name });
+    const r = await api<{ reply: string; changed?: boolean }>("/api/velo", { mode, messages: turns, timeZone: timeZone(), name, ...(callWith ? { characterId: callWith.id } : {}) });
     if (r.changed) bump();
     return r.reply;
   };
   const fetchVoice = async (text: string, _voice: string, lookId: string) => {
     try {
-      const res = await fetch("/api/voice", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, look: lookId }) });
+      const res = await fetch("/api/voice", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, look: lookId, ...(callWith ? { characterId: callWith.id } : {}) }) });
       return res.ok ? await res.blob() : null;
     } catch { return null; }
   };
@@ -160,7 +164,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
           <div style={{ fontWeight: 800, fontSize: 18 }}>Velo</div>
           <div className="muted" style={{ fontSize: 12 }}>{name ? `Here for you, ${name.split(" ")[0]}` : "Your assistant & companion"}</div>
         </div>
-        {canCallVelo() && <button className="btn" onClick={startCall} aria-label="Call Velo" data-testid="call-velo" style={{ borderRadius: 999, padding: "10px 16px" }}>📞 Call</button>}
+        {canCallVelo() && <button className="btn" onClick={startCall} aria-label={`Call ${tab === "chat" && withChar ? withChar.name : "Velo"}`} data-testid="call-velo" style={{ borderRadius: 999, padding: "10px 16px" }}>📞 Call</button>}
       </header>
 
       {due.length > 0 && (
@@ -176,8 +180,8 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       )}
 
       <main style={{ flex: 1, minHeight: 0, overflowY: tab === "chat" ? "hidden" : "auto", display: "flex", flexDirection: "column" }}>
-        {tab === "chat" && <CharacterStrip characters={chars} active={withChar?.id || null} onPick={setWithId} onNew={() => setEditing("new")} onEdit={setEditing} />}
-        {tab === "chat" && <Chat key={withChar?.id || "velo"} userId={userId} name={name} onChanged={bump} added={withChar ? null : chatAdd} onAdded={() => setChatAdd(null)} character={withChar} />}
+        {tab === "chat" && <CharacterStrip characters={chars} active={withChar?.id || null} admin={admin} onPick={setWithId} onNew={() => setEditing("new")} onEdit={setEditing} />}
+        {tab === "chat" && <Chat key={withChar?.id || "velo"} userId={userId} name={name} onChanged={bump} added={chatAdd} onAdded={() => setChatAdd(null)} character={withChar} />}
         {tab === "today" && <Today refresh={refresh} />}
         {tab === "memory" && <Memory refresh={refresh} />}
         {tab === "settings" && <Settings name={name} setName={setName} onOut={onOut} profile={profile} onProfile={() => setProfileTick(t => t + 1)} />}
@@ -193,10 +197,13 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       </nav>
 
       {calling && (
-        <VeloCall key={look} name={name} firstCall={firstCall} request={callRequest} fetchVoice={fetchVoice}
+        <VeloCall key={look + (callWith?.id || "")} name={name} firstCall={!callWith && firstCall} request={callRequest} fetchVoice={fetchVoice}
+          voice={callWith ? characterVoice(callWith.voice).kind : undefined}
+          opener={callWith ? `Hey${name ? ` ${name.split(" ")[0]}` : ""}, it's ${callWith.name}! What's going on?` : undefined}
+          who={callWith ? { name: callWith.name, face: (size: number) => <CharacterFace c={callWith} size={size} /> } : undefined}
           onEnd={(recap) => {
-            setCalling(false); setFirstCall(false);
-            if (recap) { setChatAdd({ role: "assistant", content: recap }); setWithId(null); setTab("chat"); }
+            setCalling(false); if (!callWith) setFirstCall(false);
+            if (recap) { setChatAdd({ msg: { role: "assistant", content: recap }, cid: callWith?.id || null }); setWithId(callWith?.id || null); setTab("chat"); }
           }} />
       )}
       {editing && (

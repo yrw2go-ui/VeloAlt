@@ -19,16 +19,22 @@ export type ChatMsg = { role: "user" | "assistant"; content: string; draft?: Dra
 const ACCEPT = "image/jpeg,image/png,image/webp,image/gif,application/pdf,text/plain";
 /** What Velo sees: real messages only (draft cards are local to the screen). */
 // Their messages since the last memo. Kept outside the component so switching tabs doesn't reset it.
-const unsaved = { current: 0 };
+// One count per chat (Velo's and each character's), since each keeps its own memory.
+const unsavedBy = new Map<string, number>();
 const realMsgs = (m: ChatMsg[]) => m.filter(x => !x.draft).map(({ role, content, file }) => ({ role, content, ...(file ? { fileId: file.id } : {}) }));
 const INTRO = "Hi, I'm Velo! 👋 I'm here for whatever you need — planning your day, reminders, to-dos, talking things through, or just keeping you company. What should I call you?";
 const HELLO = (n: string) => [`Hey${n ? ` ${n}` : ""}! What's on your mind?`, `Hi${n ? ` ${n}` : ""} — how's your day going?`, `Hey${n ? ` ${n}` : ""}, good to see you. What can I do for you?`];
 const SUGGESTIONS = ["Plan my day", "Remind me to call Mom tomorrow at 6pm", "I need to vent", "Help me set a goal"];
 
-export default function Chat({ userId, name, onChanged, added, onAdded, character }: { userId: string; name: string; onChanged: () => void; added: ChatMsg | null; onAdded?: () => void; character?: ChatWith | null }) {
+/** A message to drop into one chat (a call recap): cid null = Velo's chat. */
+export type ChatAdd = { msg: ChatMsg; cid: string | null };
+
+export default function Chat({ userId, name, onChanged, added, onAdded, character }: { userId: string; name: string; onChanged: () => void; added: ChatAdd | null; onAdded?: () => void; character?: ChatWith | null }) {
   const cid = character?.id || null;
   const thread = cid ? { characterId: cid } : {};
   const who = character?.name || "Velo";
+  const key = cid || "velo";
+  const unsaved = { get current() { return unsavedBy.get(key) || 0; }, set current(v: number) { unsavedBy.set(key, v); } };
   const face = (size: number) => (character ? <CharacterFace c={character} size={size} /> : <VeloAvatar size={size} />);
   const [msgs, setMsgs] = useState<ChatMsg[] | null>(null);
   const [text, setText] = useState("");
@@ -81,23 +87,23 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
 
   // A call recap lands in the chat.
   useEffect(() => {
-    if (!added || cid) return;
-    setMsgs(m => [...(m || []), added]);
-    data("messages.add", { messages: [added] }).catch(() => {});
+    if (!added || added.cid !== cid) return;
+    setMsgs(m => [...(m || []), added.msg]);
+    data("messages.add", { ...thread, messages: [added.msg] }).catch(() => {});
     onAdded?.();
   }, [added, userId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 🧠 Leaving the app after a chat: Velo remembers what mattered.
   useEffect(() => {
-    if (cid) return; // Velo's memory is about her chats with them only.
+    // 🧠 Each chat files into its own memory: Velo's, or this character's.
     const memo = () => {
       if (unsaved.current < 2 || document.visibilityState !== "hidden") return;
       unsaved.current = 0;
-      api("/api/velo", { mode: "memo", messages: realMsgs(msgsRef.current).slice(-40), timeZone: timeZone(), name }).catch(() => {});
+      api("/api/velo", { mode: "memo", messages: realMsgs(msgsRef.current).slice(-40), timeZone: timeZone(), name, ...thread }).catch(() => {});
     };
     document.addEventListener("visibilitychange", memo);
     return () => document.removeEventListener("visibilitychange", memo);
-  }, [name, cid]);
+  }, [name, cid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const send = async (raw: string) => {
     if (mic.listening) mic.stop();
@@ -109,7 +115,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     const mine: ChatMsg = { role: "user", content: t || "📎", ...(file ? { file } : {}) };
     const next = [...msgs, ...opener, mine];
     setMsgs(next); setText(""); setAttach(null); setBusy(true); setErr("");
-    if (!cid) unsaved.current++;
+    unsaved.current++;
     await data("messages.add", { ...thread, messages: [...opener, { role: "user", content: mine.content, ...(file ? { fileId: file.id } : {}) }] }).catch(() => {});
     try {
       const r = await api<{ reply: string; changed?: boolean; drafts?: Draft[] }>("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name, ...thread });

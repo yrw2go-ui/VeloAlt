@@ -18,7 +18,7 @@ import { twilioReady } from "./twilio";
 import { isValidTimeZone, localDate, formatClock, weekdayOf } from "./localTime";
 import { hideSecrets, HIDDEN } from "./secrets";
 import { ownFile, fileForAi } from "./files";
-import { ownCharacter, characterPrompt } from "./characters";
+import { characterPrompt, type Character } from "./characters";
 import { provider, type ChatModel } from "./models";
 import { oaChat, toOaTools, ProviderError, type OaMessage } from "./openai";
 
@@ -37,8 +37,12 @@ export function localNow(rawTz: unknown) {
 
 export interface AskResult { reply: string; changed: boolean; drafts: Draft[]; saved?: boolean }
 
-export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn[]; timeZone?: unknown; name?: string; goal?: string; toName?: string }): Promise<AskResult> {
+/** Velo, or (with `character`) one of the characters: same chats, calls and memory flow, but in the
+ *  character's own voice, with only their own memory of this person and no Velo tools. */
+export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn[]; timeZone?: unknown; name?: string; goal?: string; toName?: string; character?: Character | null }): Promise<AskResult> {
   const { mode } = opts;
+  const ch = opts.character || null;
+  const cid = ch?.id || null;
   const today = localNow(opts.timeZone);
   const name = String(opts.name || "").trim().split(/\s+/)[0].slice(0, 40);
   const [u] = await sql()`select plan, chat_model, personality, adult_confirmed_at from users where id = ${caller.userId}`;
@@ -46,28 +50,28 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   // to other people and memory notes always use her plain voice.
   let personality: Personality = PERSONALITIES.includes(u?.personality) ? u.personality : "friend";
   if (personality === "romantic" && !u?.adult_confirmed_at) personality = "friend";
-  const pro = u?.plan === "pro" && twilioReady();
+  const pro = !ch && u?.plan === "pro" && twilioReady();
   const proTools = pro ? await proToolsFor(caller.userId) : null;
   const drafts: Draft[] = [];
 
   // On a call Velo makes for them, the other person never hears their private memory.
-  const errand = mode === "errand" || mode === "errandsum";
-  const memory = errand ? "" : await memoryBlock(caller, today).catch(() => "");
+  const errand = !ch && (mode === "errand" || mode === "errandsum");
+  const memory = errand ? "" : await memoryBlock(caller, today, cid).catch(e => { console.error("velo: memory read", e instanceof Error ? e.message : e); return ""; });
   const modeText = {
     chat: "", sms: SMS_TALK, talk: CALL_TALK, recap: CALL_RECAP, remember: CALL_REMEMBER, memo: CHAT_REMEMBER,
     errand: errandPrompt(name, opts.toName || "", opts.goal || ""), errandsum: ERRAND_SUMMARY,
   }[mode];
   const system: Anthropic.TextBlockParam[] = [
     // The persona never changes, so it's cached across everyone's chats.
-    { type: "text", text: VELO_SYSTEM, cache_control: { type: "ephemeral" } },
+    ch ? { type: "text", text: characterPrompt(ch, name, !!u?.adult_confirmed_at) } : { type: "text", text: VELO_SYSTEM, cache_control: { type: "ephemeral" } },
     {
       type: "text",
       text: [
         errand ? "" : name ? `Their first name is ${name}.` : "You don't know their name yet — if it comes up naturally, ask, and remember it.",
         `Right now it is ${today.label}${errand ? "" : " where they are"}.`,
-        errand ? "" : pro ? SEARCH_INFO + "\n\n" + PRO_INFO + (proTools?.page ? `\nTheir Facebook Page "${proTools.page}" is connected: you can draft posts for it (draft_post).` : "\nNo Facebook Page is connected; if they want you to post, tell them to connect one in Settings → Velo Pro (Facebook only allows Pages, not personal profiles).") : FREE_INFO,
+        errand || ch ? "" : pro ? SEARCH_INFO + "\n\n" + PRO_INFO + (proTools?.page ? `\nTheir Facebook Page "${proTools.page}" is connected: you can draft posts for it (draft_post).` : "\nNo Facebook Page is connected; if they want you to post, tell them to connect one in Settings → Velo Pro (Facebook only allows Pages, not personal profiles).") : FREE_INFO,
         memory ? `${memory}\n\nYou two have talked before — never introduce yourself; talk like someone who knows them.` : "",
-        mode === "chat" || mode === "sms" || mode === "talk" || mode === "recap" ? PERSONALITY_PROMPT[personality] : "",
+        !ch && (mode === "chat" || mode === "sms" || mode === "talk" || mode === "recap") ? PERSONALITY_PROMPT[personality] : "",
         modeText,
       ].filter(Boolean).join("\n\n"),
     },
@@ -84,7 +88,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   // 📎 The newest message's attachment (chat only): Velo sees the photo or PDF, or reads the text file.
   let attached = false;
   const lastTurn = opts.messages[opts.messages.length - 1];
-  if (mode === "chat" && lastTurn?.role === "user" && lastTurn.fileId) {
+  if (mode === "chat" && !ch && lastTurn?.role === "user" && lastTurn.fileId) {
     const f = await ownFile(caller.userId, String(lastTurn.fileId));
     const block = f ? await fileForAi(f) : null;
     const last = messages[messages.length - 1];
@@ -106,7 +110,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   // Tools: none on wrap-ups or errands; Pro adds contacts, drafts, Amazon carts and 🔎 web search
   // (Anthropic runs the searches; results come back in the same response).
   const search = !!proTools && (mode === "chat" || mode === "sms" || mode === "talk");
-  const tools: Anthropic.ToolUnion[] | undefined = wrapUp || errand ? undefined : [
+  const tools: Anthropic.ToolUnion[] | undefined = wrapUp || errand ? undefined : ch ? [...MEMORY_TOOLS] : [
     ...MEMORY_TOOLS, ...REMINDER_TOOLS, ...(proTools?.tools || []),
     ...(search ? [{ type: "web_search_20260209" as const, name: "web_search" as const, max_uses: 5, user_location: { type: "approximate" as const, timezone: today.tz } }] : []),
   ];
@@ -118,8 +122,8 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   // Runs one of Velo's own tools (the same for every model).
   const runTool = async (name: string, input: unknown): Promise<{ content: string; isError?: boolean }> => {
     try {
-      const out = isMemoryTool(name) ? await runMemoryTool(caller, name, input)
-        : isReminderTool(name) ? await runReminderTool(caller, name, input, today.tz)
+      const out = isMemoryTool(name) ? await runMemoryTool(caller, name, input, cid)
+        : isReminderTool(name) && !ch ? await runReminderTool(caller, name, input, today.tz)
         : isProTool(name) && pro ? await runProTool(caller, name, input, drafts)
         : (() => { throw new ReminderError(isProTool(name) ? "That's a Velo Pro feature." : `Unknown tool ${name}`); })();
       if (isReminderTool(name) && !name.startsWith("list_")) changed = true;
@@ -206,7 +210,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
     try {
       const j = JSON.parse((reply.match(/\{[\s\S]*\}/) || ["{}"])[0]) as { summary?: unknown; goals?: unknown; facts?: unknown };
       const list = (v: unknown) => (Array.isArray(v) ? v.map(String) : []);
-      if (typeof j.summary === "string") { await saveConversationMemory(caller, mode === "memo" ? "chat" : "call", j.summary, list(j.goals), list(j.facts)); saved = true; }
+      if (typeof j.summary === "string") { await saveConversationMemory(caller, mode === "memo" ? "chat" : "call", j.summary, list(j.goals), list(j.facts), cid); saved = true; }
     } catch (e) { console.error("velo: memory", e); }
     return { reply: "", changed: false, drafts, saved };
   }
@@ -247,27 +251,6 @@ async function searchWithClaude(query: string, tz: string, sources: Map<string, 
   }
 }
 
-/** 🎭 A chat with one of their characters: the character's own voice, no Velo tools or memory,
- *  on the chat model they picked (falling back to Claude), with passwords and codes hidden. */
-export async function askCharacter(caller: Caller, opts: { characterId: string; messages: Turn[]; name?: string }): Promise<AskResult> {
-  const c = await ownCharacter(caller.userId, opts.characterId);
-  if (!c) throw new CharacterGone();
-  const [u] = await sql()`select chat_model from users where id = ${caller.userId}`;
-  const system = characterPrompt(c, String(opts.name || "").trim().split(/\s+/)[0]);
-  const turns = opts.messages.slice(-30).map(m => ({ role: m.role === "assistant" ? "assistant" as const : "user" as const, content: hideSecrets(String(m.content || "").slice(0, 4000)).text || "…" }));
-  if (turns[0]?.role === "assistant") turns.unshift({ role: "user", content: "(Chat opened.)" });
-  const alt = provider((u?.chat_model || "claude") as ChatModel);
-  if (alt) {
-    try {
-      const r = await oaChat(alt, [{ role: "system", content: system }, ...turns], [], 4000);
-      if (r.content) return { reply: r.content, changed: false, drafts: [] };
-    } catch (e) { console.error("character: alt model failed, using Claude", e instanceof ProviderError ? e.message : e); }
-  }
-  const res = await client.messages.create({ model: process.env.VELO_MODEL!, max_tokens: 4000, output_config: { effort: "low" }, system, messages: turns });
-  if (res.stop_reason === "refusal") return { reply: "Let's talk about something else.", changed: false, drafts: [] };
-  const reply = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map(b => b.text).join("").trim();
-  return { reply: reply || "…", changed: false, drafts: [] };
-}
 export class CharacterGone extends Error {}
 
 /** Logs an Anthropic failure and turns it into a friendly message. */

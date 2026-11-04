@@ -1,13 +1,14 @@
 "use client";
-// 🎭 Characters: a row of chips above the chat (Velo + each character + New),
-// and the editor where you write who they are and generate a portrait
-// (Atlas Cloud). Every character follows Velo's safety rules.
+// 🎭 Characters: a row of chips above the chat (Velo + each character, and New for admins),
+// and the admin editor: personality, backstory, relation to the user, call voice, and a
+// portrait (Atlas Cloud Seedream). Every character follows Velo's safety rules.
 import { useEffect, useState } from "react";
 import { api } from "./lib/api";
 import { confirmAsk } from "./lib/dialog";
 import { VeloAvatar } from "./avatar";
+import { CHARACTER_VOICES } from "./lib/voices";
 
-export type Character = { id: string; name: string; about: string; appearance: string; portrait_url: string | null; portrait_job: string | null };
+export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; voice: string; portrait_url: string | null; portrait_job: string | null };
 
 /** A character's picture in a circle (their initial until a portrait exists). */
 export function CharacterFace({ c, size }: { c: Pick<Character, "name" | "portrait_url">; size: number }) {
@@ -21,19 +22,20 @@ export function CharacterFace({ c, size }: { c: Pick<Character, "name" | "portra
 const chip = (on: boolean) => ({ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, padding: "4px 10px 4px 4px", borderRadius: 999, cursor: "pointer", fontSize: 13, fontWeight: 700,
   border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, background: on ? "rgba(124,140,255,0.15)" : "var(--surface2)", color: "var(--text)" } as const);
 
-/** The chips above the chat. Tap a chip to switch chats; tap the open one again to edit that character. */
-export function CharacterStrip({ characters, active, onPick, onNew, onEdit }: {
-  characters: Character[]; active: string | null; onPick: (id: string | null) => void; onNew: () => void; onEdit: (c: Character) => void;
+/** The chips above the chat. Tap a chip to switch chats; admins tap the open one again to edit it. */
+export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdit }: {
+  characters: Character[]; active: string | null; admin: boolean; onPick: (id: string | null) => void; onNew: () => void; onEdit: (c: Character) => void;
 }) {
+  if (!characters.length && !admin) return null;
   return (
     <div data-testid="character-strip" style={{ display: "flex", gap: 8, overflowX: "auto", padding: "8px 12px", borderBottom: "1px solid var(--border)" }}>
       <button style={chip(active === null)} onClick={() => onPick(null)} aria-pressed={active === null}><VeloAvatar size={26} /> Velo</button>
       {characters.map(c => (
-        <button key={c.id} style={chip(active === c.id)} aria-pressed={active === c.id} onClick={() => (active === c.id ? onEdit(c) : onPick(c.id))}>
-          <CharacterFace c={c} size={26} /> {c.name}{active === c.id ? " ✎" : ""}
+        <button key={c.id} style={chip(active === c.id)} aria-pressed={active === c.id} onClick={() => (active !== c.id ? onPick(c.id) : admin ? onEdit(c) : undefined)}>
+          <CharacterFace c={c} size={26} /> {c.name}{admin && active === c.id ? " ✎" : ""}
         </button>
       ))}
-      <button style={{ ...chip(false), padding: "4px 12px" }} onClick={onNew} data-testid="character-new">＋ New</button>
+      {admin && <button style={{ ...chip(false), padding: "4px 12px" }} onClick={onNew} data-testid="character-new">＋ New</button>}
     </div>
   );
 }
@@ -44,12 +46,15 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
 }) {
   const [c, setC] = useState<Character | null>(initial);
   const [name, setName] = useState(initial?.name || "");
-  const [about, setAbout] = useState(initial?.about || "");
+  const [personality, setPersonality] = useState(initial?.personality || "");
+  const [backstory, setBackstory] = useState(initial?.backstory || "");
+  const [relation, setRelation] = useState(initial?.relation || "");
   const [appearance, setAppearance] = useState(initial?.appearance || "");
+  const [voice, setVoice] = useState(initial?.voice || CHARACTER_VOICES[0].id);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const working = !!c?.portrait_job;
-  const dirty = !c || name !== c.name || about !== c.about || appearance !== c.appearance;
+  const dirty = !c || name !== c.name || personality !== c.personality || backstory !== c.backstory || relation !== c.relation || appearance !== c.appearance || voice !== c.voice;
 
   // A portrait in progress: check back every few seconds until it's ready.
   useEffect(() => {
@@ -66,7 +71,7 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
   const save = async () => {
     setBusy(true); setMsg("");
     try {
-      const r = await api<{ character: Character }>("/api/characters", { action: c ? "update" : "create", id: c?.id, name, about, appearance });
+      const r = await api<{ character: Character }>("/api/characters", { action: c ? "update" : "create", id: c?.id, name, personality, backstory, relation, appearance, voice });
       setC(r.character); onSaved(r.character);
       return r.character;
     } catch (e) { setMsg(e instanceof Error ? e.message : "Couldn't save."); return null; }
@@ -81,7 +86,7 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
     finally { setBusy(false); }
   };
   const remove = async () => {
-    if (!c || !(await confirmAsk(`Delete ${c.name}? Are you sure? Their chat and portrait are deleted too.`))) return;
+    if (!c || !(await confirmAsk(`Delete ${c.name}? Are you sure? Everyone's chats and memories with them, and their portrait, are deleted too.`))) return;
     setBusy(true);
     try { await api("/api/characters", { action: "delete", id: c.id }); onDeleted(c.id); }
     catch (e) { setMsg(e instanceof Error ? e.message : "Couldn't delete."); setBusy(false); }
@@ -104,13 +109,24 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
         <label style={{ fontSize: 13, fontWeight: 700 }}>Name
           <input value={name} onChange={e => setName(e.target.value)} maxLength={60} placeholder="e.g. Captain Mira" aria-label="Character name" style={{ marginTop: 4 }} />
         </label>
-        <label style={{ fontSize: 13, fontWeight: 700 }}>Personality & backstory
-          <textarea value={about} onChange={e => setAbout(e.target.value)} maxLength={1500} rows={4} placeholder="Who are they? How do they talk? What do they care about?" aria-label="Personality and backstory" style={{ marginTop: 4, resize: "vertical" }} />
+        <label style={{ fontSize: 13, fontWeight: 700 }}>Personality
+          <textarea value={personality} onChange={e => setPersonality(e.target.value)} maxLength={2000} rows={3} placeholder="How do they talk and act? e.g. gruff but kind, loves bad puns, never gives up" aria-label="Personality" style={{ marginTop: 4, resize: "vertical" }} />
+        </label>
+        <label style={{ fontSize: 13, fontWeight: 700 }}>Backstory
+          <textarea value={backstory} onChange={e => setBackstory(e.target.value)} maxLength={3000} rows={4} placeholder="Where they come from, what they've been through, what they care about" aria-label="Backstory" style={{ marginTop: 4, resize: "vertical" }} />
+        </label>
+        <label style={{ fontSize: 13, fontWeight: 700 }}>Relation to the user
+          <textarea value={relation} onChange={e => setRelation(e.target.value)} maxLength={600} rows={2} placeholder="Who they are to the person chatting, e.g. an old friend from the navy, a mentor, a big sister" aria-label="Relation to the user" style={{ marginTop: 4, resize: "vertical" }} />
+        </label>
+        <label style={{ fontSize: 13, fontWeight: 700 }}>Voice on calls
+          <select value={voice} onChange={e => setVoice(e.target.value)} aria-label="Voice on calls" style={{ marginTop: 4, display: "block", width: "100%" }}>
+            {CHARACTER_VOICES.map(v => <option key={v.id} value={v.id}>{v.name} — {v.kind}, {v.about}</option>)}
+          </select>
         </label>
         <label style={{ fontSize: 13, fontWeight: 700 }}>Appearance (for the portrait)
           <textarea value={appearance} onChange={e => setAppearance(e.target.value)} maxLength={600} rows={2} placeholder="e.g. weathered sea captain, silver braid, navy coat, warm smile" aria-label="Appearance" style={{ marginTop: 4, resize: "vertical" }} />
         </label>
-        <div className="muted" style={{ fontSize: 12 }}>Characters are fictional and family-friendly: no real people and no sexual content. Each new character is checked before it&apos;s saved.</div>
+        <div className="muted" style={{ fontSize: 12 }}>Everyone can chat with and call this character. Each person gets their own chats and memories with them. Characters are fictional: no real people and no sexual content (a quick safety check runs when you save).</div>
         {msg && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {msg}</div>}
         <div className="row" style={{ flexWrap: "wrap" }}>
           <button className="btn" disabled={busy || !name.trim() || (!dirty && !!c)} onClick={save}>{busy ? "…" : c ? "Save" : "Create"}</button>

@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import { VELO_LOOKS } from "../../lib/veloAvatars";
+import { getCharacter } from "../../lib/characters";
+import { characterVoice } from "../../lib/voices";
 
 // 🔊 Velo's natural voice on calls (ElevenLabs): one spoken reply → MP3.
 // If that voice is refused, it retries once with Sarah (a built-in voice every
 // ElevenLabs account has); if that fails too, the call uses the device's own voice.
-//   POST { text, look } → audio/mpeg. Each look has its own voice, picked here on the server.
+//   POST { text, look | characterId } → audio/mpeg. Each look has its own voice, picked here on the server.
 const MODEL = process.env.ELEVENLABS_MODEL || "eleven_flash_v2_5";
 const MAX_CHARS = 1200;
 const FALLBACK_VOICE = "EXAVITQu4vr4xnSDxMaL"; // "Sarah", one of ElevenLabs' current default voices
@@ -22,7 +24,9 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const text = String(body?.text || "").replace(/\s+/g, " ").trim().slice(0, MAX_CHARS);
     if (!text) return NextResponse.json({ error: "Nothing to say." }, { status: 400 });
-    const chosen = (VELO_LOOKS.find(l => l.id === body?.look) || VELO_LOOKS[0]).voiceId || FALLBACK_VOICE;
+    // A character speaks in its own voice; Velo in her look's voice.
+    const ch = body?.characterId ? await getCharacter(String(body.characterId)) : null;
+    const chosen = ch ? characterVoice(ch.voice).voiceId : (VELO_LOOKS.find(l => l.id === body?.look) || VELO_LOOKS[0]).voiceId || FALLBACK_VOICE;
     for (const voiceId of chosen === FALLBACK_VOICE ? [chosen] : [chosen, FALLBACK_VOICE]) {
       const res = await fetch(`${API()}/v1/text-to-speech/${voiceId}/stream?output_format=mp3_44100_64`, {
         method: "POST",
