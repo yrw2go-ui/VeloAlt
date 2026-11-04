@@ -148,6 +148,27 @@ export async function POST(req: NextRequest) {
 
       
       
+      case "profile.listCharacterLooks": {
+        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
+        const rows = await db`select character_name, media_url from character_media where user_id = ${me} order by created_at desc`;
+        const seen = new Map<string, string>();
+        for (const r of rows) {
+          const name = String(r.character_name || "");
+          if (name && !seen.has(name)) seen.set(name, String(r.media_url || ""));
+        }
+        try {
+          const extra = await db`select name from velo_characters where user_id = ${me}`;
+          for (const r of extra) if (r.name && !seen.has(String(r.name))) seen.set(String(r.name), "");
+        } catch { /* table optional */ }
+        return NextResponse.json({ looks: [...seen].map(([name, image]) => ({ name, image })) });
+      }
+      case "profile.setCharacterLook": {
+        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
+        const name = clean(b.name, 80);
+        if (!name) return bad("Name required.");
+        await db`update users set look = ${"char:" + name}, updated_at = now() where id = ${me}`;
+        return NextResponse.json({ ok: true });
+      }
       case "profile.listCharacters": {
         if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
         try { await db`create table if not exists velo_characters (id uuid primary key default gen_random_uuid(), user_id uuid not null, name text not null, created_at timestamptz default now(), unique(user_id, name))`; } catch { /* optional */ }
