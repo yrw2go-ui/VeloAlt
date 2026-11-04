@@ -1,4 +1,4 @@
-import { put, del } from "@vercel/blob";
+import { put, del, list } from "@vercel/blob";
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "../../lib/db";
 import { resolveCaller } from "../../lib/caller";
@@ -9,13 +9,14 @@ import { PHONE_MSG } from "../../lib/contact";
 import { scrub } from "../../lib/secrets";
 import { availableModels, CHAT_MODELS, MODEL_INFO, type ChatModel } from "../../lib/models";
 import { PERSONALITIES } from "../../lib/persona";
-import { askVelo } from "../../lib/brain";
+import { askVelo, makePicture, wantsPicture } from "../../lib/brain";
 
 // 📦 Everything the app reads and changes, for the signed-in person only.
 // POST { action, ...args } → { ... }. Every query is scoped to their user_id.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const clean = (v: unknown, n: number) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, n);
 const bad = (error: string) => NextResponse.json({ error }, { status: 400 });
+export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   try {
@@ -128,6 +129,30 @@ export async function POST(req: NextRequest) {
         await db`update velo_looks set is_active = false where user_id = ${me}`;
         await db`update velo_looks set is_active = true where id = ${id} and user_id = ${me}`;
         return NextResponse.json({ ok: true });
+      }
+      case "profile.listOrphans": {
+        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
+        const media = await db`select media_url from character_media where user_id = ${me}`;
+        const looks = await db`select image_url from velo_looks where user_id = ${me}`;
+        const used = new Set<string>();
+        for (const r of media) if (r.media_url) used.add(String(r.media_url));
+        for (const r of looks) if (r.image_url) used.add(String(r.image_url));
+        const orphans: { url: string; pathname: string; size: number }[] = [];
+        let cursor: string | undefined;
+        for (let i = 0; i < 20; i++) {
+          const page = await list({ prefix: `velo-looks/${me}/`, cursor, limit: 1000 });
+          for (const blob of page.blobs) if (!used.has(blob.url)) orphans.push({ url: blob.url, pathname: blob.pathname, size: blob.size });
+          if (!page.hasMore) break;
+          cursor = page.cursor;
+        }
+        return NextResponse.json({ orphans, used: used.size });
+      }
+      case "profile.deleteOrphans": {
+        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
+        const urls = Array.isArray(b.urls) ? b.urls.map(String).filter((u: string) => u.includes(".blob.vercel-storage.com") && u.includes(`/velo-looks/${me}/`)).slice(0, 200) : [];
+        let deleted = 0;
+        for (const url of urls) { try { await del(url); deleted++; } catch { /* already gone */ } }
+        return NextResponse.json({ ok: true, deleted });
       }
       case "profile.deleteLook": {
         if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
@@ -382,10 +407,21 @@ export async function POST(req: NextRequest) {
         const marked = await db`select media_url from character_media where user_id = ${me} and character_name = ${character} and is_reference = true order by created_at desc limit 2`;
         const fallback = marked.length ? marked : await db`select media_url from character_media where user_id = ${me} and character_name = ${character} order by created_at desc limit 2`;
         const refs = fallback.map((r: { media_url?: string }) => String(r.media_url || "")).filter((u: string) => u.startsWith("http"));
+        const messages = Array.isArray(b.messages) ? b.messages : [];
+        const last = [...messages].reverse().find((m: { role?: string }) => m.role !== "assistant");
+        const ask = String(last?.content || "");
+        if (wantsPicture(ask)) {
+          try {
+            const url = await makePicture(ask || ("A photo of " + character), me, character, refs);
+            return NextResponse.json({ reply: "Here.\n\n" + url, changed: false, drafts: [] });
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : "Image failed.";
+            return NextResponse.json({ reply: "Picture failed: " + msg, changed: false, drafts: [] });
+          }
+        }
         try { await db`create table if not exists character_memories (id uuid primary key default gen_random_uuid(), user_id uuid not null, character_name text not null, text text not null, created_at timestamptz default now())`; } catch { /* optional */ }
         const mems = await db`select text from character_memories where user_id = ${me} and character_name = ${character} order by created_at desc limit 12`.catch(() => [] as { text: string }[]);
         const memory = mems.map((m: { text?: string }) => String(m.text || "")).filter(Boolean).join("\n");
-        const messages = Array.isArray(b.messages) ? b.messages : [];
         if (memory) messages.unshift({ role: "user", content: `(${character}'s private memory, not Velo's: ${memory})` });
         const result = await askVelo(c, { mode: "chat", messages, timeZone: b.timeZone, name: b.name, character, refs });
         return NextResponse.json(result);
