@@ -7,6 +7,7 @@
 //   "remember" / "memo" — after a call / chat: save a summary, goals and facts to memory
 //   "errand"    — a turn on a call Velo is making FOR the owner to someone else
 //   "errandsum" — a short report to the owner after that call
+import { put } from "@vercel/blob";
 import Anthropic from "@anthropic-ai/sdk";
 import type { Caller } from "./caller";
 
@@ -58,7 +59,7 @@ async function saveCharacter(imageUrl: string, name = "Velo"): Promise<string> {
   return data.id || "saved";
 }
 
-async function generateWithCharacter(prompt: string, type: "image"|"video", characterId: string): Promise<string> {
+async function generateWithCharacter(prompt: string, type: "image"|"video", characterId: string, userId?: string): Promise<string> {
   const key = process.env.SPICY_API_KEY;
   if (!key) throw new Error("Not set up.");
   if (type === "image") {
@@ -69,7 +70,9 @@ async function generateWithCharacter(prompt: string, type: "image"|"video", char
     });
     if (!res.ok) throw new Error("Failed.");
     const data = await res.json();
-    return data?.data?.[0]?.url || "No image.";
+    const raw = data?.data?.[0]?.url || "";
+    if (!raw.startsWith("http")) return "No image.";
+    return persistImage(raw, userId, "Velo");
   } else {
     const res = await fetch("https://api.spicyapi.com/v1/videos/generations", {
       method: "POST",
@@ -87,6 +90,27 @@ const IMAGE_TOOL: Anthropic.Tool = {
   description: "Generate an explicit image from a text prompt (admin-only spicy feature). Returns a URL.",
   input_schema: { type: "object", properties: { prompt: { type: "string", description: "Detailed description of the image to generate" } }, required: ["prompt"] },
 };
+
+async function persistImage(remoteUrl: string, userId?: string, character = "Velo"): Promise<string> {
+  if (!remoteUrl.startsWith("http")) return remoteUrl;
+  let stored = remoteUrl;
+  if (!remoteUrl.includes(".blob.vercel-storage.com")) {
+    const imgRes = await fetch(remoteUrl);
+    if (!imgRes.ok) throw new Error("Couldn't download the image to store it.");
+    const buf = Buffer.from(await imgRes.arrayBuffer());
+    if (buf.length < 32) throw new Error("Image download was empty.");
+    const type = (imgRes.headers.get("content-type") || "image/jpeg").split(";")[0];
+    const ext = type.includes("png") ? "png" : type.includes("webp") ? "webp" : "jpg";
+    const uploaded = await put(`velo-looks/${userId || "anon"}/${Date.now()}.${ext}`, buf, { access: "public", contentType: type });
+    if (!uploaded.url) throw new Error("Blob upload failed. Check BLOB_READ_WRITE_TOKEN.");
+    stored = uploaded.url;
+  }
+  if (userId) {
+    try { await sql()`insert into character_media (user_id, character_name, media_url, media_type) values (${userId}, ${character}, ${stored}, 'image')`; } catch { /* gallery table may be missing */ }
+    try { await sql()`insert into velo_looks (user_id, name, image_url, is_active) values (${userId}, ${character}, ${stored}, false)`; } catch { /* looks table may be missing */ }
+  }
+  return stored;
+}
 
 async function generateImage(prompt: string, provider = "atlas", userId?: string, character = "Velo"): Promise<string> {
   if (provider === "atlas" && process.env.ATLASCLOUD_API_KEY) {
@@ -106,7 +130,9 @@ async function generateImage(prompt: string, provider = "atlas", userId?: string
       });
       if (poll.ok) {
         const p = await poll.json();
-        if (p?.data?.status === "completed" && p?.data?.outputs?.[0]) return p.data.outputs[0];
+        if (p?.data?.status === "completed" && p?.data?.outputs?.[0]) {
+          return persistImage(String(p.data.outputs[0]), userId, character);
+        }
       }
     }
     throw new Error("Atlas timed out.");
@@ -120,11 +146,9 @@ async function generateImage(prompt: string, provider = "atlas", userId?: string
   });
   if (!res.ok) throw new Error("Image generation failed.");
   const data = await res.json();
-  const url = data?.data?.[0]?.url || "No image returned.";
-  if (userId && url.startsWith("http")) {
-    try { await sql()`insert into character_media (user_id, character_name, media_url, media_type) values (${userId}, ${character}, ${url}, 'image')`; } catch {}
-  }
-  return url;
+  const url = data?.data?.[0]?.url || "";
+  if (!url.startsWith("http")) return "No image returned.";
+  return persistImage(url, userId, character);
 }
 
 import { sql } from "./db";
@@ -218,6 +242,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   ];
   let reply = "";
   let changed = false;
+  const images: string[] = [];
   const sources = new Map<string, string>(); // url → title, from the web pages she cited
   const maxTokens = mode === "talk" || mode === "errand" || mode === "sms" ? 4000 : 8000;
 
@@ -230,12 +255,18 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         : name === "generate_image" && isSpicy ? { url: await generateImage((input as { prompt: string }).prompt, (input as { provider?: string }).provider || "atlas", caller.userId) }
         : name === "generate_video" && isSpicy ? { status: await generateVideo((input as { prompt: string }).prompt, (input as { duration?: number }).duration) }
         : name === "save_character" && isSpicy ? { id: await saveCharacter((input as { image_url: string }).image_url, (input as { name?: string }).name) }
-        : name === "generate_with_character" && isSpicy ? { result: await generateWithCharacter((input as { prompt: string }).prompt, ((input as { type?: string }).type === "video" ? "video" : "image"), "chr_placeholder") }
+        : name === "generate_with_character" && isSpicy ? { result: await generateWithCharacter((input as { prompt: string }).prompt, ((input as { type?: string }).type === "video" ? "video" : "image"), "chr_placeholder", caller.userId) }
         : (() => { throw new ReminderError(isProTool(name) ? "That's a Velo Pro feature." : `Unknown tool ${name}`); })();
       if (isReminderTool(name) && !name.startsWith("list_")) changed = true;
+      const blobUrl = name === "generate_image" && out && typeof out === "object" && "url" in out ? String((out as { url: unknown }).url)
+        : name === "generate_with_character" && out && typeof out === "object" && "result" in out ? String((out as { result: unknown }).result)
+        : "";
+      if (blobUrl.startsWith("https://")) images.push(blobUrl);
       return { content: JSON.stringify(out).slice(0, 12000) };
     } catch (e) {
-      const msg = e instanceof MemoryError || e instanceof ReminderError || e instanceof ProError ? e.message : "That didn't save. Tell them it didn't go through and to try again — don't say it's done.";
+      const msg = e instanceof MemoryError || e instanceof ReminderError || e instanceof ProError ? e.message
+        : e instanceof Error && /image|blob|atlas|download/i.test(e.message) ? e.message
+        : "That didn't save. Tell them it didn't go through and to try again — don't say it's done.";
       return { content: msg, isError: true };
     }
   };
@@ -303,6 +334,15 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
     }));
     messages.push({ role: "user", content: results });
     if (round === 5) reply = "";
+  }
+  if (reply && (mode === "chat" || mode === "sms")) {
+    const allowed = new Set(images);
+    for (const [u] of sources) allowed.add(u);
+    reply = reply.replace(/https:\/\/[^\s<>"']+/g, (found) => {
+      const clean = found.replace(/[.,;:!?)]+$/, "");
+      return allowed.has(found) || allowed.has(clean) ? found : "";
+    }).replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+    for (const u of images) if (!reply.includes(u)) reply += "\n\n" + u;
   }
   // Where she found it: up to 3 links under a chat reply, 2 in a text, none spoken on a call.
   if (sources.size && reply && (mode === "chat" || mode === "sms")) {
