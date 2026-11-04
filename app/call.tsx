@@ -173,6 +173,12 @@ export default function VeloCall({ request, onEnd, voice = "female", name, first
   turnsRef.current = turns;
   // Her chosen face also picks her voice (the server maps the look to a voice).
   const look = useVeloLook();
+  const [face, setFace] = useState("");
+  useEffect(() => {
+    const on = (e: Event) => setFace(String((e as CustomEvent).detail?.image || ""));
+    window.addEventListener("velo:character", on);
+    return () => window.removeEventListener("velo:character", on);
+  }, []);
   const lookRef = useRef(look);
   lookRef.current = look;
   // 📝 Text: show the conversation on screen. Off at the start of every call.
@@ -446,7 +452,7 @@ export default function VeloCall({ request, onEnd, voice = "female", name, first
         @keyframes vcDot { 0%,80%,100% { opacity: .25 } 40% { opacity: 1 } }`}</style>
       <div style={{ fontSize: 13, color: "#9ca3af", letterSpacing: 1 }}>{phase === "ended" ? "CALL ENDED" : "ON A CALL"} · {clock(secs)}</div>
       <div style={{ marginTop: small ? 12 : 34, width: small ? 84 : 150, height: small ? 84 : 150, flexShrink: 0, borderRadius: "50%", background: "#111827", border: `3px solid ${ring}`, display: "flex", alignItems: "center", justifyContent: "center", animation: phase === "ended" || phase === "muted" ? undefined : "vcRing 1.6s infinite" }}>
-        <VeloAvatar size={small ? 78 : 144} />
+        {face ? <img src={"/api/pic?u=" + encodeURIComponent(face)} alt="" style={{ width: small ? 78 : 144, height: small ? 78 : 144, borderRadius: "50%", objectFit: "cover" }} /> : <VeloAvatar size={small ? 78 : 144} />}
       </div>
       <div style={{ marginTop: small ? 10 : 18, fontSize: small ? 22 : 26, fontWeight: 800 }}>Velo</div>
       <div style={{ marginTop: 6, fontSize: 14, color: ring, fontWeight: 700, minHeight: 20 }}>

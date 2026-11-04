@@ -95,6 +95,12 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   const [refresh, setRefresh] = useState(0);
   const [chatAdd, setChatAdd] = useState<ChatMsg | null>(null);
   const look = useVeloLook();
+  const [activeChar, setActiveChar] = useState<{ name: string; image: string }>({ name: "Velo", image: "" });
+  useEffect(() => {
+    const on = (e: Event) => setActiveChar((e as CustomEvent).detail || { name: "Velo", image: "" });
+    window.addEventListener("velo:character", on);
+    return () => window.removeEventListener("velo:character", on);
+  }, []);
   const bump = useCallback(() => setRefresh(r => r + 1), []);
 
   // Their profile: name, look, and the time zone they're in now.
@@ -149,9 +155,11 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   return (
     <div style={{ height: "100dvh", display: "flex", flexDirection: "column", maxWidth: 720, margin: "0 auto" }}>
       <header className="row" style={{ padding: "max(12px, env(safe-area-inset-top)) 16px 12px", borderBottom: "1px solid var(--border)" }}>
-        <VeloLogo size={40} />
+        {activeChar.image
+          ? <img src={"/api/pic?u=" + encodeURIComponent(activeChar.image)} alt="" style={{ width: 40, height: 40, borderRadius: "50%", objectFit: "cover" }} />
+          : <VeloLogo size={40} />}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 800, fontSize: 18 }}>Velo</div>
+          <div style={{ fontWeight: 800, fontSize: 18 }}>{activeChar.name || "Velo"}</div>
           <div className="muted" style={{ fontSize: 12 }}>{name ? `Here for you, ${name.split(" ")[0]}` : "Your assistant & companion"}</div>
         </div>
         {canCallVelo() && <button className="btn" onClick={startCall} aria-label="Call Velo" data-testid="call-velo" style={{ borderRadius: 999, padding: "10px 16px" }}>📞 Call</button>}

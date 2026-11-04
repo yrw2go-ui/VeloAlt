@@ -27,7 +27,11 @@ export default function Chat({ userId, name, onChanged, added }: { userId: strin
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [who, setWho] = useState("Velo");
-  const [people, setPeople] = useState<string[]>(["Velo"]);
+  const [people, setPeople] = useState<{ name: string; image: string }[]>([{ name: "Velo", image: "" }]);
+  const face = people.find(p => p.name === who)?.image || "";
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("velo:character", { detail: { name: who, image: face } }));
+  }, [who, face]);
   const reload = useCallback(() => {
     data<{ messages: ChatMsg[] }>("messages.list", { character: who }).then(r => setMsgs(m => {
       const out = [...r.messages];
@@ -47,7 +51,9 @@ export default function Chat({ userId, name, onChanged, added }: { userId: strin
   msgsRef.current = msgs || [];
 
   useEffect(() => {
-    data<{ characters: string[] }>("profile.listCharacters").then(r => setPeople(["Velo", ...(r.characters || []).filter(c => c !== "Velo")])).catch(() => {});
+    data<{ looks: { name: string; image: string }[] }>("profile.listCharacterLooks")
+      .then(r => setPeople([{ name: "Velo", image: "" }, ...(r.looks || []).filter(c => c.name !== "Velo")]))
+      .catch(() => {});
   }, [userId]);
   useEffect(() => {
     Promise.all([
@@ -103,12 +109,15 @@ export default function Chat({ userId, name, onChanged, added }: { userId: strin
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <div style={{ display: "flex", gap: 6, overflowX: "auto", padding: "8px 12px", borderBottom: "1px solid var(--border)" }}>
         {people.map(p => (
-          <button key={p} onClick={() => setWho(p)} style={{ padding: "6px 12px", borderRadius: 999, border: "1px solid var(--border)", background: who === p ? "var(--accent)" : "transparent", color: who === p ? "white" : "var(--text)", fontSize: 13, flexShrink: 0 }}>{p}</button>
+          <button key={p.name} onClick={() => setWho(p.name)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 999, border: "1px solid var(--border)", background: who === p.name ? "var(--accent)" : "transparent", color: who === p.name ? "white" : "var(--text)", fontSize: 13, flexShrink: 0 }}>
+            {p.image ? <img src={"/api/pic?u=" + encodeURIComponent(p.image)} alt="" style={{ width: 22, height: 22, borderRadius: "50%", objectFit: "cover" }} /> : null}
+            {p.name}
+          </button>
         ))}
       </div>
       <div data-testid="chat-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-        {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={i} m={m} />)}
-        {busy && <div className="row"><VeloAvatar size={28} /><div className="muted" style={{ fontSize: 14 }}>{who} is typing…</div></div>}
+        {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={i} m={m} face={m.role === "assistant" ? face : ""} who={who} />)}
+        {busy && <div className="row">{face ? <img src={"/api/pic?u=" + encodeURIComponent(face)} alt="" style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover" }} /> : <VeloAvatar size={28} />}<div className="muted" style={{ fontSize: 14 }}>{who} is typing…</div></div>}
         {err && <div style={{ color: "var(--bad)", fontSize: 14 }}>Could not send.</div>}
         {msgs && msgs.length === 0 && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
@@ -127,11 +136,11 @@ export default function Chat({ userId, name, onChanged, added }: { userId: strin
   );
 }
 
-function Bubble({ m }: { m: ChatMsg }) {
+function Bubble({ m, face, who }: { m: ChatMsg; face?: string; who?: string }) {
   const mine = m.role === "user";
   return (
     <div style={{ display: "flex", gap: 8, alignItems: "flex-end", justifyContent: mine ? "flex-end" : "flex-start" }}>
-      {!mine && <VeloAvatar size={28} />}
+      {!mine && (face ? <img src={"/api/pic?u=" + encodeURIComponent(face)} alt="" style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover" }} /> : <VeloAvatar size={28} />)}
       <div style={{ maxWidth: "80%", padding: "10px 14px", borderRadius: 18, borderBottomLeftRadius: mine ? 18 : 4, borderBottomRightRadius: mine ? 4 : 18, background: mine ? "linear-gradient(135deg, var(--accent), var(--accent2))" : "var(--surface2)", color: "var(--text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", lineHeight: 1.45, fontSize: 15 }}>
         {renderRich(m.content.replace(/\*\*(.+?)\*\*/g, "$1"))}
       </div>
