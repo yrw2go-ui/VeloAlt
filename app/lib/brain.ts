@@ -193,6 +193,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   let personality: Personality = PERSONALITIES.includes(u?.personality) ? u.personality : "friend";
   if (personality === "romantic" && !u?.adult_confirmed_at) personality = "friend";
   if (personality === "alternate" && caller.email.toLowerCase() !== "yrw2go@gmail.com") personality = "friend";
+  const isSpicy = personality === "alternate" && caller.email.toLowerCase() === "yrw2go@gmail.com";
   const pro = u?.plan === "pro" && twilioReady();
   const proTools = pro ? await proToolsFor(caller.userId) : null;
   const drafts: Draft[] = [];
@@ -248,7 +249,6 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   // Tools: none on wrap-ups or errands; Pro adds contacts, drafts, Amazon carts and 🔎 web search
   // (Anthropic runs the searches; results come back in the same response).
   const search = !!proTools && (mode === "chat" || mode === "sms" || mode === "talk");
-  const isSpicy = personality === "alternate" && caller.email.toLowerCase() === "yrw2go@gmail.com";
   const tools: Anthropic.ToolUnion[] | undefined = wrapUp || errand ? undefined : [
     ...MEMORY_TOOLS, ...REMINDER_TOOLS, ...(proTools?.tools || []),
     ...(isSpicy ? [IMAGE_TOOL, VIDEO_TOOL, SAVE_CHARACTER_TOOL, USE_CHARACTER_TOOL] : []),
