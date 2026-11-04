@@ -101,7 +101,7 @@ async function persistImage(remoteUrl: string, userId?: string, character = "Vel
     if (buf.length < 32) throw new Error("Image download was empty.");
     const type = (imgRes.headers.get("content-type") || "image/jpeg").split(";")[0];
     const ext = type.includes("png") ? "png" : type.includes("webp") ? "webp" : "jpg";
-    const uploaded = await put(`velo-looks/${userId || "anon"}/${Date.now()}.${ext}`, buf, { access: "public", contentType: type });
+    const uploaded = await put(`velo-looks/\( {userId || "anon"}/ \){Date.now()}.${ext}`, buf, { access: "public", contentType: type });
     if (!uploaded.url) throw new Error("Blob upload failed. Check BLOB_READ_WRITE_TOKEN.");
     stored = uploaded.url;
   }
@@ -112,40 +112,64 @@ async function persistImage(remoteUrl: string, userId?: string, character = "Vel
   return stored;
 }
 
+function pictureSize(prompt: string) {
+  const p = prompt.toLowerCase();
+  if (/\b(standing|full[- ]?body|full length|head to toe|walking|from behind)\b/.test(p)) return "1584*2816";
+  if (/\b(lying|laying|reclining|horizontal|landscape|wide shot|side view|from the side|bed)\b/.test(p)) return "2496*1664";
+  return "1664*2496";
+}
+async function atlasImage(url: string): Promise<string> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Couldn't read her photo.");
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (buf.length < 32) throw new Error("Her photo was empty.");
+  const type = (res.headers.get("content-type") || "image/jpeg").split(";")[0];
+  return `data:\( {type};base64, \){buf.toString("base64")}`;
+}
+
 async function generateImage(prompt: string, provider = "atlas", userId?: string, character = "Velo", refs: string[] = []): Promise<string> {
   const useRefs = refs.filter(u => u.startsWith("http")).slice(0, 2);
-  if (provider === "atlas" && process.env.ATLASCLOUD_API_KEY) {
-    const body = useRefs.length
-      ? { model: "bytedance/seedream-v5.0-pro/edit", prompt: `This is ${character}. ${prompt}`, images: useRefs, size: "1536*1536" }
-      : { model: "bytedance/seedream-v5.0-pro/text-to-image", prompt: `Portrait of ${character}. ${prompt}`, size: "1536*1536" };
-    const res = await fetch("https://api.atlascloud.ai/api/v1/model/generateImage", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${process.env.ATLASCLOUD_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) throw new Error("Atlas failed.");
-    const data = await res.json();
-    const predId = data?.data?.id;
-    if (!predId) throw new Error("No prediction id.");
-    for (let i = 0; i < 30; i++) {
-      await new Promise(r => setTimeout(r, 3000));
-      const poll = await fetch(`https://api.atlascloud.ai/api/v1/model/prediction/${predId}`, {
-        headers: { Authorization: `Bearer ${process.env.ATLASCLOUD_API_KEY}` },
+  const key = process.env.ATLASCLOUD_API_KEY;
+  if (key) {
+    const poll = async (body: unknown) => {
+      const res = await fetch("https://api.atlascloud.ai/api/v1/model/generateImage", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
       });
-      if (poll.ok) {
-        const p = await poll.json();
-        if (p?.data?.status === "completed" && p?.data?.outputs?.[0]) {
-          return persistImage(String(p.data.outputs[0]), userId, character);
-        }
+      const raw = await res.text();
+      if (!res.ok) throw new Error("Atlas " + res.status + ": " + raw.slice(0, 180));
+      const data = JSON.parse(raw);
+      const predId = data?.data?.id;
+      if (!predId) throw new Error("No prediction id.");
+      for (let i = 0; i < 18; i++) {
+        await new Promise(r => setTimeout(r, 2000));
+        const pRes = await fetch(`https://api.atlascloud.ai/api/v1/model/prediction/${predId}`, { headers: { Authorization: `Bearer ${key}` } });
+        if (!pRes.ok) continue;
+        const p = await pRes.json();
+        if (p?.data?.status === "failed") throw new Error("Atlas failed: " + String(p?.data?.error || p?.data?.status));
+        if (p?.data?.status === "completed" && p?.data?.outputs?.[0]) return persistImage(String(p.data.outputs[0]), userId, character);
       }
+      throw new Error("Atlas timed out.");
+    };
+    if (useRefs.length) {
+      const images = [];
+      for (const u of useRefs) images.push(await atlasImage(u));
+      return poll({
+        model: "bytedance/seedream-v5.0-pro/edit",
+        prompt: `The person in the reference photo is ${character}. Keep her face the same. ${prompt}`,
+        images,
+        size: pictureSize(prompt),
+        output_format: "jpeg",
+      });
     }
-    throw new Error("Atlas timed out.");
+    return poll({ model: "bytedance/seedream-v5.0-pro/text-to-image", prompt: `Portrait of ${character}. ${prompt}`, size: pictureSize(prompt), output_format: "jpeg" });
   }
-  const key = process.env.SPICY_API_KEY;
-  if (!key) throw new Error("Image generation isn't set up.");
+  const spicy = process.env.SPICY_API_KEY;
+  if (!spicy) throw new Error("Image generation isn't set up.");
   const res = await fetch("https://api.spicyapi.com/v1/images/generations", {
     method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    headers: { Authorization: `Bearer ${spicy}`, "Content-Type": "application/json" },
     body: JSON.stringify({ model: "spicy-image-1", prompt, size: "832*1216", n: 1 }),
   });
   if (!res.ok) throw new Error("Image generation failed.");
@@ -212,13 +236,14 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
       type: "text",
       text: [
         errand ? "" : name ? `Their first name is ${name}.` : "You don't know their name yet — if it comes up naturally, ask, and remember it.",
-        `Right now it is ${today.label}${errand ? "" : " where they are"}.`,
+        `Right now it is \( {today.label} \){errand ? "" : " where they are"}.`,
         errand ? "" : pro ? SEARCH_INFO + "\n\n" + PRO_INFO + (proTools?.page ? `\nTheir Facebook Page "${proTools.page}" is connected: you can draft posts for it (draft_post).` : "\nNo Facebook Page is connected; if they want you to post, tell them to connect one in Settings → Velo Pro (Facebook only allows Pages, not personal profiles).") : FREE_INFO,
         memory ? `${memory}\n\nYou two have talked before — never introduce yourself; talk like someone who knows them.` : "",
         mode === "chat" || mode === "sms" || mode === "talk" || mode === "recap" ? PERSONALITY_PROMPT[personality] : "",
         modeText,
-        isCharacter ? `YOU ARE ${character}, not Velo. This is her private chat. Stay in character as ${character}. Do not mention Velo. Your memories are only about this chat with them. When they ask to see you, call generate_image. The pictures must look like ${character}, matching her saved photos. Never write a URL yourself.` : "",
-        mode === "talk" && isSpicy ? "On this call you CAN send a picture. If they ask to see you or for a picture, call generate_image. Do not say the link. The app shows the picture on screen. Say a short line like 'Here you go' after the tool returns." : "",
+        isCharacter ? `YOU ARE ${character}, not Velo. This is her private chat or call. Stay in character as ${character}. Do not mention Velo. Your memories are this chat and these calls with them. When they ask to see you, call generate_image. The pictures must look like ${character}, matching her saved photos. Never write a URL yourself.` : "",
+        (opts.refs || []).length ? `Reference photos of ${character} are attached to image generation. Any picture must be that same person. Do not invent a different face.` : "",
+        mode === "talk" && (isSpicy || isCharacter) ? "On this call you CAN send a picture. If they ask to see you or for a picture, call generate_image. The picture must match her reference photos. Do not say the link. The app shows the picture on screen. Say a short line like 'Here you go' after the tool returns." : "",
       ].filter(Boolean).join("\n\n"),
     },
   ];
@@ -251,7 +276,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   const search = !!proTools && (mode === "chat" || mode === "sms" || mode === "talk");
   const tools: Anthropic.ToolUnion[] | undefined = wrapUp || errand ? undefined : [
     ...MEMORY_TOOLS, ...REMINDER_TOOLS, ...(proTools?.tools || []),
-    ...(isSpicy ? [IMAGE_TOOL, VIDEO_TOOL, SAVE_CHARACTER_TOOL, USE_CHARACTER_TOOL] : []),
+    ...(isSpicy || isCharacter ? [IMAGE_TOOL, VIDEO_TOOL, SAVE_CHARACTER_TOOL, USE_CHARACTER_TOOL] : []),
     ...(search ? [{ type: "web_search_20260209" as const, name: "web_search" as const, max_uses: 5, user_location: { type: "approximate" as const, timezone: today.tz } }] : []),
   ];
   let reply = "";
@@ -266,7 +291,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
       const out = isMemoryTool(name) ? await runMemoryTool(caller, name, input)
         : isReminderTool(name) ? await runReminderTool(caller, name, input, today.tz)
         : isProTool(name) && pro ? await runProTool(caller, name, input, drafts)
-        : name === "generate_image" && isSpicy ? { url: await generateImage((input as { prompt: string }).prompt, (input as { provider?: string }).provider || "atlas", caller.userId, isCharacter ? character : "Velo", isCharacter ? opts.refs || [] : []) }
+        : name === "generate_image" && (isSpicy || isCharacter) ? { url: await generateImage((input as { prompt: string }).prompt, (input as { provider?: string }).provider || "atlas", caller.userId, character, opts.refs || []) }
         : name === "generate_video" && isSpicy ? { status: await generateVideo((input as { prompt: string }).prompt, (input as { duration?: number }).duration) }
         : name === "save_character" && isSpicy ? { id: await saveCharacter((input as { image_url: string }).image_url, (input as { name?: string }).name) }
         : name === "generate_with_character" && isSpicy ? { result: await generateWithCharacter((input as { prompt: string }).prompt, ((input as { type?: string }).type === "video" ? "video" : "image"), "chr_placeholder", caller.userId) }
@@ -367,7 +392,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   // Where she found it: up to 3 links under a chat reply, 2 in a text, none spoken on a call.
   if (sources.size && reply && (mode === "chat" || mode === "sms")) {
     const list = [...sources].slice(0, mode === "sms" ? 2 : 3);
-    reply += mode === "sms" ? `\n\n${list.map(([u]) => u).join("\n")}` : `\n\nSources:\n${list.map(([u, t]) => `• ${t.slice(0, 80)} — ${u}`).join("\n")}`;
+    reply += mode === "sms" ? `\n\n\( {list.map(([u]) => u).join("\n")}` : `\n\nSources:\n \){list.map(([u, t]) => `• ${t.slice(0, 80)} — ${u}`).join("\n")}`;
   }
 
   if (mode === "remember" || mode === "memo") {
