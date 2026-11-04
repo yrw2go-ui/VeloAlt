@@ -223,7 +223,7 @@ const STYLES = [
 
 /** Admin-only: generate and save looks for Velo. */
 function VeloLookGenerator({ profile, onChange }: { profile: Profile; onChange: () => void }) {
-  const [prompt, setPrompt] = useState("");
+  const [genPrompt, setGenPrompt] = useState("");
   const [lookName, setLookName] = useState("Velo");
   const [provider, setProvider] = useState("atlas");
   const [busy, setBusy] = useState(false);
@@ -251,10 +251,10 @@ function VeloLookGenerator({ profile, onChange }: { profile: Profile; onChange: 
     } catch (e) { setMsg(e instanceof Error ? e.message : "Upload failed."); setBusy(false); }
   };
   const gen = async () => {
-    if (!prompt.trim()) return;
+    if (!genPrompt.trim()) return;
     setBusy(true); setMsg(""); setUrl("");
     try {
-      const r = await data<{ url?: string }>("profile.generateLook", { prompt: prompt.trim(), provider });
+      const r = await data<{ url?: string }>("profile.generateLook", { prompt: genPrompt.trim(), provider });
       if (r.url) setUrl(r.url);
       else setMsg("No image returned.");
     } catch (e) { setMsg(e instanceof Error ? e.message : "Failed."); }
@@ -285,8 +285,8 @@ function VeloLookGenerator({ profile, onChange }: { profile: Profile; onChange: 
       <div className="row" style={{ gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
         <button disabled={busy} onClick={() => setProvider("spicy")} style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${provider === "spicy" ? "var(--accent)" : "var(--border)"}`, background: provider === "spicy" ? "rgba(124,140,255,0.12)" : "var(--surface2)", color: "var(--text)", cursor: "pointer", fontSize: 13 }}>Spicy</button>
         <button disabled={busy} onClick={() => setProvider("atlas")} style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${provider === "atlas" ? "var(--accent)" : "var(--border)"}`, background: provider === "atlas" ? "rgba(124,140,255,0.12)" : "var(--surface2)", color: "var(--text)", cursor: "pointer", fontSize: 13 }}>Atlas</button>
-        <input value={prompt} onChange={e => setPrompt(e.target.value)} placeholder="Describe her look…" style={{ flex: 1, minWidth: 200 }} />
-        <button className="btn" disabled={busy || !prompt.trim()} onClick={gen}>{busy ? "…" : "Generate"}</button>
+        <input value={genPrompt} onChange={e => setGenPrompt(e.target.value)} placeholder="Describe her look…" style={{ flex: 1, minWidth: 200 }} />
+        <button className="btn" disabled={busy || !genPrompt.trim()} onClick={gen}>{busy ? "…" : "Generate"}</button>
       </div>
       {url && (
         <div style={{ marginTop: 8 }}>
@@ -376,7 +376,7 @@ export function CharacterGallery({ profile, onChange }: { profile: Profile; onCh
   const [media, setMedia] = useState<{id:string; media_url:string; is_reference:boolean}[]>([]);
   const [page, setPage] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [prompt, setPrompt] = useState("");
+  const [genPrompt, setGenPrompt] = useState("");
   const loadChars = async () => {
     try { const r = await data<{characters: string[]}>("profile.listCharacters"); setChars(r.characters || ["Velo"]); } catch { setChars(["Velo"]); }
   };
@@ -394,10 +394,10 @@ export function CharacterGallery({ profile, onChange }: { profile: Profile; onCh
     setBusy(false);
   };
   const gen = async () => {
-    if (!prompt.trim()) return;
+    if (!genPrompt.trim()) return;
     setBusy(true);
     try {
-      const r = await data<{url?: string}>("profile.generateLook", { prompt: prompt.trim(), provider: "atlas" });
+      const r = await data<{url?: string}>("profile.generateLook", { prompt: genPrompt.trim(), provider: "atlas" });
       if (r.url) {
         await data("profile.saveMedia", { character: active, url: r.url, type: "image" });
         loadMedia(active);
@@ -417,8 +417,8 @@ export function CharacterGallery({ profile, onChange }: { profile: Profile; onCh
         <button onClick={rename} disabled={busy} style={{ padding: "6px 12px", fontSize: 13 }}>Rename</button>
       </div>
       <div className="row" style={{ gap: 8, marginBottom: 10 }}>
-        <input value={prompt} onChange={e => setPrompt(e.target.value)} placeholder="Generate more of her…" style={{ flex: 1 }} />
-        <button className="btn" disabled={busy || !prompt.trim()} onClick={gen}>Generate</button>
+        <input value={genPrompt} onChange={e => setGenPrompt(e.target.value)} placeholder="Generate more of her…" style={{ flex: 1 }} />
+        <button className="btn" disabled={busy || !genPrompt.trim()} onClick={gen}>Generate</button>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))", gap: 8 }}>
         {shown.map(m => (
