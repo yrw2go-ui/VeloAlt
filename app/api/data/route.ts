@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
         if (buf.length < 32) throw new Error("Image download was empty.");
         const type = (imgRes.headers.get("content-type") || "image/jpeg").split(";")[0];
         const ext = type.includes("png") ? "png" : type.includes("webp") ? "webp" : "jpg";
-        const uploaded = await put(`velo-looks/${me}/${Date.now()}.${ext}`, buf, { access: "public", contentType: type });
+        const uploaded = await put(`velo-looks/\( {me}/ \){Date.now()}.${ext}`, buf, { access: "public", contentType: type });
         if (!uploaded.url) throw new Error("Blob upload failed. Check BLOB_READ_WRITE_TOKEN.");
         stored = uploaded.url;
       }
@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
         const imgRes = await fetch(imageUrl);
         if (!imgRes.ok) return bad("Couldn't download image.");
         const blob = await imgRes.blob();
-        const uploaded = await put(`velo-looks/${me}/${Date.now()}.jpg`, blob, { access: "public" });
+        const uploaded = await put(`velo-looks/\( {me}/ \){Date.now()}.jpg`, blob, { access: "public" });
         if (!uploaded.url) return bad("Blob upload failed. Check token.");
         await db`update velo_looks set is_active = false where user_id = ${me}`;
         await db`insert into velo_looks (user_id, name, image_url, is_active) values (${me}, ${name}, ${uploaded.url}, true)`;
@@ -164,7 +164,7 @@ export async function POST(req: NextRequest) {
         // imageData is a data URL or base64
         const buf = Buffer.from(imageData.split(",")[1] || imageData, "base64");
         const blob = new Blob([buf], { type: "image/jpeg" });
-        const uploaded = await put(`velo-looks/${me}/${Date.now()}.jpg`, blob, { access: "public" });
+        const uploaded = await put(`velo-looks/\( {me}/ \){Date.now()}.jpg`, blob, { access: "public" });
         if (!uploaded.url) return bad("Blob upload failed. Check token.");
         await db`update velo_looks set is_active = false where user_id = ${me}`;
         await db`insert into velo_looks (user_id, name, image_url, is_active) values (${me}, ${name}, ${uploaded.url}, true)`;
@@ -274,7 +274,7 @@ export async function POST(req: NextRequest) {
         const imgRes = await fetch(url);
         if (!imgRes.ok) return bad("Couldn't download image. Check Blob token.");
         const blob = await imgRes.blob();
-        const uploaded = await put(`velo-looks/${me}/${Date.now()}.jpg`, blob, { access: "public" });
+        const uploaded = await put(`velo-looks/\( {me}/ \){Date.now()}.jpg`, blob, { access: "public" });
         await db`insert into character_media (user_id, character_name, media_url, media_type) values (${me}, ${name}, ${uploaded.url}, ${type})`;
         return NextResponse.json({ ok: true, url: uploaded.url });
       }
@@ -285,9 +285,12 @@ export async function POST(req: NextRequest) {
         const prompt = String(b.prompt || "");
         const refs = Array.isArray(b.images) ? b.images.map(String).filter((u: string) => u.startsWith("http")).slice(0, 2) : [];
         if (provider === "atlas" && process.env.ATLASCLOUD_API_KEY) {
+        const size = /\b(standing|full[- ]?body|full length|walking)\b/i.test(prompt) ? "1584*2816"
+          : /\b(lying|laying|reclining|horizontal|landscape|wide|bed)\b/i.test(prompt) ? "2496*1664"
+          : "1664*2496";
           const body = refs.length
-            ? { model: "bytedance/seedream-v5.0-pro/edit", prompt, images: refs, size: "1536*1536" }
-            : { model: "bytedance/seedream-v5.0-pro/text-to-image", prompt, size: "1536*1536" };
+            ? { model: "bytedance/seedream-v5.0-pro/edit", prompt, images: refs, size, output_format: "jpeg" }
+            : { model: "bytedance/seedream-v5.0-pro/text-to-image", prompt, size, output_format: "jpeg" };
           const res = await fetch("https://api.atlascloud.ai/api/v1/model/generateImage", {
             method: "POST",
             headers: { Authorization: `Bearer ${process.env.ATLASCLOUD_API_KEY}`, "Content-Type": "application/json" },
@@ -385,6 +388,36 @@ export async function POST(req: NextRequest) {
         const messages = Array.isArray(b.messages) ? b.messages : [];
         if (memory) messages.unshift({ role: "user", content: `(${character}'s private memory, not Velo's: ${memory})` });
         const result = await askVelo(c, { mode: "chat", messages, timeZone: b.timeZone, name: b.name, character, refs });
+        return NextResponse.json(result);
+      }
+      case "character.call": {
+        const character = String(b.character || "Velo").slice(0, 80) || "Velo";
+        const mine = character.toLowerCase() !== "velo";
+        if (mine && c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
+        const mode = b.mode === "recap" || b.mode === "remember" ? b.mode : "talk";
+        const marked = await db`select media_url from character_media where user_id = ${me} and character_name = ${character} and is_reference = true order by created_at desc limit 2`;
+        const fallback = marked.length ? marked : await db`select media_url from character_media where user_id = ${me} and character_name = ${character} order by created_at desc limit 2`;
+        const refs = fallback.map((r: { media_url?: string }) => String(r.media_url || "")).filter((u: string) => u.startsWith("http"));
+        try { await db`create table if not exists character_memories (id uuid primary key default gen_random_uuid(), user_id uuid not null, character_name text not null, text text not null, created_at timestamptz default now())`; } catch { /* optional */ }
+        const mems = await db`select text from character_memories where user_id = ${me} and character_name = ${character} order by created_at desc limit 12`.catch(() => [] as { text: string }[]);
+        const memory = mems.map((m: { text?: string }) => String(m.text || "")).filter(Boolean).join("\n");
+        try { await db`alter table velo_messages add column if not exists character text default 'Velo'`; } catch { /* already there */ }
+        const recent = mine
+          ? await db`select role, content from velo_messages where user_id = ${me} and character = ${character} order by created_at desc limit 10`.catch(() => [] as { role: string; content: string }[])
+          : [];
+        const chatBits = [...recent].reverse().map((m: { role?: string; content?: string }) => `${m.role}: ${String(m.content || "").slice(0, 240)}`).join("\n");
+        const messages = Array.isArray(b.messages) ? [...b.messages] : [];
+        const preface = [memory ? `\( {character}'s saved memory from chat and calls:\n \){memory}` : "", chatBits ? `Recent chat with \( {character}. Continue it. Do not read this list aloud:\n \){chatBits}` : ""].filter(Boolean).join("\n\n");
+        if (preface) messages.unshift({ role: "user", content: `(Private context: ${preface})` });
+        if (mode === "remember" && mine) {
+          const said = (Array.isArray(b.messages) ? b.messages : []).filter((m: { content?: string }) => String(m.content || "").trim());
+          const note = said.slice(-6).map((m: { role?: string; content?: string }) => `${m.role}: ${String(m.content).slice(0, 160)}`).join(" | ").slice(0, 500);
+          if (note) await db`insert into character_memories (user_id, character_name, text) values (${me}, ${character}, ${"Call: " + note})`;
+          const at = Date.now() - said.length;
+          for (const [i, m] of said.entries()) await db`insert into velo_messages (user_id, role, content, character, created_at) values (${me}, ${m.role === "assistant" ? "assistant" : "user"}, ${String(m.content).slice(0, 4000)}, ${character}, ${new Date(at + i).toISOString()})`;
+          return NextResponse.json({ reply: "", changed: false });
+        }
+        const result = await askVelo(c, { mode, messages, timeZone: b.timeZone, name: b.name, character, refs });
         return NextResponse.json(result);
       }
       case "character.remember": {
