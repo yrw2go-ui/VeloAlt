@@ -141,6 +141,12 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
 
   const startCall = () => { primeSpeech(); setCalling(true); };
   const callRequest = async (turns: { role: "user" | "assistant"; content: string }[], mode: "talk" | "recap" | "remember") => {
+    const character = activeChar.name || "Velo";
+    if (profile?.isAdmin) {
+      const r = await data<{ reply: string; changed?: boolean }>("character.call", { mode, messages: turns, timeZone: timeZone(), name, character });
+      if (r.changed) bump();
+      return r.reply;
+    }
     const r = await api<{ reply: string; changed?: boolean }>("/api/velo", { mode, messages: turns, timeZone: timeZone(), name });
     if (r.changed) bump();
     return r.reply;
@@ -162,7 +168,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
           <div style={{ fontWeight: 800, fontSize: 18 }}>{activeChar.name || "Velo"}</div>
           <div className="muted" style={{ fontSize: 12 }}>{name ? `Here for you, ${name.split(" ")[0]}` : "Your assistant & companion"}</div>
         </div>
-        {canCallVelo() && <button className="btn" onClick={startCall} aria-label="Call Velo" data-testid="call-velo" style={{ borderRadius: 999, padding: "10px 16px" }}>📞 Call</button>}
+        {canCallVelo() && <button className="btn" onClick={startCall} aria-label={"Call " + (activeChar.name || "Velo")} data-testid="call-velo" style={{ borderRadius: 999, padding: "10px 16px" }}>📞 {activeChar.name && activeChar.name !== "Velo" ? activeChar.name : "Call"}</button>}
       </header>
 
       {due.length > 0 && (
@@ -194,7 +200,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       </nav>
 
       {calling && (
-        <VeloCall key={look} name={name} firstCall={firstCall} request={callRequest} fetchVoice={fetchVoice}
+        <VeloCall key={activeChar.name || "Velo"} name={name} who={activeChar.name || "Velo"} faceUrl={activeChar.image} firstCall={firstCall && (activeChar.name || "Velo") === "Velo"} request={callRequest} fetchVoice={fetchVoice}
           onEnd={(recap) => {
             setCalling(false); setFirstCall(false);
             if (recap) { setChatAdd({ role: "assistant", content: recap }); setTab("chat"); }
