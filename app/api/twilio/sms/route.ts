@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
           return reply(r.ok ? (kind === "text" ? `Sent to ${who}. ✅` : kind === "post" ? `Posted to ${who}. ✅` : `Calling ${who} now — I'll text you how it went. 📞`) : (r.error || "That didn't go through."));
         }
       }
-      const rows = await sql()`select role, content from velo_messages where user_id = ${owner.userId} order by created_at desc, id desc limit 30`;
+      const rows = await sql()`select role, content from velo_messages where user_id = ${owner.userId} and character_id is null order by created_at desc, id desc limit 30`;
       const turns = (rows.reverse() as Turn[]);
       const r = await askVelo(owner, { mode: "sms", messages: turns, timeZone: owner.timeZone, name: owner.name });
       // A cart is just a link (nothing to approve); texts, calls and posts wait for YES.

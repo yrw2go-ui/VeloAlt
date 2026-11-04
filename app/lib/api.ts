@@ -11,3 +11,31 @@ export async function api<T = unknown>(path: string, body: unknown): Promise<T> 
 
 /** Reads and changes the person's own data (app/api/data). */
 export const data = <T = unknown>(action: string, args: Record<string, unknown> = {}) => api<T>("/api/data", { action, ...args });
+
+export type SavedFile = { id: string; url: string; name: string; content_type: string; size: number };
+
+/** Big photos are shrunk on the device first (longest side 2000px, JPEG) so uploads stay small and fast. */
+async function shrink(file: File): Promise<File> {
+  if (!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size < 1_500_000) return file;
+  try {
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, 2000 / Math.max(bmp.width, bmp.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bmp.width * scale); canvas.height = Math.round(bmp.height * scale);
+    canvas.getContext("2d")!.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>(r => canvas.toBlob(r, "image/jpeg", 0.85));
+    return blob ? new File([blob], file.name.replace(/\.\w+$/, "") + ".jpg", { type: "image/jpeg" }) : file;
+  } catch { return file; }
+}
+
+/** Saves a file to Velo's storage (purpose "chat" for attachments, "face" for her picture). */
+export async function uploadFile(file: File, purpose: "chat" | "face"): Promise<SavedFile> {
+  const form = new FormData();
+  form.set("file", await shrink(file));
+  form.set("purpose", purpose);
+  const res = await fetch("/api/files", { method: "POST", body: form });
+  const out = await res.json().catch(() => ({}));
+  if (res.status === 401) window.dispatchEvent(new Event("velo:signed-out"));
+  if (!res.ok) throw new Error(out.error || "Upload didn't go through.");
+  return out.file as SavedFile;
+}

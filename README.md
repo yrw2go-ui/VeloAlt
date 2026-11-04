@@ -9,6 +9,7 @@ Your personal assistant and companion — the Velo from GetPAID, as her own app.
 - ✅ **To-dos** — Velo adds to your list; check things off on the Today tab.
 - 💬 **Personality** — Friend (default), Professional assistant, Sarcastic assistant, or Romantic companion (adults only, 18+ confirmation, kept tasteful). Calls Velo makes to other people always use her plain, polite voice.
 - 🧠 **Velo's brain** — pick which AI she chats with: Claude (default), Qwen or DeepSeek. Memory, reminders and Pro features work with all of them; passwords and codes are hidden from every one.
+- 📎 **Files** — send Velo photos, PDFs and text files in chat (📎); she can look at them, and they're saved (Vercel Blob) in a Files list on the Memory tab where you can open or delete them.
 - 🧑 **Looks** — pick Velo's face (each has her own voice).
 - ⭐ **Velo Pro** — Velo gets her own phone number: she texts and calls people for you (bookings, appointments, questions) and reports back, and you can text or call her. She can also post to your Facebook Page, 🔎 search the web for you (answers come with links), and 🛒 put together Amazon carts — you review and check out on Amazon yourself. Every text, call and post is shown to you first and only goes out when you tap Send / Call (or reply YES). Texts go out marked "(via Velo)"; on calls she says she's an AI assistant calling for you.
 
@@ -31,7 +32,11 @@ Your personal assistant and companion — the Velo from GetPAID, as her own app.
 5. **Web search** uses Anthropic's web search tool (billed per search on your Anthropic account; up to 5 searches per question) and needs a model that supports it. **Amazon carts** need no setup (optional: `AMAZON_ASSOCIATE_TAG`). Run `db/migrations/004-cart.sql`.
 6. Limits: 30 texts, 10 calls and 10 posts per person per day; calls end after 10 minutes.
 
-Run `db/migrations/006-personality.sql` for personalities.
+Run `db/migrations/006-personality.sql` for personalities and `db/migrations/007-files.sql` for files.
+
+### Files (Vercel Blob)
+
+Connect a Blob store to the project (it sets `BLOB_READ_WRITE_TOKEN`). Chat attachments and Velo's custom face are saved there with long random links; uploads are up to 4 MB (photos are shrunk on the device first).
 
 ### Qwen and DeepSeek (optional)
 

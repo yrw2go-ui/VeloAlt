@@ -8,6 +8,8 @@ import { PHONE_MSG } from "../../lib/contact";
 import { scrub } from "../../lib/secrets";
 import { availableModels, CHAT_MODELS, MODEL_INFO, type ChatModel } from "../../lib/models";
 import { PERSONALITIES } from "../../lib/persona";
+import { deleteFile, ownFile } from "../../lib/files";
+import { ownCharacter } from "../../lib/characters";
 
 // 📦 Everything the app reads and changes, for the signed-in person only.
 // POST { action, ...args } → { ... }. Every query is scoped to their user_id.
@@ -28,8 +30,10 @@ export async function POST(req: NextRequest) {
       case "profile.get": {
         const [u] = await db`select name, look, time_zone, plan, phone, phone_verified_at, chat_model, personality, adult_confirmed_at from users where id = ${me}`;
         const [{ n }] = await db`select count(*)::int as n from velo_memories where user_id = ${me} and kind = 'call'`;
+        const [face] = await db`select url from velo_files where user_id = ${me} and kind = 'face' order by created_at desc limit 1`;
         return NextResponse.json({
-          name: u?.name || "", look: u?.look || "default", timeZone: u?.time_zone || null, hadCall: n > 0,
+          name: u?.name || "", look: u?.look === "custom" && !face ? "default" : u?.look || "default", customFace: face ? String(face.url) : "",
+          timeZone: u?.time_zone || null, hadCall: n > 0,
           plan: u?.plan || "free", proForSale: !!process.env.STRIPE_PRICE_PRO && twilioReady(),
           phone: u?.phone ? showPhone(String(u.phone)) : "", phoneVerified: !!u?.phone_verified_at, veloNumber: veloNumber(),
           chatModel: availableModels().includes(u?.chat_model) ? u?.chat_model : "claude",
@@ -42,6 +46,8 @@ export async function POST(req: NextRequest) {
       case "profile.update": {
         if (typeof b.name === "string") await db`update users set name = ${clean(b.name, 80) || null}, updated_at = now() where id = ${me}`;
         if (typeof b.look === "string" && VELO_LOOKS.some(l => l.id === b.look)) await db`update users set look = ${b.look}, updated_at = now() where id = ${me}`;
+        // "custom" = the face they uploaded (only if there is one).
+        if (b.look === "custom") await db`update users set look = 'custom', updated_at = now() where id = ${me} and exists (select 1 from velo_files where user_id = ${me} and kind = 'face')`;
         if (isValidTimeZone(b.timeZone)) await db`update users set time_zone = ${b.timeZone} where id = ${me}`;
         // Romantic is for adults: picking it needs the 18+ confirmation (sent with it, or given before).
         if (b.adultConfirmed === true) await db`update users set adult_confirmed_at = coalesce(adult_confirmed_at, now()) where id = ${me}`;
@@ -55,20 +61,33 @@ export async function POST(req: NextRequest) {
       }
 
       case "messages.list": {
-        const rows = await db`select role, content from velo_messages where user_id = ${me} order by created_at desc, id desc limit 60`;
-        return NextResponse.json({ messages: rows.reverse() });
+        // Velo's chat (no characterId) or one character's chat.
+        const ch = b.characterId ? await ownCharacter(me, String(b.characterId)) : null;
+        if (b.characterId && !ch) return bad("That character wasn't found.");
+        const rows = await db`select m.role, m.content, f.id as file_id, f.url as file_url, f.name as file_name, f.content_type as file_type
+          from velo_messages m left join velo_files f on f.id = m.file_id and f.user_id = m.user_id
+          where m.user_id = ${me} and m.character_id is not distinct from ${ch?.id || null} order by m.created_at desc, m.id desc limit 60`;
+        return NextResponse.json({ messages: rows.reverse().map(r => ({ role: r.role, content: r.content,
+          ...(r.file_id ? { file: { id: r.file_id, url: r.file_url, name: r.file_name, type: r.file_type } } : {}) })) });
       }
       case "messages.add": {
+        const ch = b.characterId ? await ownCharacter(me, String(b.characterId)) : null;
+        if (b.characterId && !ch) return bad("That character wasn't found.");
         const list = (Array.isArray(b.messages) ? b.messages : []).slice(0, 4)
-          .map((m: { role?: string; content?: unknown }) => ({ role: m.role === "assistant" ? "assistant" : "user", content: scrub(String(m.content || "").slice(0, 8000)) }))
-          .filter((m: { content: string }) => m.content);
+          .map((m: { role?: string; content?: unknown; fileId?: unknown }) => ({ role: m.role === "assistant" ? "assistant" : "user", content: scrub(String(m.content || "").slice(0, 8000)), fileId: String(m.fileId || "") }))
+          .filter((m: { content: string; fileId: string }) => m.content || m.fileId);
         // A millisecond apart so they always sort in the order sent.
         const at = Date.now() - list.length;
-        for (const [i, m] of list.entries()) await db`insert into velo_messages (user_id, role, content, created_at) values (${me}, ${m.role}, ${m.content}, ${new Date(at + i).toISOString()})`;
+        for (const [i, m] of list.entries()) {
+          // Only their own file can be attached.
+          const f = m.fileId && m.role === "user" && !ch ? await ownFile(me, m.fileId) : null;
+          await db`insert into velo_messages (user_id, role, content, file_id, character_id, created_at) values (${me}, ${m.role}, ${m.content || "📎"}, ${f?.id || null}, ${ch?.id || null}, ${new Date(at + i).toISOString()})`;
+        }
         return NextResponse.json({ ok: true });
       }
       case "messages.clear":
-        await db`delete from velo_messages where user_id = ${me}`;
+        // Velo's chat only; each character's chat goes when the character is deleted.
+        await db`delete from velo_messages where user_id = ${me} and character_id is null`;
         return NextResponse.json({ ok: true });
 
       case "reminders.list": {
@@ -136,6 +155,20 @@ export async function POST(req: NextRequest) {
         const rows = await db`select id, kind, to_name, to_phone, body, status, result from velo_actions
           where user_id = ${me} and kind in ('text', 'call', 'post') and created_at > now() - interval '2 days' order by created_at limit 30`;
         return NextResponse.json({ drafts: rows });
+      }
+
+      case "files.list": {
+        const rows = await db`select id, url, name, content_type, size, created_at from velo_files where user_id = ${me} and kind = 'file' order by created_at desc limit 200`;
+        return NextResponse.json({ files: rows });
+      }
+      case "files.delete":
+        if (!needId()) return bad("Unknown file.");
+        return (await deleteFile(me, id)) ? NextResponse.json({ ok: true }) : bad("That file wasn't found.");
+      case "face.remove": {
+        const faces = await db`select id from velo_files where user_id = ${me} and kind = 'face'`;
+        for (const f of faces) await deleteFile(me, String(f.id));
+        await db`update users set look = 'default', updated_at = now() where id = ${me} and look = 'custom'`;
+        return NextResponse.json({ ok: true });
       }
 
       default:

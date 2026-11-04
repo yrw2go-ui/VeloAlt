@@ -2,7 +2,8 @@
 // 🧠 What Velo remembers: goals, things she knows about you, and past chats and
 // calls. You can forget any of it (and clear the chat history).
 import { useEffect, useState } from "react";
-import { data } from "./lib/api";
+import { data, type SavedFile } from "./lib/api";
+import { FileThumb } from "./chat";
 import { confirmAsk } from "./lib/dialog";
 
 type Mem = { id: string; kind: "goal" | "fact" | "call" | "chat"; text: string; status: string; created_at: string };
@@ -22,6 +23,13 @@ export default function Memory({ refresh }: { refresh: number }) {
   const forget = async (m: Mem) => {
     if (!(await confirmAsk("Forget this? Are you sure?"))) return;
     await data("memories.delete", { id: m.id }).catch(() => {});
+    setTick(t => t + 1);
+  };
+  const [files, setFiles] = useState<SavedFile[] | null>(null);
+  useEffect(() => { data<{ files: SavedFile[] }>("files.list").then(r => setFiles(r.files)).catch(() => setFiles([])); }, [refresh, tick]);
+  const removeFile = async (f: SavedFile) => {
+    if (!(await confirmAsk(`Delete ${f.name}? Are you sure? It's removed from storage and from the chat.`))) return;
+    await data("files.delete", { id: f.id }).catch(() => {});
     setTick(t => t + 1);
   };
   const clearChat = async () => {
@@ -50,6 +58,19 @@ export default function Memory({ refresh }: { refresh: number }) {
           </section>
         );
       })}
+      <section className="card" data-testid="files">
+        <div style={{ fontWeight: 800, marginBottom: 8 }}>📁 Files</div>
+        {files === null ? <div className="muted">Loading…</div> : !files.length ? <div className="muted" style={{ fontSize: 14 }}>Photos and files you send Velo (📎 in the chat) are saved here.</div> : files.map(f => (
+          <div key={f.id} className="row" style={{ padding: "8px 0", borderTop: "1px solid var(--border)" }}>
+            <FileThumb f={{ url: f.url, name: f.name, type: f.content_type }} size={48} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</div>
+              <div className="muted" style={{ fontSize: 12 }}>{Math.max(1, Math.round(f.size / 1024))} KB · {new Date(String((f as SavedFile & { created_at?: string }).created_at || Date.now())).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })}</div>
+            </div>
+            <button className="ghost" onClick={() => removeFile(f)} style={{ padding: "4px 10px", fontSize: 12 }}>Delete</button>
+          </div>
+        ))}
+      </section>
       <button className="ghost" onClick={clearChat}>Clear chat history</button>
     </div>
   );

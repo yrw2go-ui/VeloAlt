@@ -17,13 +17,15 @@ import { proToolsFor, isProTool, runProTool, ProError, type Draft } from "./pro"
 import { twilioReady } from "./twilio";
 import { isValidTimeZone, localDate, formatClock, weekdayOf } from "./localTime";
 import { hideSecrets, HIDDEN } from "./secrets";
+import { ownFile, fileForAi } from "./files";
+import { ownCharacter, characterPrompt } from "./characters";
 import { provider, type ChatModel } from "./models";
 import { oaChat, toOaTools, ProviderError, type OaMessage } from "./openai";
 
 // Only ever the app's own key (never another credential in the environment).
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, authToken: null });
 export type Mode = "chat" | "sms" | "talk" | "recap" | "remember" | "memo" | "errand" | "errandsum";
-export type Turn = { role: "user" | "assistant"; content: string };
+export type Turn = { role: "user" | "assistant"; content: string; fileId?: string };
 export const aiReady = () => !!(process.env.VELO_MODEL && process.env.ANTHROPIC_API_KEY);
 
 export function localNow(rawTz: unknown) {
@@ -79,6 +81,19 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
     if ((h.hidden || h.text.includes(HIDDEN)) && i === all.length - 1 && m.role !== "assistant") hidLast = true;
     return { role: m.role === "assistant" ? "assistant" : "user", content: h.text || "…" };
   });
+  // 📎 The newest message's attachment (chat only): Velo sees the photo or PDF, or reads the text file.
+  let attached = false;
+  const lastTurn = opts.messages[opts.messages.length - 1];
+  if (mode === "chat" && lastTurn?.role === "user" && lastTurn.fileId) {
+    const f = await ownFile(caller.userId, String(lastTurn.fileId));
+    const block = f ? await fileForAi(f) : null;
+    const last = messages[messages.length - 1];
+    if (f && block && last?.role === "user") {
+      last.content = [block, { type: "text", text: String(last.content) === "📎" ? `(They sent ${f.name} with no message.)` : String(last.content) }];
+      attached = true;
+      system.push({ type: "text", text: `They attached a file (${f.name}). Use it to help them. If it shows a password, PIN, code, card number or ID number, never read it out or repeat it — say you'll skip that part to keep them safe.` });
+    }
+  }
   if (hidLast) system.push({ type: "text", text: errand
     ? "Something they just said was replaced with [hidden] because it looked like a password, PIN or code. You can't hear it; if you need it, say the person you're calling for will follow up directly."
     : "Part of their last message was replaced with [hidden] because it looked like a password, PIN or code. You never see those. Briefly tell them you hid it to keep them safe, and that they should never share passwords or codes with anyone — including you. Then carry on with the rest." });
@@ -119,7 +134,8 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   // calls with them). Wrap-ups, memory and calls Velo makes for them stay on Claude.
   // If that provider fails, this message falls back to Claude.
   const chosen = (u?.chat_model || "claude") as ChatModel;
-  const alt = chosen !== "claude" && (mode === "chat" || mode === "sms" || mode === "talk") ? provider(chosen) : null;
+  // Messages with an attachment go to Claude (Qwen and DeepSeek are set up for text only here).
+  const alt = chosen !== "claude" && !attached && (mode === "chat" || mode === "sms" || mode === "talk") ? provider(chosen) : null;
   let answered = false;
   if (alt && tools) {
     try {
@@ -230,6 +246,29 @@ async function searchWithClaude(query: string, tz: string, sources: Map<string, 
     return { content: "Web search isn't working right now.", isError: true };
   }
 }
+
+/** 🎭 A chat with one of their characters: the character's own voice, no Velo tools or memory,
+ *  on the chat model they picked (falling back to Claude), with passwords and codes hidden. */
+export async function askCharacter(caller: Caller, opts: { characterId: string; messages: Turn[]; name?: string }): Promise<AskResult> {
+  const c = await ownCharacter(caller.userId, opts.characterId);
+  if (!c) throw new CharacterGone();
+  const [u] = await sql()`select chat_model from users where id = ${caller.userId}`;
+  const system = characterPrompt(c, String(opts.name || "").trim().split(/\s+/)[0]);
+  const turns = opts.messages.slice(-30).map(m => ({ role: m.role === "assistant" ? "assistant" as const : "user" as const, content: hideSecrets(String(m.content || "").slice(0, 4000)).text || "…" }));
+  if (turns[0]?.role === "assistant") turns.unshift({ role: "user", content: "(Chat opened.)" });
+  const alt = provider((u?.chat_model || "claude") as ChatModel);
+  if (alt) {
+    try {
+      const r = await oaChat(alt, [{ role: "system", content: system }, ...turns], [], 4000);
+      if (r.content) return { reply: r.content, changed: false, drafts: [] };
+    } catch (e) { console.error("character: alt model failed, using Claude", e instanceof ProviderError ? e.message : e); }
+  }
+  const res = await client.messages.create({ model: process.env.VELO_MODEL!, max_tokens: 4000, output_config: { effort: "low" }, system, messages: turns });
+  if (res.stop_reason === "refusal") return { reply: "Let's talk about something else.", changed: false, drafts: [] };
+  const reply = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map(b => b.text).join("").trim();
+  return { reply: reply || "…", changed: false, drafts: [] };
+}
+export class CharacterGone extends Error {}
 
 /** Logs an Anthropic failure and turns it into a friendly message. */
 export function aiError(e: unknown): { error: string; status: number } {

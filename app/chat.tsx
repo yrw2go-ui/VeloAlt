@@ -3,23 +3,33 @@
 // follows them across devices). When they leave the app after chatting, Velo
 // files a short summary and any new goals/facts in her memory ("memo").
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, data } from "./lib/api";
+import { api, data, uploadFile } from "./lib/api";
 import { VeloAvatar } from "./avatar";
 import DraftCard, { type Draft } from "./drafts";
 import { hideSecrets } from "./lib/secrets";
 import { timeZone } from "./lib/tz";
 import { useDictation } from "./dictate";
+import { CharacterFace } from "./characters";
 
-export type ChatMsg = { role: "user" | "assistant"; content: string; draft?: Draft };
+/** Who this chat is with: Velo (no character) or one of their characters. */
+export type ChatWith = { id: string; name: string; portrait_url: string | null };
+
+export type ChatFile = { id: string; url: string; name: string; type: string };
+export type ChatMsg = { role: "user" | "assistant"; content: string; draft?: Draft; file?: ChatFile };
+const ACCEPT = "image/jpeg,image/png,image/webp,image/gif,application/pdf,text/plain";
 /** What Velo sees: real messages only (draft cards are local to the screen). */
 // Their messages since the last memo. Kept outside the component so switching tabs doesn't reset it.
 const unsaved = { current: 0 };
-const realMsgs = (m: ChatMsg[]) => m.filter(x => !x.draft).map(({ role, content }) => ({ role, content }));
+const realMsgs = (m: ChatMsg[]) => m.filter(x => !x.draft).map(({ role, content, file }) => ({ role, content, ...(file ? { fileId: file.id } : {}) }));
 const INTRO = "Hi, I'm Velo! 👋 I'm here for whatever you need — planning your day, reminders, to-dos, talking things through, or just keeping you company. What should I call you?";
 const HELLO = (n: string) => [`Hey${n ? ` ${n}` : ""}! What's on your mind?`, `Hi${n ? ` ${n}` : ""} — how's your day going?`, `Hey${n ? ` ${n}` : ""}, good to see you. What can I do for you?`];
 const SUGGESTIONS = ["Plan my day", "Remind me to call Mom tomorrow at 6pm", "I need to vent", "Help me set a goal"];
 
-export default function Chat({ userId, name, onChanged, added }: { userId: string; name: string; onChanged: () => void; added: ChatMsg | null }) {
+export default function Chat({ userId, name, onChanged, added, onAdded, character }: { userId: string; name: string; onChanged: () => void; added: ChatMsg | null; onAdded?: () => void; character?: ChatWith | null }) {
+  const cid = character?.id || null;
+  const thread = cid ? { characterId: cid } : {};
+  const who = character?.name || "Velo";
+  const face = (size: number) => (character ? <CharacterFace c={character} size={size} /> : <VeloAvatar size={size} />);
   const [msgs, setMsgs] = useState<ChatMsg[] | null>(null);
   const [text, setText] = useState("");
   const mic = useDictation(setText);
@@ -28,9 +38,20 @@ export default function Chat({ userId, name, onChanged, added }: { userId: strin
   useEffect(() => { const el = box.current; if (!el) return; el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, 140)}px`; }, [text]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  // 📎 A file picked to go with the next message (already saved; sent with Send).
+  const [attach, setAttach] = useState<ChatFile | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const picker = useRef<HTMLInputElement>(null);
+  const pick = async (f: File | undefined) => {
+    if (!f) return;
+    setUploading(true); setErr("");
+    try { const s = await uploadFile(f, "chat"); setAttach({ id: s.id, url: s.url, name: s.name, type: s.content_type }); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Upload didn't go through."); }
+    finally { setUploading(false); if (picker.current) picker.current.value = ""; }
+  };
   // A call finished: Velo's report landed in the chat (draft cards stay where they are).
   const reload = useCallback(() => {
-    data<{ messages: ChatMsg[] }>("messages.list").then(r => setMsgs(m => {
+    data<{ messages: ChatMsg[] }>("messages.list", thread).then(r => setMsgs(m => {
       // Fresh history from the server; each card goes back after the message it followed.
       const out = [...r.messages];
       let anchor: ChatMsg | undefined;
@@ -42,7 +63,7 @@ export default function Chat({ userId, name, onChanged, added }: { userId: strin
       }
       return out;
     })).catch(() => {});
-  }, []);
+  }, [cid]); // eslint-disable-line react-hooks/exhaustive-deps
   const end = useRef<HTMLDivElement>(null);
   const msgsRef = useRef<ChatMsg[]>([]);
   const [hello] = useState(() => Math.floor(Math.random() * 3));
@@ -51,21 +72,24 @@ export default function Chat({ userId, name, onChanged, added }: { userId: strin
   useEffect(() => {
     // History, then drafts still waiting for a Send and calls still going.
     Promise.all([
-      data<{ messages: ChatMsg[] }>("messages.list").then(r => r.messages).catch(() => [] as ChatMsg[]),
-      data<{ drafts: Draft[] }>("drafts.list").then(r => r.drafts).catch(() => [] as Draft[]),
+      data<{ messages: ChatMsg[] }>("messages.list", thread).then(r => r.messages).catch(() => [] as ChatMsg[]),
+      // Drafts (texts, calls, posts) are Velo's; characters can't send anything.
+      cid ? Promise.resolve([] as Draft[]) : data<{ drafts: Draft[] }>("drafts.list").then(r => r.drafts).catch(() => [] as Draft[]),
     ]).then(([m, d]) => setMsgs([...m, ...d.filter(x => x.status === "pending" || x.status === "calling").map(draft => ({ role: "assistant" as const, content: "", draft }))]));
-  }, [userId]);
+  }, [userId, cid]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [msgs, busy]);
 
   // A call recap lands in the chat.
   useEffect(() => {
-    if (!added) return;
+    if (!added || cid) return;
     setMsgs(m => [...(m || []), added]);
     data("messages.add", { messages: [added] }).catch(() => {});
-  }, [added, userId]);
+    onAdded?.();
+  }, [added, userId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 🧠 Leaving the app after a chat: Velo remembers what mattered.
   useEffect(() => {
+    if (cid) return; // Velo's memory is about her chats with them only.
     const memo = () => {
       if (unsaved.current < 2 || document.visibilityState !== "hidden") return;
       unsaved.current = 0;
@@ -73,48 +97,67 @@ export default function Chat({ userId, name, onChanged, added }: { userId: strin
     };
     document.addEventListener("visibilitychange", memo);
     return () => document.removeEventListener("visibilitychange", memo);
-  }, [name]);
+  }, [name, cid]);
 
   const send = async (raw: string) => {
     if (mic.listening) mic.stop();
     // 🔒 Passwords and codes are hidden right here, before anything leaves the phone.
     const t = hideSecrets(raw.trim()).text;
-    if (!t || busy || !msgs) return;
-    const opener: ChatMsg[] = msgs.length ? [] : [{ role: "assistant", content: openingLine }];
-    const next = [...msgs, ...opener, { role: "user" as const, content: t }];
-    setMsgs(next); setText(""); setBusy(true); setErr("");
-    unsaved.current++;
-    await data("messages.add", { messages: [...opener, { role: "user", content: t }] }).catch(() => {});
+    const file = attach;
+    if ((!t && !file) || busy || uploading || !msgs) return;
+    const opener: ChatMsg[] = msgs.length || cid ? [] : [{ role: "assistant", content: openingLine }];
+    const mine: ChatMsg = { role: "user", content: t || "📎", ...(file ? { file } : {}) };
+    const next = [...msgs, ...opener, mine];
+    setMsgs(next); setText(""); setAttach(null); setBusy(true); setErr("");
+    if (!cid) unsaved.current++;
+    await data("messages.add", { ...thread, messages: [...opener, { role: "user", content: mine.content, ...(file ? { fileId: file.id } : {}) }] }).catch(() => {});
     try {
-      const r = await api<{ reply: string; changed?: boolean; drafts?: Draft[] }>("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name });
+      const r = await api<{ reply: string; changed?: boolean; drafts?: Draft[] }>("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name, ...thread });
       setMsgs(m => [...(m || []), { role: "assistant", content: r.reply }, ...(r.drafts || []).map(draft => ({ role: "assistant" as const, content: "", draft }))]);
       // Free the box as soon as her reply shows; saving it can finish in the background.
       setBusy(false);
-      await data("messages.add", { messages: [{ role: "assistant", content: r.reply }] }).catch(() => {});
+      await data("messages.add", { ...thread, messages: [{ role: "assistant", content: r.reply }] }).catch(() => {});
       if (r.changed) onChanged();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Velo didn't answer.");
+      setErr(e instanceof Error ? e.message : `${who} didn't answer.`);
     } finally { setBusy(false); }
   };
 
   const openingLine = msgs && !msgs.length && !name ? INTRO : HELLO(name.split(" ")[0])[hello];
-  const shown: ChatMsg[] = msgs && !msgs.length ? [{ role: "assistant", content: openingLine }] : msgs || [];
+  const shown: ChatMsg[] = msgs && !msgs.length && !cid ? [{ role: "assistant", content: openingLine }] : msgs || [];
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <div data-testid="chat-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-        {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={i} m={m} />)}
-        {busy && <div className="row"><VeloAvatar size={28} /><div className="muted" style={{ fontSize: 14 }}>Velo is typing…</div></div>}
+        {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={i} m={m} face={face(28)} />)}
+        {character && msgs && !msgs.length && (
+          <div className="muted" style={{ textAlign: "center", fontSize: 14, marginTop: 24, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+            {face(72)}<div>Say hi to {character.name} 👋</div>
+          </div>
+        )}
+        {busy && <div className="row">{face(28)}<div className="muted" style={{ fontSize: 14 }}>{who} is typing…</div></div>}
         {err && <div style={{ color: "var(--bad)", fontSize: 14 }}>⚠️ {err}</div>}
-        {msgs && msgs.length === 0 && (
+        {msgs && msgs.length === 0 && !cid && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
             {SUGGESTIONS.map(s => <button key={s} className="ghost" onClick={() => send(s)} style={{ borderRadius: 999, fontSize: 14, padding: "8px 12px" }}>{s}</button>)}
           </div>
         )}
         <div ref={end} />
       </div>
+      {attach && (
+        <div className="row" data-testid="chat-attachment" style={{ padding: "8px 12px 0", gap: 8 }}>
+          <FileThumb f={attach} size={44} />
+          <div style={{ flex: 1, minWidth: 0, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{attach.name}</div>
+          <button type="button" className="ghost" onClick={() => setAttach(null)} aria-label="Remove attachment" style={{ padding: "4px 10px", fontSize: 13 }}>✕</button>
+        </div>
+      )}
       <form onSubmit={e => { e.preventDefault(); send(text); }} className="row" style={{ padding: "10px 12px", borderTop: "1px solid var(--border)" }}>
-        <textarea ref={box} rows={1} value={text} onChange={e => setText(e.target.value)} placeholder={msgs ? "Message Velo…" : "Loading…"} aria-label="Message Velo" disabled={!msgs}
+        {!cid && <input ref={picker} type="file" accept={ACCEPT} hidden onChange={e => pick(e.target.files?.[0])} data-testid="chat-file-input" />}
+        {!cid && <button type="button" onClick={() => picker.current?.click()} disabled={!msgs || busy || uploading} aria-label="Attach a photo or file" data-testid="chat-attach"
+          style={{ borderRadius: 999, width: 40, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 20, border: "none", background: "transparent", color: "var(--muted)" }}>
+          {uploading ? "⏳" : "📎"}
+        </button>}
+        <textarea ref={box} rows={1} value={text} onChange={e => setText(e.target.value)} placeholder={msgs ? `Message ${who}…` : "Loading…"} aria-label={`Message ${who}`} disabled={!msgs}
           onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(text); } }}
           style={{ resize: "none", maxHeight: 140, borderRadius: 20 }} />
         {mic.supported && (
@@ -126,7 +169,7 @@ export default function Chat({ userId, name, onChanged, added }: { userId: strin
             {mic.listening ? "⏹" : "🎙️"}
           </button>
         )}
-        <button className="btn" disabled={!text.trim() || busy} aria-label="Send" style={{ borderRadius: 999, width: 46, height: 46, padding: 0, flexShrink: 0 }}>➤</button>
+        <button className="btn" disabled={(!text.trim() && !attach) || busy || uploading} aria-label="Send" style={{ borderRadius: 999, width: 46, height: 46, padding: 0, flexShrink: 0 }}>➤</button>
       </form>
       {(mic.listening || mic.error) && (
         <div style={{ padding: "0 14px 8px", fontSize: 12, color: mic.error ? "var(--bad)" : "var(--muted)" }}>
@@ -138,14 +181,15 @@ export default function Chat({ userId, name, onChanged, added }: { userId: strin
   );
 }
 
-function Bubble({ m }: { m: ChatMsg }) {
+function Bubble({ m, face }: { m: ChatMsg; face: React.ReactNode }) {
   const mine = m.role === "user";
   return (
     <div style={{ display: "flex", gap: 8, alignItems: "flex-end", justifyContent: mine ? "flex-end" : "flex-start" }}>
-      {!mine && <VeloAvatar size={28} />}
+      {!mine && face}
       <div style={{ maxWidth: "80%", padding: "10px 14px", borderRadius: 18, borderBottomLeftRadius: mine ? 18 : 4, borderBottomRightRadius: mine ? 4 : 18,
         background: mine ? "linear-gradient(135deg, var(--accent), var(--accent2))" : "var(--surface2)", color: "var(--text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", lineHeight: 1.45, fontSize: 15 }}>
-        {linkify(m.content.replace(/\*\*(.+?)\*\*/g, "$1"))}
+        {m.file && <div style={{ marginBottom: m.content && m.content !== "📎" ? 8 : 0 }}><FileThumb f={m.file} size={180} /></div>}
+        {m.content !== "📎" && linkify(m.content.replace(/\*\*(.+?)\*\*/g, "$1"))}
       </div>
     </div>
   );
@@ -155,4 +199,17 @@ function Bubble({ m }: { m: ChatMsg }) {
 function linkify(text: string) {
   return text.split(/(https:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]])/g).map((part, i) =>
     i % 2 ? <a key={i} href={part} target="_blank" rel="noopener noreferrer nofollow" style={{ color: "var(--accent)", wordBreak: "break-all" }}>{part.replace(/^https:\/\/(www\.)?/, "").slice(0, 60)}</a> : part);
+}
+
+/** A saved file: photos show as a picture, anything else as a tappable file chip. Opens full size in a new tab. */
+export function FileThumb({ f, size }: { f: { url: string; name: string; type: string }; size: number }) {
+  const isImage = f.type.startsWith("image/");
+  return (
+    <a href={f.url} target="_blank" rel="noopener noreferrer" style={{ display: "inline-block", color: "inherit", textDecoration: "none" }}>
+      {isImage
+        // eslint-disable-next-line @next/next/no-img-element
+        ? <img src={f.url} alt={f.name} style={{ display: "block", maxWidth: size, maxHeight: size, borderRadius: 10, objectFit: "cover" }} />
+        : <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: size < 60 ? "6px 8px" : "8px 12px", borderRadius: 10, background: "rgba(0,0,0,0.2)", fontSize: 13 }}>{f.type === "application/pdf" ? "📄" : "📝"} {size < 60 ? "" : f.name}</span>}
+    </a>
+  );
 }

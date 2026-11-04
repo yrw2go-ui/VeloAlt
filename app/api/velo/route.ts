@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
-import { askVelo, aiReady, aiError, type Mode, type Turn } from "../../lib/brain";
+import { askVelo, askCharacter, CharacterGone, aiReady, aiError, type Mode, type Turn } from "../../lib/brain";
 
 // 💬 Velo in the app: chat, in-app calls, recaps and memory (see lib/brain.ts).
 // POST { mode, messages: [{role, content}], timeZone, name } → { reply, changed?, drafts? }
@@ -19,10 +19,17 @@ export async function POST(req: NextRequest) {
     const messages: Turn[] = Array.isArray(body.messages) ? body.messages : [];
     if (!messages.length) return NextResponse.json({ error: "No messages provided" }, { status: 400 });
 
+    // 🎭 A character's chat (plain chat only; memory notes and calls are Velo's).
+    if (body.characterId) {
+      if (mode !== "chat") return NextResponse.json({ ok: true, reply: "" });
+      const r = await askCharacter(caller, { characterId: String(body.characterId), messages, name: body.name });
+      return NextResponse.json({ reply: r.reply });
+    }
     const r = await askVelo(caller, { mode, messages, timeZone: body.timeZone, name: body.name });
     if (mode === "remember" || mode === "memo") return NextResponse.json({ ok: !!r.saved, reply: "" });
     return NextResponse.json({ reply: r.reply, ...(r.changed ? { changed: true } : {}), ...(r.drafts.length ? { drafts: r.drafts } : {}) });
   } catch (e) {
+    if (e instanceof CharacterGone) return NextResponse.json({ error: "That character was deleted." }, { status: 404 });
     const { error, status } = aiError(e);
     return NextResponse.json({ error }, { status });
   }

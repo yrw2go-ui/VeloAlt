@@ -7,6 +7,7 @@ import { currentAsk, subscribeAsk } from "./lib/dialog";
 import { VeloLogo, VeloLookPicker, applyVeloLook, useVeloLook } from "./avatar";
 import VeloCall, { canCallVelo, primeSpeech } from "./call";
 import Chat, { type ChatMsg } from "./chat";
+import { CharacterStrip, CharacterEditor, type Character } from "./characters";
 import Today from "./today";
 import Memory from "./memory";
 import { timeZone } from "./lib/tz";
@@ -89,6 +90,17 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   const [refresh, setRefresh] = useState(0);
   const [chatAdd, setChatAdd] = useState<ChatMsg | null>(null);
   const look = useVeloLook();
+  // 🎭 Their characters: a chip row above the chat; the open chat is Velo (null) or one character.
+  const [chars, setChars] = useState<Character[]>([]);
+  const [portraits, setPortraits] = useState(false);
+  const [withId, setWithId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Character | "new" | null>(null);
+  useEffect(() => {
+    api<{ characters: Character[]; portraits: boolean }>("/api/characters", { action: "list" })
+      .then(r => { setChars(r.characters); setPortraits(r.portraits); }).catch(() => {});
+  }, [userId]);
+  const withChar = chars.find(c => c.id === withId) || null;
+  const savedChar = (c: Character) => { setChars(cs => (cs.some(x => x.id === c.id) ? cs.map(x => (x.id === c.id ? c : x)) : [...cs, c])); setWithId(c.id); };
   const bump = useCallback(() => setRefresh(r => r + 1), []);
 
   // Their profile: name, look, and the time zone they're in now.
@@ -97,7 +109,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       const p = await data<Profile & { timeZone: string | null; hadCall: boolean }>("profile.get");
       setProfile(p);
       setName(p.name);
-      applyVeloLook(p.look);
+      applyVeloLook(p.look, p.customFace || "");
       setFirstCall(!p.hadCall);
       if (p.timeZone !== timeZone()) await data("profile.update", { timeZone: timeZone() });
     })().catch(() => {});
@@ -164,7 +176,8 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       )}
 
       <main style={{ flex: 1, minHeight: 0, overflowY: tab === "chat" ? "hidden" : "auto", display: "flex", flexDirection: "column" }}>
-        {tab === "chat" && <Chat userId={userId} name={name} onChanged={bump} added={chatAdd} />}
+        {tab === "chat" && <CharacterStrip characters={chars} active={withChar?.id || null} onPick={setWithId} onNew={() => setEditing("new")} onEdit={setEditing} />}
+        {tab === "chat" && <Chat key={withChar?.id || "velo"} userId={userId} name={name} onChanged={bump} added={withChar ? null : chatAdd} onAdded={() => setChatAdd(null)} character={withChar} />}
         {tab === "today" && <Today refresh={refresh} />}
         {tab === "memory" && <Memory refresh={refresh} />}
         {tab === "settings" && <Settings name={name} setName={setName} onOut={onOut} profile={profile} onProfile={() => setProfileTick(t => t + 1)} />}
@@ -183,8 +196,13 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
         <VeloCall key={look} name={name} firstCall={firstCall} request={callRequest} fetchVoice={fetchVoice}
           onEnd={(recap) => {
             setCalling(false); setFirstCall(false);
-            if (recap) { setChatAdd({ role: "assistant", content: recap }); setTab("chat"); }
+            if (recap) { setChatAdd({ role: "assistant", content: recap }); setWithId(null); setTab("chat"); }
           }} />
+      )}
+      {editing && (
+        <CharacterEditor key={editing === "new" ? "new" : editing.id} initial={editing === "new" ? null : editing} portraits={portraits}
+          onClose={() => setEditing(null)} onSaved={savedChar}
+          onDeleted={id => { setChars(cs => cs.filter(c => c.id !== id)); setWithId(null); setEditing(null); }} />
       )}
       <ConfirmHost />
     </div>
@@ -212,7 +230,7 @@ function Settings({ name, setName, onOut, profile, onProfile }: { name: string; 
       </div>
       <div className="card">
         <div style={{ fontWeight: 700 }}>🧑 Velo&apos;s look</div>
-        <div className="muted" style={{ fontSize: 13, margin: "2px 0 12px" }}>Each face has her own voice on calls.</div>
+        <div className="muted" style={{ fontSize: 13, margin: "2px 0 12px" }}>Each face has her own voice on calls. You can also upload your own picture (she keeps the default voice).</div>
         <VeloLookPicker />
       </div>
       {profile && <PersonalityCard profile={profile} onChange={onProfile} />}

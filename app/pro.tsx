@@ -10,7 +10,7 @@ import { formatPhone, contactProblem } from "./lib/contact";
 export type Profile = {
   name: string; look: string; plan: "free" | "pro"; proForSale: boolean; phone: string; phoneVerified: boolean; veloNumber: string;
   chatModel: string; models: { id: string; label: string; by: string; where: string }[];
-  personality: string; adultConfirmed: boolean;
+  personality: string; adultConfirmed: boolean; customFace?: string;
 };
 type Contact = { id: string; name: string; phone: string };
 

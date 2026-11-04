@@ -137,3 +137,38 @@ alter table users add column if not exists chat_model text not null default 'cla
 alter table users
   add column if not exists personality text not null default 'friend' check (personality in ('friend', 'professional', 'sarcastic', 'romantic')),
   add column if not exists adult_confirmed_at timestamptz;
+-- 📎 Files saved to Vercel Blob: chat attachments (kind 'file') and Velo's
+-- custom face (kind 'face'). Each person sees and deletes only their own.
+create table if not exists velo_files (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  kind text not null default 'file' check (kind in ('file', 'face')),
+  url text not null check (char_length(url) <= 1000),
+  pathname text not null check (char_length(pathname) <= 600),
+  name text not null check (char_length(name) between 1 and 200),
+  content_type text not null check (char_length(content_type) <= 100),
+  size integer not null check (size >= 0),
+  created_at timestamptz not null default now()
+);
+create index if not exists velo_files_user_idx on velo_files (user_id, kind, created_at desc);
+-- A chat message can carry one attachment.
+alter table velo_messages add column if not exists file_id uuid references velo_files(id) on delete set null;
+-- 🎭 Characters people create and chat with. Each has its own chat thread
+-- (velo_messages.character_id; Velo's own chat is character_id null) and an
+-- optional portrait generated with Atlas Cloud (saved to Blob as kind 'portrait').
+create table if not exists chat_characters (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  name text not null check (char_length(name) between 1 and 60),
+  about text not null default '' check (char_length(about) <= 1500),
+  appearance text not null default '' check (char_length(appearance) <= 600),
+  portrait_file_id uuid references velo_files(id) on delete set null,
+  portrait_job text check (portrait_job is null or char_length(portrait_job) <= 200),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists chat_characters_user_idx on chat_characters (user_id, created_at);
+alter table velo_messages add column if not exists character_id uuid references chat_characters(id) on delete cascade;
+create index if not exists velo_messages_thread_idx on velo_messages (user_id, character_id, created_at desc);
+alter table velo_files drop constraint if exists velo_files_kind_check;
+alter table velo_files add constraint velo_files_kind_check check (kind in ('file', 'face', 'portrait'));
