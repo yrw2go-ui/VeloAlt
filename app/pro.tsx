@@ -391,7 +391,7 @@ export function StorageCard({ profile }: { profile: Profile }) {
   };
   const wipe = async () => {
     if (!rows?.length) return;
-    if (!(await confirmAsk("Delete " + rows.length + " orphaned files from storage? This cannot be undone.", "Delete"))) return;
+    if (!(await confirmAsk("Delete " + rows.length + " orphaned files from storage? This cannot be undone.", { yes: "Delete" }))) return;
     setBusy(true); setMsg("");
     try {
       const r = await data<{ deleted: number }>("profile.deleteOrphans", { urls: rows.map(x => x.url) });
