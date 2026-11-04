@@ -9,7 +9,7 @@ import { PHONE_MSG } from "../../lib/contact";
 import { scrub } from "../../lib/secrets";
 import { availableModels, CHAT_MODELS, MODEL_INFO, type ChatModel } from "../../lib/models";
 import { PERSONALITIES } from "../../lib/persona";
-import { askVelo, makePicture, wantsPicture } from "../../lib/brain";
+import { askVelo, makePicture, wantsPicture, spicyPicLine } from "../../lib/brain";
 
 // 📦 Everything the app reads and changes, for the signed-in person only.
 // POST { action, ...args } → { ... }. Every query is scoped to their user_id.
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
         if (buf.length < 32) throw new Error("Image download was empty.");
         const type = (imgRes.headers.get("content-type") || "image/jpeg").split(";")[0];
         const ext = type.includes("png") ? "png" : type.includes("webp") ? "webp" : "jpg";
-        const uploaded = await put(`velo-looks/\( {me}/ \){Date.now()}.${ext}`, buf, { access: "public", contentType: type });
+        const uploaded = await put(`velo-looks/${me}/${Date.now()}.${ext}`, buf, { access: "public", contentType: type });
         if (!uploaded.url) throw new Error("Blob upload failed. Check BLOB_READ_WRITE_TOKEN.");
         stored = uploaded.url;
       }
@@ -116,7 +116,7 @@ export async function POST(req: NextRequest) {
         const imgRes = await fetch(imageUrl);
         if (!imgRes.ok) return bad("Couldn't download image.");
         const blob = await imgRes.blob();
-        const uploaded = await put(`velo-looks/\( {me}/ \){Date.now()}.jpg`, blob, { access: "public" });
+        const uploaded = await put(`velo-looks/${me}/${Date.now()}.jpg`, blob, { access: "public" });
         if (!uploaded.url) return bad("Blob upload failed. Check token.");
         await db`update velo_looks set is_active = false where user_id = ${me}`;
         await db`insert into velo_looks (user_id, name, image_url, is_active) values (${me}, ${name}, ${uploaded.url}, true)`;
@@ -189,7 +189,7 @@ export async function POST(req: NextRequest) {
         // imageData is a data URL or base64
         const buf = Buffer.from(imageData.split(",")[1] || imageData, "base64");
         const blob = new Blob([buf], { type: "image/jpeg" });
-        const uploaded = await put(`velo-looks/\( {me}/ \){Date.now()}.jpg`, blob, { access: "public" });
+        const uploaded = await put(`velo-looks/${me}/${Date.now()}.jpg`, blob, { access: "public" });
         if (!uploaded.url) return bad("Blob upload failed. Check token.");
         await db`update velo_looks set is_active = false where user_id = ${me}`;
         await db`insert into velo_looks (user_id, name, image_url, is_active) values (${me}, ${name}, ${uploaded.url}, true)`;
@@ -299,7 +299,7 @@ export async function POST(req: NextRequest) {
         const imgRes = await fetch(url);
         if (!imgRes.ok) return bad("Couldn't download image. Check Blob token.");
         const blob = await imgRes.blob();
-        const uploaded = await put(`velo-looks/\( {me}/ \){Date.now()}.jpg`, blob, { access: "public" });
+        const uploaded = await put(`velo-looks/${me}/${Date.now()}.jpg`, blob, { access: "public" });
         await db`insert into character_media (user_id, character_name, media_url, media_type) values (${me}, ${name}, ${uploaded.url}, ${type})`;
         return NextResponse.json({ ok: true, url: uploaded.url });
       }
@@ -413,7 +413,7 @@ export async function POST(req: NextRequest) {
         if (wantsPicture(ask)) {
           try {
             const url = await makePicture(ask || ("A photo of " + character), me, character, refs);
-            return NextResponse.json({ reply: "Here.\n\n" + url, changed: false, drafts: [] });
+            return NextResponse.json({ reply: spicyPicLine() + "\n\n" + url, changed: false, drafts: [] });
           } catch (e) {
             const msg = e instanceof Error ? e.message : "Image failed.";
             return NextResponse.json({ reply: "Picture failed: " + msg, changed: false, drafts: [] });
@@ -443,7 +443,7 @@ export async function POST(req: NextRequest) {
           : [];
         const chatBits = [...recent].reverse().map((m: { role?: string; content?: string }) => `${m.role}: ${String(m.content || "").slice(0, 240)}`).join("\n");
         const messages = Array.isArray(b.messages) ? [...b.messages] : [];
-        const preface = [memory ? `\( {character}'s saved memory from chat and calls:\n \){memory}` : "", chatBits ? `Recent chat with \( {character}. Continue it. Do not read this list aloud:\n \){chatBits}` : ""].filter(Boolean).join("\n\n");
+        const preface = [memory ? `${character}'s saved memory from chat and calls:\n${memory}` : "", chatBits ? `Recent chat with ${character}. Continue it. Do not read this list aloud:\n${chatBits}` : ""].filter(Boolean).join("\n\n");
         if (preface) messages.unshift({ role: "user", content: `(Private context: ${preface})` });
         if (mode === "remember" && mine) {
           const said = (Array.isArray(b.messages) ? b.messages : []).filter((m: { content?: string }) => String(m.content || "").trim());
