@@ -147,7 +147,7 @@ export async function POST(req: NextRequest) {
         if (!url) return bad("No media.");
         // Download and re-upload to Blob for permanence
         const imgRes = await fetch(url);
-        if (!imgRes.ok) return bad("Couldn't download.");
+        if (!imgRes.ok) return bad("Couldn't download image. Check Blob token.");
         const blob = await imgRes.blob();
         const uploaded = await put(`velo-looks/${me}/${Date.now()}.jpg`, blob, { access: "public" });
         await db`insert into character_media (user_id, character_name, media_url, media_type) values (${me}, ${name}, ${uploaded.url}, ${type})`;
