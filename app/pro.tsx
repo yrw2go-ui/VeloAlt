@@ -373,6 +373,58 @@ export function CustomLookRow() {
   );
 }
 
+
+export function StorageCard({ profile }: { profile: Profile }) {
+  const [rows, setRows] = useState<{ url: string; pathname: string; size: number }[] | null>(null);
+  const [used, setUsed] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  if (!profile.isAdmin) return null;
+  const check = async () => {
+    setBusy(true); setMsg("");
+    try {
+      const r = await data<{ orphans: { url: string; pathname: string; size: number }[]; used: number }>("profile.listOrphans");
+      setRows(r.orphans); setUsed(r.used);
+      setMsg(r.orphans.length ? r.orphans.length + " orphaned files. " + r.used + " still in use." : "No orphaned files. " + r.used + " in use.");
+    } catch (e) { setMsg(e instanceof Error ? e.message : "Couldn't check storage."); }
+    setBusy(false);
+  };
+  const wipe = async () => {
+    if (!rows?.length) return;
+    if (!(await confirmAsk("Delete " + rows.length + " orphaned files from storage? This cannot be undone.", "Delete"))) return;
+    setBusy(true); setMsg("");
+    try {
+      const r = await data<{ deleted: number }>("profile.deleteOrphans", { urls: rows.map(x => x.url) });
+      setMsg("Deleted " + r.deleted + ".");
+      setRows([]);
+    } catch (e) { setMsg(e instanceof Error ? e.message : "Delete failed."); }
+    setBusy(false);
+  };
+  return (
+    <div className="card">
+      <div style={{ fontWeight: 700 }}>Storage cleanup</div>
+      <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>Files in Blob that are not attached to a character or look.</div>
+      <div className="row" style={{ gap: 8 }}>
+        <button className="btn" disabled={busy} onClick={check}>{busy ? "…" : "Check for orphans"}</button>
+        {!!rows?.length && <button className="ghost" disabled={busy} onClick={wipe} style={{ color: "var(--bad)" }}>Delete {rows.length}</button>}
+      </div>
+      {msg && <div className="muted" style={{ fontSize: 13, marginTop: 8 }}>{msg}</div>}
+      {!!rows?.length && (
+        <div style={{ marginTop: 10, maxHeight: 220, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
+          {rows.slice(0, 40).map(r => (
+            <div key={r.url} className="row" style={{ gap: 8, fontSize: 12 }}>
+              <img src={picSrc(r.url)} alt="" style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 6 }} />
+              <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.pathname}</div>
+              <span className="muted">{Math.max(1, Math.round(r.size / 1024))} KB</span>
+            </div>
+          ))}
+          {rows.length > 40 && <div className="muted" style={{ fontSize: 12 }}>+{rows.length - 40} more</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function UpdateCard() {
   const update = () => {
     if ("serviceWorker" in navigator) {
@@ -383,7 +435,7 @@ export function UpdateCard() {
   return (
     <div className="card">
       <div style={{ fontWeight: 700 }}>App</div>
-      <div className="muted" style={{ fontSize: 12, margin: "2px 0 8px" }}>v1.11 · Nov 4, 2026 2:42 AM CST</div>
+      <div className="muted" style={{ fontSize: 12, margin: "2px 0 8px" }}>v1.15 · Nov 4, 2026 3:02 AM CST</div>
       <button className="btn" onClick={update} style={{ marginTop: 8 }}>Update app</button>
     </div>
   );
