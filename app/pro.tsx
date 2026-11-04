@@ -327,6 +327,36 @@ function VeloLookGenerator({ profile, onChange }: { profile: Profile; onChange: 
 
 
 
+export function CustomLookRow() {
+  const [looks, setLooks] = useState<{ name: string; image: string }[]>([]);
+  const [active, setActive] = useState("");
+  useEffect(() => {
+    data<{ looks: { name: string; image: string }[] }>("profile.listCharacterLooks")
+      .then(r => setLooks(r.looks || []))
+      .catch(() => {});
+  }, []);
+  if (!looks.length) return null;
+  const pick = async (name: string) => {
+    setActive(name);
+    await data("profile.setCharacterLook", { name }).catch(() => {});
+  };
+  return (
+    <div style={{ marginTop: 14 }}>
+      <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>Your characters</div>
+      <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 4 }}>
+        {looks.map(l => (
+          <button key={l.name} onClick={() => pick(l.name)} style={{ background: "none", border: "none", color: "var(--text)", textAlign: "center", flexShrink: 0, padding: 0 }}>
+            {l.image
+              ? <img src={"/api/pic?u=" + encodeURIComponent(l.image)} alt="" style={{ width: 64, height: 64, borderRadius: "50%", objectFit: "cover", border: active === l.name ? "3px solid var(--accent)" : "2px solid transparent" }} />
+              : <div style={{ width: 64, height: 64, borderRadius: "50%", background: "var(--surface2)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700 }}>{l.name.slice(0, 1)}</div>}
+            <div style={{ fontSize: 12, marginTop: 4 }}>{l.name}</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function UpdateCard() {
   const update = () => {
     if ("serviceWorker" in navigator) {
@@ -337,7 +367,7 @@ export function UpdateCard() {
   return (
     <div className="card">
       <div style={{ fontWeight: 700 }}>App</div>
-      <div className="muted" style={{ fontSize: 12, margin: "2px 0 8px" }}>v1.6 · Nov 4, 2026 1:20 AM</div>
+      <div className="muted" style={{ fontSize: 12, margin: "2px 0 8px" }}>v1.7 · Nov 4, 2026 2:26 AM CST</div>
       <button className="btn" onClick={update} style={{ marginTop: 8 }}>Update app</button>
     </div>
   );

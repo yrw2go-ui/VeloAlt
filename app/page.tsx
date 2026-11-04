@@ -10,7 +10,7 @@ import Chat, { type ChatMsg } from "./chat";
 import Today from "./today";
 import Memory from "./memory";
 import { timeZone } from "./lib/tz";
-import ProCard, { BrainCard, PersonalityCard, LookGenerator, ModeCard, UpdateCard, CharacterGallery, type Profile } from "./pro";
+import ProCard, { BrainCard, PersonalityCard, LookGenerator, ModeCard, UpdateCard, CharacterGallery, CustomLookRow, type Profile } from "./pro";
 
 type Tab = "chat" | "today" | "memory" | "settings";
 const TABS: { id: Tab; icon: string; label: string }[] = [
@@ -220,6 +220,7 @@ function Settings({ name, setName, onOut, profile, onProfile }: { name: string; 
         <div style={{ fontWeight: 700 }}>🧑 Velo&apos;s look</div>
         <div className="muted" style={{ fontSize: 13, margin: "2px 0 12px" }}>Each face has her own voice on calls.</div>
         <VeloLookPicker />
+        <CustomLookRow />
       </div>
       {profile && <UpdateCard />}
             {profile && <ModeCard profile={profile} onChange={onProfile} />}
