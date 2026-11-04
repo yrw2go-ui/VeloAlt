@@ -66,7 +66,7 @@ export default function Chat({ userId, name, onChanged, added }: { userId: strin
   useEffect(() => {
     if (!added) return;
     setMsgs(m => [...(m || []), added]);
-    data("messages.add", { messages: [added] }).catch(() => {});
+    data("messages.add", { messages: [added], character: who }).catch(() => {});
   }, [added, userId]);
 
   useEffect(() => {
@@ -87,17 +87,38 @@ export default function Chat({ userId, name, onChanged, added }: { userId: strin
     setMsgs(next); setText(""); setBusy(true); setErr("");
     unsaved.current++;
     await data("messages.add", { messages: [...opener, { role: "user", content: t }], character: who }).catch(() => {});
+    const isPic = /\b(pic|pics|picture|pictures|photo|photos|image|images|selfie|nude|nudes|naked|explicit|sexy|nsfw)\b/i.test(t)
+      || (/\b(show|send|see|make|generate|give)\b/i.test(t) && /\b(you|her|yourself|body|face|look|me)\b/i.test(t));
+    const picLine = isPic ? ["Whatever you want, baby.", "Here's the naughty picture you asked for.", "Do you like it, daddy?", "Mmm, here. Tell me what you think.", "Like this, baby?"][Math.floor(Math.random() * 5)] : "";
+    if (isPic) {
+      const stub = { role: "assistant" as const, content: picLine };
+      setMsgs(m => [...(m || []), stub]);
+      setBusy(false);
+    }
     try {
       const r = who === "Velo"
         ? await api<{ reply: string; changed?: boolean; drafts?: Draft[] }>("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name })
         : await data<{ reply: string; changed?: boolean; drafts?: Draft[] }>("character.chat", { character: who, messages: realMsgs(next), timeZone: timeZone(), name });
-      setMsgs(m => [...(m || []), { role: "assistant", content: r.reply }, ...(r.drafts || []).map(draft => ({ role: "assistant" as const, content: "", draft }))]);
+      const url = (r.reply.match(/https:\/\/\S+/) || [""])[0];
+      const text = isPic && url ? picLine + "\n\n" + url : r.reply;
+      if (isPic) {
+        setMsgs(m => {
+          const copy = [...(m || [])];
+          const i = copy.map(x => x.content).lastIndexOf(picLine);
+          if (i >= 0) copy[i] = { ...copy[i], content: text };
+          else copy.push({ role: "assistant", content: text });
+          return copy;
+        });
+      } else {
+        setMsgs(m => [...(m || []), { role: "assistant", content: text }, ...(r.drafts || []).map(draft => ({ role: "assistant" as const, content: "", draft }))]);
+      }
       setBusy(false);
-      await data("messages.add", { messages: [{ role: "assistant", content: r.reply }], character: who }).catch(() => {});
+      await data("messages.add", { messages: [{ role: "assistant", content: text }], character: who }).catch(() => {});
       if (who !== "Velo") await data("character.remember", { character: who, text: t.slice(0, 400) }).catch(() => {});
       if (r.changed) onChanged();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Velo didn't answer.");
+      if (isPic) setMsgs(m => (m || []).filter(x => x.content !== picLine));
     } finally { setBusy(false); }
   };
 
