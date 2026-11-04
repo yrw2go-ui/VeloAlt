@@ -6,7 +6,26 @@
 import { useEffect, useState } from "react";
 import { data } from "./lib/api";
 
-export type Media = { id: string; kind: "image" | "video"; status: "working" | "done" | "failed"; url: string | null; thumb?: string | null; caption?: string | null };
+export type Media = { id: string; kind: "image" | "video"; status: "working" | "done" | "failed"; url: string | null; thumb?: string | null; caption?: string | null; reaction?: string | null };
+
+// ❤️ Reactions they can leave on a photo/video.
+export const REACTIONS = ["❤️", "🔥", "🙌", "😍", "👍"] as const;
+
+/** The reaction row right under a photo/video. Tap one to react; tap it again to take it back. */
+export function ReactionBar({ value, onPick }: { value: string | null | undefined; onPick: (r: string) => void }) {
+  return (
+    <div role="group" aria-label="React" data-testid="reactions" style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap" }}>
+      {REACTIONS.map(r => {
+        const on = value === r;
+        return (
+          <button key={r} type="button" onClick={e => { e.stopPropagation(); onPick(r); }} aria-pressed={on} aria-label={`React ${r}`}
+            style={{ fontSize: 18, lineHeight: 1, padding: "6px 8px", borderRadius: 999, cursor: "pointer", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`,
+              background: on ? "rgba(124,140,255,0.22)" : "var(--surface2)", transform: on ? "scale(1.12)" : "none", transition: "transform .15s" }}>{r}</button>
+        );
+      })}
+    </div>
+  );
+}
 
 /** Keeps checking a photo/video until it's done (backs off from 4s to 15s; retries through errors). */
 export function useMedia(initial: Media, onReady?: (m: Media) => void): Media {

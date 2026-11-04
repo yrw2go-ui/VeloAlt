@@ -243,3 +243,5 @@ alter table velo_media add column if not exists caption text check (caption is n
 create index if not exists velo_media_gallery_idx on velo_media (user_id, character_id, created_at desc) where status = 'done';
 -- 🖼️ A small thumbnail for each uploaded photo (the chat shows it; the full photo opens on tap).
 alter table velo_files add column if not exists thumb_url text check (thumb_url is null or char_length(thumb_url) <= 1000);
+-- ❤️ Their reaction to a photo/video Velo or a character sent (one at a time; tap again to remove).
+alter table velo_media add column if not exists reaction text check (reaction is null or reaction in ('❤️', '🔥', '🙌', '😍', '👍'));

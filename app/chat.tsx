@@ -10,7 +10,7 @@ import { hideSecrets } from "./lib/secrets";
 import { timeZone } from "./lib/tz";
 import { useDictation } from "./dictate";
 import { CharacterFace } from "./characters";
-import { MediaView, type Media } from "./media";
+import { MediaView, ReactionBar, type Media } from "./media";
 
 /** Who this chat is with: Velo (no character) or one of their characters. */
 export type ChatWith = { id: string; name: string; portrait_url: string | null };
@@ -137,6 +137,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
 
   // 💬 A photo/video arrived: they say something about it ("What do you think?"), right under it.
   const mediaArrived = (x: Media) => {
+    setMsgs(list => (list || []).map(y => (y.media?.id === x.id ? { ...y, media: { ...y.media, ...x } } : y)));
     if (x.caption) setMsgs(list => {
       const all = list || [];
       const at = all.findIndex(y => y.media?.id === x.id);
@@ -145,13 +146,36 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     });
     setTimeout(() => end.current?.scrollIntoView({ block: "end" }), 50);
   };
+  // ❤️ They reacted to a photo/video: it's saved where Velo/the character sees it, and sometimes they answer.
+  const react = async (id: string, emoji: string) => {
+    const cur = msgsRef.current.find(x => x.media?.id === id)?.media;
+    if (!cur) return;
+    const next = cur.reaction === emoji ? null : emoji;
+    const set = (reaction: string | null, content?: string) => setMsgs(list => (list || []).map(x => (x.media?.id === id ? { ...x, ...(content ? { content } : {}), media: { ...x.media!, reaction } } : x)));
+    set(next);
+    let note = "";
+    try { note = (await data<{ note: string }>("media.react", { id, reaction: next })).note; set(next, note); }
+    catch { set(cur.reaction || null); return; }
+    if (!next || busy || Math.random() > 0.55) return;
+    setBusy(true);
+    try {
+      const history = realMsgs(msgsRef.current.map(x => (x.media?.id === id ? { ...x, content: note } : x)));
+      const ask = `(They just reacted ${next} to the ${cur.kind === "image" ? "photo" : "video"} you sent. React back naturally in one short line — a few words or an emoji is fine. Don't send anything new.)`;
+      const r = await api<{ reply: string }>("/api/velo", { mode: "chat", messages: [...history, { role: "user", content: ask }], timeZone: timeZone(), name, ...thread });
+      if (r.reply) {
+        setMsgs(list => [...(list || []), { role: "assistant", content: r.reply }]);
+        await data("messages.add", { ...thread, messages: [{ role: "assistant", content: r.reply }] }).catch(() => {});
+      }
+    } catch { /* a reaction reply is a bonus; skip it on errors */ }
+    finally { setBusy(false); }
+  };
   const openingLine = msgs && !msgs.length && !name ? INTRO : HELLO(name.split(" ")[0])[hello];
   const shown: ChatMsg[] = msgs && !msgs.length && !cid ? [{ role: "assistant", content: openingLine }] : msgs || [];
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <div data-testid="chat-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-        {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={m.media?.id || i} m={m} face={face(28)} onMedia={mediaArrived} />)}
+        {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={m.media?.id || i} m={m} face={face(28)} onMedia={mediaArrived} onReact={react} />)}
         {character && msgs && !msgs.length && (
           <div className="muted" style={{ textAlign: "center", fontSize: 14, marginTop: 24, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
             {face(72)}<div>Say hi to {character.name} 👋</div>
@@ -203,12 +227,15 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   );
 }
 
-function Bubble({ m, face, onMedia }: { m: ChatMsg; face: React.ReactNode; onMedia: (x: Media) => void }) {
+function Bubble({ m, face, onMedia, onReact }: { m: ChatMsg; face: React.ReactNode; onMedia: (x: Media) => void; onReact: (id: string, r: string) => void }) {
   const mine = m.role === "user";
   if (m.media) return (
     <div data-testid="chat-media" style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
       {face}
-      <div style={{ maxWidth: "min(80%, 380px)" }}><MediaView media={m.media} onReady={onMedia} /></div>
+      <div style={{ maxWidth: "min(80%, 380px)" }}>
+        <MediaView media={m.media} onReady={onMedia} />
+        {m.media.status === "done" && <ReactionBar value={m.media.reaction} onPick={r => onReact(m.media!.id, r)} />}
+      </div>
     </div>
   );
   return (
