@@ -143,8 +143,13 @@ export async function POST(req: NextRequest) {
         const url = String(b.url || "");
         const type = String(b.type || "image");
         if (!url) return bad("No media.");
-        await db`insert into character_media (user_id, character_name, media_url, media_type) values (${me}, ${name}, ${url}, ${type})`;
-        return NextResponse.json({ ok: true });
+        // Download and re-upload to Blob for permanence
+        const imgRes = await fetch(url);
+        if (!imgRes.ok) return bad("Couldn't download.");
+        const blob = await imgRes.blob();
+        const uploaded = await put(`velo-looks/${me}/${Date.now()}.jpg`, blob, { access: "public" });
+        await db`insert into character_media (user_id, character_name, media_url, media_type) values (${me}, ${name}, ${uploaded.url}, ${type})`;
+        return NextResponse.json({ ok: true, url: uploaded.url });
       }
 
       case "profile.generateLook": {
