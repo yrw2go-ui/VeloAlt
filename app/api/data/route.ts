@@ -9,6 +9,7 @@ import { PHONE_MSG } from "../../lib/contact";
 import { scrub } from "../../lib/secrets";
 import { availableModels, CHAT_MODELS, MODEL_INFO, type ChatModel } from "../../lib/models";
 import { PERSONALITIES } from "../../lib/persona";
+import { askVelo } from "../../lib/brain";
 
 // 📦 Everything the app reads and changes, for the signed-in person only.
 // POST { action, ...args } → { ... }. Every query is scoped to their user_id.
@@ -329,16 +330,45 @@ export async function POST(req: NextRequest) {
       }
 
       case "messages.list": {
-        const rows = await db`select role, content from velo_messages where user_id = ${me} order by created_at desc, id desc limit 60`;
+        const character = String(b.character || "Velo").slice(0, 80);
+        try { await db`alter table velo_messages add column if not exists character text default 'Velo'`; } catch { /* already there */ }
+        const rows = character === "Velo"
+          ? await db`select role, content from velo_messages where user_id = ${me} and (character is null or character = 'Velo') order by created_at desc, id desc limit 60`
+          : await db`select role, content from velo_messages where user_id = ${me} and character = ${character} order by created_at desc, id desc limit 60`;
         return NextResponse.json({ messages: rows.reverse() });
       }
       case "messages.add": {
+        const character = String(b.character || "Velo").slice(0, 80);
+        try { await db`alter table velo_messages add column if not exists character text default 'Velo'`; } catch { /* already there */ }
         const list = (Array.isArray(b.messages) ? b.messages : []).slice(0, 4)
           .map((m: { role?: string; content?: unknown }) => ({ role: m.role === "assistant" ? "assistant" : "user", content: scrub(String(m.content || "").slice(0, 8000)) }))
           .filter((m: { content: string }) => m.content);
-        // A millisecond apart so they always sort in the order sent.
         const at = Date.now() - list.length;
-        for (const [i, m] of list.entries()) await db`insert into velo_messages (user_id, role, content, created_at) values (${me}, ${m.role}, ${m.content}, ${new Date(at + i).toISOString()})`;
+        for (const [i, m] of list.entries()) await db`insert into velo_messages (user_id, role, content, character, created_at) values (${me}, ${m.role}, ${m.content}, ${character}, ${new Date(at + i).toISOString()})`;
+        return NextResponse.json({ ok: true });
+      }
+      case "character.chat": {
+        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
+        const character = String(b.character || "").slice(0, 80);
+        if (!character || character.toLowerCase() === "velo") return bad("Pick a character.");
+        const marked = await db`select media_url from character_media where user_id = ${me} and character_name = ${character} and is_reference = true order by created_at desc limit 2`;
+        const fallback = marked.length ? marked : await db`select media_url from character_media where user_id = ${me} and character_name = ${character} order by created_at desc limit 2`;
+        const refs = fallback.map((r: { media_url?: string }) => String(r.media_url || "")).filter((u: string) => u.startsWith("http"));
+        try { await db`create table if not exists character_memories (id uuid primary key default gen_random_uuid(), user_id uuid not null, character_name text not null, text text not null, created_at timestamptz default now())`; } catch { /* optional */ }
+        const mems = await db`select text from character_memories where user_id = ${me} and character_name = ${character} order by created_at desc limit 12`.catch(() => [] as { text: string }[]);
+        const memory = mems.map((m: { text?: string }) => String(m.text || "")).filter(Boolean).join("\n");
+        const messages = Array.isArray(b.messages) ? b.messages : [];
+        if (memory) messages.unshift({ role: "user", content: `(${character}'s private memory, not Velo's: ${memory})` });
+        const result = await askVelo(c, { mode: "chat", messages, timeZone: b.timeZone, name: b.name, character, refs });
+        return NextResponse.json(result);
+      }
+      case "character.remember": {
+        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
+        const character = String(b.character || "").slice(0, 80);
+        const text = clean(b.text, 600);
+        if (!character || !text) return bad("Need a character and a note.");
+        try { await db`create table if not exists character_memories (id uuid primary key default gen_random_uuid(), user_id uuid not null, character_name text not null, text text not null, created_at timestamptz default now())`; } catch { /* optional */ }
+        await db`insert into character_memories (user_id, character_name, text) values (${me}, ${character}, ${text})`;
         return NextResponse.json({ ok: true });
       }
       case "messages.clear":
