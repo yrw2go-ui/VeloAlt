@@ -103,6 +103,27 @@ export async function POST(req: NextRequest) {
       }
 
       
+      
+      case "profile.listCharacters": {
+        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
+        const chars = await db`select distinct character_name from character_media where user_id = ${me} order by character_name`;
+        return NextResponse.json({ characters: chars.map(c => c.character_name) });
+      }
+      case "profile.renameCharacter": {
+        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
+        const from = String(b.from || "");
+        const to = String(b.to || "");
+        if (!from || !to) return bad("Names required.");
+        await db`update character_media set character_name = ${to} where user_id = ${me} and character_name = ${from}`;
+        return NextResponse.json({ ok: true });
+      }
+      case "profile.deleteMedia": {
+        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
+        const id = String(b.id || "");
+        await db`delete from character_media where id = ${id} and user_id = ${me}`;
+        return NextResponse.json({ ok: true });
+      }
+
       case "profile.listMedia": {
         if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
         const name = String(b.character || "Velo");
