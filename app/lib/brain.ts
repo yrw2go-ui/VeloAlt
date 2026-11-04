@@ -211,6 +211,18 @@ export async function makePicture(prompt: string, userId: string | undefined, ch
   return generateImage(prompt, "atlas", userId, character, refs);
 }
 
+const PIC_LINES = [
+  "Whatever you want, baby.",
+  "Here's the naughty picture you asked for.",
+  "Do you like it, daddy?",
+  "Mmm, here. Tell me what you think.",
+  "Like this, baby?",
+  "You asked, so here I am.",
+];
+export function spicyPicLine() {
+  return PIC_LINES[Math.floor(Math.random() * PIC_LINES.length)];
+}
+
 import { sql } from "./db";
 import { VELO_SYSTEM, CALL_TALK, CALL_RECAP, CALL_REMEMBER, CHAT_REMEMBER, SMS_TALK, PRO_INFO, FREE_INFO, SEARCH_INFO, errandPrompt, ERRAND_SUMMARY, PERSONALITY_PROMPT, PERSONALITIES, type Personality } from "./persona";
 import { MEMORY_TOOLS, isMemoryTool, runMemoryTool, MemoryError, memoryBlock, saveConversationMemory } from "./memory";
@@ -262,7 +274,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
     if (wantsPicture(ask)) {
       try {
         const url = await generateImage(ask, "atlas", caller.userId, character, opts.refs || []);
-        return { reply: "Here.\n\n" + url, changed: false, drafts };
+        return { reply: spicyPicLine() + "\n\n" + url, changed: false, drafts };
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Atlas error";
         return { reply: "Picture failed: " + msg, changed: false, drafts };
