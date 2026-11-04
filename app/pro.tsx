@@ -318,6 +318,22 @@ function VeloLookGenerator({ profile, onChange }: { profile: Profile; onChange: 
 }
 
 
+
+export function UpdateCard() {
+  const update = () => {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.update()));
+    }
+    window.location.reload();
+  };
+  return (
+    <div className="card">
+      <div style={{ fontWeight: 700 }}>App</div>
+      <button className="btn" onClick={update} style={{ marginTop: 8 }}>Update app</button>
+    </div>
+  );
+}
+
 export function ModeCard({ profile, onChange }: { profile: Profile; onChange: () => void }) {
   const [mode, setMode] = useState(profile.mode || "productivity");
   const [notifySpicy, setNotifySpicy] = useState(profile.notifySpicy || false);
