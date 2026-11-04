@@ -121,7 +121,7 @@ function pickVoice(kind: VeloVoice): { voice: SpeechSynthesisVoice | null; sure:
 const speakable = (t: string) => t.replace(/\[\[[^\]]*\]\]/g, "").replace(/https?:\/\/\S+/g, "").replace(/[*_#`>|]/g, "").replace(/\s+/g, " ").trim();
 // Said out loud: "Velo" is pronounced Vĕllō ("VEL-oh"), so the voice reads it as "Vello".
 const sayable = (t: string) => speakable(t).replace(/\bVelo\b/g, "Vello").replace(/\bVELO\b/g, "Vello");
-const clock = (s: number) => `\( {Math.floor(s / 60)}: \){String(s % 60).padStart(2, "0")}`;
+const clock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 /** Velo answers by first name, a little differently each time. On the very
  *  first call she introduces herself and what she's there for. */
 const greetingFor = (name?: string, first = false, who = "Velo") => {
@@ -133,10 +133,10 @@ const greetingFor = (name?: string, first = false, who = "Velo") => {
   const say = (named: string, plain: string) => (n ? named : plain);
   const options = [
     say(`Hey ${n}, what's up?`, "Hey, what's up?"),
-    say(`${tod} \( {n}!`, ` \){tod}!`),
+    say(`${tod} ${n}!`, `${tod}!`),
     say(`Hi ${n}, how can I help?`, "Hi, how can I help?"),
     say(`Hey ${n}! What's on your mind?`, "Hey! What's on your mind?"),
-    say(`${tod} \( {n}, what are we working on?`, ` \){tod}, what are we working on?`),
+    say(`${tod} ${n}, what are we working on?`, `${tod}, what are we working on?`),
     say(`Hi ${n}! Good to hear from you. What's going on?`, "Hi! Good to hear from you. What's going on?"),
   ];
   return options[Math.floor(Math.random() * options.length)];
@@ -395,12 +395,23 @@ export default function VeloCall({ request, onEnd, voice = "female", name, who =
   const think = async (text: string) => {
     const next = [...turnsRef.current, { role: "user" as const, content: text }];
     setTurns(next); setPhase("thinking"); setErr("");
+    const isPic = /\b(pic|pics|picture|pictures|photo|photos|image|images|selfie|nude|nudes|naked|explicit|sexy|nsfw)\b/i.test(text)
+      || (/\b(show|send|see|make|generate|give)\b/i.test(text) && /\b(you|her|yourself|body|face|look|me)\b/i.test(text));
+    const picLine = isPic ? ["Whatever you want, baby.", "Here's the naughty picture you asked for.", "Do you like it, daddy?", "Mmm, here. Tell me what you think.", "Like this, baby?"][Math.floor(Math.random() * 5)] : "";
+    if (isPic) {
+      setTurns([...next, { role: "assistant", content: picLine }]);
+      setPhase("speaking");
+      speak(picLine);
+    }
     try {
       const reply = await request(next, "talk");
       if (!live.current) return;
-      setTurns([...next, { role: "assistant", content: reply }]);
+      const url = (reply.match(/https:\/\/\S+/) || [""])[0];
+      const shown = isPic && url ? picLine + "\n\n" + url : reply;
+      setTurns([...next, { role: "assistant", content: shown }]);
       setHeard("");
-      speak(reply);
+      if (!isPic) speak(reply);
+      else if (url) setSaid(shown);
     } catch (e) {
       if (!live.current) return;
       const msg = e instanceof Error ? e.message : "Velo didn't answer.";
