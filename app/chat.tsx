@@ -26,8 +26,10 @@ export default function Chat({ userId, name, onChanged, added }: { userId: strin
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [who, setWho] = useState("Velo");
+  const [people, setPeople] = useState<string[]>(["Velo"]);
   const reload = useCallback(() => {
-    data<{ messages: ChatMsg[] }>("messages.list").then(r => setMsgs(m => {
+    data<{ messages: ChatMsg[] }>("messages.list", { character: who }).then(r => setMsgs(m => {
       const out = [...r.messages];
       let anchor: ChatMsg | undefined;
       const after = new Map<ChatMsg | undefined, ChatMsg[]>();
@@ -38,18 +40,21 @@ export default function Chat({ userId, name, onChanged, added }: { userId: strin
       }
       return out;
     })).catch(() => {});
-  }, []);
+  }, [who]);
   const end = useRef<HTMLDivElement>(null);
   const msgsRef = useRef<ChatMsg[]>([]);
   const [hello] = useState(() => Math.floor(Math.random() * 3));
   msgsRef.current = msgs || [];
 
   useEffect(() => {
-    Promise.all([
-      data<{ messages: ChatMsg[] }>("messages.list").then(r => r.messages).catch(() => [] as ChatMsg[]),
-      data<{ drafts: Draft[] }>("drafts.list").then(r => r.drafts).catch(() => [] as Draft[]),
-    ]).then(([m, d]) => setMsgs([...m, ...d.filter(x => x.status === "pending" || x.status === "calling").map(draft => ({ role: "assistant" as const, content: "", draft }))]));
+    data<{ characters: string[] }>("profile.listCharacters").then(r => setPeople(["Velo", ...(r.characters || []).filter(c => c !== "Velo")])).catch(() => {});
   }, [userId]);
+  useEffect(() => {
+    Promise.all([
+      data<{ messages: ChatMsg[] }>("messages.list", { character: who }).then(r => r.messages).catch(() => [] as ChatMsg[]),
+      who === "Velo" ? data<{ drafts: Draft[] }>("drafts.list").then(r => r.drafts).catch(() => [] as Draft[]) : Promise.resolve([] as Draft[]),
+    ]).then(([m, d]) => setMsgs([...m, ...d.filter(x => x.status === "pending" || x.status === "calling").map(draft => ({ role: "assistant" as const, content: "", draft }))]));
+  }, [userId, who]);
   useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [msgs, busy]);
 
   useEffect(() => {
@@ -75,12 +80,15 @@ export default function Chat({ userId, name, onChanged, added }: { userId: strin
     const next = [...msgs, ...opener, { role: "user" as const, content: t }];
     setMsgs(next); setText(""); setBusy(true); setErr("");
     unsaved.current++;
-    await data("messages.add", { messages: [...opener, { role: "user", content: t }] }).catch(() => {});
+    await data("messages.add", { messages: [...opener, { role: "user", content: t }], character: who }).catch(() => {});
     try {
-      const r = await api<{ reply: string; changed?: boolean; drafts?: Draft[] }>("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name });
+      const r = who === "Velo"
+        ? await api<{ reply: string; changed?: boolean; drafts?: Draft[] }>("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name })
+        : await data<{ reply: string; changed?: boolean; drafts?: Draft[] }>("character.chat", { character: who, messages: realMsgs(next), timeZone: timeZone(), name });
       setMsgs(m => [...(m || []), { role: "assistant", content: r.reply }, ...(r.drafts || []).map(draft => ({ role: "assistant" as const, content: "", draft }))]);
       setBusy(false);
-      await data("messages.add", { messages: [{ role: "assistant", content: r.reply }] }).catch(() => {});
+      await data("messages.add", { messages: [{ role: "assistant", content: r.reply }], character: who }).catch(() => {});
+      if (who !== "Velo") await data("character.remember", { character: who, text: t.slice(0, 400) }).catch(() => {});
       if (r.changed) onChanged();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Velo didn't answer.");
@@ -88,14 +96,19 @@ export default function Chat({ userId, name, onChanged, added }: { userId: strin
   };
 
   const first = (name || "").split(" ")[0];
-  const openingLine = msgs && !msgs.length && !name ? INTRO : helloLine(first, hello);
+  const openingLine = who !== "Velo" ? "Hey, it's " + who + ". What's on your mind?" : msgs && !msgs.length && !name ? INTRO : helloLine(first, hello);
   const shown: ChatMsg[] = msgs && !msgs.length ? [{ role: "assistant", content: openingLine }] : msgs || [];
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      <div style={{ display: "flex", gap: 6, overflowX: "auto", padding: "8px 12px", borderBottom: "1px solid var(--border)" }}>
+        {people.map(p => (
+          <button key={p} onClick={() => setWho(p)} style={{ padding: "6px 12px", borderRadius: 999, border: "1px solid var(--border)", background: who === p ? "var(--accent)" : "transparent", color: who === p ? "white" : "var(--text)", fontSize: 13, flexShrink: 0 }}>{p}</button>
+        ))}
+      </div>
       <div data-testid="chat-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
         {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={i} m={m} />)}
-        {busy && <div className="row"><VeloAvatar size={28} /><div className="muted" style={{ fontSize: 14 }}>Velo is typing…</div></div>}
+        {busy && <div className="row"><VeloAvatar size={28} /><div className="muted" style={{ fontSize: 14 }}>{who} is typing…</div></div>}
         {err && <div style={{ color: "var(--bad)", fontSize: 14 }}>Could not send.</div>}
         {msgs && msgs.length === 0 && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
