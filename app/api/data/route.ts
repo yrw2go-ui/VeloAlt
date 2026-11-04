@@ -26,6 +26,21 @@ export async function POST(req: NextRequest) {
     const needId = () => UUID.test(id);
 
     switch (String(b.action || "")) {
+      
+      case "profile.setMode": {
+        const mode = String(b.mode || "productivity");
+        if (!["spicy","productivity"].includes(mode)) return bad("Bad mode.");
+        await db`update users set mode = ${mode} where id = ${me}`;
+        return NextResponse.json({ ok: true });
+      }
+      case "profile.setNotify": {
+        const side = String(b.side || "productivity");
+        const on = Boolean(b.on);
+        if (side === "spicy") await db`update users set notify_spicy = ${on} where id = ${me}`;
+        else await db`update users set notify_productivity = ${on} where id = ${me}`;
+        return NextResponse.json({ ok: true });
+      }
+
       case "profile.get": {
         const [u] = await db`select name, look, time_zone, plan, phone, phone_verified_at, chat_model, personality, adult_confirmed_at, spicy_voice, secret_voice, spicy_api_voice from users where id = ${me}`;
         const [{ n }] = await db`select count(*)::int as n from velo_memories where user_id = ${me} and kind = 'call'`;
@@ -87,6 +102,30 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true, url: uploaded.url });
       }
 
+      
+      case "profile.listMedia": {
+        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
+        const name = String(b.character || "Velo");
+        const media = await db`select id, media_url, media_type, is_reference from character_media where user_id = ${me} and character_name = ${name} order by created_at desc`;
+        return NextResponse.json({ media });
+      }
+      case "profile.setReference": {
+        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
+        const id = String(b.id || "");
+        const on = Boolean(b.on);
+        await db`update character_media set is_reference = ${on} where id = ${id} and user_id = ${me}`;
+        return NextResponse.json({ ok: true });
+      }
+      case "profile.saveMedia": {
+        if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
+        const name = String(b.character || "Velo");
+        const url = String(b.url || "");
+        const type = String(b.type || "image");
+        if (!url) return bad("No media.");
+        await db`insert into character_media (user_id, character_name, media_url, media_type) values (${me}, ${name}, ${url}, ${type})`;
+        return NextResponse.json({ ok: true });
+      }
+
       case "profile.generateLook": {
         if (c.email.toLowerCase() !== "yrw2go@gmail.com") return bad("Admin only.");
         const provider = String(b.provider || "spicy");
@@ -95,7 +134,7 @@ export async function POST(req: NextRequest) {
           const res = await fetch("https://api.atlascloud.ai/api/v1/model/generateImage", {
             method: "POST",
             headers: { Authorization: `Bearer ${process.env.ATLASCLOUD_API_KEY}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ model: "bytedance/seedream-v5.0-pro/text-to-image", prompt }),
+            body: JSON.stringify({ model: "bytedance/seedream-v5.0-pro/text-to-image", prompt, size: "1536*1536" }),
           });
           if (!res.ok) {
             const err = await res.text().catch(() => "");
