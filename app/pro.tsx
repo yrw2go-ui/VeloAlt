@@ -7,6 +7,12 @@ import { api, data } from "./lib/api";
 import { confirmAsk } from "./lib/dialog";
 import { formatPhone, contactProblem } from "./lib/contact";
 
+function picSrc(url: string) {
+  if (!url) return "";
+  if (url.startsWith("data:") || url.startsWith("/")) return url;
+  return "/api/pic?u=" + encodeURIComponent(url);
+}
+
 export type Profile = {
   name: string; look: string; plan: "free" | "pro"; proForSale: boolean; phone: string; phoneVerified: boolean; veloNumber: string;
   chatModel: string; models: { id: string; label: string; by: string; where: string }[];
@@ -185,7 +191,8 @@ function FacebookCard() {
 /** Settings → Velo's brain: which AI she chats with (only shown when there's a choice). */
 export function BrainCard({ profile, onChange }: { profile: Profile; onChange: () => void }) {
   const [busy, setBusy] = useState(false);
-  if (profile.models.length < 2) return null;
+  const models = profile.models || [];
+  if (models.length < 2) return null;
   const pick = async (id: string) => {
     if (id === profile.chatModel) return;
     setBusy(true);
@@ -197,7 +204,7 @@ export function BrainCard({ profile, onChange }: { profile: Profile; onChange: (
       <div style={{ fontWeight: 700 }}>🧠 Velo&apos;s brain</div>
       <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>The AI Velo chats with. Her memory, reminders and everything else stay the same. Passwords and codes are hidden from every one of them.</div>
       <div role="radiogroup" aria-label="Velo's brain" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {profile.models.map(m => {
+        {models.map(m => {
           const on = m.id === profile.chatModel;
           return (
             <button key={m.id} role="radio" aria-checked={on} disabled={busy} onClick={() => pick(m.id)}
@@ -257,6 +264,7 @@ function VeloLookGenerator({ profile, onChange }: { profile: Profile; onChange: 
       const r = await data<{ url?: string }>("profile.generateLook", { prompt: genPrompt.trim(), provider });
       if (r.url) setUrl(r.url);
       else setMsg("No image returned.");
+      loadLooks();
     } catch (e) { setMsg(e instanceof Error ? e.message : "Failed."); }
     setBusy(false);
   };
@@ -290,7 +298,7 @@ function VeloLookGenerator({ profile, onChange }: { profile: Profile; onChange: 
       </div>
       {url && (
         <div style={{ marginTop: 8 }}>
-          <img src={url} alt="Generated" style={{ maxWidth: "100%", borderRadius: 8, marginBottom: 8 }} />
+          <img src={picSrc(url)} alt="Generated" style={{ maxWidth: "100%", borderRadius: 8, marginBottom: 8 }} />
           <button className="btn" disabled={busy} onClick={save}>Save as Velo look</button>
         </div>
       )}
@@ -306,7 +314,7 @@ function VeloLookGenerator({ profile, onChange }: { profile: Profile; onChange: 
                 loadLooks();
                 setBusy(false);
               }}>
-                <img src={l.image_url} alt={l.name} style={{ width: 100, height: 100, objectFit: "contain", background: "#111", borderRadius: 8, border: l.is_active ? "2px solid var(--accent)" : "1px solid var(--border)" }} />
+                <img src={picSrc(l.image_url)} alt={l.name} style={{ width: 100, height: 100, objectFit: "contain", background: "#111", borderRadius: 8, border: l.is_active ? "2px solid var(--accent)" : "1px solid var(--border)" }} />
                 <div style={{ fontSize: 11, marginTop: 2 }}>{l.is_active ? "Reference" : ""}</div>
               </div>
             ))}
@@ -329,7 +337,7 @@ export function UpdateCard() {
   return (
     <div className="card">
       <div style={{ fontWeight: 700 }}>App</div>
-      <div className="muted" style={{ fontSize: 12, margin: "2px 0 8px" }}>v1.4 · Nov 4, 2026 12:40 AM</div>
+      <div className="muted" style={{ fontSize: 12, margin: "2px 0 8px" }}>v1.6 · Nov 4, 2026 1:20 AM</div>
       <button className="btn" onClick={update} style={{ marginTop: 8 }}>Update app</button>
     </div>
   );
@@ -376,6 +384,7 @@ export function CharacterGallery({ profile, onChange }: { profile: Profile; onCh
   const [page, setPage] = useState(0);
   const [busy, setBusy] = useState(false);
   const [genPrompt, setGenPrompt] = useState("");
+  const [note, setNote] = useState("");
   const loadChars = async () => {
     try { const r = await data<{characters: string[]}>("profile.listCharacters"); setChars(r.characters || ["Velo"]); } catch { setChars(["Velo"]); }
   };
@@ -396,14 +405,12 @@ export function CharacterGallery({ profile, onChange }: { profile: Profile; onCh
   };
   const gen = async () => {
     if (!genPrompt.trim()) return;
-    setBusy(true);
+    setBusy(true); setNote("");
     try {
-      const r = await data<{url?: string}>("profile.generateLook", { prompt: genPrompt.trim(), provider: "atlas" });
-      if (r.url) {
-        await data("profile.saveMedia", { character: active, url: r.url, type: "image" });
-        loadMedia(active);
-      }
-    } catch {}
+      const r = await data<{url?: string}>("profile.generateLook", { prompt: genPrompt.trim(), provider: "atlas", character: active });
+      if (r.url) { setNote("Saved."); loadMedia(active); }
+      else setNote("No image returned.");
+    } catch (e) { setNote(e instanceof Error ? e.message : "Generate failed."); }
     setBusy(false);
   };
   const pageSize = 40;
@@ -422,10 +429,11 @@ export function CharacterGallery({ profile, onChange }: { profile: Profile; onCh
         <input value={genPrompt} onChange={e => setGenPrompt(e.target.value)} placeholder="Generate more of her…" style={{ flex: 1 }} />
         <button className="btn" disabled={busy || !genPrompt.trim()} onClick={gen}>Generate</button>
       </div>
+      {note && <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>{note}</div>}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))", gap: 8 }}>
         {shown.map(m => (
           <div key={m.id} style={{ position: "relative" }}>
-            <img src={m.media_url} alt="" style={{ width: "100%", aspectRatio: "1", objectFit: "contain", background: "#111", borderRadius: 6 }} />
+            <img src={picSrc(m.media_url)} alt="" style={{ width: "100%", aspectRatio: "1", objectFit: "contain", background: "#111", borderRadius: 6 }} />
             <button onClick={async () => { await data("profile.deleteMedia", { id: m.id }); loadMedia(active); }} style={{ position: "absolute", top: 2, right: 2, background: "rgba(0,0,0,0.6)", color: "white", border: "none", borderRadius: 4, fontSize: 11, padding: "2px 6px" }}>✕</button>
           </div>
         ))}
