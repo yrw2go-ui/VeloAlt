@@ -1,6 +1,6 @@
 {
-  "name": "Velo",
-  "short_name": "Velo",
+  "name": "Velo 2",
+  "short_name": "Velo 2",
   "description": "Your personal assistant and companion.",
   "start_url": "/",
   "display": "standalone",
