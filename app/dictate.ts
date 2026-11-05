@@ -48,5 +48,8 @@ export function useDictation(onText: (t: string) => void) {
     try { r?.stop(); } catch { /* fine */ }
   };
 
-  return { supported, listening, error, start, stop };
+  /** Whether it's listening right now (up to date even before a re-render). */
+  const active = () => !!rec.current;
+
+  return { supported, listening, error, start, stop, active };
 }
