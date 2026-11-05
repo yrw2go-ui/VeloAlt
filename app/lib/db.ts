@@ -32,7 +32,17 @@ export function sql(): Sql {
     pg(strings, ...(values as any[])).then(r => Array.from(r) as Row[])) as Sql);
 }
 
-export const dbUrl = () => process.env.DATABASE_URL || process.env.POSTGRES_URL || "";
+/** The first env var set among these names — also with a prefix, as Vercel's storage links can
+ *  add one (e.g. STORAGE_POSTGRES_URL). */
+export function envAny(...names: string[]): string {
+  for (const n of names) if (process.env[n]) return process.env[n]!;
+  for (const n of names) {
+    const k = Object.keys(process.env).find(k => k.endsWith(`_${n}`) && process.env[k]);
+    if (k) return process.env[k]!;
+  }
+  return "";
+}
+export const dbUrl = () => process.env.DATABASE_URL || envAny("POSTGRES_URL", "POSTGRES_PRISMA_URL");
 
 /** The connection string without its query options (e.g. ?sslmode=require&supa=…) — the
  *  driver would send unknown ones to the server, which refuses them. SSL is set above. */

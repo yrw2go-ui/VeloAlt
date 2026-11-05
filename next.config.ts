@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 // Pictures can also come from the Supabase project's storage (when it's linked).
-const SUPABASE = (() => { try { return new URL(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "").origin; } catch { return ""; } })();
+const supabaseEnv = () => { for (const n of ["SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL"]) { if (process.env[n]) return process.env[n]!; const k = Object.keys(process.env).find(k => k.endsWith(`_${n}`) && process.env[k]); if (k) return process.env[k]!; } return ""; };
+const SUPABASE = (() => { try { return new URL(supabaseEnv()).origin; } catch { return ""; } })();
 
 // No framing, no sniffing, and the browser only ever talks to this site.
 const CSP = [
