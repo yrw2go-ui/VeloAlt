@@ -33,5 +33,26 @@
   "description": "Headshot in her Austin tattoo studio, band tee and beanie, smirking",
   "model": "gemini-3-pro-image (ElevenLabs)",
   "file": "portraits/jade.jpg"
+ },
+ {
+  "name": "Anya",
+  "file": "portraits/anya.jpg",
+  "prompt": "Anya's headshot, made in Velo.",
+  "description": "Anya's headshot",
+  "model": "bytedance/seedream-v5.0-pro (Velo)"
+ },
+ {
+  "name": "Hailey",
+  "file": "portraits/hailey.jpg",
+  "prompt": "Hailey's headshot, made in Velo.",
+  "description": "Hailey's headshot",
+  "model": "bytedance/seedream-v5.0-pro (Velo)"
+ },
+ {
+  "name": "Allie",
+  "file": "portraits/allie.jpg",
+  "prompt": "Allie's headshot, made in Velo.",
+  "description": "Allie's headshot",
+  "model": "upload (Velo)"
  }
 ]
