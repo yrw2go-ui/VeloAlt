@@ -12,7 +12,7 @@ import { CHARACTER_ZONES } from "./lib/states";
 
 type VoiceOption = { id: string; name: string; kind: "female" | "male"; about: string; preview: string; owner?: string };
 
-export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; portrait_url: string | null; portrait_job: string | null };
+export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; portrait_url: string | null; portrait_job: string | null };
 
 /** A character's picture in a circle (their initial until a portrait exists). */
 export function CharacterFace({ c, size }: { c: Pick<Character, "name" | "portrait_url">; size: number }) {
@@ -57,6 +57,9 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
   const [backstory, setBackstory] = useState(initial?.backstory || "");
   const [relation, setRelation] = useState(initial?.relation || "");
   const [appearance, setAppearance] = useState(initial?.appearance || "");
+  const [job, setJob] = useState(initial?.job || "");
+  const [wear, setWear] = useState(initial?.casual_wear || "");
+  const [hobbies, setHobbies] = useState(initial?.hobbies || "");
   const first = CHARACTER_VOICES[0];
   const [romantic, setRomantic] = useState(!!initial?.romantic);
   const [arc, setArc] = useState(initial?.romance_arc || "");
@@ -79,7 +82,7 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const working = !!c?.portrait_job;
-  const dirty = !c || name !== c.name || personality !== c.personality || backstory !== c.backstory || relation !== c.relation || appearance !== c.appearance || voice.id !== c.voice || JSON.stringify(traits) !== JSON.stringify(cleanTraits(c.traits && Object.keys(c.traits).length ? c.traits : DEFAULT_TRAITS)) || preset !== (c.preset || "") || zone !== (c.time_zone || "") || bday !== (c.birthday || "") || romantic !== !!c.romantic || (romantic ? arc : "") !== (c.romance_arc || "") || refIds.join() !== (c.reference_ids || []).join();
+  const dirty = !c || name !== c.name || personality !== c.personality || backstory !== c.backstory || relation !== c.relation || appearance !== c.appearance || job !== (c.job || "") || wear !== (c.casual_wear || "") || hobbies !== (c.hobbies || "") || voice.id !== c.voice || JSON.stringify(traits) !== JSON.stringify(cleanTraits(c.traits && Object.keys(c.traits).length ? c.traits : DEFAULT_TRAITS)) || preset !== (c.preset || "") || zone !== (c.time_zone || "") || bday !== (c.birthday || "") || romantic !== !!c.romantic || (romantic ? arc : "") !== (c.romance_arc || "") || refIds.join() !== (c.reference_ids || []).join();
 
   // A portrait in progress: check back every few seconds until it's ready.
   useEffect(() => {
@@ -96,7 +99,7 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
   const save = async () => {
     setBusy(true); setMsg("");
     try {
-      const fields = { name, personality, backstory, relation, appearance, voice: { id: voice.id, name: voice.name, kind: voice.kind, owner: voice.owner }, romantic, romanceArc: romantic ? arc : "", traits, preset, timeZone: zone, birthday: bday };
+      const fields = { name, personality, backstory, relation, appearance, job, casualWear: wear, hobbies, voice: { id: voice.id, name: voice.name, kind: voice.kind, owner: voice.owner }, romantic, romanceArc: romantic ? arc : "", traits, preset, timeZone: zone, birthday: bday };
       const r = await api<{ character: Character }>("/api/characters", { action: c ? "update" : "create", id: c?.id, ...fields, referenceIds: refIds });
       // 🖼️ Pictures picked while making a new character: upload them now (first one as headshot), as references.
       if (!c && pending.files.length && pending.fictional) {
@@ -167,6 +170,19 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
         <label style={{ fontSize: 13, fontWeight: 700 }}>Relation to the user
           <textarea value={relation} onChange={e => setRelation(e.target.value)} maxLength={600} rows={2} placeholder="Who they are to the person chatting, e.g. an old friend from the navy, a mentor, a big sister" aria-label="Relation to the user" style={{ marginTop: 4, resize: "vertical" }} />
         </label>
+        <div data-testid="character-life" style={{ display: "flex", flexDirection: "column", gap: 10, padding: 12, borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface2)" }}>
+          <div style={{ fontWeight: 800, fontSize: 14 }}>💼 Their everyday life</div>
+          <label style={{ fontSize: 13, fontWeight: 700 }}>Job
+            <input value={job} onChange={e => setJob(e.target.value)} maxLength={300} placeholder="e.g. Yoga instructor at a small studio downtown, teaches mornings" aria-label="Job" style={{ marginTop: 4 }} />
+          </label>
+          <label style={{ fontSize: 13, fontWeight: 700 }}>Preferred casual wear
+            <textarea value={wear} onChange={e => setWear(e.target.value)} maxLength={400} rows={2} placeholder="e.g. Oversized hoodies, high-waisted jeans, white sneakers, gold hoops" aria-label="Preferred casual wear" style={{ marginTop: 4, resize: "vertical" }} />
+          </label>
+          <label style={{ fontSize: 13, fontWeight: 700 }}>Favorite hobbies
+            <textarea value={hobbies} onChange={e => setHobbies(e.target.value)} maxLength={600} rows={2} placeholder="e.g. Hiking on weekends, baking sourdough, thrift shopping, horror movies" aria-label="Favorite hobbies" style={{ marginTop: 4, resize: "vertical" }} />
+          </label>
+          <span className="muted" style={{ fontSize: 12 }}>They&apos;ll talk about their work and hobbies, and usually wear their casual style in everyday photos.</span>
+        </div>
         <TraitSliders value={traits} romantic={romantic} onChange={(k, v) => { setTraits(t => ({ ...t, [k]: v })); }} />
         <label style={{ fontSize: 13, fontWeight: 700 }}>Where they live (time zone)
           <select value={zone} onChange={e => setZone(e.target.value)} aria-label="Character time zone" style={{ marginTop: 4, display: "block", width: "100%" }}>

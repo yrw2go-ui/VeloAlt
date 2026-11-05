@@ -10,7 +10,7 @@ import { MAX_CHARACTERS, DAILY_PORTRAITS, isAdmin, listCharacters, getCharacter,
 
 // 🎭 Characters. Everyone can list them and chat; only admins create and edit. POST { action, ... }:
 //   list                     → { characters, portraits, admin }
-//   create / update { id?, name, personality, backstory, relation, appearance, voice, romantic, romanceArc, traits, preset, timeZone, referenceIds } → { character }   (admin)
+//   create / update { id?, name, personality, backstory, relation, appearance, job, casualWear, hobbies, voice, romantic, romanceArc, traits, preset, timeZone, referenceIds } → { character }   (admin)
 //   gallery { id } → { items }   the admin's pictures of this character, to pick references from
 //   delete { id }            (admin; everyone's chats and memories with it go too)
 //   portrait.start { id }    (admin) starts an Atlas Cloud portrait from the appearance
@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     switch (action) {
       case "create":
       case "update": {
-        const f = { name: clean(b.name, 60), personality: clean(b.personality, 2000), backstory: clean(b.backstory, 3000), relation: clean(b.relation, 600), appearance: clean(b.appearance, 600) };
+        const f = { name: clean(b.name, 60), personality: clean(b.personality, 2000), backstory: clean(b.backstory, 3000), relation: clean(b.relation, 600), appearance: clean(b.appearance, 600), job: clean(b.job, 300), casual_wear: clean(b.casualWear, 400), hobbies: clean(b.hobbies, 600) };
         if (!f.name) return bad("Give your character a name.");
         if (!allow(`chars:${me}`, [{ ms: 60_000, max: 10 }, { ms: 86_400_000, max: 200 }])) return bad("That's a lot of changes — try again in a bit.", 429);
         if (action === "update" && !(await getCharacter(id))) return bad("That character wasn't found.");
@@ -58,8 +58,8 @@ export async function POST(req: NextRequest) {
         // Same voice as before: keep it (no trip to ElevenLabs).
         const v = prev && (b.voice?.id ?? b.voice) === prev.voice ? { id: prev.voice, name: prev.voice_name, kind: prev.voice_kind } : await chooseVoice(b.voice);
         const [row] = action === "create"
-          ? await sql()`insert into chat_characters (created_by, name, personality, backstory, relation, appearance, voice, voice_name, voice_kind, romantic, romance_arc, traits, preset, time_zone, birthday) values (${me}, ${f.name}, ${f.personality}, ${f.backstory}, ${f.relation}, ${f.appearance}, ${v.id}, ${v.name}, ${v.kind}, ${romantic}, ${arc}, ${JSON.stringify(traits)}::jsonb, ${presetId}, ${zone}, ${bday}) returning id`
-          : await sql()`update chat_characters set name = ${f.name}, personality = ${f.personality}, backstory = ${f.backstory}, relation = ${f.relation}, appearance = ${f.appearance}, voice = ${v.id}, voice_name = ${v.name}, voice_kind = ${v.kind}, romantic = ${romantic}, romance_arc = ${arc}, traits = ${JSON.stringify(traits)}::jsonb, preset = ${presetId}, time_zone = ${zone}, birthday = ${bday}, reference_ids = ${want.filter((x: string) => refs.includes(x))}::uuid[], updated_at = now() where id = ${id} returning id`;
+          ? await sql()`insert into chat_characters (created_by, name, personality, backstory, relation, appearance, job, casual_wear, hobbies, voice, voice_name, voice_kind, romantic, romance_arc, traits, preset, time_zone, birthday) values (${me}, ${f.name}, ${f.personality}, ${f.backstory}, ${f.relation}, ${f.appearance}, ${f.job}, ${f.casual_wear}, ${f.hobbies}, ${v.id}, ${v.name}, ${v.kind}, ${romantic}, ${arc}, ${JSON.stringify(traits)}::jsonb, ${presetId}, ${zone}, ${bday}) returning id`
+          : await sql()`update chat_characters set name = ${f.name}, personality = ${f.personality}, backstory = ${f.backstory}, relation = ${f.relation}, appearance = ${f.appearance}, job = ${f.job}, casual_wear = ${f.casual_wear}, hobbies = ${f.hobbies}, voice = ${v.id}, voice_name = ${v.name}, voice_kind = ${v.kind}, romantic = ${romantic}, romance_arc = ${arc}, traits = ${JSON.stringify(traits)}::jsonb, preset = ${presetId}, time_zone = ${zone}, birthday = ${bday}, reference_ids = ${want.filter((x: string) => refs.includes(x))}::uuid[], updated_at = now() where id = ${id} returning id`;
         return NextResponse.json({ character: await getCharacter(String(row.id)) });
       }
 
