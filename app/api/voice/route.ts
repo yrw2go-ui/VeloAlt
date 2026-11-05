@@ -30,14 +30,27 @@ async function eleven(text: string, voiceId: string): Promise<Response | null> {
   return null;
 }
 
+// Fish's paid models need API credit (separate from a Fish app plan). With none left
+// (402), the same voice is tried once on Fish's free model before falling back.
+const FISH_FREE_MODEL = "s2.1-pro-free";
+async function fishOnce(text: string, voice: string, key: string, model: string): Promise<Response> {
+  return fetch(`${FISH()}/v1/tts`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", model },
+    body: JSON.stringify({ text, reference_id: voice.slice(5), format: "mp3", mp3_bitrate: 64, latency: "balanced" }),
+  });
+}
+
 async function fish(text: string, voice: string): Promise<Response | null> {
   const key = (process.env.FISH_AUDIO_API_KEY || process.env.FISH_API_KEY);
   if (!key) { console.error("voice: Fish Audio voice picked but FISH_API_KEY isn't set"); return null; }
-  const res = await fetch(`${FISH()}/v1/tts`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", model: process.env.FISH_AUDIO_MODEL || "s1" },
-    body: JSON.stringify({ text, reference_id: voice.slice(5), format: "mp3", mp3_bitrate: 64, latency: "balanced" }),
-  });
+  const model = process.env.FISH_AUDIO_MODEL || "s1";
+  let res = await fishOnce(text, voice, key, model);
+  if (res.status === 402 && model !== FISH_FREE_MODEL) {
+    console.error(`voice: Fish Audio has no API credit for ${model}; using ${FISH_FREE_MODEL}`);
+    await res.text().catch(() => "");
+    res = await fishOnce(text, voice, key, FISH_FREE_MODEL);
+  }
   if (res.ok && res.body) return res;
   console.error(`voice: Fish Audio refused voice ${voice} (${res.status}) ${(await res.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 300)}`);
   return null;
