@@ -16,7 +16,7 @@ import { acceptMedia, declineMedia, mediaNote, checkMedia, sweepMedia, getMedia,
 
 // 📦 Everything the app reads and changes, for the signed-in person only.
 // POST { action, ...args } → { ... }. Every query is scoped to their user_id.
-const REACTIONS = ["❤️", "🔥", "🙌", "😍", "👍", "😮"];
+const REACTIONS = ["❤️", "🔥", "🙌", "😍", "👍", "😮", "😂"];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const clean = (v: unknown, n: number) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, n);
 const bad = (error: string) => NextResponse.json({ error }, { status: 400 });

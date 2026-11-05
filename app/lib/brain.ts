@@ -53,8 +53,8 @@ const ASKED_FOR_MEDIA = /\b(send|show|share|snap|take|got|get|see|want|wanna|mak
 export interface AskResult { reply: string; changed: boolean; drafts: Draft[]; media: Media[]; saved?: boolean; react?: string }
 
 // 😮 Reactions (shown as a little badge on their message, like a text-message tapback).
-export const REACTIONS = ["❤️", "🔥", "🙌", "😍", "👍", "😮"];
-const REACT_HINT = `REACTIONS: they can react to your messages with ❤️ 🔥 🙌 😍 👍 😮 — notes like "(they reacted 🔥 to this)" tell you when they did. You can react to THEIR latest message (or the photo they sent) too, but only now and then — mostly when you really like or love it, or it surprises you: start your reply with [react:❤️] (one of ❤️ 🔥 🙌 😍 👍 😮). It shows as a badge on their message; don't mention it. Most replies have no reaction.`;
+export const REACTIONS = ["❤️", "🔥", "🙌", "😍", "👍", "😮", "😂"];
+const REACT_HINT = `REACTIONS: they can react to your messages with ❤️ 🔥 🙌 😍 👍 😮 😂 — notes like "(they reacted 🔥 to this)" tell you when they did. You can react to THEIR latest message (or the photo they sent) too, but only now and then — mostly when you really like or love it, or it surprises you: start your reply with [react:❤️] (one of ❤️ 🔥 🙌 😍 👍 😮 😂). It shows as a badge on their message; don't mention it. Most replies have no reaction.`;
 const REACT_TAG = /\[react:\s*([^\]\s]+)\s*\]\s*/gu;
 
 /** Velo, or (with `character`) one of the characters: same chats, calls and memory flow, but in the
