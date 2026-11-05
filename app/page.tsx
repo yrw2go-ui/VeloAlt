@@ -168,9 +168,10 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
 
   // 📞 Calls whoever's chat is open: Velo, or that character (in their own voice, with their own memory).
   const [callWith, setCallWith] = useState<Character | null>(null);
+  const [callMini, setCallMini] = useState(false);
   // 🎨 Photos/videos sent during the call: shown on the call screen, and saved to that chat.
   const [callMedia, setCallMedia] = useState<Media[]>([]);
-  const startCall = () => { primeSpeech(); setCallWith(tab === "chat" ? withChar : null); setCallMedia([]); setCalling(true); };
+  const startCall = () => { primeSpeech(); setCallWith(tab === "chat" ? withChar : null); setCallMedia([]); setCallMini(false); setCalling(true); };
   // Unfinished photos/videos keep getting finished in the background while the app is open.
   useEffect(() => {
     const sweep = () => { if (document.visibilityState === "visible") data("media.sweep").catch(() => {}); };
@@ -195,13 +196,14 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
 
   return (
     <div style={{ height: "100dvh", display: "flex", flexDirection: "column", maxWidth: 720, margin: "0 auto" }}>
+      {calling && callMini && <div aria-hidden style={{ height: "calc(max(8px, env(safe-area-inset-top)) + 50px)", flexShrink: 0 }} />}
       <header className="row" style={{ padding: "max(12px, env(safe-area-inset-top)) 16px 12px", borderBottom: "1px solid var(--border)" }}>
         <VeloLogo size={40} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 800, fontSize: 18 }}>Velo</div>
           <div className="muted" style={{ fontSize: 12 }}>{name ? `Here for you, ${name.split(" ")[0]}` : "Your assistant & companion"}</div>
         </div>
-        {canCallVelo() && <button className="btn" onClick={startCall} aria-label={`Call ${tab === "chat" && withChar ? withChar.name : "Velo"}`} data-testid="call-velo" style={{ borderRadius: 999, padding: "10px 16px" }}>📞 Call</button>}
+        {canCallVelo() && !calling && <button className="btn" onClick={startCall} aria-label={`Call ${tab === "chat" && withChar ? withChar.name : "Velo"}`} data-testid="call-velo" style={{ borderRadius: 999, padding: "10px 16px" }}>📞 Call</button>}
       </header>
 
       {due.length > 0 && (
@@ -238,8 +240,9 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
           voice={callWith ? callWith.voice_kind : undefined}
           opener={callWith ? `Hey${name ? ` ${name.split(" ")[0]}` : ""}, it's ${callWith.name}! What's going on?` : undefined}
           who={callWith ? { name: callWith.name, face: (size: number) => <CharacterFace c={callWith} size={size} /> } : undefined}
+          mini={callMini} onMinimize={() => setCallMini(true)} onExpand={() => setCallMini(false)}
           onEnd={(recap) => {
-            setCalling(false); if (!callWith) setFirstCall(false);
+            setCalling(false); setCallMini(false); if (!callWith) setFirstCall(false);
             // Photos/videos from the call are in the chat: show them right away.
             if (!recap) setChatTick(t => t + 1);
             if (recap) { setChatAdd({ msg: { role: "assistant", content: recap }, cid: callWith?.id || null }); setWithId(callWith?.id || null); setTab("chat"); }

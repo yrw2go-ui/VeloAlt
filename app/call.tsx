@@ -141,7 +141,11 @@ const greetingFor = (name?: string, first = false) => {
   return options[Math.floor(Math.random() * options.length)];
 };
 
-export default function VeloCall({ request, onEnd, voice = "female", name, firstCall = false, fetchVoice, opener, startPrivate = false, who }: {
+export default function VeloCall({ request, onEnd, voice = "female", name, firstCall = false, fetchVoice, opener, startPrivate = false, who, mini = false, onMinimize, onExpand }: {
+  /** ⤡ Shrunk to a bar so they can use the app while they talk; the call carries on. */
+  mini?: boolean;
+  onMinimize?: () => void;
+  onExpand?: () => void;
   /** 🎭 A call with a character instead of Velo: their name and face. */
   who?: { name: string; face: (size: number) => React.ReactNode };
   /** 📞 Check-in call: what Velo says first (instead of her usual hello). */
@@ -446,12 +450,32 @@ export default function VeloCall({ request, onEnd, voice = "female", name, first
   const pill = (on: boolean) => ({ flexShrink: 0, background: on ? "#3b82f6" : "#1f2937", color: "#fff", border: `1px solid ${on ? "#60a5fa" : "#374151"}`, borderRadius: 999, padding: "8px 12px", fontSize: 14, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" } as const);
   const btn = (bg: string) => ({ width: 64, height: 64, borderRadius: "50%", border: "none", background: bg, color: "#fff", fontSize: 26, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" } as const);
 
+  // 📞 Minimized: a bar at the top; listening and talking carry on underneath.
+  if (mini && phase !== "ended") return (
+    <div data-testid="velo-call-mini" style={{ position: "fixed", left: 0, right: 0, top: 0, zIndex: 2000, padding: "max(8px, env(safe-area-inset-top)) 12px 8px", background: "linear-gradient(90deg, #1e3a8a, #1e2a4a)", borderBottom: "1px solid #3b82f6", color: "#f1f1f3", display: "flex", alignItems: "center", gap: 10, boxShadow: "0 6px 20px rgba(0,0,0,0.45)", fontFamily: "'Inter', -apple-system, sans-serif" }}>
+      <style>{`@keyframes vcRing { 0% { box-shadow: 0 0 0 0 ${ring}88 } 70% { box-shadow: 0 0 0 10px ${ring}00 } 100% { box-shadow: 0 0 0 0 ${ring}00 } }`}</style>
+      <button onClick={onExpand} aria-label="Back to the call screen" data-testid="velo-call-expand" style={{ all: "unset", flex: 1, minWidth: 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ width: 34, height: 34, borderRadius: "50%", border: `2px solid ${ring}`, overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", animation: phase === "muted" ? undefined : "vcRing 1.6s infinite" }}>{who ? who.face(30) : <VeloAvatar size={30} />}</span>
+        <span style={{ minWidth: 0, flex: 1 }}>
+          <span style={{ display: "block", fontSize: 13, fontWeight: 800 }}>📞 {who?.name || "Velo"} · {clock(secs)} <span style={{ color: ring, fontWeight: 700 }}>· {phase === "speaking" ? "Talking" : label}</span></span>
+          {said && <span style={{ display: "block", fontSize: 12, color: "#cbd5e1", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{speakable(said)}</span>}
+        </span>
+      </button>
+      <button onClick={toggleMute} aria-label={muted.current ? "Unmute" : "Mute"} style={{ ...btn(muted.current ? "#4b5563" : "#1f2937"), width: 36, height: 36, fontSize: 16, flexShrink: 0 }}>{muted.current ? "🔇" : "🎙️"}</button>
+      <button onClick={hangUp} aria-label="End call" style={{ ...btn("#ef4444"), width: 36, height: 36, fontSize: 16, flexShrink: 0 }}><span style={{ transform: "rotate(135deg)", display: "inline-block" }}>📞</span></button>
+    </div>
+  );
+
   return (
     <div role="dialog" aria-label={`Call with ${who?.name || "Velo"}`} data-testid="velo-call" onClick={interrupt} onPointerDownCapture={touched}
       style={{ position: "fixed", inset: 0, zIndex: 2000, background: "radial-gradient(circle at 50% 30%, #1e2a4a 0%, #0a0a0f 70%)", color: "#f1f1f3", display: "flex", flexDirection: "column", alignItems: "center", padding: "max(40px, env(safe-area-inset-top)) 20px max(28px, env(safe-area-inset-bottom))", fontFamily: "'Inter', -apple-system, sans-serif" }}>
       <style>{`@keyframes vcRing { 0% { box-shadow: 0 0 0 0 ${ring}88 } 70% { box-shadow: 0 0 0 26px ${ring}00 } 100% { box-shadow: 0 0 0 0 ${ring}00 } }
         @keyframes vcDot { 0%,80%,100% { opacity: .25 } 40% { opacity: 1 } }`}</style>
       <div style={{ fontSize: 13, color: "#9ca3af", letterSpacing: 1 }}>{phase === "ended" ? "CALL ENDED" : "ON A CALL"} · {clock(secs)}</div>
+      {onMinimize && phase !== "ended" && (
+        <button onClick={e => { e.stopPropagation(); onMinimize(); }} data-testid="velo-call-minimize" title="Shrink the call and use the app while you talk"
+          style={{ position: "absolute", top: "max(32px, env(safe-area-inset-top))", right: 16, background: "#1f2937", color: "#f1f1f3", border: "1px solid #374151", borderRadius: 999, padding: "8px 14px", fontSize: 14, fontWeight: 800, cursor: "pointer" }}>⤡ Minimize</button>
+      )}
       <div style={{ marginTop: small ? 12 : 34, width: small ? 84 : 150, height: small ? 84 : 150, flexShrink: 0, borderRadius: "50%", background: "#111827", border: `3px solid ${ring}`, display: "flex", alignItems: "center", justifyContent: "center", animation: phase === "ended" || phase === "muted" ? undefined : "vcRing 1.6s infinite" }}>
         {who ? who.face(small ? 78 : 144) : <VeloAvatar size={small ? 78 : 144} />}
       </div>
