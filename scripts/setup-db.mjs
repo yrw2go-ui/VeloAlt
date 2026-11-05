@@ -6,7 +6,9 @@
 import { readFileSync } from "node:fs";
 import postgres from "postgres";
 
-const url = process.env.POSTGRES_URL_NON_POOLING || process.env.DATABASE_URL || process.env.POSTGRES_URL || "";
+// Also finds prefixed names (e.g. STORAGE_POSTGRES_URL) that Vercel's storage links can add.
+const envAny = (...names) => { for (const n of names) if (process.env[n]) return process.env[n]; for (const n of names) { const k = Object.keys(process.env).find(k => k.endsWith(`_${n}`) && process.env[k]); if (k) return process.env[k]; } return ""; };
+const url = process.env.DATABASE_URL || envAny("POSTGRES_URL_NON_POOLING", "POSTGRES_URL");
 if (!url) { console.log("setup-db: no database URL, skipping"); process.exit(0); }
 if (/neon\.tech/i.test(url)) { console.log("setup-db: Neon database, skipping (migrations are applied by hand)"); process.exit(0); }
 

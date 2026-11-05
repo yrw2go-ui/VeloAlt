@@ -4,10 +4,11 @@
 // Paths are random folders plus a random suffix, never a person's id or email.
 import { put as blobPut, del as blobDel } from "@vercel/blob";
 import { randomBytes } from "node:crypto";
+import { envAny } from "./db";
 
 const BUCKET = "velo";
-const base = () => (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "").replace(/\/+$/, "");
-const key = () => process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+const base = () => envAny("SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL").replace(/\/+$/, "");
+const key = () => envAny("SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SECRET_KEY");
 export const usingSupabase = () => !!(base() && key());
 export const storageReady = () => usingSupabase() || !!process.env.BLOB_READ_WRITE_TOKEN;
 const headers = (extra: Record<string, string> = {}) => ({ Authorization: `Bearer ${key()}`, apikey: key(), ...extra });
