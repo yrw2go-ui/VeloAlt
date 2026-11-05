@@ -5,7 +5,7 @@ import { isAdmin } from "../../lib/characters";
 import { CHARACTER_VOICES } from "../../lib/voices";
 
 // 🔊 Voices to choose from for a character (admins). POST { provider: "elevenlabs" | "fish", q } → { voices, source }
-// Fish Audio: female voices from its public library (needs FISH_AUDIO_API_KEY).
+// Fish Audio: female voices from its public library (needs FISH_API_KEY).
 // Their ElevenLabs voices plus a search of ElevenLabs' shared voice library (thousands of
 // voices); a shared voice is added to their ElevenLabs account when the character is saved.
 // If ElevenLabs can't be reached (or the key can't list voices), the built-in list.
@@ -23,8 +23,8 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const q = String(body?.q || "").replace(/[^\w\s'-]/g, " ").trim().slice(0, 60);
   if (body?.provider === "fish") {
-    const key = process.env.FISH_AUDIO_API_KEY;
-    if (!key) return NextResponse.json({ error: "Fish Audio isn't set up yet — add FISH_AUDIO_API_KEY in Vercel." }, { status: 503 });
+    const key = (process.env.FISH_AUDIO_API_KEY || process.env.FISH_API_KEY);
+    if (!key) return NextResponse.json({ error: "Fish Audio isn't set up yet — add FISH_API_KEY in Vercel." }, { status: 503 });
     try {
       const r = await fetch(`${FISH()}/model?page_size=40&page_number=1&sort_by=score&tag=female${q ? `&title=${encodeURIComponent(q)}` : ""}`, { headers: { Authorization: `Bearer ${key}` } });
       if (!r.ok) { console.error(`voices: Fish Audio list ${r.status} ${(await r.text().catch(() => "")).slice(0, 200)}`); return NextResponse.json({ error: "Fish Audio didn't answer. Try again." }, { status: 502 }); }

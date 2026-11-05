@@ -31,8 +31,8 @@ async function eleven(text: string, voiceId: string): Promise<Response | null> {
 }
 
 async function fish(text: string, voice: string): Promise<Response | null> {
-  const key = process.env.FISH_AUDIO_API_KEY;
-  if (!key) { console.error("voice: Fish Audio voice picked but FISH_AUDIO_API_KEY isn't set"); return null; }
+  const key = (process.env.FISH_AUDIO_API_KEY || process.env.FISH_API_KEY);
+  if (!key) { console.error("voice: Fish Audio voice picked but FISH_API_KEY isn't set"); return null; }
   const res = await fetch(`${FISH()}/v1/tts`, {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", model: process.env.FISH_AUDIO_MODEL || "s1" },
@@ -45,7 +45,7 @@ async function fish(text: string, voice: string): Promise<Response | null> {
 
 export async function POST(req: NextRequest) {
   try {
-    if (!process.env.ELEVENLABS_API_KEY && !process.env.FISH_AUDIO_API_KEY) return NextResponse.json({ error: "Voice isn't set up." }, { status: 503 });
+    if (!process.env.ELEVENLABS_API_KEY && !(process.env.FISH_AUDIO_API_KEY || process.env.FISH_API_KEY)) return NextResponse.json({ error: "Voice isn't set up." }, { status: 503 });
     const caller = await resolveCaller(req);
     if (!caller) return NextResponse.json({ error: "Please sign in again." }, { status: 401 });
     if (!allow(caller.userId)) return NextResponse.json({ error: "Too many requests." }, { status: 429 });
