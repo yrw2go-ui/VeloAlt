@@ -7,10 +7,12 @@ import { api } from "./lib/api";
 import { confirmAsk } from "./lib/dialog";
 import { VeloAvatar } from "./avatar";
 import { CHARACTER_VOICES } from "./lib/voices";
+import { TRAITS, PRESETS, DEFAULT_TRAITS, cleanTraits, type TraitKey } from "./lib/traits";
+import { CHARACTER_ZONES } from "./lib/states";
 
 type VoiceOption = { id: string; name: string; kind: "female" | "male"; about: string; preview: string; owner?: string };
 
-export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; reference_ids: string[]; portrait_url: string | null; portrait_job: string | null };
+export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; portrait_url: string | null; portrait_job: string | null };
 
 /** A character's picture in a circle (their initial until a portrait exists). */
 export function CharacterFace({ c, size }: { c: Pick<Character, "name" | "portrait_url">; size: number }) {
@@ -54,13 +56,25 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
   const [appearance, setAppearance] = useState(initial?.appearance || "");
   const first = CHARACTER_VOICES[0];
   const [romantic, setRomantic] = useState(!!initial?.romantic);
+  const [arc, setArc] = useState(initial?.romance_arc || "");
+  const [traits, setTraits] = useState<Record<TraitKey, number>>(cleanTraits(initial?.traits && Object.keys(initial.traits).length ? initial.traits : DEFAULT_TRAITS));
+  const [preset, setPreset] = useState(initial?.preset || "");
+  const [zone, setZone] = useState(initial?.time_zone || "");
+  // 🎚️ A preset sets the sliders (and the personality, if it's empty or still another preset's text).
+  const applyPreset = (id: string) => {
+    setPreset(id);
+    const p = PRESETS.find(x => x.id === id);
+    if (!p) return;
+    setTraits({ ...p.traits });
+    if (!personality.trim() || PRESETS.some(x => x.about === personality)) setPersonality(p.about);
+  };
   const [shots, setShots] = useState(0); // finished portraits (refreshes the reference picker)
   const [refIds, setRefIds] = useState<string[]>(initial?.reference_ids || []);
   const [voice, setVoice] = useState<VoiceOption>(initial ? { id: initial.voice, name: initial.voice_name || "Voice", kind: initial.voice_kind, about: "", preview: "" } : { id: first.voiceId, name: first.name, kind: first.kind, about: first.about, preview: "" });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const working = !!c?.portrait_job;
-  const dirty = !c || name !== c.name || personality !== c.personality || backstory !== c.backstory || relation !== c.relation || appearance !== c.appearance || voice.id !== c.voice || romantic !== !!c.romantic || refIds.join() !== (c.reference_ids || []).join();
+  const dirty = !c || name !== c.name || personality !== c.personality || backstory !== c.backstory || relation !== c.relation || appearance !== c.appearance || voice.id !== c.voice || JSON.stringify(traits) !== JSON.stringify(cleanTraits(c.traits && Object.keys(c.traits).length ? c.traits : DEFAULT_TRAITS)) || preset !== (c.preset || "") || zone !== (c.time_zone || "") || romantic !== !!c.romantic || (romantic ? arc : "") !== (c.romance_arc || "") || refIds.join() !== (c.reference_ids || []).join();
 
   // A portrait in progress: check back every few seconds until it's ready.
   useEffect(() => {
@@ -77,7 +91,7 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
   const save = async () => {
     setBusy(true); setMsg("");
     try {
-      const r = await api<{ character: Character }>("/api/characters", { action: c ? "update" : "create", id: c?.id, name, personality, backstory, relation, appearance, voice: { id: voice.id, name: voice.name, kind: voice.kind, owner: voice.owner }, romantic, referenceIds: refIds });
+      const r = await api<{ character: Character }>("/api/characters", { action: c ? "update" : "create", id: c?.id, name, personality, backstory, relation, appearance, voice: { id: voice.id, name: voice.name, kind: voice.kind, owner: voice.owner }, romantic, romanceArc: romantic ? arc : "", traits, preset, timeZone: zone, referenceIds: refIds });
       setC(r.character); onSaved(r.character);
       // A library voice is saved as a copy in their ElevenLabs account: follow its new id.
       setVoice(v => ({ ...v, id: r.character.voice, owner: undefined }));
@@ -117,6 +131,13 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
         <label style={{ fontSize: 13, fontWeight: 700 }}>Name
           <input value={name} onChange={e => setName(e.target.value)} maxLength={60} placeholder="e.g. Captain Mira" aria-label="Character name" style={{ marginTop: 4 }} />
         </label>
+        <label style={{ fontSize: 13, fontWeight: 700 }}>Personality preset <span className="muted" style={{ fontWeight: 500 }}>· optional starting point</span>
+          <select value={preset} onChange={e => applyPreset(e.target.value)} aria-label="Personality preset" style={{ marginTop: 4, display: "block", width: "100%" }}>
+            <option value="">— Custom —</option>
+            {PRESETS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+          </select>
+          {preset && <span className="muted" style={{ fontWeight: 500, display: "block", marginTop: 4 }}>{PRESETS.find(p => p.id === preset)?.about}</span>}
+        </label>
         <label style={{ fontSize: 13, fontWeight: 700 }}>Personality
           <textarea value={personality} onChange={e => setPersonality(e.target.value)} maxLength={2000} rows={3} placeholder="How do they talk and act? e.g. gruff but kind, loves bad puns, never gives up" aria-label="Personality" style={{ marginTop: 4, resize: "vertical" }} />
         </label>
@@ -126,11 +147,26 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
         <label style={{ fontSize: 13, fontWeight: 700 }}>Relation to the user
           <textarea value={relation} onChange={e => setRelation(e.target.value)} maxLength={600} rows={2} placeholder="Who they are to the person chatting, e.g. an old friend from the navy, a mentor, a big sister" aria-label="Relation to the user" style={{ marginTop: 4, resize: "vertical" }} />
         </label>
+        <TraitSliders value={traits} romantic={romantic} onChange={(k, v) => { setTraits(t => ({ ...t, [k]: v })); }} />
+        <label style={{ fontSize: 13, fontWeight: 700 }}>Where they live (time zone)
+          <select value={zone} onChange={e => setZone(e.target.value)} aria-label="Character time zone" style={{ marginTop: 4, display: "block", width: "100%" }}>
+            {CHARACTER_ZONES.map(([id, label]) => <option key={id || "same"} value={id}>{label}</option>)}
+          </select>
+          <span className="muted" style={{ fontWeight: 500, display: "block", marginTop: 4 }}>They always know your local time too — and notice when it&apos;s late for one of you.</span>
+        </label>
         <VoicePicker value={voice} onChange={setVoice} />
         <label className="row" style={{ gap: 10, fontSize: 13, fontWeight: 700, alignItems: "flex-start" }}>
           <input type="checkbox" checked={romantic} onChange={e => setRomantic(e.target.checked)} aria-label="Romantic" style={{ width: 20, height: 20, marginTop: 1, flexShrink: 0 }} />
-          <span>💕 Romantic (PG-13) <span className="muted" style={{ fontWeight: 500, display: "block" }}>Flirty and affectionate with adults who confirmed they&apos;re 18+, never explicit. Others get a friendly, platonic version.</span></span>
+          <span>💕 Romantic (PG-13) <span className="muted" style={{ fontWeight: 500, display: "block" }}>Romance becomes possible with adults who confirmed they&apos;re 18+ (never explicit) — but their personality still leads. Others get a friendly, platonic version.</span></span>
         </label>
+        {romantic && (
+          <label style={{ fontSize: 13, fontWeight: 700 }}>💕 Romance arc
+            <textarea value={arc} onChange={e => setArc(e.target.value)} maxLength={1500} rows={3} aria-label="Romance arc"
+              placeholder="How their feelings start and can grow, e.g. Not interested in them at first and a bit cold — but if they're patient and kind, she slowly starts to care and could fall for them."
+              style={{ marginTop: 4, resize: "vertical" }} />
+            <span className="muted" style={{ fontWeight: 500, display: "block", marginTop: 4 }}>Each person&apos;s relationship develops on its own from here, a little after every chat and call. Edit this any time to add new turns.</span>
+          </label>
+        )}
         {c && <ReferencePicker characterId={c.id} value={refIds} onChange={setRefIds} refresh={shots} />}
         <label style={{ fontSize: 13, fontWeight: 700 }}>Appearance (for the portrait)
           <textarea value={appearance} onChange={e => setAppearance(e.target.value)} maxLength={600} rows={2} placeholder="e.g. weathered sea captain, silver braid, navy coat, warm smile" aria-label="Appearance" style={{ marginTop: 4, resize: "vertical" }} />
@@ -241,6 +277,30 @@ function ReferencePicker({ characterId, value, onChange, refresh }: { characterI
             })}
           </div>
         )}
+    </div>
+  );
+}
+
+/** 🎚️ Nine temperament sliders (0–10). Their mix makes each character unique; Flirty and Suggestive only count when Romantic is on. */
+function TraitSliders({ value, romantic, onChange }: { value: Record<TraitKey, number>; romantic: boolean; onChange: (k: TraitKey, v: number) => void }) {
+  return (
+    <div data-testid="trait-sliders" style={{ fontSize: 13, fontWeight: 700 }}>
+      Temperament <span className="muted" style={{ fontWeight: 500 }}>· tendencies, not a script — the personality text still leads</span>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+        {TRAITS.map(t => {
+          const off = "romantic" in t && !romantic;
+          return (
+            <div key={t.key} style={{ opacity: off ? 0.5 : 1 }}>
+              <div className="row" style={{ justifyContent: "space-between", gap: 8 }}>
+                <span>{t.icon} {t.label} <span className="muted" style={{ fontWeight: 500, fontSize: 12 }}>· {off ? "only with Romantic on" : t.hint}</span></span>
+                <span style={{ minWidth: 36, textAlign: "right" }}>{value[t.key]}/10</span>
+              </div>
+              <input type="range" min={0} max={10} step={1} value={value[t.key]} onChange={e => onChange(t.key, Number(e.target.value))} aria-label={t.label}
+                style={{ width: "100%", accentColor: "var(--accent)", padding: 0, border: "none", background: "transparent" }} />
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

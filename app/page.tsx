@@ -10,6 +10,7 @@ import Chat, { type ChatAdd } from "./chat";
 import { CallMedia, type Media } from "./media";
 import { CharacterStrip, CharacterEditor, CharacterFace, type Character } from "./characters";
 import Gallery from "./gallery";
+import AboutCard from "./about";
 import Today from "./today";
 import Memory from "./memory";
 import { timeZone } from "./lib/tz";
@@ -256,6 +257,7 @@ function Settings({ name, setName, onOut, profile, onProfile }: { name: string; 
         <div className="muted" style={{ fontSize: 13, margin: "2px 0 12px" }}>Each face has her own voice on calls. You can also upload your own picture (she keeps the default voice).</div>
         <VeloLookPicker />
       </div>
+      {profile && <AboutCard profile={profile} onChange={onProfile} />}
       {profile && <PersonalityCard profile={profile} onChange={onProfile} />}
       {profile && <BrainCard profile={profile} onChange={onProfile} />}
       {profile && <VideoCard profile={profile} onChange={onProfile} />}

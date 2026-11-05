@@ -7,6 +7,7 @@ import { allow } from "../../lib/rateLimit";
 import sharp from "sharp";
 import { IMAGE_TYPES, DOC_TYPES, MAX_BYTES, MAX_FILES, blobReady, deleteFile } from "../../lib/files";
 import { thumbOf } from "../../lib/media";
+import { describePhoto } from "../../lib/bio";
 
 /** 🔒 Re-saves a photo without its hidden data (GPS location, camera, date…), upright, same format. */
 async function cleanImage(buf: Buffer, type: string): Promise<Buffer> {
@@ -27,11 +28,11 @@ export async function POST(req: NextRequest) {
 
     const form = await req.formData().catch(() => null);
     const file = form?.get("file");
-    const purpose = form?.get("purpose") === "face" ? "face" : "chat";
+    const purpose = form?.get("purpose") === "face" ? "face" : form?.get("purpose") === "bio" ? "bio" : "chat";
     if (!(file instanceof File)) return NextResponse.json({ error: "Choose a file." }, { status: 400 });
     const type = (file.type || "").toLowerCase();
-    const allowed = purpose === "face" ? IMAGE_TYPES : [...IMAGE_TYPES, ...DOC_TYPES];
-    if (!allowed.includes(type)) return NextResponse.json({ error: purpose === "face" ? "Use a JPG, PNG, WebP or GIF picture." : "Velo can take photos (JPG, PNG, WebP, GIF), PDFs and text files." }, { status: 400 });
+    const allowed = purpose === "chat" ? [...IMAGE_TYPES, ...DOC_TYPES] : IMAGE_TYPES;
+    if (!allowed.includes(type)) return NextResponse.json({ error: purpose !== "chat" ? "Use a JPG, PNG, WebP or GIF picture." : "Velo can take photos (JPG, PNG, WebP, GIF), PDFs and text files." }, { status: 400 });
     if (file.size > MAX_BYTES) return NextResponse.json({ error: "That file is over 4 MB." }, { status: 400 });
     if (file.size === 0) return NextResponse.json({ error: "That file is empty." }, { status: 400 });
     const [{ n }] = await sql()`select count(*)::int as n from velo_files where user_id = ${c.userId}`;
@@ -51,7 +52,7 @@ export async function POST(req: NextRequest) {
     }
     const blob = await put(`${folder}/${name}`, body, { access: "public", addRandomSuffix: true, contentType: type });
     const [row] = await sql()`insert into velo_files (user_id, kind, url, pathname, name, content_type, size, thumb_url)
-      values (${c.userId}, ${purpose === "face" ? "face" : "file"}, ${blob.url}, ${blob.pathname}, ${name}, ${type}, ${body.length}, ${thumbUrl})
+      values (${c.userId}, ${purpose === "chat" ? "file" : purpose}, ${blob.url}, ${blob.pathname}, ${name}, ${type}, ${body.length}, ${thumbUrl})
       returning id, url, thumb_url, name, content_type, size, kind`;
 
     if (purpose === "face") {
@@ -59,6 +60,14 @@ export async function POST(req: NextRequest) {
       const old = await sql()`select id from velo_files where user_id = ${c.userId} and kind = 'face' and id <> ${row.id}`;
       for (const o of old) await deleteFile(c.userId, String(o.id));
       await sql()`update users set look = 'custom', updated_at = now() where id = ${c.userId}`;
+    }
+    if (purpose === "bio") {
+      // 👤 Their photo for "About you": described once in words (visible features only), old one removed.
+      const note = await describePhoto(body, type).catch(e => { console.error("files: describe photo", e instanceof Error ? e.message : e); return null; });
+      await sql()`update users set bio_photo_file_id = ${row.id}, bio_photo_note = ${note}, updated_at = now() where id = ${c.userId}`;
+      const old = await sql()`select id from velo_files where user_id = ${c.userId} and kind = 'bio' and id <> ${row.id}`;
+      for (const o of old) await deleteFile(c.userId, String(o.id));
+      return NextResponse.json({ file: row, note });
     }
     return NextResponse.json({ file: row });
   } catch (e) {

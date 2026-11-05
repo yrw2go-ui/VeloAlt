@@ -31,6 +31,8 @@ const rememberPrompt = (what: string) => `The ${what} above just ended. For your
 Leave out anything already in YOUR MEMORY, anything they asked you to forget, and passing small talk. Use [] when there's nothing new. Don't invent anything.`;
 
 export const CHAT_REMEMBER = rememberPrompt("chat");
+/** Romantic characters: also update how they feel about this person (slowly, in character). */
+export const FEELINGS_REMEMBER = `Also add "feelings" to the JSON: 1–2 sentences, in first person, on how you feel about them now. Change it only a little from HOW YOU FEEL ABOUT THEM RIGHT NOW, and only if something in this conversation earned it (kindness, patience, shared moments — or the opposite). Stay true to your personality and the arc your creator wrote; it can stay the same, grow warmer, or cool off.`;
 export const CALL_REMEMBER = rememberPrompt("voice call");
 
 export const CALL_TALK = `PHONE CALL MODE. You're on a voice call — your replies are read aloud by text-to-speech.

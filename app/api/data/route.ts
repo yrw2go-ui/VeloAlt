@@ -10,6 +10,7 @@ import { availableModels, CHAT_MODELS, MODEL_INFO, type ChatModel } from "../../
 import { PERSONALITIES } from "../../lib/persona";
 import { deleteFile, ownFile } from "../../lib/files";
 import { getCharacter } from "../../lib/characters";
+import { US_STATES } from "../../lib/states";
 import { checkMedia, sweepMedia, getMedia, listGallery, deleteMedia, VIDEO_MODELS, DEFAULT_VIDEO_MODEL } from "../../lib/media";
 
 // 📦 Everything the app reads and changes, for the signed-in person only.
@@ -30,7 +31,7 @@ export async function POST(req: NextRequest) {
 
     switch (String(b.action || "")) {
       case "profile.get": {
-        const [u] = await db`select name, look, time_zone, plan, phone, phone_verified_at, chat_model, personality, adult_confirmed_at, video_model from users where id = ${me}`;
+        const [u] = await db`select name, look, time_zone, plan, phone, phone_verified_at, chat_model, personality, adult_confirmed_at, video_model, bio, birthday::text, age, home_state, (select url from velo_files where id = users.bio_photo_file_id) as bio_photo, (select thumb_url from velo_files where id = users.bio_photo_file_id) as bio_thumb, bio_photo_note from users where id = ${me}`;
         const [{ n }] = await db`select count(*)::int as n from velo_memories where user_id = ${me} and kind = 'call' and character_id is null`;
         const [face] = await db`select url from velo_files where user_id = ${me} and kind = 'face' order by created_at desc limit 1`;
         return NextResponse.json({
@@ -40,6 +41,7 @@ export async function POST(req: NextRequest) {
           phone: u?.phone ? showPhone(String(u.phone)) : "", phoneVerified: !!u?.phone_verified_at, veloNumber: veloNumber(),
           chatModel: availableModels().includes(u?.chat_model) ? u?.chat_model : "claude",
           models: availableModels().map(id => ({ id, ...MODEL_INFO[id] })),
+          bio: { text: u?.bio || "", birthday: u?.birthday || "", age: u?.age || null, state: u?.home_state || "", photo: u?.bio_thumb || u?.bio_photo || "", photoNote: u?.bio_photo_note || "" },
           videoModel: VIDEO_MODELS.some(m => m.id === u?.video_model) ? u?.video_model : DEFAULT_VIDEO_MODEL,
           videoModels: VIDEO_MODELS.map(m => ({ id: m.id, label: m.label })),
           // Anything unknown (or romantic without the 18+ confirmation) shows as Friend.
@@ -61,6 +63,15 @@ export async function POST(req: NextRequest) {
           await db`update users set personality = ${b.personality}, updated_at = now() where id = ${me}`;
         }
         if (CHAT_MODELS.includes(b.chatModel) && availableModels().includes(b.chatModel as ChatModel)) await db`update users set chat_model = ${b.chatModel}, updated_at = now() where id = ${me}`;
+        // 👤 About you (all optional; empty clears it).
+        if (b.bio && typeof b.bio === "object") {
+          const x = b.bio as Record<string, unknown>;
+          const text = scrub(String(x.text ?? "").trim().slice(0, 1000)) || null;
+          const bday = typeof x.birthday === "string" && /^\d{4}-\d{2}-\d{2}$/.test(x.birthday) && !Number.isNaN(Date.parse(x.birthday)) && x.birthday > "1900-01-01" && Date.parse(x.birthday) < Date.now() ? x.birthday : null;
+          const age = bday ? null : Number.isInteger(Number(x.age)) && Number(x.age) >= 13 && Number(x.age) <= 120 ? Number(x.age) : null;
+          const st = US_STATES.includes(x.state as (typeof US_STATES)[number]) ? String(x.state) : null;
+          await db`update users set bio = ${text}, birthday = ${bday}, age = ${age}, home_state = ${st}, updated_at = now() where id = ${me}`;
+        }
         if (VIDEO_MODELS.some(m => m.id === b.videoModel)) await db`update users set video_model = ${b.videoModel}, updated_at = now() where id = ${me}`;
         return NextResponse.json({ ok: true });
       }
@@ -113,6 +124,12 @@ export async function POST(req: NextRequest) {
         const note = `(sent a ${m.kind === "image" ? "photo" : "video"}${reaction ? ` — they reacted ${reaction}` : ""})`;
         await db`update velo_messages set content = ${note} where media_id = ${id} and user_id = ${me}`;
         return NextResponse.json({ ok: true, note });
+      }
+      case "bio.photoRemove": {
+        await db`update users set bio_photo_file_id = null, bio_photo_note = null where id = ${me}`;
+        const old = await db`select id from velo_files where user_id = ${me} and kind = 'bio'`;
+        for (const o of old) await deleteFile(me, String(o.id));
+        return NextResponse.json({ ok: true });
       }
       case "media.check": {
         const m = needId() ? await checkMedia(me, id) : null;

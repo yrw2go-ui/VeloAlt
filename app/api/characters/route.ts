@@ -4,11 +4,13 @@ import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import { scrub } from "../../lib/secrets";
 import { listGallery } from "../../lib/media";
+import { cleanTraits, PRESETS } from "../../lib/traits";
+import { isValidTimeZone } from "../../lib/localTime";
 import { MAX_CHARACTERS, DAILY_PORTRAITS, isAdmin, listCharacters, getCharacter, screenCharacter, startPortrait, checkPortrait, deleteCharacter, portraitsReady, chooseVoice, VoiceError } from "../../lib/characters";
 
 // 🎭 Characters. Everyone can list them and chat; only admins create and edit. POST { action, ... }:
 //   list                     → { characters, portraits, admin }
-//   create / update { id?, name, personality, backstory, relation, appearance, voice, romantic, referenceIds } → { character }   (admin)
+//   create / update { id?, name, personality, backstory, relation, appearance, voice, romantic, romanceArc, traits, preset, timeZone, referenceIds } → { character }   (admin)
 //   gallery { id } → { items }   the admin's pictures of this character, to pick references from
 //   delete { id }            (admin; everyone's chats and memories with it go too)
 //   portrait.start { id }    (admin) starts an Atlas Cloud portrait from the appearance
@@ -40,19 +42,23 @@ export async function POST(req: NextRequest) {
           if (n >= MAX_CHARACTERS) return bad(`There can be up to ${MAX_CHARACTERS} characters — delete one first.`);
         }
         const romantic = b.romantic === true;
+        const arc = romantic ? clean(b.romanceArc, 1500) : "";
+        const traits = cleanTraits(b.traits);
+        const presetId = PRESETS.some(p => p.id === b.preset) ? String(b.preset) : "";
+        const zone = typeof b.timeZone === "string" && b.timeZone && isValidTimeZone(b.timeZone) ? b.timeZone : "";
         // Up to 4 reference pictures: finished photos of this character from the admin's gallery.
         const want = (Array.isArray(b.referenceIds) ? b.referenceIds : []).map(String).filter((x: string) => /^[0-9a-f-]{36}$/i.test(x)).slice(0, 4);
         const refs = action === "update" && want.length
           ? (await sql()`select id from velo_media where id = any(${want}::uuid[]) and user_id = ${me} and character_id = ${id} and kind = 'image' and status = 'done'`).map(r => String(r.id))
           : [];
-        const problem = await screenCharacter({ ...f, relation: f.relation + (romantic ? " (romantic, PG-13)" : "") });
+        const problem = await screenCharacter({ ...f, relation: f.relation + (romantic ? " (romance possible, PG-13)" : ""), arc });
         if (problem) return bad(problem);
         const prev = action === "update" ? await getCharacter(id) : null;
         // Same voice as before: keep it (no trip to ElevenLabs).
         const v = prev && (b.voice?.id ?? b.voice) === prev.voice ? { id: prev.voice, name: prev.voice_name, kind: prev.voice_kind } : await chooseVoice(b.voice);
         const [row] = action === "create"
-          ? await sql()`insert into chat_characters (created_by, name, personality, backstory, relation, appearance, voice, voice_name, voice_kind, romantic) values (${me}, ${f.name}, ${f.personality}, ${f.backstory}, ${f.relation}, ${f.appearance}, ${v.id}, ${v.name}, ${v.kind}, ${romantic}) returning id`
-          : await sql()`update chat_characters set name = ${f.name}, personality = ${f.personality}, backstory = ${f.backstory}, relation = ${f.relation}, appearance = ${f.appearance}, voice = ${v.id}, voice_name = ${v.name}, voice_kind = ${v.kind}, romantic = ${romantic}, reference_ids = ${want.filter((x: string) => refs.includes(x))}::uuid[], updated_at = now() where id = ${id} returning id`;
+          ? await sql()`insert into chat_characters (created_by, name, personality, backstory, relation, appearance, voice, voice_name, voice_kind, romantic, romance_arc, traits, preset, time_zone) values (${me}, ${f.name}, ${f.personality}, ${f.backstory}, ${f.relation}, ${f.appearance}, ${v.id}, ${v.name}, ${v.kind}, ${romantic}, ${arc}, ${JSON.stringify(traits)}::jsonb, ${presetId}, ${zone}) returning id`
+          : await sql()`update chat_characters set name = ${f.name}, personality = ${f.personality}, backstory = ${f.backstory}, relation = ${f.relation}, appearance = ${f.appearance}, voice = ${v.id}, voice_name = ${v.name}, voice_kind = ${v.kind}, romantic = ${romantic}, romance_arc = ${arc}, traits = ${JSON.stringify(traits)}::jsonb, preset = ${presetId}, time_zone = ${zone}, reference_ids = ${want.filter((x: string) => refs.includes(x))}::uuid[], updated_at = now() where id = ${id} returning id`;
         return NextResponse.json({ character: await getCharacter(String(row.id)) });
       }
 

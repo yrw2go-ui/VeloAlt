@@ -10,15 +10,18 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Caller } from "./caller";
 import { sql } from "./db";
-import { VELO_SYSTEM, CALL_TALK, CALL_RECAP, CALL_REMEMBER, CHAT_REMEMBER, SMS_TALK, PRO_INFO, FREE_INFO, SEARCH_INFO, errandPrompt, ERRAND_SUMMARY, PERSONALITY_PROMPT, PERSONALITIES, type Personality } from "./persona";
+import { VELO_SYSTEM, CALL_TALK, CALL_RECAP, CALL_REMEMBER, CHAT_REMEMBER, SMS_TALK, PRO_INFO, FREE_INFO, SEARCH_INFO, errandPrompt, ERRAND_SUMMARY, FEELINGS_REMEMBER, PERSONALITY_PROMPT, PERSONALITIES, type Personality } from "./persona";
 import { MEMORY_TOOLS, isMemoryTool, runMemoryTool, MemoryError, memoryBlock, saveConversationMemory } from "./memory";
 import { REMINDER_TOOLS, isReminderTool, runReminderTool, ReminderError } from "./reminders";
 import { proToolsFor, isProTool, runProTool, ProError, type Draft } from "./pro";
 import { twilioReady } from "./twilio";
 import { isValidTimeZone, localDate, formatClock, weekdayOf } from "./localTime";
-import { hideSecrets, HIDDEN } from "./secrets";
+import { hideSecrets, HIDDEN, scrub as scrubText } from "./secrets";
 import { ownFile, fileForAi } from "./files";
-import { characterPrompt, type Character } from "./characters";
+import { characterPrompt, feelingsFor, saveFeelings, type Character } from "./characters";
+import { aboutThem } from "./bio";
+import { mediaMood } from "./traits";
+import { CHARACTER_ZONES } from "./states";
 import { provider, type ChatModel } from "./models";
 import { oaChat, toOaTools, ProviderError, type OaMessage } from "./openai";
 import { SEND_MEDIA_TOOL, startMedia, mediaReady, MediaError, type Media } from "./media";
@@ -72,22 +75,32 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   // On a call Velo makes for them, the other person never hears their private memory.
   const errand = !ch && (mode === "errand" || mode === "errandsum");
   const memory = errand ? "" : await memoryBlock(caller, today, cid).catch(e => { console.error("velo: memory read", e instanceof Error ? e.message : e); return ""; });
+  // 👤 What they've shared about themselves (look, age/birthday, state), for Velo and characters.
+  const about = errand ? "" : await aboutThem(caller.userId, today.date).catch(() => "");
+  // 🕰️ A character can live in another time zone: their own clock, as well as the person's.
+  const chZone = ch?.time_zone && isValidTimeZone(ch.time_zone) ? ch.time_zone : null;
+  const chClock = chZone ? `Where YOU live (${CHARACTER_ZONES.find(z => z[0] === chZone)?.[1] || chZone}), it's ${localNow(chZone).label}. Live by your own clock — sleepy late at night, busy in your morning — and notice the time difference with them when it matters (like telling them it's late for you). Don't mention the time unless it's relevant.` : "";
+  // 💕 A romantic character with an adult: their relationship develops (feelings, updated after each chat/call).
+  const arc = !!ch?.romantic && !!u?.adult_confirmed_at;
   const modeText = {
     chat: "", sms: SMS_TALK, talk: CALL_TALK, recap: CALL_RECAP, remember: CALL_REMEMBER, memo: CHAT_REMEMBER,
     errand: errandPrompt(name, opts.toName || "", opts.goal || ""), errandsum: ERRAND_SUMMARY,
   }[mode];
   const system: Anthropic.TextBlockParam[] = [
     // The persona never changes, so it's cached across everyone's chats.
-    ch ? { type: "text", text: characterPrompt(ch, name, !!u?.adult_confirmed_at) } : { type: "text", text: VELO_SYSTEM, cache_control: { type: "ephemeral" } },
+    ch ? { type: "text", text: characterPrompt(ch, name, !!u?.adult_confirmed_at, arc ? await feelingsFor(caller.userId, ch.id).catch(() => "") : "") } : { type: "text", text: VELO_SYSTEM, cache_control: { type: "ephemeral" } },
     {
       type: "text",
       text: [
         errand ? "" : name ? `Their first name is ${name}.` : "You don't know their name yet — if it comes up naturally, ask, and remember it.",
         `Right now it is ${today.label}${errand ? "" : " where they are"}.`,
+        chClock,
+        about,
         errand || ch ? "" : pro ? SEARCH_INFO + "\n\n" + PRO_INFO + (proTools?.page ? `\nTheir Facebook Page "${proTools.page}" is connected: you can draft posts for it (draft_post).` : "\nNo Facebook Page is connected; if they want you to post, tell them to connect one in Settings → Velo Pro (Facebook only allows Pages, not personal profiles).") : FREE_INFO,
         memory ? `${memory}\n\nYou two have talked before — never introduce yourself; talk like someone who knows them.` : "",
         !ch && (mode === "chat" || mode === "sms" || mode === "talk" || mode === "recap") ? PERSONALITY_PROMPT[personality] : "",
         modeText,
+        arc && (mode === "remember" || mode === "memo") ? FEELINGS_REMEMBER : "",
       ].filter(Boolean).join("\n\n"),
     },
   ];
@@ -139,7 +152,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   const runTool = async (name: string, input: unknown): Promise<{ content: string; isError?: boolean }> => {
     try {
       const out = name === "send_media" && canSend ? await (async () => {
-          const m = await startMedia(caller.userId, input, { characterId: cid, who: ch?.name || "Velo", appearance: ch?.appearance || "", refs, romantic });
+          const m = await startMedia(caller.userId, input, { characterId: cid, who: ch?.name || "Velo", appearance: ch?.appearance || "", refs, romantic, mood: ch ? mediaMood(ch.traits) : "" });
           media.push(m);
           if (m.status === "failed") throw new MediaError("The picture service wouldn't make that one. Say so briefly and offer something else.");
           return { ok: true, tell_them: `It's on its way (${m.kind === "image" ? "about half a minute" : "a few minutes"}); it'll show up for them when ready. Mention you're sending it, then keep the conversation going.` };
@@ -230,7 +243,8 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   if (mode === "remember" || mode === "memo") {
     let saved = false;
     try {
-      const j = JSON.parse((reply.match(/\{[\s\S]*\}/) || ["{}"])[0]) as { summary?: unknown; goals?: unknown; facts?: unknown };
+      const j = JSON.parse((reply.match(/\{[\s\S]*\}/) || ["{}"])[0]) as { summary?: unknown; goals?: unknown; facts?: unknown; feelings?: unknown };
+      if (arc && ch && typeof j.feelings === "string") await saveFeelings(caller.userId, ch.id, scrubText(j.feelings));
       const list = (v: unknown) => (Array.isArray(v) ? v.map(String) : []);
       if (typeof j.summary === "string") { await saveConversationMemory(caller, mode === "memo" ? "chat" : "call", j.summary, list(j.goals), list(j.facts), cid); saved = true; }
     } catch (e) { console.error("velo: memory", e); }

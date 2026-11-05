@@ -113,7 +113,7 @@ async function atlasStart(kind: "image" | "video", model: string, prompt: string
 }
 
 /** Starts a photo or video (from the send_media tool). Returns it as "working". */
-export async function startMedia(userId: string, input: unknown, ctx: { characterId: string | null; who: string; appearance: string; refs: string[]; romantic: boolean }): Promise<Media> {
+export async function startMedia(userId: string, input: unknown, ctx: { characterId: string | null; who: string; appearance: string; refs: string[]; romantic: boolean; mood?: string }): Promise<Media> {
   const a = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
   const kind = a.kind === "video" ? "video" : "image";
   const desc = scrub(String(a.description || "").replace(/\s+/g, " ").trim().slice(0, 400));
@@ -130,7 +130,7 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
   const ref = refs[0] || null;
   const subject = withMe ? (ref ? `The person in the reference image${refs.length > 1 ? "s" : ""} is ${ctx.who}; keep their face, hair, body and look exactly the same. ` : ctx.appearance ? `${ctx.who}: ${ctx.appearance}. ` : "") : "";
   const style = ctx.romantic ? "Tasteful and PG-13: flattering and flirty, no nudity, nothing explicit" : "Family-friendly, everyone fully clothed";
-  const prompt = `${subject}${desc}. ${style}, natural and realistic${kind === "image" ? " photo, candid phone-camera feel" : " video, smooth natural motion"}.`.slice(0, 1500);
+  const prompt = `${subject}${desc}. ${withMe && ctx.mood ? `${ctx.mood} ` : ""}${style}, natural and realistic${kind === "image" ? " photo, candid phone-camera feel" : " video, smooth natural motion"}.`.slice(0, 1500);
   const [u] = await sql()`select video_model from users where id = ${userId}`;
   const model = kind === "image" ? (ref ? EDIT_MODEL() : IMAGE_MODEL()) : videoModel(String(u?.video_model || DEFAULT_VIDEO_MODEL), !!ref);
   const [row] = await sql()`insert into velo_media (user_id, character_id, kind, prompt, model, caption) values (${userId}, ${ctx.characterId}, ${kind}, ${prompt}, ${model}, ${captionFor(kind, ctx.romantic)}) returning id`;

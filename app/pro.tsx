@@ -12,6 +12,7 @@ export type Profile = {
   chatModel: string; models: { id: string; label: string; by: string; where: string }[];
   personality: string; adultConfirmed: boolean; customFace?: string;
   videoModel?: string; videoModels?: { id: string; label: string }[];
+  bio?: { text: string; birthday: string; age: number | null; state: string; photo: string; photoNote: string };
 };
 type Contact = { id: string; name: string; phone: string };
 
