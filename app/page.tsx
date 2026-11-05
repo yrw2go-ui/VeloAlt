@@ -3,6 +3,7 @@
 // ⚙️ Settings), the 📞 call screen, and due-reminder pop-ups.
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { api, data } from "./lib/api";
+import { VersionCard } from "./version";
 import { currentAsk, subscribeAsk } from "./lib/dialog";
 import { VeloLogo, VeloLookPicker, applyVeloLook, useVeloLook } from "./avatar";
 import VeloCall, { canCallVelo, primeSpeech } from "./call";
@@ -291,6 +292,7 @@ function Settings({ name, setName, onOut, profile, onProfile }: { name: string; 
       {profile && <VideoCard profile={profile} onChange={onProfile} />}
       {profile && <ProCard profile={profile} onChange={onProfile} />}
       <button className="ghost" onClick={() => api("/api/auth", { action: "signout" }).finally(onOut)}>Sign out</button>
+      <VersionCard />
     </div>
   );
 }
