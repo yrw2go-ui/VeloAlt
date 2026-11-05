@@ -133,7 +133,8 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
     ? "That can't be sent — it can be flirty and PG-13, but never nudity, lingerie or anything explicit. Tell them so playfully and offer something else."
     : "That can't be sent — keep it family-friendly (fully clothed, nothing suggestive). Tell them you can't send that, kindly, and offer something else.");
   if (!mediaReady()) throw new MediaError("Photos and videos aren't set up yet. Tell them it's coming soon.");
-  const [{ n }] = await sql()`select count(*)::int as n from velo_media where user_id = ${userId} and kind = ${kind} and status not in ('offered', 'declined') and created_at > now() - interval '1 day'`;
+  // The daily limit counts photos/videos actually made (they have a job) — not uploaded or copied-in ones.
+  const [{ n }] = await sql()`select count(*)::int as n from velo_media where user_id = ${userId} and kind = ${kind} and status not in ('offered', 'declined') and job_id is not null and created_at > now() - interval '1 day'`;
   // An unanswered offer never blocks: a new offer replaces it, and asking for one supersedes it
   // (its card then shows as passed on). A fresh offer (under 10 minutes) still waits its turn.
   if (ctx.offer) {
