@@ -26,6 +26,7 @@ import { mediaMood, allowsSuggestive } from "./traits";
 import { CHARACTER_ZONES } from "./states";
 import { provider, type ChatModel } from "./models";
 import { oaChat, toOaTools, ProviderError, type OaMessage } from "./openai";
+import { PLAN_TOOL, runPlanTool, plansNote } from "./plans";
 import { SEND_MEDIA_TOOL, startMedia, mediaReady, MediaError, tasteNote, recentMediaNote, type Media } from "./media";
 import { veloLook } from "./veloAvatars";
 
@@ -129,6 +130,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         !ch && (mode === "chat" || mode === "sms" || mode === "talk" || mode === "recap" || mode === "checkin") ? PERSONALITY_PROMPT[personality] : "",
         modeText,
         scene ? sceneNote(scene) : "",
+        ch && mode !== "remember" && mode !== "memo" ? await plansNote(caller.userId, ch.id, today.date).catch(() => "") : "",
         ch ? "SCENES: lines starting with 🎬 are dates or outings you two did together (played out, or that they told you happened). Treat them as real shared memories — bring them up, tease about them, look back on them." : "",
         mode === "chat" ? REACT_HINT : "",
         arc && (mode === "remember" || mode === "memo") ? FEELINGS_REMEMBER : "",
@@ -183,7 +185,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   // Tools: none on wrap-ups or errands; Pro adds contacts, drafts, Amazon carts and 🔎 web search
   // (Anthropic runs the searches; results come back in the same response).
   const search = !!proTools && (mode === "chat" || mode === "sms" || mode === "talk");
-  const tools: Anthropic.ToolUnion[] | undefined = wrapUp || errand ? undefined : ch ? [...MEMORY_TOOLS, ...(canSend ? [SEND_MEDIA_TOOL(ch.name, romantic)] : [])] : [
+  const tools: Anthropic.ToolUnion[] | undefined = wrapUp || errand ? undefined : ch ? [...MEMORY_TOOLS, ...(canSend ? [SEND_MEDIA_TOOL(ch.name, romantic)] : []), ...(mode === "chat" || mode === "talk" || mode === "sms" ? [PLAN_TOOL] : [])] : [
     ...(canSend ? [SEND_MEDIA_TOOL("Velo", romantic)] : []),
     ...MEMORY_TOOLS, ...REMINDER_TOOLS, ...(proTools?.tools || []),
     ...(search ? [{ type: "web_search_20260209" as const, name: "web_search" as const, max_uses: 5, user_location: { type: "approximate" as const, timezone: today.tz } }] : []),
@@ -208,6 +210,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
           if (m.status === "offered") return { ok: true, offered: true, tell_them: "Offered — they'll see an Accept / No thanks button. Ask casually if they'd like it (don't say it's sent or on its way), then keep talking." };
           return { ok: true, tell_them: `It's on its way (${m.kind === "image" ? "about a minute" : "a few minutes"}); it'll show up on their screen by itself when ready. Mention you're sending it, then keep the conversation going.` };
         })()
+        : name === "plan_hangout" && ch ? await runPlanTool(caller.userId, ch.id, input, today.date)
         : isMemoryTool(name) ? await runMemoryTool(caller, name, input, cid)
         : isReminderTool(name) && !ch ? await runReminderTool(caller, name, input, today.tz)
         : isProTool(name) && pro ? await runProTool(caller, name, input, drafts)

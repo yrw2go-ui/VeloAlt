@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { duePlans, setPlanStatus } from "../../lib/plans";
 import { cleanTags } from "../../lib/text";
 import { sql } from "../../lib/db";
 import { resolveCaller } from "../../lib/caller";
-import { isValidTimeZone } from "../../lib/localTime";
+import { isValidTimeZone, localDate } from "../../lib/localTime";
 import { VELO_LOOKS } from "../../lib/veloAvatars";
 import { toE164, showPhone, twilioReady, veloNumber } from "../../lib/twilio";
 import { PHONE_MSG } from "../../lib/contact";
@@ -179,6 +180,8 @@ export async function POST(req: NextRequest) {
         const title = scrub(clean(b.title, 120)), details = scrub(String(b.details ?? "").replace(/\s+/g, " ").trim().slice(0, 1000));
         if (!title) return bad("Say what the scene is (e.g. a dinner date at Luigi's).");
         if (cur) await db`update chat_scenes set status = 'ended', ended_at = now() where id = ${cur.id}`;
+        // Started from a plan's "today" card: that plan is done.
+        if (b.planId) await setPlanStatus(me, String(b.planId), "done");
         if (action === "scene.start") {
           const [s] = await db`insert into chat_scenes (user_id, character_id, kind, title, details) values (${me}, ${ch.id}, 'live', ${title}, ${details}) returning id, kind, title, details, status, started_at::text`;
           return NextResponse.json({ scene: s, marker: await marker(`🎬 Scene: ${title}${details ? ` — ${details}` : ""}`, String(s.id)) });
@@ -188,6 +191,18 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true, marker: await marker(`🎬 Something we did together: ${title}${details ? ` — ${details}` : ""}`, String(s.id)) });
       }
 
+      // 📅 Plans whose day has come, for a character's chat ("set the scene" card); skip one.
+      case "plans.due": {
+        const ch = b.characterId ? await getCharacter(String(b.characterId)) : null;
+        if (!ch) return bad("That character wasn't found.");
+        const [u] = await db`select time_zone from users where id = ${me}`;
+        const today = /^\d{4}-\d{2}-\d{2}$/.test(String(b.today || "")) ? String(b.today) : localDate(Date.now(), isValidTimeZone(u?.time_zone) ? u.time_zone : "America/Chicago");
+        return NextResponse.json({ plans: await duePlans(me, ch.id, today) });
+      }
+      case "plans.skip": {
+        if (!(await setPlanStatus(me, String(b.planId || ""), "skipped"))) return bad("That plan isn't open anymore.");
+        return NextResponse.json({ ok: true });
+      }
       // 🔴 Unread: messages from Velo / each character since they last looked at that chat.
       case "chats.unread": {
         const rows = await db`select m.character_id, count(*)::int as n from velo_messages m

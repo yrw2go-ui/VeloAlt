@@ -157,12 +157,23 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   // 🎬 Scenes: a date or outing, played out here, or something that already happened.
   const [scene, setScene] = useState<{ id: string; title: string; details: string } | null>(null);
   const [sceneSheet, setSceneSheet] = useState(false);
+  // 📅 A hangout/date you two planned for today: set the scene for it.
+  type Plan = { id: string; title: string; details: string; day: string };
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [fromPlan, setFromPlan] = useState<Plan | null>(null);
   useEffect(() => {
     if (!cid) return;
     data<{ scene: { id: string; title: string; details: string } | null }>("scene.active", { characterId: cid }).then(r => setScene(r.scene)).catch(() => {});
+    data<{ plans: Plan[] }>("plans.due", { characterId: cid, today: todayYmd() }).then(r => setPlans(r.plans)).catch(() => {});
   }, [cid, userId]);
+  const skipPlan = async (p: Plan) => {
+    setPlans(ps => ps.filter(x => x.id !== p.id));
+    await data("plans.skip", { planId: p.id }).catch(() => {});
+  };
   const startScene = async (kind: "live" | "past", title: string, details: string) => {
-    const r = await data<{ scene?: { id: string; title: string; details: string }; marker: ChatMsg }>(kind === "live" ? "scene.start" : "scene.past", { characterId: cid, title, details });
+    const r = await data<{ scene?: { id: string; title: string; details: string }; marker: ChatMsg }>(kind === "live" ? "scene.start" : "scene.past", { characterId: cid, title, details, ...(fromPlan ? { planId: fromPlan.id } : {}) });
+    if (fromPlan) setPlans(ps => ps.filter(x => x.id !== fromPlan.id));
+    setFromPlan(null);
     setSceneSheet(false);
     if (kind === "live" && r.scene) setScene(r.scene);
     unsaved.current++;
@@ -268,7 +279,17 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
           <button className="ghost" onClick={endScene} disabled={busy} data-testid="scene-end" style={{ padding: "4px 10px", fontSize: 12 }}>End scene</button>
         </div>
       )}
-      {sceneSheet && character && <SceneSheet who={character.name} onClose={() => setSceneSheet(false)} onStart={startScene} />}
+      {character && !scene && plans[0] && (
+        <div data-testid="plan-card" style={{ margin: "10px 14px 0", padding: "12px 14px", borderRadius: 14, border: "1px solid rgba(236,72,153,.4)", background: "linear-gradient(90deg, rgba(124,140,255,.16), rgba(236,72,153,.14))", display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ fontSize: 14 }}>📅 <b>{plans[0].day === todayYmd() ? "Today" : "You had plans"}:</b> {plans[0].title}{plans[0].details ? <span className="muted"> — {plans[0].details}</span> : null}</div>
+          <div className="muted" style={{ fontSize: 12 }}>Describe the scene — where you are, the vibe, what you&apos;re wearing — and play it out with {character.name}.</div>
+          <div className="row" style={{ gap: 8 }}>
+            <button className="btn" data-testid="plan-start" disabled={busy || !msgs} onClick={() => { setFromPlan(plans[0]); setSceneSheet(true); }} style={{ padding: "8px 14px", fontSize: 13 }}>🎬 Set the scene</button>
+            <button className="ghost" data-testid="plan-skip" onClick={() => skipPlan(plans[0])} style={{ padding: "8px 12px", fontSize: 13 }}>Not today</button>
+          </div>
+        </div>
+      )}
+      {sceneSheet && character && <SceneSheet key={fromPlan?.id || "new"} who={character.name} plan={fromPlan} onClose={() => { setSceneSheet(false); setFromPlan(null); }} onStart={startScene} />}
       <div data-testid="chat-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
         {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={m.media?.id || m.id || i} m={m} onReactMsg={reactMsg} face={face(28)} onMedia={mediaArrived} onReact={react} who={who} onAnswer={x => setMsgs(list => (list || []).map(y => (y.media?.id === x.id ? { ...y, content: mediaNote({ ...y.media!, ...x }), media: { ...y.media!, ...x } } : y)))} />)}
         {character && msgs && !msgs.length && (
@@ -388,10 +409,12 @@ export function FileThumb({ f, size }: { f: { url: string; thumb?: string | null
 }
 
 /** 🎬 Set up a scene: play it out now, or say it already happened. */
-function SceneSheet({ who, onClose, onStart }: { who: string; onClose: () => void; onStart: (kind: "live" | "past", title: string, details: string) => Promise<void> }) {
+const todayYmd = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+
+function SceneSheet({ who, plan, onClose, onStart }: { who: string; plan?: { title: string; details: string } | null; onClose: () => void; onStart: (kind: "live" | "past", title: string, details: string) => Promise<void> }) {
   const [kind, setKind] = useState<"live" | "past">("live");
-  const [title, setTitle] = useState("");
-  const [details, setDetails] = useState("");
+  const [title, setTitle] = useState(plan?.title || "");
+  const [details, setDetails] = useState(plan?.details || "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const go = async () => {
@@ -403,7 +426,7 @@ function SceneSheet({ who, onClose, onStart }: { who: string; onClose: () => voi
     <div role="dialog" aria-modal="true" data-testid="scene-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }} onClick={onClose}>
       <div className="card" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 12 }}>
         <div className="row" style={{ justifyContent: "space-between" }}>
-          <div style={{ fontWeight: 800, fontSize: 17 }}>🎬 A scene with {who}</div>
+          <div style={{ fontWeight: 800, fontSize: 17 }}>🎬 {plan ? `Your plans with ${who}` : `A scene with ${who}`}</div>
           <button className="ghost" onClick={onClose} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
         </div>
         <div className="row" style={{ gap: 8 }}>
@@ -414,7 +437,7 @@ function SceneSheet({ who, onClose, onStart }: { who: string; onClose: () => voi
         <label style={{ fontSize: 13, fontWeight: 700 }}>{kind === "live" ? "What's the plan?" : "What did you do?"}
           <input value={title} onChange={e => setTitle(e.target.value)} maxLength={120} aria-label="Scene" placeholder={kind === "live" ? "e.g. Dinner date at Luigi's" : "e.g. Went bowling downtown"} style={{ marginTop: 4 }} />
         </label>
-        <label style={{ fontSize: 13, fontWeight: 700 }}>Details <span className="muted" style={{ fontWeight: 500 }}>· optional</span>
+        <label style={{ fontSize: 13, fontWeight: 700 }}>{plan ? "Describe the scene" : "Details"} <span className="muted" style={{ fontWeight: 500 }}>· {plan ? "the more you write, the better" : "optional"}</span>
           <textarea value={details} onChange={e => setDetails(e.target.value)} maxLength={1000} rows={3} aria-label="Scene details" style={{ marginTop: 4, resize: "vertical" }}
             placeholder={kind === "live" ? "Where, when, the vibe — e.g. Friday night, candlelit Italian place, she's wearing the red dress" : "What happened — e.g. you beat me twice, I threw a gutter ball, then we got ice cream"} />
         </label>
