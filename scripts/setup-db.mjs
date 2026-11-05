@@ -1,6 +1,7 @@
 // 🗄️ Runs before each build: sets up an empty database (e.g. a fresh Supabase project linked in
 // Vercel) from db/schema.sql, and keeps Supabase's public Data API from reading any table
 // (row level security on, no policies — the app itself connects as the owner, so it's unaffected).
+// The first time, it also adds the starter characters (db/seeds/starter-characters.sql).
 // Does nothing when there's no database URL (e.g. a local build without one).
 import { readFileSync } from "node:fs";
 import postgres from "postgres";
@@ -19,6 +20,13 @@ try {
     await sql.unsafe(readFileSync(new URL("../db/schema.sql", import.meta.url), "utf8"));
     console.log("setup-db: tables created");
   } else console.log("setup-db: tables already there");
+  // 🌟 The starter characters, added once (a character deleted later doesn't come back).
+  const [seeded] = await sql`select 1 from app_config where key = 'starter_characters_seeded'`;
+  if (!seeded) {
+    await sql.unsafe(readFileSync(new URL("../db/seeds/starter-characters.sql", import.meta.url), "utf8"));
+    await sql`insert into app_config (key, value) values ('starter_characters_seeded', ${sql.json({ at: new Date().toISOString() })}) on conflict (key) do nothing`;
+    console.log("setup-db: starter characters added");
+  }
   const tables = await sql`select tablename from pg_tables where schemaname = 'public' and not rowsecurity`;
   for (const t of tables) await sql.unsafe(`alter table public."${t.tablename.replace(/"/g, '""')}" enable row level security`);
   if (tables.length) console.log(`setup-db: locked ${tables.length} table(s) from the public Data API`);
