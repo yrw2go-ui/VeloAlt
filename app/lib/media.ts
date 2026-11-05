@@ -86,7 +86,7 @@ const SUGGESTIVE = /\b(sexy|seductive|sultry|bikini|swimsuit|cleavage|lingerie|b
 
 export const SEND_MEDIA_TOOL = (who: string, romantic = false): Anthropic.Tool => ({
   name: "send_media",
-  description: `Send them a photo or a short video, like a friend would from their phone, to make the chat feel personal: a selfie of you (${who}) somewhere, what you're "up to" right now (fit it to your time of day, season and plans), something you're describing, or when they ask for one. Be creative, and lean toward the settings, outfits and vibes they've loved. If they ASKED for it, set they_asked: true and it's made right away. If it's your own idea, it's only OFFERED: they get an Accept button, and nothing is made unless they accept — so ask casually ("want a pic of my view right now?") and never say it's sent. Once made it takes about a minute (a photo) or a few minutes (a video) and pops into the chat or onto their call screen — keep talking meanwhile. Use it now and then, not every message. ${romantic ? "This is a romantic setting with an adult, so it can be PG-13 — flirty, cute, date-night outfits, swimwear at the beach — but never nudity, underwear/lingerie or anything sexual or explicit." : "Always family-friendly: everyone fully clothed, nothing sexual or suggestive."} No real people, and never a picture of the person you're talking with. Vary it like real photos do: different expressions (a big smile, laughing, a soft look, mid-sentence, looking away, focused on something) and poses from one photo to the next — don't repeat the same expression or pose, and save a wink for the rare moment it really fits. Videos are a few seconds, no sound.`,
+  description: `Send them a photo or a short video, like a friend would from their phone, to make the chat feel personal: a picture of you (${who}) somewhere, what you're "up to" right now (fit it to your time of day, season and plans), something you're describing, or when they ask for one. Mix it up: not every picture of you is a selfie — often it's just a photo of you, as if a friend snapped it or it's on a timer (candid, full-body, mid-activity); only say \"mirror selfie\" when you're holding your phone up to a mirror. Be creative, and lean toward the settings, outfits and vibes they've loved. If they ASKED for it, set they_asked: true and it's made right away. If it's your own idea, it's only OFFERED: they get an Accept button, and nothing is made unless they accept — so ask casually ("want a pic of my view right now?") and never say it's sent. Once made it takes about a minute (a photo) or a few minutes (a video) and pops into the chat or onto their call screen — keep talking meanwhile. Use it now and then, not every message. ${romantic ? "This is a romantic setting with an adult, so it can be PG-13 — flirty, cute, date-night outfits, swimwear at the beach — but never nudity, underwear/lingerie or anything sexual or explicit." : "Always family-friendly: everyone fully clothed, nothing sexual or suggestive."} No real people, and never a picture of the person you're talking with. Vary it like real photos do: different expressions (a big smile, laughing, a soft look, mid-sentence, looking away, focused on something) and poses from one photo to the next — don't repeat the same expression or pose, and save a wink for the rare moment it really fits. Videos are a few seconds, no sound.`,
   input_schema: {
     type: "object",
     properties: {
@@ -94,7 +94,7 @@ export const SEND_MEDIA_TOOL = (who: string, romantic = false): Anthropic.Tool =
       with_me: { type: "boolean", description: `true if you (${who}) are in it (a selfie or a shot of you)` },
       of_person: { type: "string", description: "Name of one of the other people in their life you know of (from OTHER PEOPLE IN THEIR LIFE YOU KNOW OF), if they're in it — e.g. a pic of her when she comes up. Only them; never real people." },
       they_asked: { type: "boolean", description: "true only if their latest message asked you for a photo/video" },
-      description: { type: "string", description: "What's in it: the scene, setting, action, mood, framing (e.g. 'selfie on a sailboat at sunset, wind in my hair, big smile'). Max ~300 characters." },
+      description: { type: "string", description: "What's in it: the scene, setting, action, mood, framing (e.g. 'on a sailboat at sunset, wind in my hair, big smile, shot from the deck'). Max ~300 characters." },
     },
     required: ["kind", "description"],
     additionalProperties: false,
@@ -157,7 +157,15 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
       + (withMe ? (meRefs.length ? `The other reference image${meRefs.length > 1 ? "s show" : " shows"} ${ctx.who}; keep their face and look the same too. ` : ctx.appearance ? `With ${ctx.who}: ${ctx.appearance}. ` : "") : "")
     : withMe ? (ref ? `The person in the reference image${refs.length > 1 ? "s" : ""} is ${ctx.who}; keep their face, hair, body and look exactly the same. ` : ctx.appearance ? `${ctx.who}: ${ctx.appearance}. ` : "") : "";
   const style = ctx.romantic ? "Tasteful and PG-13: flattering and flirty, no nudity, nothing explicit" : "Family-friendly, everyone fully clothed";
-  const prompt = `${subject}${desc}. ${withMe && !o && ctx.mood ? `${ctx.mood} ` : ""}${style}, natural and realistic${kind === "image" ? " photo, candid phone-camera feel" : " video, smooth natural motion"}.`.slice(0, 1500);
+  // 🤳 No stray hands or phones: only a mirror selfie shows the phone; otherwise the shot IS the camera.
+  const mirror = /\bmirror\b/i.test(desc), selfie = /\bselfie\b/i.test(desc), shooter = o && !withMe ? o.name : ctx.who;
+  const framing = !(withMe || o) ? "" : (mirror
+    ? `A mirror selfie: ${shooter} holds a phone in one hand, seen only in the reflection. `
+    : selfie
+      ? `An arm's-length selfie from the camera's own point of view: the phone is NOT visible, and at most ${shooter}'s own arm reaches toward the camera. `
+      : "A photo taken by someone else or on a timer: no phone or camera visible, nobody holding one. ")
+    + "Natural anatomy: every person has exactly two arms and two hands — no extra, floating or disembodied hands or arms in the frame. ";
+  const prompt = `${subject}${desc}. ${framing}${withMe && !o && ctx.mood ? `${ctx.mood} ` : ""}${style}, natural and realistic${kind === "image" ? " photo, candid and natural" : " video, smooth natural motion"}.`.slice(0, 1500);
   const [u] = await sql()`select video_model from users where id = ${userId}`;
   const model = kind === "image" ? (ref ? EDIT_MODEL() : IMAGE_MODEL()) : videoModel(String(u?.video_model || DEFAULT_VIDEO_MODEL), !!ref);
   const sendRefs = kind === "image" ? refs : ref ? [ref] : [];
