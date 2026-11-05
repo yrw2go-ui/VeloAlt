@@ -5,6 +5,7 @@
 // Does nothing when there's no database URL (e.g. a local build without one).
 import { readFileSync } from "node:fs";
 import postgres from "postgres";
+import { importImages } from "./import-images.mjs";
 
 // Also finds prefixed names (e.g. STORAGE_POSTGRES_URL) that Vercel's storage links can add.
 const envAny = (...names) => { for (const n of names) if (process.env[n]) return process.env[n]; for (const n of names) { const k = Object.keys(process.env).find(k => k.endsWith(`_${n}`) && process.env[k]); if (k) return process.env[k]; } return ""; };
@@ -57,6 +58,8 @@ try {
     await sql`insert into app_config (key, value) values ('starter_characters_seeded', ${sql.json({ at: new Date().toISOString() })}) on conflict (key) do nothing`;
     console.log("setup-db: starter characters added");
   }
+  // 🖼️ Anya's, Hailey's and Allie's pictures from Velo (once there's an admin to own them).
+  try { await importImages(sql); } catch (e) { console.warn(`setup-db: pictures not copied: ${e?.message || e}`); }
   const tables = await sql`select tablename from pg_tables where schemaname = 'public' and not rowsecurity`;
   for (const t of tables) await sql.unsafe(`alter table public."${t.tablename.replace(/"/g, '""')}" enable row level security`);
   if (tables.length) console.log(`setup-db: locked ${tables.length} table(s) from the public Data API`);
