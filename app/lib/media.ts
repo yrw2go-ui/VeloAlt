@@ -133,14 +133,17 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
     : "That can't be sent — keep it family-friendly (fully clothed, nothing suggestive). Tell them you can't send that, kindly, and offer something else.");
   if (!mediaReady()) throw new MediaError("Photos and videos aren't set up yet. Tell them it's coming soon.");
   const [{ n }] = await sql()`select count(*)::int as n from velo_media where user_id = ${userId} and kind = ${kind} and status not in ('offered', 'declined') and created_at > now() - interval '1 day'`;
+  // An unanswered offer never blocks: a new offer replaces it, and asking for one supersedes it
+  // (its card then shows as passed on). A fresh offer (under 10 minutes) still waits its turn.
   if (ctx.offer) {
-    const [{ p }] = await sql()`select count(*)::int as p from velo_media where user_id = ${userId} and character_id is not distinct from ${ctx.characterId} and status = 'offered'`;
-    if (p > 0) throw new MediaError("You already offered one and they haven't answered yet — wait for that first.");
+    const [fresh] = await sql()`select 1 from velo_media where user_id = ${userId} and character_id is not distinct from ${ctx.characterId} and status = 'offered' and created_at > now() - interval '10 minutes' limit 1`;
+    if (fresh) throw new MediaError("You just offered one and they haven't answered yet — wait for that first.");
   }
   if (n >= DAILY[kind]) throw new MediaError(`That's the limit of ${kind === "image" ? "photos" : "videos"} for today. Tell them you'll send more tomorrow.`);
   // One at a time: if one is still being made in this chat, don't start another.
   const [busy] = await sql()`select kind, extract(epoch from now() - created_at)::int as secs from velo_media where user_id = ${userId} and character_id is not distinct from ${ctx.characterId} and status = 'working' and created_at > now() - interval '6 minutes' order by created_at desc limit 1`;
   if (busy) throw new MediaError(`You already sent a ${busy.kind === "image" ? "photo" : "video"} ${busy.secs < 60 ? `${busy.secs} seconds` : `${Math.round(busy.secs / 60)} min`} ago and it's still on its way (it WILL arrive — photos take about a minute, videos a few). Tell them it's coming; don't make another.`);
+  await sql()`update velo_media set status = 'declined' where user_id = ${userId} and character_id is not distinct from ${ctx.characterId} and status = 'offered'`;
 
   const withMe = a.with_me === true;
   // 👥 Someone else they know of can be in it (her references first), with or without them.

@@ -51,8 +51,8 @@ export function localNow(rawTz: unknown) {
 // "send me a pic", "can I see a selfie?", "show me a video of…", "got any photos?"
 const ASKED_FOR_MEDIA = /\b(send|show|share|snap|take|got|get|see|want|wanna|make|need|post|drop)\b[\s\S]{0,40}\b(pics?|pictures?|photos?|selfies?|videos?|vids?|clips?|images?|snaps?|shots?)\b|\b(pics?|pictures?|photos?|selfies?|videos?|vids?)\b[\s\S]{0,30}\?|\b(let me|lemme|can i|could i|i wanna|i want to)\s+see\b|\bshow me\b|\bsend (me )?(one|another|it|that|more)\b|\b(another|one more)( one| pic| photo)?\s*(please|pls|plz)?\s*[!?.]*$|\bwhat (do|does) (you|your \w+) look like\b|\bwhat are you wearing\b/i;
 // "Yes please" to her own "want a pic?" counts as asking.
-const YES = /^\s*(yes|yeah|yep|yup|ya|sure|ok(ay)?|please|pls|plz|of course|absolutely|definitely|do it|go ahead|i'?d love (that|one|to)|send it|why not)\b/i;
-const MENTIONS_MEDIA = /\b(pics?|pictures?|photos?|selfies?|videos?|vids?|clips?|snaps?|show you|send you)\b/i;
+const YES = /^\s*(yes|yeah|yep|yup|ya|sure|ok(ay)?|please|pls|plz|of course|absolutely|definitely|do it|go ahead|i'?d love (that|one|to)|send it|why not|try (it |that )?again|retry|resend)\b/i;
+const MENTIONS_MEDIA = /\b(phone|pics?|pictures?|photos?|selfies?|videos?|vids?|clips?|snaps?|show you|send you)\b/i;
 
 export interface AskResult { reply: string; changed: boolean; drafts: Draft[]; media: Media[]; saved?: boolean; react?: string }
 
