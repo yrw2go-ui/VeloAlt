@@ -39,3 +39,18 @@ export async function uploadFile(file: File, purpose: "chat" | "face" | "bio"): 
   if (!res.ok) throw new Error(out.error || "Upload didn't go through.");
   return out.file as SavedFile;
 }
+
+/** 🎭 Admin: add a picture of a character (e.g. made in Atlas Cloud) to her gallery; optionally her headshot. */
+export async function uploadCharacterPicture(file: File, characterId: string, portrait: boolean): Promise<{ mediaId: string; url: string }> {
+  const form = new FormData();
+  form.set("file", await shrink(file));
+  form.set("purpose", "character");
+  form.set("characterId", characterId);
+  form.set("fictional", "yes");
+  if (portrait) form.set("portrait", "yes");
+  const res = await fetch("/api/files", { method: "POST", body: form });
+  const out = await res.json().catch(() => ({}));
+  if (res.status === 401) window.dispatchEvent(new Event("velo:signed-out"));
+  if (!res.ok) throw new Error(out.error || "Upload didn't go through.");
+  return out;
+}

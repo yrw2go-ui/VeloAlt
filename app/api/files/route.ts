@@ -6,7 +6,8 @@ import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import sharp from "sharp";
 import { IMAGE_TYPES, DOC_TYPES, MAX_BYTES, MAX_FILES, blobReady, deleteFile } from "../../lib/files";
-import { thumbOf } from "../../lib/media";
+import { thumbOf, saveImageItem } from "../../lib/media";
+import { isAdmin, getCharacter } from "../../lib/characters";
 import { describePhoto } from "../../lib/bio";
 
 /** 🔒 Re-saves a photo without its hidden data (GPS location, camera, date…), upright, same format. */
@@ -28,7 +29,8 @@ export async function POST(req: NextRequest) {
 
     const form = await req.formData().catch(() => null);
     const file = form?.get("file");
-    const purpose = form?.get("purpose") === "face" ? "face" : form?.get("purpose") === "bio" ? "bio" : "chat";
+    const p0 = String(form?.get("purpose") || "");
+    const purpose = p0 === "face" ? "face" : p0 === "bio" ? "bio" : p0 === "character" ? "character" : "chat";
     if (!(file instanceof File)) return NextResponse.json({ error: "Choose a file." }, { status: 400 });
     const type = (file.type || "").toLowerCase();
     const allowed = purpose === "chat" ? [...IMAGE_TYPES, ...DOC_TYPES] : IMAGE_TYPES;
@@ -37,6 +39,20 @@ export async function POST(req: NextRequest) {
     if (file.size === 0) return NextResponse.json({ error: "That file is empty." }, { status: 400 });
     const [{ n }] = await sql()`select count(*)::int as n from velo_files where user_id = ${c.userId}`;
     if (n >= MAX_FILES) return NextResponse.json({ error: `You have ${MAX_FILES} files saved — delete some on the Memory tab first.` }, { status: 400 });
+
+    // 🎭 An admin adding a picture of a character (e.g. made in Atlas Cloud): into her gallery, optionally her headshot.
+    if (purpose === "character") {
+      if (!(await isAdmin(c.userId))) return NextResponse.json({ error: "Only an admin can add character pictures." }, { status: 403 });
+      const ch = await getCharacter(String(form?.get("characterId") || ""));
+      if (!ch) return NextResponse.json({ error: "That character wasn't found." }, { status: 400 });
+      if (form?.get("fictional") !== "yes") return NextResponse.json({ error: "Confirm it's an AI-made or fictional picture — not a photo of a real person." }, { status: 400 });
+      let img: Buffer;
+      try { img = await cleanImage(Buffer.from(await file.arrayBuffer()), type); }
+      catch { return NextResponse.json({ error: "That picture couldn't be read. Try another one." }, { status: 400 }); }
+      const item = await saveImageItem(c.userId, ch.id, img, type, "Picture uploaded by admin", "upload");
+      if (form?.get("portrait") === "yes") await sql()`update chat_characters set portrait_file_id = ${item.fileId}, updated_at = now() where id = ${ch.id}`;
+      return NextResponse.json({ mediaId: item.mediaId, url: item.url });
+    }
 
     const name = (file.name || "file").replace(/[^\w.\- ]+/g, "_").slice(-120) || "file";
     // Folder names are random, never the person's id or email; Blob adds a random suffix too.

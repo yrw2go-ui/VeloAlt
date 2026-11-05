@@ -63,6 +63,15 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ character: await getCharacter(String(row.id)) });
       }
 
+      // Make one of her gallery pictures the main headshot.
+      case "portrait.set": {
+        const mid = String(b.mediaId || "");
+        if (!/^[0-9a-f-]{36}$/i.test(mid) || !(await getCharacter(id))) return bad("That picture wasn't found.");
+        const [m] = await sql()`select file_id from velo_media where id = ${mid} and user_id = ${me} and character_id = ${id} and kind = 'image' and status = 'done'`;
+        if (!m?.file_id) return bad("That picture wasn't found.");
+        await sql()`update chat_characters set portrait_file_id = ${m.file_id}, updated_at = now() where id = ${id}`;
+        return NextResponse.json({ character: await getCharacter(id) });
+      }
       case "gallery": {
         if (!(await getCharacter(id))) return bad("That character wasn't found.");
         return NextResponse.json({ items: (await listGallery(me, id, null, 60)).filter(x => x.kind === "image") });

@@ -3,7 +3,7 @@
 // and the admin editor: personality, backstory, relation to the user, call voice, and a
 // portrait (Atlas Cloud Seedream). Every character follows Velo's safety rules.
 import { useEffect, useRef, useState } from "react";
-import { api } from "./lib/api";
+import { api, uploadCharacterPicture } from "./lib/api";
 import { confirmAsk } from "./lib/dialog";
 import { VeloAvatar } from "./avatar";
 import { CHARACTER_VOICES } from "./lib/voices";
@@ -179,7 +179,8 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
             <span className="muted" style={{ fontWeight: 500, display: "block", marginTop: 4 }}>Each person&apos;s relationship develops on its own from here, a little after every chat and call. Edit this any time to add new turns.</span>
           </label>
         )}
-        {c && <ReferencePicker characterId={c.id} value={refIds} onChange={setRefIds} refresh={shots} />}
+        {c && <ReferencePicker characterId={c.id} value={refIds} onChange={setRefIds} refresh={shots}
+          onPortrait={ch => { setC(ch); onSaved(ch); }} />}
         <label style={{ fontSize: 13, fontWeight: 700 }}>Appearance (for the portrait)
           <textarea value={appearance} onChange={e => setAppearance(e.target.value)} maxLength={600} rows={2} placeholder="e.g. weathered sea captain, silver braid, navy coat, warm smile" aria-label="Appearance" style={{ marginTop: 4, resize: "vertical" }} />
         </label>
@@ -263,23 +264,62 @@ function VoicePicker({ value, onChange }: { value: VoiceOption; onChange: (v: Vo
 }
 
 /** 🖼️ Pick 2–4 pictures of this character (portraits or photos it sent you) that keep it looking the same in new photos and videos. */
-function ReferencePicker({ characterId, value, onChange, refresh }: { characterId: string; value: string[]; onChange: (ids: string[]) => void; refresh: number }) {
+function ReferencePicker({ characterId, value, onChange, refresh, onPortrait }: { characterId: string; value: string[]; onChange: (ids: string[]) => void; refresh: number; onPortrait: (c: Character) => void }) {
   const [items, setItems] = useState<{ id: string; thumb: string | null; url: string }[] | null>(null);
+  const [reload, setReload] = useState(0);
+  const [fictional, setFictional] = useState(false);
+  const [asHeadshot, setAsHeadshot] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [selected, setSelected] = useState<string | null>(null);
+  const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
     api<{ items: { id: string; thumb: string | null; url: string }[] }>("/api/characters", { action: "gallery", id: characterId }).then(r => setItems(r.items)).catch(() => setItems([]));
-  }, [characterId, refresh]);
+  }, [characterId, refresh, reload]);
+  const upload = async (f: File | undefined) => {
+    if (!f) return;
+    setBusy(true); setErr("");
+    try {
+      const r = await uploadCharacterPicture(f, characterId, asHeadshot);
+      setReload(n => n + 1);
+      if (value.length < 4) onChange([...value, r.mediaId]);
+      if (asHeadshot) { const g = await api<{ character: Character }>("/api/characters", { action: "portrait.set", id: characterId, mediaId: r.mediaId }); onPortrait(g.character); }
+    } catch (e) { setErr(e instanceof Error ? e.message : "Upload didn't go through."); }
+    finally { setBusy(false); if (input.current) input.current.value = ""; }
+  };
+  const makeHeadshot = async (mediaId: string) => {
+    setBusy(true); setErr("");
+    try { const g = await api<{ character: Character }>("/api/characters", { action: "portrait.set", id: characterId, mediaId }); onPortrait(g.character); setSelected(null); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't set it."); }
+    finally { setBusy(false); }
+  };
+  const uploader = (
+    <div data-testid="char-upload" style={{ marginTop: 8, padding: 10, borderRadius: 12, border: "1px dashed var(--border)", display: "flex", flexDirection: "column", gap: 6, fontWeight: 500 }}>
+      <label className="row" style={{ gap: 8, alignItems: "flex-start" }}>
+        <input type="checkbox" checked={fictional} onChange={e => setFictional(e.target.checked)} aria-label="AI-made or fictional" style={{ width: 18, height: 18, marginTop: 1, flexShrink: 0 }} />
+        <span>This picture is AI-made or fictional (e.g. from Atlas Cloud) — not a photo of a real person.</span>
+      </label>
+      <label className="row" style={{ gap: 8 }}>
+        <input type="checkbox" checked={asHeadshot} onChange={e => setAsHeadshot(e.target.checked)} aria-label="Use as headshot" style={{ width: 18, height: 18, flexShrink: 0 }} />
+        <span>Also make it her main headshot</span>
+      </label>
+      <button type="button" className="ghost" disabled={!fictional || busy} onClick={() => input.current?.click()} data-testid="char-upload-btn" style={{ alignSelf: "flex-start", padding: "6px 12px", fontSize: 13 }}>{busy ? "Uploading…" : "⬆️ Upload a picture"}</button>
+      <input ref={input} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={e => upload(e.target.files?.[0])} data-testid="char-upload-input" />
+      {err && <div style={{ color: "var(--bad)", fontSize: 12 }}>⚠️ {err}</div>}
+    </div>
+  );
   const toggle = (id: string) => onChange(value.includes(id) ? value.filter(x => x !== id) : value.length >= 4 ? value : [...value, id]);
   return (
     <div style={{ fontSize: 13, fontWeight: 700 }}>
       Reference pictures <span className="muted" style={{ fontWeight: 500 }}>· {value.length}/4 picked (2–4 keeps them looking the same)</span>
       {!items ? <div className="muted" style={{ fontWeight: 500, marginTop: 6 }}>Loading…</div>
-        : !items.length ? <div className="muted" style={{ fontWeight: 500, marginTop: 6 }}>Generate a few portraits (or ask them for selfies in chat), then pick the best 2–4 here.</div>
+        : !items.length ? <div className="muted" style={{ fontWeight: 500, marginTop: 6 }}>Upload pictures you made (e.g. in Atlas Cloud), generate a few portraits, or ask them for selfies in chat — then pick the best 2–4 here.</div>
         : (
           <div data-testid="reference-picker" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginTop: 6, maxHeight: 230, overflowY: "auto" }}>
             {items.map(it => {
               const on = value.includes(it.id);
               return (
-                <button key={it.id} type="button" onClick={() => toggle(it.id)} aria-pressed={on} data-testid="reference-item"
+                <button key={it.id} type="button" onClick={() => { toggle(it.id); setSelected(it.id); }} aria-pressed={on} data-testid="reference-item"
                   style={{ position: "relative", padding: 0, borderRadius: 10, overflow: "hidden", aspectRatio: "2 / 3", cursor: "pointer", border: `3px solid ${on ? "var(--accent)" : "transparent"}`, background: "var(--surface2)" }}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={it.thumb || it.url} alt="" loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", opacity: on ? 1 : 0.75 }} />
@@ -289,6 +329,10 @@ function ReferencePicker({ characterId, value, onChange, refresh }: { characterI
             })}
           </div>
         )}
+      {selected && items?.some(x => x.id === selected) && (
+        <button type="button" className="ghost" disabled={busy} onClick={() => makeHeadshot(selected)} data-testid="make-headshot" style={{ marginTop: 6, padding: "6px 12px", fontSize: 13 }}>⭐ Make the last one I tapped her headshot</button>
+      )}
+      {uploader}
     </div>
   );
 }
