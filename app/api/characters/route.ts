@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
         const refs = action === "update" && want.length
           ? (await sql()`select id from velo_media where id = any(${want}::uuid[]) and user_id = ${me} and character_id = ${id} and kind = 'image' and status = 'done'`).map(r => String(r.id))
           : [];
-        const problem = await screenCharacter({ ...f, relation: f.relation + (romantic ? " (romance possible, PG-13)" : ""), arc });
+        const problem = await screenCharacter({ ...f, arc, romantic });
         if (problem) return bad(problem);
         const prev = action === "update" ? await getCharacter(id) : null;
         // Same voice as before: keep it (no trip to ElevenLabs).
