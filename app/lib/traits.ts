@@ -73,13 +73,22 @@ export const PRESETS = [
 ] as const;
 
 const band = (v: number) => (v <= 3 ? 0 : v <= 6 ? 1 : 2);
+// 0 on a PG-13 slider means none at all — even in PG-13 mode.
+const NONE = {
+  flirty: "NONE — doesn't flirt at all",
+  suggestive: "NONE — no innuendo, no suggestive talk, and only family-friendly photos (fully clothed, nothing suggestive)",
+  language: "NONE — no swearing or crude words at all",
+};
+/** PG-13 mode with Suggestive at 0: photos stay family-friendly. */
+export const allowsSuggestive = (raw: unknown) => !raw || typeof raw !== "object" || !Object.keys(raw).length || cleanTraits(raw).suggestive > 0;
 
 /** The temperament part of a character's instructions. Flirty, Suggestive and Language only count in
  *  PG-13 mode (a romantic character with someone who confirmed they're 18+); otherwise she keeps it clean. */
 export function traitsPrompt(raw: unknown, romance: boolean): string {
   const t = cleanTraits(raw);
-  const lines = TRAITS.filter(x => romance || !("romantic" in x)).map(x => `- ${x.label} ${t[x.key]}/10: ${x.bands[band(t[x.key])]}`);
+  const lines = TRAITS.filter(x => romance || !("romantic" in x)).map(x => `- ${x.label} ${t[x.key]}/10: ${t[x.key] === 0 && x.key in NONE ? NONE[x.key as keyof typeof NONE] : x.bands[band(t[x.key])]}`);
   if (!romance) lines.push("- Language: clean — no swearing or crude talk.");
+  else lines.push("These PG-13 sliders are hard limits: whatever PG-13 allows, a 0 means NONE of that at all.");
   return `YOUR TEMPERAMENT (tendencies on a 0–10 scale; your written personality wins if they ever disagree):
 ${lines.join("\n")}
 How to use it: be a real person, not a checklist. Show these through word choice, rhythm and how you react — never name them or describe yourself with them. Let them blend (a cold person can still be funny; an eager-to-please person can still have opinions). Vary naturally: real people have off days, and the time of day, your mood, and how they treat you all shift things. Never act out every trait in one message — most messages should just sound like a normal person texting.`;

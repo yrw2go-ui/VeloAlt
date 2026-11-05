@@ -21,7 +21,7 @@ import { hideSecrets, HIDDEN, scrub as scrubText } from "./secrets";
 import { ownFile, fileForAi } from "./files";
 import { characterPrompt, feelingsFor, saveFeelings, noteMentions, acquaintancesNote, referenceUrls, pictureOf, type Character } from "./characters";
 import { aboutThem } from "./bio";
-import { mediaMood } from "./traits";
+import { mediaMood, allowsSuggestive } from "./traits";
 import { CHARACTER_ZONES } from "./states";
 import { provider, type ChatModel } from "./models";
 import { oaChat, toOaTools, ProviderError, type OaMessage } from "./openai";
@@ -78,7 +78,8 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   const refs = (ch ? (canSend ? await referenceUrls(ch) : [])
     : look !== "custom" && veloLook(look).round !== false && opts.origin ? [`${opts.origin}${veloLook(look).src256}`] : []).filter(u => /^https?:\/\//.test(u));
   // 💕 PG-13 romance: adults only, with Velo's romantic personality or a romantic character.
-  const romantic = !!u?.adult_confirmed_at && (ch ? !!ch.romantic : personality === "romantic");
+  // (A romantic character with Suggestive at 0 keeps photos family-friendly.)
+  const romantic = !!u?.adult_confirmed_at && (ch ? !!ch.romantic && allowsSuggestive(ch.traits) : personality === "romantic");
 
   // On a call Velo makes for them, the other person never hears their private memory.
   const errand = !ch && (mode === "errand" || mode === "errandsum");
