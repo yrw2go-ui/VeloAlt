@@ -60,7 +60,7 @@ const ATLAS = () => process.env.ATLASCLOUD_API_URL || "https://api.atlascloud.ai
 export const mediaReady = () => !!(process.env.ATLASCLOUD_API_KEY && storageReady());
 const IMAGE_MODEL = () => process.env.ATLASCLOUD_IMAGE_MODEL || "bytedance/seedream-v5.0-pro/text-to-image";
 const EDIT_MODEL = () => process.env.ATLASCLOUD_IMAGE_EDIT_MODEL || "bytedance/seedream-v5.0-pro/edit";
-export const DAILY = { image: 30, video: 6 };
+export const DAILY = { image: 200, video: 6 };
 const GIVE_UP_MS = 3 * 3600_000;
 
 // 🎬 Video models they can choose from (Settings). Each has a text-to-video and an
