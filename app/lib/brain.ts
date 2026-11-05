@@ -19,7 +19,7 @@ import { isValidTimeZone, localDate, formatClock, weekdayOf, zonedParts } from "
 import { partOfDay, monthName, calendarNote, ownBirthdayNote } from "./calendar";
 import { hideSecrets, HIDDEN, scrub as scrubText } from "./secrets";
 import { ownFile, fileForAi } from "./files";
-import { characterPrompt, feelingsFor, saveFeelings, trustFor, saveTrust, trustNote, noteMentions, acquaintancesNote, referenceUrls, pictureOf, type Character } from "./characters";
+import { characterPrompt, feelingsFor, saveFeelings, trustFor, saveTrust, trustNote, activeScene, sceneNote, noteMentions, acquaintancesNote, referenceUrls, pictureOf, type Character } from "./characters";
 import { aboutThem } from "./bio";
 import { mediaMood, allowsSuggestive } from "./traits";
 import { CHARACTER_ZONES } from "./states";
@@ -102,6 +102,8 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   const arc = !!ch?.romantic && !!u?.adult_confirmed_at;
   // 🤝 How much this character trusts them (null when Trust is 0 / off).
   const trust = ch ? await trustFor(caller.userId, ch).catch(() => null) : null;
+  // 🎬 A scene (date/outing) being played out right now with this character.
+  const scene = ch && (mode === "chat" || mode === "talk") ? await activeScene(caller.userId, ch.id).catch(() => null) : null;
   const modeText = {
     chat: "", checkin: CHECKIN, sms: SMS_TALK, talk: CALL_TALK, recap: CALL_RECAP, remember: CALL_REMEMBER, memo: CHAT_REMEMBER,
     errand: errandPrompt(name, opts.toName || "", opts.goal || ""), errandsum: ERRAND_SUMMARY,
@@ -125,6 +127,8 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         memory ? `${memory}\n\nYou two have talked before — never introduce yourself; talk like someone who knows them.` : "",
         !ch && (mode === "chat" || mode === "sms" || mode === "talk" || mode === "recap" || mode === "checkin") ? PERSONALITY_PROMPT[personality] : "",
         modeText,
+        scene ? sceneNote(scene) : "",
+        ch ? "SCENES: lines starting with 🎬 are dates or outings you two did together (played out, or that they told you happened). Treat them as real shared memories — bring them up, tease about them, look back on them." : "",
         mode === "chat" ? REACT_HINT : "",
         arc && (mode === "remember" || mode === "memo") ? FEELINGS_REMEMBER : "",
         trust !== null && mode !== "remember" && mode !== "memo" ? trustNote(trust, arc) : "",
@@ -139,8 +143,14 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
     const h = hideSecrets(String(m.content || "").slice(0, 4000));
     // Hidden here, or already hidden on the phone / at the text or call webhook.
     if ((h.hidden || h.text.includes(HIDDEN)) && i === all.length - 1 && m.role !== "assistant") hidLast = true;
-    return { role: m.role === "assistant" ? "assistant" : "user", content: h.text || "…" };
-  });
+    return { role: m.role === "assistant" ? "assistant" as const : "user" as const, content: h.text || "…" } as Anthropic.MessageParam;
+  }).reduce<Anthropic.MessageParam[]>((all, m) => {
+    // Back-to-back turns from the same side (e.g. a 🎬 scene note, then their message) become one.
+    const prev = all[all.length - 1];
+    if (prev && prev.role === m.role && typeof prev.content === "string" && typeof m.content === "string") prev.content = `${prev.content}\n\n${m.content}`;
+    else all.push(m);
+    return all;
+  }, []);
   // 📎 The newest message's attachment (chat only): Velo sees the photo or PDF, or reads the text file.
   let attached = false;
   const lastTurn = opts.messages[opts.messages.length - 1];

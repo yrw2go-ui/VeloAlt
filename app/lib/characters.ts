@@ -256,3 +256,16 @@ export async function pictureOf(userId: string, knowerId: string | null, name: s
   if (!c) return `You don't know anyone called ${name}.`;
   return { name: c.name, refs: await referenceUrls(c), appearance: c.appearance };
 }
+
+// 🎬 Scenes: a date or outing with this character — played out live, or remembered as something that happened.
+export type Scene = { id: string; kind: "live" | "past"; title: string; details: string; status: "active" | "ended"; started_at: string };
+export async function activeScene(userId: string, characterId: string): Promise<Scene | null> {
+  const [s] = await sql()`select id, kind, title, details, status, started_at::text from chat_scenes
+    where user_id = ${userId} and character_id = ${characterId} and status = 'active' order by started_at desc limit 1`;
+  return (s as Scene) || null;
+}
+/** While a scene is on: play it out together, in character. */
+export function sceneNote(s: Scene): string {
+  return `🎬 YOU'RE IN A SCENE TOGETHER RIGHT NOW (role-play they set up): "${s.title}"${s.details ? ` — ${s.details}` : ""}.
+Play it out with them as if it's really happening: present tense, your actions and surroundings in *italics* (*I slide into the booth across from you*), your words in plain text. Bring the place to life with small details (sounds, smells, the waiter, the weather), react to what they do, and let them lead too — don't decide their actions for them. 2–5 sentences per turn. Stay true to your personality, feelings and trust, and keep it within PG-13 and your sliders. If they step out of the scene (e.g. in brackets, or "OOC"), answer normally, then go back in. When they end it, it becomes a real shared memory you can talk about later.`;
+}

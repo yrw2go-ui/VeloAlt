@@ -130,6 +130,12 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     // Their message gets its id (for reactions), so a reaction from her can land on it.
     const myId = saved.ids?.at(-1);
     if (myId) { mine.id = myId; setMsgs(list => (list || []).map(x => (x === mine ? { ...x, id: myId } : x))); }
+    await respond(next, myId);
+  };
+
+  /** Her reply to the chat so far (after their message, or after a 🎬 scene note). */
+  const respond = async (next: ChatMsg[], myId?: string) => {
+    setBusy(true); setErr("");
     try {
       const r = await api<{ reply: string; changed?: boolean; drafts?: Draft[]; media?: Media[]; react?: string }>("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name, ...thread, ...(myId ? { replyTo: myId } : {}) });
       if (r.react) setMsgs(list => (list || []).map(x => (x.id && x.id === myId ? { ...x, theirReaction: r.react } : x)));
@@ -146,6 +152,36 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     } catch (e) {
       setErr(e instanceof Error ? e.message : `${who} didn't answer.`);
     } finally { setBusy(false); }
+  };
+
+  // 🎬 Scenes: a date or outing, played out here, or something that already happened.
+  const [scene, setScene] = useState<{ id: string; title: string; details: string } | null>(null);
+  const [sceneSheet, setSceneSheet] = useState(false);
+  useEffect(() => {
+    if (!cid) return;
+    data<{ scene: { id: string; title: string; details: string } | null }>("scene.active", { characterId: cid }).then(r => setScene(r.scene)).catch(() => {});
+  }, [cid, userId]);
+  const startScene = async (kind: "live" | "past", title: string, details: string) => {
+    const r = await data<{ scene?: { id: string; title: string; details: string }; marker: ChatMsg }>(kind === "live" ? "scene.start" : "scene.past", { characterId: cid, title, details });
+    setSceneSheet(false);
+    if (kind === "live" && r.scene) setScene(r.scene);
+    unsaved.current++;
+    const next = [...msgsRef.current, r.marker];
+    setMsgs(next);
+    await respond(next);
+  };
+  const endScene = async () => {
+    if (!(await confirmAsk(`End the scene "${scene?.title}"? It'll become a memory you both have.`, { yes: "End scene" }))) return;
+    try {
+      const r = await data<{ marker: ChatMsg }>("scene.end", { characterId: cid });
+      setScene(null);
+      const next = [...msgsRef.current, r.marker];
+      setMsgs(next);
+      // She files it away (summary, feelings, trust), then says something about it.
+      api("/api/velo", { mode: "memo", messages: realMsgs(next).slice(-40), timeZone: timeZone(), name, ...thread }).catch(() => {});
+      unsaved.current = 0;
+      await respond(next);
+    } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't end the scene."); }
   };
 
   // 🤝 Her trust in them (a small meter at the top of a character's chat).
@@ -226,6 +262,13 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
           <span className="muted" style={{ minWidth: 30, textAlign: "right" }}>{trust}%</span>
         </div>
       )}
+      {character && scene && (
+        <div data-testid="scene-banner" className="row" style={{ gap: 8, padding: "8px 14px", borderBottom: "1px solid var(--border)", background: "linear-gradient(90deg, rgba(124,140,255,.16), rgba(236,72,153,.12))", fontSize: 13 }}>
+          <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>🎬 <b>{scene.title}</b></span>
+          <button className="ghost" onClick={endScene} disabled={busy} data-testid="scene-end" style={{ padding: "4px 10px", fontSize: 12 }}>End scene</button>
+        </div>
+      )}
+      {sceneSheet && character && <SceneSheet who={character.name} onClose={() => setSceneSheet(false)} onStart={startScene} />}
       <div data-testid="chat-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
         {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={m.media?.id || m.id || i} m={m} onReactMsg={reactMsg} face={face(28)} onMedia={mediaArrived} onReact={react} who={who} onAnswer={x => setMsgs(list => (list || []).map(y => (y.media?.id === x.id ? { ...y, content: mediaNote({ ...y.media!, ...x }), media: { ...y.media!, ...x } } : y)))} />)}
         {character && msgs && !msgs.length && (
@@ -251,6 +294,8 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       )}
       <form onSubmit={e => { e.preventDefault(); send(text); }} className="row" style={{ padding: "10px 12px", borderTop: "1px solid var(--border)" }}>
         <input ref={picker} type="file" accept={ACCEPT} hidden onChange={e => pick(e.target.files?.[0])} data-testid="chat-file-input" />
+        {cid && !scene && <button type="button" onClick={() => setSceneSheet(true)} disabled={!msgs || busy} aria-label="Start a scene" data-testid="scene-open"
+          style={{ borderRadius: 999, width: 36, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 19, border: "none", background: "transparent", color: "var(--muted)" }}>🎬</button>}
         <button type="button" onClick={() => picker.current?.click()} disabled={!msgs || busy || uploading} aria-label="Attach a photo or file" data-testid="chat-attach"
           style={{ borderRadius: 999, width: 40, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 20, border: "none", background: "transparent", color: "var(--muted)" }}>
           {uploading ? "⏳" : "📎"}
@@ -287,6 +332,9 @@ function Bubble({ m, face, who, onMedia, onReact, onAnswer, onReactMsg }: { m: C
     <span data-testid={mine ? "their-reaction" : "my-reaction"} aria-label={`${who} reacted ${r}`}
       style={{ position: "absolute", bottom: -12, [mine ? "left" : "right"]: -6, fontSize: 15, lineHeight: 1, padding: "3px 5px", borderRadius: 999, background: "var(--surface)", border: "1px solid var(--border)", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }}>{r}</span>
   );
+  if (m.content.startsWith("🎬 ")) return (
+    <div data-testid="scene-note" style={{ alignSelf: "center", maxWidth: "90%", textAlign: "center", fontSize: 12, padding: "6px 12px", borderRadius: 999, background: "var(--surface2)", border: "1px solid var(--border)" }} className="muted">{m.content}</div>
+  );
   if (m.media) return (
     <div data-testid="chat-media" style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
       {face}
@@ -304,7 +352,7 @@ function Bubble({ m, face, who, onMedia, onReact, onAnswer, onReactMsg }: { m: C
         style={{ position: "relative", cursor: !mine && m.id ? "pointer" : undefined, padding: "10px 14px", borderRadius: 18, borderBottomLeftRadius: mine ? 18 : 4, borderBottomRightRadius: mine ? 4 : 18,
         background: mine ? "linear-gradient(135deg, var(--accent), var(--accent2))" : "var(--surface2)", color: "var(--text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", lineHeight: 1.45, fontSize: 15 }}>
         {m.file && <div style={{ marginBottom: m.content && m.content !== "📎" ? 8 : 0 }}><FileThumb f={m.file} size={180} /></div>}
-        {m.content !== "📎" && linkify(m.content.replace(/\*\*(.+?)\*\*/g, "$1"))}
+        {m.content !== "📎" && styled(m.content.replace(/\*\*(.+?)\*\*/g, "$1"))}
         {mine && m.theirReaction && badge(m.theirReaction, who)}
         {!mine && m.reaction && badge(m.reaction, "You")}
       </div>
@@ -312,6 +360,11 @@ function Bubble({ m, face, who, onMedia, onReact, onAnswer, onReactMsg }: { m: C
       </div>
     </div>
   );
+}
+
+/** *Actions in asterisks* show in italics (scenes); links stay tappable. */
+function styled(text: string) {
+  return text.split(/(\*[^*\n]+\*)/g).map((part, i) => (i % 2 ? <em key={i} style={{ opacity: 0.85 }}>{part.slice(1, -1)}</em> : <span key={i}>{linkify(part)}</span>));
 }
 
 /** Web links in a message become tappable (https only; they open in a new tab). */
@@ -331,5 +384,43 @@ export function FileThumb({ f, size }: { f: { url: string; thumb?: string | null
         ? <img src={f.thumb || f.url} alt={f.name} loading="lazy" style={{ display: "block", maxWidth: size, maxHeight: size, borderRadius: 10, objectFit: "cover" }} />
         : <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: size < 60 ? "6px 8px" : "8px 12px", borderRadius: 10, background: "rgba(0,0,0,0.2)", fontSize: 13 }}>{f.type === "application/pdf" ? "📄" : "📝"} {size < 60 ? "" : f.name}</span>}
     </a>
+  );
+}
+
+/** 🎬 Set up a scene: play it out now, or say it already happened. */
+function SceneSheet({ who, onClose, onStart }: { who: string; onClose: () => void; onStart: (kind: "live" | "past", title: string, details: string) => Promise<void> }) {
+  const [kind, setKind] = useState<"live" | "past">("live");
+  const [title, setTitle] = useState("");
+  const [details, setDetails] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const go = async () => {
+    setBusy(true); setErr("");
+    try { await onStart(kind, title.trim(), details.trim()); } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't start it."); setBusy(false); }
+  };
+  const tab = (on: boolean) => ({ flex: 1, padding: "8px 10px", borderRadius: 999, fontWeight: 700, fontSize: 13, cursor: "pointer", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, background: on ? "rgba(124,140,255,0.15)" : "transparent", color: "var(--text)" } as const);
+  return (
+    <div role="dialog" aria-modal="true" data-testid="scene-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }} onClick={onClose}>
+      <div className="card" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 12 }}>
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          <div style={{ fontWeight: 800, fontSize: 17 }}>🎬 A scene with {who}</div>
+          <button className="ghost" onClick={onClose} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
+        </div>
+        <div className="row" style={{ gap: 8 }}>
+          <button type="button" style={tab(kind === "live")} onClick={() => setKind("live")} data-testid="scene-live">Play it out</button>
+          <button type="button" style={tab(kind === "past")} onClick={() => setKind("past")} data-testid="scene-past">It already happened</button>
+        </div>
+        <div className="muted" style={{ fontSize: 12 }}>{kind === "live" ? `You two act it out here — ${who} sets the scene, you join in. *Actions in asterisks* show in italics. End it when you're done; it becomes a memory you both have.` : `Tell ${who} what you did together — she'll remember it as a real shared memory and talk about it.`}</div>
+        <label style={{ fontSize: 13, fontWeight: 700 }}>{kind === "live" ? "What's the plan?" : "What did you do?"}
+          <input value={title} onChange={e => setTitle(e.target.value)} maxLength={120} aria-label="Scene" placeholder={kind === "live" ? "e.g. Dinner date at Luigi's" : "e.g. Went bowling downtown"} style={{ marginTop: 4 }} />
+        </label>
+        <label style={{ fontSize: 13, fontWeight: 700 }}>Details <span className="muted" style={{ fontWeight: 500 }}>· optional</span>
+          <textarea value={details} onChange={e => setDetails(e.target.value)} maxLength={1000} rows={3} aria-label="Scene details" style={{ marginTop: 4, resize: "vertical" }}
+            placeholder={kind === "live" ? "Where, when, the vibe — e.g. Friday night, candlelit Italian place, she's wearing the red dress" : "What happened — e.g. you beat me twice, I threw a gutter ball, then we got ice cream"} />
+        </label>
+        {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
+        <button className="btn" disabled={busy || !title.trim()} onClick={go} data-testid="scene-go">{busy ? "…" : kind === "live" ? "Start the scene" : `Tell ${who}`}</button>
+      </div>
+    </div>
   );
 }

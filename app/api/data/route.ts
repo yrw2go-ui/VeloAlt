@@ -9,7 +9,7 @@ import { scrub } from "../../lib/secrets";
 import { availableModels, CHAT_MODELS, MODEL_INFO, type ChatModel } from "../../lib/models";
 import { PERSONALITIES } from "../../lib/persona";
 import { deleteFile, ownFile } from "../../lib/files";
-import { getCharacter, trustFor } from "../../lib/characters";
+import { getCharacter, trustFor, activeScene } from "../../lib/characters";
 import { US_STATES } from "../../lib/states";
 import { acceptMedia, declineMedia, mediaNote, checkMedia, sweepMedia, getMedia, listGallery, deleteMedia, VIDEO_MODELS, DEFAULT_VIDEO_MODEL } from "../../lib/media";
 
@@ -102,13 +102,15 @@ export async function POST(req: NextRequest) {
         // A millisecond apart so they always sort in the order sent.
         const at = Date.now() - list.length;
         const ids: string[] = [];
+        // 🎬 Messages during a scene are part of it.
+        const sceneId = ch ? (await activeScene(me, ch.id))?.id || null : null;
         for (const [i, m] of list.entries()) {
           // Only their own file can be attached.
           const f = m.fileId && m.role === "user" ? await ownFile(me, m.fileId) : null;
           // A photo/video sent in this same chat (theirs, and from this Velo/character).
           const md = m.mediaId && m.role === "assistant" ? await getMedia(me, m.mediaId) : null;
           const mediaId = md && md.character_id === (ch?.id || null) ? md.id : null;
-          const [row] = await db`insert into velo_messages (user_id, role, content, file_id, media_id, character_id, created_at) values (${me}, ${m.role}, ${m.content || (mediaId ? "(sent a photo)" : "📎")}, ${f?.id || null}, ${mediaId}, ${ch?.id || null}, ${new Date(at + i).toISOString()}) returning id`;
+          const [row] = await db`insert into velo_messages (user_id, role, content, file_id, media_id, character_id, scene_id, created_at) values (${me}, ${m.role}, ${m.content || (mediaId ? "(sent a photo)" : "📎")}, ${f?.id || null}, ${mediaId}, ${ch?.id || null}, ${sceneId}, ${new Date(at + i).toISOString()}) returning id`;
           ids.push(String(row.id));
         }
         return NextResponse.json({ ok: true, ids });
@@ -151,6 +153,40 @@ export async function POST(req: NextRequest) {
         const m = needId() ? await declineMedia(me, id) : null;
         return m ? NextResponse.json({ media: m }) : bad("That offer isn't open anymore.");
       }
+      // 🎬 Scenes with a character: play one out (start → chat → end), or say one already happened.
+      case "scene.active":
+      case "scene.start":
+      case "scene.past":
+      case "scene.end": {
+        const ch = b.characterId ? await getCharacter(String(b.characterId)) : null;
+        if (!ch) return bad("That character wasn't found.");
+        const action = String(b.action);
+        const cur = await activeScene(me, ch.id);
+        if (action === "scene.active") return NextResponse.json({ scene: cur });
+        const day = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+        const marker = async (content: string, sceneId: string | null) => {
+          const [row] = await db`insert into velo_messages (user_id, role, content, character_id, scene_id) values (${me}, 'user', ${content}, ${ch.id}, ${sceneId}) returning id`;
+          return { id: String(row.id), role: "user", content };
+        };
+        if (action === "scene.end") {
+          if (!cur) return bad("There's no scene going on.");
+          await db`update chat_scenes set status = 'ended', ended_at = now() where id = ${cur.id}`;
+          // A lasting memory for her (the play-by-play summary comes from the chat itself).
+          await db`insert into velo_memories (user_id, character_id, kind, text) values (${me}, ${ch.id}, 'fact', ${`We did this together (${day}): ${cur.title}`.slice(0, 300)})`;
+          return NextResponse.json({ ok: true, marker: await marker(`🎬 Scene ended: ${cur.title}`, null) });
+        }
+        const title = scrub(clean(b.title, 120)), details = scrub(String(b.details ?? "").replace(/\s+/g, " ").trim().slice(0, 1000));
+        if (!title) return bad("Say what the scene is (e.g. a dinner date at Luigi's).");
+        if (cur) await db`update chat_scenes set status = 'ended', ended_at = now() where id = ${cur.id}`;
+        if (action === "scene.start") {
+          const [s] = await db`insert into chat_scenes (user_id, character_id, kind, title, details) values (${me}, ${ch.id}, 'live', ${title}, ${details}) returning id, kind, title, details, status, started_at::text`;
+          return NextResponse.json({ scene: s, marker: await marker(`🎬 Scene: ${title}${details ? ` — ${details}` : ""}`, String(s.id)) });
+        }
+        const [s] = await db`insert into chat_scenes (user_id, character_id, kind, title, details, status, ended_at) values (${me}, ${ch.id}, 'past', ${title}, ${details}, 'ended', now()) returning id`;
+        await db`insert into velo_memories (user_id, character_id, kind, text) values (${me}, ${ch.id}, 'fact', ${`We did this together (${day}): ${title}${details ? ` — ${details}` : ""}`.slice(0, 300)})`;
+        return NextResponse.json({ ok: true, marker: await marker(`🎬 Something we did together: ${title}${details ? ` — ${details}` : ""}`, String(s.id)) });
+      }
+
       // 🤝 How much this character trusts them (null when trust is off for that character).
       case "relationship.get": {
         const ch = b.characterId ? await getCharacter(String(b.characterId)) : null;
