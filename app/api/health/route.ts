@@ -2,6 +2,15 @@ import { NextResponse } from "next/server";
 import { sql, dbUrl } from "../../lib/db";
 import { usingSupabase, storageReady } from "../../lib/storage";
 
+// Does Atlas Cloud accept the key? (A read-only call; never shows the key.)
+async function atlasCheck(): Promise<string> {
+  try {
+    const res = await fetch(`${process.env.ATLASCLOUD_API_URL || "https://api.atlascloud.ai"}/api/v1/model/prediction/health-check`, { headers: { Authorization: `Bearer ${process.env.ATLASCLOUD_API_KEY}` }, signal: AbortSignal.timeout(8000) });
+    if (res.status === 401 || res.status === 403) return "refused — Atlas Cloud says the key is wrong";
+    return "ready (Atlas Cloud)";
+  } catch { return "ready (Atlas Cloud didn't answer the check)"; }
+}
+
 // 🩺 Is everything connected? Says what's set up and what's missing — never a key, password or
 // address. Open /api/health in a browser.
 export const dynamic = "force-dynamic";
@@ -24,6 +33,7 @@ export async function GET() {
   return NextResponse.json({
     database: db,
     files: storageReady() ? (usingSupabase() ? "Supabase Storage" : "Vercel Blob") : "missing — no Supabase keys or Blob token",
-    ai: !!process.env.ANTHROPIC_API_KEY,
+    ai: process.env.ANTHROPIC_API_KEY ? (process.env.VELO_MODEL ? true : "missing — no VELO_MODEL") : "missing — no ANTHROPIC_API_KEY",
+    photos: !process.env.ATLASCLOUD_API_KEY ? "missing — no ATLASCLOUD_API_KEY" : !storageReady() ? "missing — no file storage" : await atlasCheck(),
   }, { headers: { "Cache-Control": "no-store" } });
 }
