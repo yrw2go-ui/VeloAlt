@@ -17,10 +17,17 @@ export async function importImages(sql, file = new URL("../db/seeds/my-character
   const b = await fetch(`${base}/storage/v1/bucket`, { method: "POST", headers: H({ "Content-Type": "application/json" }), body: JSON.stringify({ id: "velo", name: "velo", public: true, file_size_limit: 52428800 }) });
   if (!b.ok && !/already exists|Duplicate|409/i.test(`${b.status} ${await b.text().catch(() => "")}`)) throw new Error(`bucket ${b.status}`);
   const upload = async (srcUrl, folder, name) => {
-    const res = await fetch(srcUrl);
-    if (!res.ok) throw new Error(`download ${res.status}`);
-    const type = res.headers.get("content-type") || (name.endsWith(".webp") ? "image/webp" : "image/jpeg");
-    const buf = Buffer.from(await res.arrayBuffer());
+    // "file:…" = a picture saved with the code (db/seeds/…); otherwise a link to download.
+    let type, buf;
+    if (srcUrl.startsWith("file:")) {
+      buf = readFileSync(new URL(`../db/seeds/${srcUrl.slice(5)}`, import.meta.url));
+      type = srcUrl.endsWith(".png") ? "image/png" : "image/jpeg";
+    } else {
+      const res = await fetch(srcUrl);
+      if (!res.ok) throw new Error(`download ${res.status}`);
+      type = res.headers.get("content-type") || (name.endsWith(".webp") ? "image/webp" : "image/jpeg");
+      buf = Buffer.from(await res.arrayBuffer());
+    }
     const dot = name.lastIndexOf(".");
     const path = `velo/media/${folder}/${name.slice(0, dot)}-${randomBytes(9).toString("base64url")}${name.slice(dot)}`;
     const up = await fetch(`${base}/storage/v1/object/velo/${path}`, { method: "POST", headers: H({ "Content-Type": type, "x-upsert": "false" }), body: buf });
@@ -28,6 +35,11 @@ export async function importImages(sql, file = new URL("../db/seeds/my-character
     return { url: `${base}/storage/v1/object/public/velo/${path}`, pathname: path, type, size: buf.length };
   };
   const data = JSON.parse(readFileSync(file, "utf8"));
+  // 🌟 The starter characters' headshots made in ElevenLabs (one picture each, with its prompt).
+  try {
+    for (const p of JSON.parse(readFileSync(new URL("../db/seeds/starter-portraits.json", import.meta.url), "utf8")))
+      data.push({ name: p.name, portrait: `file:${p.file}`, images: [{ ref: 1, url: `file:${p.file}`, thumb: null, model: p.model, prompt: p.prompt, description: p.description, kept: true }] });
+  } catch { /* no starter portraits list */ }
   for (const c of data) {
     const [ch] = await sql`select id, portrait_file_id, cardinality(reference_ids) as refs from chat_characters where lower(name) = lower(${c.name}) limit 1`;
     if (!ch || ch.portrait_file_id || ch.refs > 0) continue;
@@ -37,12 +49,12 @@ export async function importImages(sql, file = new URL("../db/seeds/my-character
     for (const im of c.images) {
       try {
         const folder = randomUUID();
-        const f = await upload(im.url, folder, "photo.jpg");
+        const f = await upload(im.url, folder, /\.png(\?|$)/i.test(im.url) ? "photo.png" : "photo.jpg");
         const t = im.thumb ? await upload(im.thumb, folder, "thumb.webp").catch(() => null) : null;
-        const [file] = await sql`insert into velo_files (user_id, kind, url, pathname, name, content_type, size) values (${admin.id}, 'media', ${f.url}, ${f.pathname}, 'photo.jpg', ${f.type}, ${f.size}) returning id`;
+        const [file] = await sql`insert into velo_files (user_id, kind, url, pathname, name, content_type, size) values (${admin.id}, 'media', ${f.url}, ${f.pathname}, ${f.pathname.split("/").pop().replace(/-[\w-]{12}(\.\w+)$/, "$1")}, ${f.type}, ${f.size}) returning id`;
         const [thumb] = t ? await sql`insert into velo_files (user_id, kind, url, pathname, name, content_type, size) values (${admin.id}, 'media', ${t.url}, ${t.pathname}, 'thumb.webp', ${t.type}, ${t.size}) returning id` : [null];
         const [m] = await sql`insert into velo_media (user_id, character_id, kind, prompt, model, status, file_id, thumb_file_id, kept, caption, description, created_at, done_at)
-          values (${admin.id}, ${ch.id}, 'image', ${(im.description || "Copied from Velo").slice(0, 2000)}, ${String(im.model || "upload").slice(0, 200)}, 'done', ${file.id}, ${thumb?.id || null}, ${!!im.kept}, ${im.caption ? String(im.caption).slice(0, 200) : null}, ${im.description ? String(im.description).slice(0, 400) : null}, ${im.at || new Date().toISOString()}, ${im.at || new Date().toISOString()})
+          values (${admin.id}, ${ch.id}, 'image', ${(im.prompt || im.description || "Copied from Velo").slice(0, 2000)}, ${String(im.model || "upload").slice(0, 200)}, 'done', ${file.id}, ${thumb?.id || null}, ${!!im.kept}, ${im.caption ? String(im.caption).slice(0, 200) : null}, ${im.description ? String(im.description).slice(0, 400) : null}, ${im.at || new Date().toISOString()}, ${im.at || new Date().toISOString()})
           returning id`;
         if (im.ref) refs.push({ ref: im.ref, id: m.id });
         if (im.url === c.portrait) portrait = file.id;

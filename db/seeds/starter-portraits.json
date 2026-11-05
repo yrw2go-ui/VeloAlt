@@ -1,0 +1,37 @@
+[
+ {
+  "name": "Sofia",
+  "prompt": "A realistic head-and-shoulders portrait of Sofia: a stunning 26-year-old Cuban-American woman with long dark-brown wavy hair, warm brown eyes with long lashes, bronze sun-kissed skin, full lips with a glossy red smile, small gold hoop earrings. She wears an off-the-shoulder cream top. Warm golden-hour light on a Miami rooftop lounge, palm trees softly blurred behind her. Confident, playful smile looking at the camera.",
+  "description": "Golden-hour headshot on a Miami rooftop lounge, off-the-shoulder cream top, gold hoops, playful smile",
+  "model": "gemini-3-pro-image (ElevenLabs)",
+  "file": "portraits/sofia.jpg"
+ },
+ {
+  "name": "Mia",
+  "prompt": "A realistic head-and-shoulders portrait of Mia: a gorgeous 23-year-old woman with long sun-kissed honey-blonde hair, bright blue eyes, light freckles across her nose, golden tan and a wide dimpled smile. She wears an oversized light flannel shirt over a white cropped tee. Bright late-afternoon light at a Venice Beach boardwalk, ocean softly blurred behind her. Bubbly, laughing expression looking at the camera.",
+  "description": "Headshot on the Venice Beach boardwalk, flannel over a white tee, laughing",
+  "model": "gemini-3-pro-image (ElevenLabs)",
+  "file": "portraits/mia.jpg"
+ },
+ {
+  "name": "Chloe",
+  "prompt": "A realistic head-and-shoulders portrait of Chloe: a beautiful 27-year-old woman with shoulder-length dark chestnut hair in a loose messy bun, warm green eyes, fair skin with a few freckles, soft natural makeup. She wears a cozy oatmeal knit sweater. Soft morning window light in a cozy Chicago apartment with plants blurred behind her. Warm, slightly teasing small smile that reaches her eyes, looking at the camera.",
+  "description": "Morning headshot in her Chicago apartment, oatmeal knit sweater, messy bun, warm teasing smile",
+  "model": "gemini-3-pro-image (ElevenLabs)",
+  "file": "portraits/chloe.jpg"
+ },
+ {
+  "name": "Elena",
+  "prompt": "A realistic head-and-shoulders portrait of Elena: a striking 29-year-old Scandinavian woman with long straight platinum-blonde hair, ice-blue eyes, porcelain skin, high cheekbones and red lipstick. She wears a black cashmere turtleneck and minimal gold jewelry. Cool soft gallery lighting in a white-walled art gallery, an abstract painting softly blurred behind her. Composed, mysterious half-smile, looking at the camera.",
+  "description": "Headshot in a white-walled gallery, black cashmere turtleneck, red lipstick, mysterious half-smile",
+  "model": "gemini-3-pro-image (ElevenLabs)",
+  "file": "portraits/elena.jpg"
+ },
+ {
+  "name": "Jade",
+  "prompt": "A realistic head-and-shoulders portrait of Jade: a gorgeous 25-year-old woman with a sleek jet-black bob with teal streaks, dark brown almond eyes with winged eyeliner, light olive skin, a delicate nose ring and fine-line tattoos visible on her arms. She wears a black band t-shirt and a beanie. Moody neon-and-lamp light in an Austin tattoo studio with flash art on the wall softly blurred behind her. Smirking, playful expression looking at the camera.",
+  "description": "Headshot in her Austin tattoo studio, band tee and beanie, smirking",
+  "model": "gemini-3-pro-image (ElevenLabs)",
+  "file": "portraits/jade.jpg"
+ }
+]
