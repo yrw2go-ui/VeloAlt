@@ -174,6 +174,7 @@ export function CallMedia({ items, name }: { items: Media[]; name: string }) {
           style={{ position: "fixed", inset: 0, zIndex: 2100, background: "rgba(0,0,0,.78)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "max(20px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom))", gap: 12 }}>
           <div style={{ color: "#fff", fontWeight: 700, fontSize: 15, textAlign: "center" }}>{name}: {open.caption || `sent you a ${open.kind === "image" ? "photo" : "video"}`}</div>
           <MediaView key={open.id} media={open} big />
+          <CallReactions m={open} />
           <SaveButton m={open} />
           <button onClick={() => close(open.id)} style={{ background: "#1f2937", color: "#fff", border: "1px solid #374151", borderRadius: 999, padding: "10px 22px", fontWeight: 700, cursor: "pointer" }}>
             {ready.filter(r => !gone.has(r.id)).length > 1 ? "Next" : "Back to call"}
@@ -204,4 +205,14 @@ export function SaveButton({ m }: { m: Media }) {
       {kept ? "⭐ Saved to gallery" : "☆ Save to gallery"}
     </button>
   );
+}
+
+/** ❤️ React to a photo/video right on the call pop-up (saved like in chat; she sees it). */
+function CallReactions({ m }: { m: Media }) {
+  const [r, setR] = useState<string | null>(m.reaction || null);
+  const pick = async (e: string) => {
+    const next = r === e ? null : e; setR(next);
+    try { await data("media.react", { id: m.id, reaction: next }); } catch { setR(r); }
+  };
+  return <div onClick={e => e.stopPropagation()} style={{ display: "flex", justifyContent: "center" }}><ReactionBar value={r} onPick={pick} /></div>;
 }

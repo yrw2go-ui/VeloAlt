@@ -11,6 +11,7 @@ import { CallMedia, type Media } from "./media";
 import { CharacterStrip, CharacterEditor, CharacterFace, type Character } from "./characters";
 import Gallery from "./gallery";
 import AboutCard from "./about";
+import CheckinsCard from "./notify";
 import Today from "./today";
 import Memory from "./memory";
 import { timeZone } from "./lib/tz";
@@ -97,7 +98,8 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   const [chars, setChars] = useState<Character[]>([]);
   const [portraits, setPortraits] = useState(false);
   const [admin, setAdmin] = useState(false);
-  const [withId, setWithId] = useState<string | null>(null);
+  // A tapped notification opens that chat (?chat=<character id>, or "velo").
+  const [withId, setWithId] = useState<string | null>(() => { if (typeof location === "undefined") return null; const c = new URLSearchParams(location.search).get("chat"); return c && c !== "velo" ? c : null; });
   const [editing, setEditing] = useState<Character | "new" | null>(null);
   const [gallery, setGallery] = useState(false);
   const [chatTick, setChatTick] = useState(0);
@@ -261,6 +263,7 @@ function Settings({ name, setName, onOut, profile, onProfile }: { name: string; 
         <VeloLookPicker />
       </div>
       {profile && <AboutCard profile={profile} onChange={onProfile} />}
+      {profile && <CheckinsCard profile={profile} onChange={onProfile} />}
       {profile && <PersonalityCard profile={profile} onChange={onProfile} />}
       {profile && <BrainCard profile={profile} onChange={onProfile} />}
       {profile && <VideoCard profile={profile} onChange={onProfile} />}

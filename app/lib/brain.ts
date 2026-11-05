@@ -30,7 +30,10 @@ import { veloLook } from "./veloAvatars";
 
 // Only ever the app's own key (never another credential in the environment).
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, authToken: null });
-export type Mode = "chat" | "sms" | "talk" | "recap" | "remember" | "memo" | "errand" | "errandsum";
+export type Mode = "chat" | "sms" | "talk" | "recap" | "remember" | "memo" | "errand" | "errandsum" | "checkin";
+
+// 🔔 Texting them first (a check-in, sent as a push notification).
+const CHECKIN = `REACHING OUT FIRST: they haven't written in a while, and you're texting them first — like a friend (or more) would. Write ONE short text (1–2 sentences, under 160 characters). Make it personal and specific when you can: follow up on something from YOUR MEMORY or your recent chat, react to the time of day, a holiday, the weather of the season, or just say hi in your own way and voice. Don't mention apps, notifications or that you were told to write. No questions lists, no emojis overload, no links.`;
 export type Turn = { role: "user" | "assistant"; content: string; fileId?: string };
 export const aiReady = () => !!(process.env.VELO_MODEL && process.env.ANTHROPIC_API_KEY);
 
@@ -98,7 +101,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   // 💕 A romantic character with an adult: their relationship develops (feelings, updated after each chat/call).
   const arc = !!ch?.romantic && !!u?.adult_confirmed_at;
   const modeText = {
-    chat: "", sms: SMS_TALK, talk: CALL_TALK, recap: CALL_RECAP, remember: CALL_REMEMBER, memo: CHAT_REMEMBER,
+    chat: "", checkin: CHECKIN, sms: SMS_TALK, talk: CALL_TALK, recap: CALL_RECAP, remember: CALL_REMEMBER, memo: CHAT_REMEMBER,
     errand: errandPrompt(name, opts.toName || "", opts.goal || ""), errandsum: ERRAND_SUMMARY,
   }[mode];
   const system: Anthropic.TextBlockParam[] = [
@@ -118,7 +121,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         canSend ? await recentMediaNote(caller.userId, cid, today.tz).catch(() => "") : "",
         errand || ch ? "" : pro ? SEARCH_INFO + "\n\n" + PRO_INFO + (proTools?.page ? `\nTheir Facebook Page "${proTools.page}" is connected: you can draft posts for it (draft_post).` : "\nNo Facebook Page is connected; if they want you to post, tell them to connect one in Settings → Velo Pro (Facebook only allows Pages, not personal profiles).") : FREE_INFO,
         memory ? `${memory}\n\nYou two have talked before — never introduce yourself; talk like someone who knows them.` : "",
-        !ch && (mode === "chat" || mode === "sms" || mode === "talk" || mode === "recap") ? PERSONALITY_PROMPT[personality] : "",
+        !ch && (mode === "chat" || mode === "sms" || mode === "talk" || mode === "recap" || mode === "checkin") ? PERSONALITY_PROMPT[personality] : "",
         modeText,
         mode === "chat" ? REACT_HINT : "",
         arc && (mode === "remember" || mode === "memo") ? FEELINGS_REMEMBER : "",
@@ -151,10 +154,16 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
     ? "Something they just said was replaced with [hidden] because it looked like a password, PIN or code. You can't hear it; if you need it, say the person you're calling for will follow up directly."
     : "Part of their last message was replaced with [hidden] because it looked like a password, PIN or code. You never see those. Briefly tell them you hid it to keep them safe, and that they should never share passwords or codes with anyone — including you. Then carry on with the rest." });
   // A call opens with Velo's hello, so the turns can start on her side; the model wants the other person first.
-  if (messages[0]?.role === "assistant") messages.unshift({ role: "user", content: mode === "chat" ? "(Chat opened.)" : "(Call connected.)" });
-  if (!messages.length) messages.push({ role: "user", content: "(Call connected. Say your opening line now.)" });
-  const wrapUp = mode === "recap" || mode === "remember" || mode === "memo" || mode === "errandsum";
-  if (wrapUp) messages.push({ role: "user", content: mode === "recap" ? "(The call has ended. Write the call recap now, as described.)" : mode === "errandsum" ? "(The call has ended. Write the report now, as described.)" : "(This conversation has ended. Reply with only the JSON object for your memory, as described.)" });
+  if (messages[0]?.role === "assistant") messages.unshift({ role: "user", content: mode === "chat" || mode === "checkin" ? "(Chat opened.)" : "(Call connected.)" });
+  if (!messages.length && mode !== "checkin") messages.push({ role: "user", content: "(Call connected. Say your opening line now.)" });
+  const wrapUp = mode === "recap" || mode === "remember" || mode === "memo" || mode === "errandsum" || mode === "checkin";
+  if (mode === "checkin") {
+    const nudge = "(Some time has passed since your last messages. Text them first now — one short message, as described.)";
+    const lastM = messages[messages.length - 1];
+    if (lastM?.role === "user" && typeof lastM.content === "string") lastM.content = `${lastM.content}\n\n${nudge}`;
+    else messages.push({ role: "user", content: nudge });
+  }
+  else if (wrapUp) messages.push({ role: "user", content: mode === "recap" ? "(The call has ended. Write the call recap now, as described.)" : mode === "errandsum" ? "(The call has ended. Write the report now, as described.)" : "(This conversation has ended. Reply with only the JSON object for your memory, as described.)" });
 
   // Tools: none on wrap-ups or errands; Pro adds contacts, drafts, Amazon carts and 🔎 web search
   // (Anthropic runs the searches; results come back in the same response).
