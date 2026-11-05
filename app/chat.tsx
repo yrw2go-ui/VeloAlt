@@ -148,6 +148,13 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     } finally { setBusy(false); }
   };
 
+  // 🤝 Her trust in them (a small meter at the top of a character's chat).
+  const [trust, setTrust] = useState<number | null>(null);
+  useEffect(() => {
+    if (!cid) return;
+    data<{ trust: number | null }>("relationship.get", { characterId: cid }).then(r => setTrust(r.trust)).catch(() => {});
+  }, [cid, userId]);
+
   // 😮 React to one of her messages (tap it). Tap the same one again to take it back.
   const reactMsg = async (id: string, emoji: string) => {
     const cur = msgsRef.current.find(x => x.id === id);
@@ -208,6 +215,15 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
           <div style={{ flex: "1 1 200px" }}>💕 {character.name} is a romantic character. Confirm you&apos;re 18+ to unlock romance (PG-13) — until then {character.name} keeps it friendly.</div>
           <button className="btn" onClick={confirmAdult} style={{ padding: "6px 12px", fontSize: 13 }}>I&apos;m 18+</button>
           <button className="ghost" onClick={() => setSkipRomance(true)} aria-label="Keep it friendly" style={{ padding: "6px 10px", fontSize: 13 }}>Not now</button>
+        </div>
+      )}
+      {character && trust !== null && (
+        <div data-testid="trust-meter" title="How much she trusts you — it grows with honesty and consistency" className="row" style={{ gap: 8, padding: "6px 14px", borderBottom: "1px solid var(--border)", fontSize: 12 }}>
+          <span>🤝 {character.name}&apos;s trust</span>
+          <div style={{ flex: 1, height: 6, borderRadius: 999, background: "var(--surface2)", overflow: "hidden" }}>
+            <div style={{ width: `${trust}%`, height: "100%", borderRadius: 999, background: trust >= 70 ? "#10b981" : trust >= 40 ? "#f59e0b" : "#ef4444", transition: "width .4s" }} />
+          </div>
+          <span className="muted" style={{ minWidth: 30, textAlign: "right" }}>{trust}%</span>
         </div>
       )}
       <div data-testid="chat-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>

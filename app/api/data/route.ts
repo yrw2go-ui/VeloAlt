@@ -9,7 +9,7 @@ import { scrub } from "../../lib/secrets";
 import { availableModels, CHAT_MODELS, MODEL_INFO, type ChatModel } from "../../lib/models";
 import { PERSONALITIES } from "../../lib/persona";
 import { deleteFile, ownFile } from "../../lib/files";
-import { getCharacter } from "../../lib/characters";
+import { getCharacter, trustFor } from "../../lib/characters";
 import { US_STATES } from "../../lib/states";
 import { acceptMedia, declineMedia, mediaNote, checkMedia, sweepMedia, getMedia, listGallery, deleteMedia, VIDEO_MODELS, DEFAULT_VIDEO_MODEL } from "../../lib/media";
 
@@ -150,6 +150,12 @@ export async function POST(req: NextRequest) {
       case "media.decline": {
         const m = needId() ? await declineMedia(me, id) : null;
         return m ? NextResponse.json({ media: m }) : bad("That offer isn't open anymore.");
+      }
+      // 🤝 How much this character trusts them (null when trust is off for that character).
+      case "relationship.get": {
+        const ch = b.characterId ? await getCharacter(String(b.characterId)) : null;
+        if (!ch) return bad("That character wasn't found.");
+        return NextResponse.json({ trust: await trustFor(me, ch) });
       }
       case "media.check": {
         const m = needId() ? await checkMedia(me, id) : null;

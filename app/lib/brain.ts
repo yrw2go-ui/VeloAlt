@@ -10,7 +10,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Caller } from "./caller";
 import { sql } from "./db";
-import { VELO_SYSTEM, CALL_TALK, CALL_RECAP, CALL_REMEMBER, CHAT_REMEMBER, SMS_TALK, PRO_INFO, FREE_INFO, SEARCH_INFO, errandPrompt, ERRAND_SUMMARY, FEELINGS_REMEMBER, PERSONALITY_PROMPT, PERSONALITIES, type Personality } from "./persona";
+import { VELO_SYSTEM, CALL_TALK, CALL_RECAP, CALL_REMEMBER, CHAT_REMEMBER, SMS_TALK, PRO_INFO, FREE_INFO, SEARCH_INFO, errandPrompt, ERRAND_SUMMARY, FEELINGS_REMEMBER, TRUST_REMEMBER, PERSONALITY_PROMPT, PERSONALITIES, type Personality } from "./persona";
 import { MEMORY_TOOLS, isMemoryTool, runMemoryTool, MemoryError, memoryBlock, saveConversationMemory } from "./memory";
 import { REMINDER_TOOLS, isReminderTool, runReminderTool, ReminderError } from "./reminders";
 import { proToolsFor, isProTool, runProTool, ProError, type Draft } from "./pro";
@@ -19,7 +19,7 @@ import { isValidTimeZone, localDate, formatClock, weekdayOf, zonedParts } from "
 import { partOfDay, monthName, calendarNote, ownBirthdayNote } from "./calendar";
 import { hideSecrets, HIDDEN, scrub as scrubText } from "./secrets";
 import { ownFile, fileForAi } from "./files";
-import { characterPrompt, feelingsFor, saveFeelings, noteMentions, acquaintancesNote, referenceUrls, pictureOf, type Character } from "./characters";
+import { characterPrompt, feelingsFor, saveFeelings, trustFor, saveTrust, trustNote, noteMentions, acquaintancesNote, referenceUrls, pictureOf, type Character } from "./characters";
 import { aboutThem } from "./bio";
 import { mediaMood, allowsSuggestive } from "./traits";
 import { CHARACTER_ZONES } from "./states";
@@ -100,6 +100,8 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   const chClock = chZone ? `Where YOU live (${CHARACTER_ZONES.find(z => z[0] === chZone)?.[1] || chZone}), it's ${localNow(chZone).label}. Live by your own clock — sleepy late at night, busy in your morning — and notice the time difference with them when it matters (like telling them it's late for you). Don't mention the time unless it's relevant.` : "";
   // 💕 A romantic character with an adult: their relationship develops (feelings, updated after each chat/call).
   const arc = !!ch?.romantic && !!u?.adult_confirmed_at;
+  // 🤝 How much this character trusts them (null when Trust is 0 / off).
+  const trust = ch ? await trustFor(caller.userId, ch).catch(() => null) : null;
   const modeText = {
     chat: "", checkin: CHECKIN, sms: SMS_TALK, talk: CALL_TALK, recap: CALL_RECAP, remember: CALL_REMEMBER, memo: CHAT_REMEMBER,
     errand: errandPrompt(name, opts.toName || "", opts.goal || ""), errandsum: ERRAND_SUMMARY,
@@ -125,6 +127,8 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         modeText,
         mode === "chat" ? REACT_HINT : "",
         arc && (mode === "remember" || mode === "memo") ? FEELINGS_REMEMBER : "",
+        trust !== null && mode !== "remember" && mode !== "memo" ? trustNote(trust, arc) : "",
+        trust !== null && (mode === "remember" || mode === "memo") ? `YOUR TRUST IN THEM: ${trust}/100. ${TRUST_REMEMBER(arc)}` : "",
       ].filter(Boolean).join("\n\n"),
     },
   ];
@@ -279,8 +283,9 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   if (mode === "remember" || mode === "memo") {
     let saved = false;
     try {
-      const j = JSON.parse((reply.match(/\{[\s\S]*\}/) || ["{}"])[0]) as { summary?: unknown; goals?: unknown; facts?: unknown; feelings?: unknown };
+      const j = JSON.parse((reply.match(/\{[\s\S]*\}/) || ["{}"])[0]) as { summary?: unknown; goals?: unknown; facts?: unknown; feelings?: unknown; trust?: unknown };
       if (arc && ch && typeof j.feelings === "string") await saveFeelings(caller.userId, ch.id, scrubText(j.feelings));
+      if (trust !== null && ch && Number.isFinite(Number((j as { trust?: unknown }).trust))) await saveTrust(caller.userId, ch.id, Number((j as { trust?: unknown }).trust), trust);
       const list = (v: unknown) => (Array.isArray(v) ? v.map(String) : []);
       if (typeof j.summary === "string") { await saveConversationMemory(caller, mode === "memo" ? "chat" : "call", j.summary, list(j.goals), list(j.facts), cid); saved = true; }
     } catch (e) { console.error("velo: memory", e); }

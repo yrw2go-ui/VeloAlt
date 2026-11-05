@@ -10,7 +10,7 @@ import { del } from "@vercel/blob";
 import { sql } from "./db";
 import { CHARACTER_VOICES, VOICE_ID, FISH_ID } from "./voices";
 import { PG13 } from "./persona";
-import { traitsPrompt } from "./traits";
+import { traitsPrompt, trustOn, startingTrust } from "./traits";
 import { saveImageItem } from "./media";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, authToken: null });
@@ -64,7 +64,28 @@ export class VoiceError extends Error {}
 /** How this character feels about this person right now (romantic characters; empty until it starts to develop). */
 export async function feelingsFor(userId: string, characterId: string): Promise<string> {
   const [r] = await sql()`select feelings from chat_relationships where user_id = ${userId} and character_id = ${characterId}`;
-  return r ? String(r.feelings) : "";
+  return r?.feelings ? String(r.feelings) : "";
+}
+
+// 🤝 Trust (0–100) this character has in this person; starts from their nature, moves a little after each chat/call.
+export async function trustFor(userId: string, c: Character): Promise<number | null> {
+  if (!trustOn(c.traits)) return null;
+  const [r] = await sql()`select trust from chat_relationships where user_id = ${userId} and character_id = ${c.id}`;
+  return r?.trust ?? startingTrust(c.traits);
+}
+export async function saveTrust(userId: string, characterId: string, trust: number, previous: number) {
+  // Only small steps at a time, so trust is earned (or lost) gradually.
+  const t = Math.max(0, Math.min(100, Math.round(Math.max(previous - 12, Math.min(previous + 8, trust)))));
+  await sql()`insert into chat_relationships (user_id, character_id, trust) values (${userId}, ${characterId}, ${t})
+    on conflict (user_id, character_id) do update set trust = excluded.trust, updated_at = now()`;
+}
+/** How trust shows up in what she says. */
+export function trustNote(trust: number, romance: boolean): string {
+  const how = trust >= 70 ? "You trust them a lot: you open up — share personal things, worries, little secrets and stories from your own life."
+    : trust >= 40 ? "You trust them some: friendly and open about everyday things, but you keep the more personal stuff to yourself for now."
+    : "You don't fully trust them right now: you're guarded, keep answers general and deflect personal questions.";
+  const jealous = romance && trust < 45 ? " Since you're romantically involved and your trust is shaky, you may suspect they're talking to another woman — especially if they mention other women — and ask about it or get a little jealous in your own way. Keep it realistic: never controlling, threatening, or guilt-tripping." : "";
+  return `YOUR TRUST IN THEM: ${trust}/100. ${how}${jealous} Let it show naturally; never mention numbers.`;
 }
 export async function saveFeelings(userId: string, characterId: string, feelings: string) {
   const f = feelings.replace(/\s+/g, " ").trim().slice(0, 500);

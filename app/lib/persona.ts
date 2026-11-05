@@ -31,6 +31,8 @@ const rememberPrompt = (what: string) => `The ${what} above just ended. For your
 Leave out anything already in YOUR MEMORY, anything they asked you to forget, and passing small talk. Use [] when there's nothing new. Don't invent anything.`;
 
 export const CHAT_REMEMBER = rememberPrompt("chat");
+/** 🤝 Characters with trust on: also update how much they trust this person (small steps). */
+export const TRUST_REMEMBER = (romance: boolean) => `Also add "trust" to the JSON: a number 0–100 for how much you trust them now. Move it only a little from YOUR TRUST IN THEM (usually within ±5): up for honesty, consistency, keeping promises, opening up, kindness; down for lies, flakiness, secrecy, disrespect${romance ? ", or signs they're seeing other women" : ""}. Stay true to how trusting you are by nature (your Trust slider).`;
 /** Romantic characters: also update how they feel about this person (slowly, in character). */
 export const FEELINGS_REMEMBER = `Also add "feelings" to the JSON: 1–2 sentences, in first person, on how you feel about them now. Change it only a little from HOW YOU FEEL ABOUT THEM RIGHT NOW, and only if something in this conversation earned it (kindness, patience, shared moments — or the opposite). Stay true to your personality and the arc your creator wrote; it can stay the same, grow warmer, or cool off.`;
 export const CALL_REMEMBER = rememberPrompt("voice call");
