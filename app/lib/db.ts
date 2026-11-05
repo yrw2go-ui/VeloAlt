@@ -42,7 +42,14 @@ export function envAny(...names: string[]): string {
   }
   return "";
 }
-export const dbUrl = () => process.env.DATABASE_URL || envAny("POSTGRES_URL", "POSTGRES_PRISMA_URL");
+// Supabase's direct "db.<ref>.supabase.co" address is IPv6-only (Vercel can't reach it): a pooler
+// address, when there is one, comes first.
+const isDirect = (url: string) => { try { return /^db\.[a-z0-9]+\.supabase\.co$/i.test(new URL(url).hostname); } catch { return false; } };
+export function dbUrl(): string {
+  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
+  const all = Object.keys(process.env).filter(k => /(^|_)POSTGRES_(URL|PRISMA_URL)$/.test(k) && process.env[k]).map(k => process.env[k]!);
+  return all.find(u => !isDirect(u)) || all[0] || envAny("POSTGRES_URL_NON_POOLING");
+}
 
 /** The connection string without its query options (e.g. ?sslmode=require&supa=…) — the
  *  driver would send unknown ones to the server, which refuses them. SSL is set above. */
