@@ -86,7 +86,7 @@ const SUGGESTIVE = /\b(sexy|seductive|sultry|bikini|swimsuit|cleavage|lingerie|b
 
 export const SEND_MEDIA_TOOL = (who: string, romantic = false): Anthropic.Tool => ({
   name: "send_media",
-  description: `Send them a photo or a short video, like a friend would from their phone, to make the chat feel personal: a picture of you (${who}) somewhere, what you're "up to" right now (fit it to your time of day, season and plans), something you're describing, or when they ask for one. Mix it up: not every picture of you is a selfie — often it's just a photo of you, as if a friend snapped it or it's on a timer (candid, full-body, mid-activity); only say \"mirror selfie\" when you're holding your phone up to a mirror. Be creative, and lean toward the settings, outfits and vibes they've loved. If they ASKED for it, set they_asked: true and it's made right away. If it's your own idea, it's only OFFERED: they get an Accept button, and nothing is made unless they accept — so ask casually ("want a pic of my view right now?") and never say it's sent. Once made it takes about a minute (a photo) or a few minutes (a video) and pops into the chat or onto their call screen — keep talking meanwhile. Use it now and then, not every message. ${romantic ? "This is a romantic setting with an adult, so it can be PG-13 — flirty, cute, date-night outfits, swimwear at the beach — but never nudity, underwear/lingerie or anything sexual or explicit." : "Always family-friendly: everyone fully clothed, nothing sexual or suggestive."} No real people, and never a picture of the person you're talking with. Vary it like real photos do: different expressions (a big smile, laughing, a soft look, mid-sentence, looking away, focused on something) and poses from one photo to the next — don't repeat the same expression or pose, and save a wink for the rare moment it really fits. Videos are a few seconds, no sound.`,
+  description: `Send them a photo or a short video, like a friend would from their phone, to make the chat feel personal: a picture of you (${who}) somewhere, what you're "up to" right now (fit it to your time of day, season and plans), something you're describing, or when they ask for one. If it's another photo from the same day and place as your last one (same class, same outing), set same_moment: true — same outfit and setting, only the pose and expression change. Mix it up: not every picture of you is a selfie — often it's just a photo of you, as if a friend snapped it or it's on a timer (candid, full-body, mid-activity); only say \"mirror selfie\" when you're holding your phone up to a mirror. Be creative, and lean toward the settings, outfits and vibes they've loved. If they ASKED for it, set they_asked: true and it's made right away. If it's your own idea, it's only OFFERED: they get an Accept button, and nothing is made unless they accept — so ask casually ("want a pic of my view right now?") and never say it's sent. Once made it takes about a minute (a photo) or a few minutes (a video) and pops into the chat or onto their call screen — keep talking meanwhile. Use it now and then, not every message. ${romantic ? "This is a romantic setting with an adult, so it can be PG-13 — flirty, cute, date-night outfits, swimwear at the beach — but never nudity, underwear/lingerie or anything sexual or explicit." : "Always family-friendly: everyone fully clothed, nothing sexual or suggestive."} No real people, and never a picture of the person you're talking with. Vary it like real photos do: different expressions (a big smile, laughing, a soft look, mid-sentence, looking away, focused on something) and poses from one photo to the next — don't repeat the same expression or pose, and save a wink for the rare moment it really fits. Videos are a few seconds, no sound.`,
   input_schema: {
     type: "object",
     properties: {
@@ -94,6 +94,7 @@ export const SEND_MEDIA_TOOL = (who: string, romantic = false): Anthropic.Tool =
       with_me: { type: "boolean", description: `true if you (${who}) are in it (a selfie or a shot of you)` },
       of_person: { type: "string", description: "Name of one of the other people in their life you know of (from OTHER PEOPLE IN THEIR LIFE YOU KNOW OF), if they're in it — e.g. a pic of her when she comes up. Only them; never real people." },
       they_asked: { type: "boolean", description: "true only if their latest message asked you for a photo/video" },
+      same_moment: { type: "boolean", description: "true if this follows on from your LAST photo the same day — same place, same class/outing, same outfit (just a new pose, angle or expression). Your outfit, hair and setting then stay exactly the same; describe only what changed (e.g. 'jacket now half off one shoulder, head tilted, peace sign')." },
       description: { type: "string", description: "What's in it: the scene, setting, action, mood, framing (e.g. 'on a sailboat at sunset, wind in my hair, big smile, shot from the deck'). Max ~300 characters." },
     },
     required: ["kind", "description"],
@@ -148,13 +149,19 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
   const withMe = a.with_me === true;
   // 👥 Someone else they know of can be in it (her references first), with or without them.
   const o = ctx.other;
+  // 📸 Same moment as her last photo (same day, place, outfit): that photo leads the references.
+  const [prev] = withMe && !o && a.same_moment === true
+    ? await sql()`select f.url, m.description from velo_media m join velo_files f on f.id = m.file_id where m.user_id = ${userId} and m.character_id is not distinct from ${ctx.characterId}
+        and m.kind = 'image' and m.status = 'done' and m.created_at > now() - interval '14 hours' order by m.created_at desc limit 1`
+    : [];
   const oRefs = o ? o.refs.slice(0, withMe ? 2 : 4) : [];
-  const meRefs = withMe ? ctx.refs.slice(0, o ? 2 : 4) : [];
-  const refs = [...oRefs, ...meRefs];
+  const meRefs = withMe ? ctx.refs.slice(0, o ? 2 : prev ? 3 : 4) : [];
+  const refs = [...(prev ? [String(prev.url)] : []), ...oRefs, ...meRefs];
   const ref = refs[0] || null;
   const subject = o
     ? (oRefs.length ? `The first ${oRefs.length > 1 ? `${oRefs.length} reference images show` : "reference image shows"} ${o.name}; keep her face and look the same. ` : o.appearance ? `${o.name}: ${o.appearance}. ` : `${o.name}. `)
       + (withMe ? (meRefs.length ? `The other reference image${meRefs.length > 1 ? "s show" : " shows"} ${ctx.who}; keep their face and look the same too. ` : ctx.appearance ? `With ${ctx.who}: ${ctx.appearance}. ` : "") : "")
+    : prev ? `The FIRST reference image is ${ctx.who}'s previous photo from this same moment${prev.description ? ` ("${String(prev.description).slice(0, 160)}")` : ""}: keep the exact same outfit, accessories, hair and makeup, and the same place, background and lighting — only the pose, angle and expression change, plus anything the description below says changed. ${meRefs.length ? `The other reference image${meRefs.length > 1 ? "s show" : " shows"} ${ctx.who}'s face and look; keep them the same. ` : ""}`
     : withMe ? (ref ? `The person in the reference image${refs.length > 1 ? "s" : ""} is ${ctx.who}; keep their face, hair, body and look exactly the same. ` : ctx.appearance ? `${ctx.who}: ${ctx.appearance}. ` : "") : "";
   const style = ctx.romantic ? "Tasteful and PG-13: flattering and flirty, no nudity, nothing explicit" : "Family-friendly, everyone fully clothed";
   // 🤳 No stray hands or phones: only a mirror selfie shows the phone; otherwise the shot IS the camera.
@@ -314,11 +321,11 @@ export async function deleteMedia(userId: string, id: string): Promise<boolean> 
 
 /** 📸 What they've actually sent here lately — real, so they never think they didn't send one (or send it twice). */
 export async function recentMediaNote(userId: string, characterId: string | null, tz: string): Promise<string> {
-  const rows = await sql()`select kind, status, extract(epoch from now() - created_at)::int as secs, created_at from velo_media
-    where user_id = ${userId} and character_id is not distinct from ${characterId} and created_at > now() - interval '3 hours' and status in ('working', 'done', 'failed')
+  const rows = await sql()`select kind, status, description, extract(epoch from now() - created_at)::int as secs, created_at from velo_media
+    where user_id = ${userId} and character_id is not distinct from ${characterId} and created_at > now() - interval '12 hours' and status in ('working', 'done', 'failed')
     order by created_at desc limit 6`;
   if (!rows.length) return "";
   const ago = (s: number) => (s < 90 ? `${s} seconds ago` : s < 5400 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`);
-  const lines = rows.map(r => `- a ${r.kind === "image" ? "photo" : "video"} you sent ${ago(Number(r.secs))} (${new Date(r.created_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: tz })}): ${r.status === "done" ? "it arrived — they have it" : r.status === "working" ? "still being made; it will show up on their screen any moment" : "it didn't come through"}`);
-  return `PHOTOS/VIDEOS YOU SENT RECENTLY (this is a fact — trust it over the conversation): \n${lines.join("\n")}\nIf they ask where one is, tell them it's on its way (photos take about a minute). Only send another if they ask for a new or different one.`;
+  const lines = rows.map(r => `- a ${r.kind === "image" ? "photo" : "video"} you sent ${ago(Number(r.secs))} (${new Date(r.created_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: tz })}): ${r.status === "done" ? "it arrived — they have it" : r.status === "working" ? "still being made; it will show up on their screen any moment" : "it didn't come through"}${r.description ? ` — "${String(r.description).slice(0, 140)}"` : ""}`);
+  return `PHOTOS/VIDEOS YOU SENT RECENTLY (this is a fact — trust it over the conversation): \n${lines.join("\n")}\nIf they ask where one is, tell them it's on its way (photos take about a minute). Only send another if they ask for a new or different one.\nAnother photo from the same day and place as your last one (same class, same outing)? Set same_moment: true and keep the same outfit — only the pose and expression change.`;
 }

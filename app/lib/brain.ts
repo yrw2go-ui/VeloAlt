@@ -206,7 +206,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
           // Their own idea → only an offer (nothing is made until they accept). Asked for → made now.
           // They asked (in their last message, or "yes" to her offering one) → made now, no Accept step.
           // Only her own unprompted idea becomes an offer they accept or decline.
-          const asked = ASKED_FOR_MEDIA.test(String(lastSaid)) || (YES.test(String(lastSaid)) && MENTIONS_MEDIA.test(String(lastHers)));
+          const asked = (input as { they_asked?: unknown })?.they_asked === true || ASKED_FOR_MEDIA.test(String(lastSaid)) || (YES.test(String(lastSaid)) && MENTIONS_MEDIA.test(String(lastHers)));
           const who = (input as { of_person?: unknown })?.of_person;
           const other = typeof who === "string" && who.trim() ? await pictureOf(caller.userId, cid, who) : null;
           if (typeof other === "string") throw new MediaError(other);
