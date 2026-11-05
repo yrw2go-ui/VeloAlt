@@ -417,17 +417,29 @@ function SceneSheet({ who, plan, onClose, onStart }: { who: string; plan?: { tit
   const [details, setDetails] = useState(plan?.details || "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  // 🎙️ Say it instead of typing: a mic for each box (one listens at a time).
+  const titleMic = useDictation(t => setTitle(t.slice(0, 120)));
+  const detailsMic = useDictation(t => setDetails(t.slice(0, 1000)));
+  const stopMics = () => { if (titleMic.active()) titleMic.stop(); if (detailsMic.active()) detailsMic.stop(); };
+  const micBtn = ({ m, other, value, label, id }: { m: ReturnType<typeof useDictation>; other: ReturnType<typeof useDictation>; value: string; label: string; id: string }) => m.supported ? (
+    <button type="button" onClick={e => { e.preventDefault(); if (m.active()) m.stop(); else { if (other.active()) other.stop(); m.start(value); } }}
+      aria-label={m.listening ? "Stop listening" : label} aria-pressed={m.listening} data-testid={id}
+      style={{ flexShrink: 0, width: 44, height: 44, borderRadius: 12, border: `1px solid ${m.listening ? "var(--bad)" : "var(--border)"}`, background: m.listening ? "rgba(248,113,113,0.18)" : "var(--surface2)", color: "var(--text)", fontSize: 20, cursor: "pointer", alignSelf: "flex-start" }}>
+      {m.listening ? "⏹️" : "🎙️"}
+    </button>
+  ) : null;
   const go = async () => {
+    stopMics();
     setBusy(true); setErr("");
     try { await onStart(kind, title.trim(), details.trim()); } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't start it."); setBusy(false); }
   };
   const tab = (on: boolean) => ({ flex: 1, padding: "8px 10px", borderRadius: 999, fontWeight: 700, fontSize: 13, cursor: "pointer", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, background: on ? "rgba(124,140,255,0.15)" : "transparent", color: "var(--text)" } as const);
   return (
-    <div role="dialog" aria-modal="true" data-testid="scene-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }} onClick={onClose}>
+    <div role="dialog" aria-modal="true" data-testid="scene-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }} onClick={() => { stopMics(); onClose(); }}>
       <div className="card" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 12 }}>
         <div className="row" style={{ justifyContent: "space-between" }}>
           <div style={{ fontWeight: 800, fontSize: 17 }}>🎬 {plan ? `Your plans with ${who}` : `A scene with ${who}`}</div>
-          <button className="ghost" onClick={onClose} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
+          <button className="ghost" onClick={() => { stopMics(); onClose(); }} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
         </div>
         <div className="row" style={{ gap: 8 }}>
           <button type="button" style={tab(kind === "live")} onClick={() => setKind("live")} data-testid="scene-live">Play it out</button>
@@ -435,12 +447,20 @@ function SceneSheet({ who, plan, onClose, onStart }: { who: string; plan?: { tit
         </div>
         <div className="muted" style={{ fontSize: 12 }}>{kind === "live" ? `You two act it out here — ${who} sets the scene, you join in. *Actions in asterisks* show in italics. End it when you're done; it becomes a memory you both have.` : `Tell ${who} what you did together — she'll remember it as a real shared memory and talk about it.`}</div>
         <label style={{ fontSize: 13, fontWeight: 700 }}>{kind === "live" ? "What's the plan?" : "What did you do?"}
-          <input value={title} onChange={e => setTitle(e.target.value)} maxLength={120} aria-label="Scene" placeholder={kind === "live" ? "e.g. Dinner date at Luigi's" : "e.g. Went bowling downtown"} style={{ marginTop: 4 }} />
+          <span className="row" style={{ gap: 8, marginTop: 4, alignItems: "flex-start" }}>
+            <input value={title} onChange={e => setTitle(e.target.value)} maxLength={120} aria-label="Scene" placeholder={kind === "live" ? "e.g. Dinner date at Luigi's" : "e.g. Went bowling downtown"} style={{ flex: 1, minWidth: 0 }} />
+            {micBtn({ m: titleMic, other: detailsMic, value: title, label: "Say the plan", id: "scene-title-mic" })}
+          </span>
         </label>
         <label style={{ fontSize: 13, fontWeight: 700 }}>{plan ? "Describe the scene" : "Details"} <span className="muted" style={{ fontWeight: 500 }}>· {plan ? "the more you write, the better" : "optional"}</span>
-          <textarea value={details} onChange={e => setDetails(e.target.value)} maxLength={1000} rows={3} aria-label="Scene details" style={{ marginTop: 4, resize: "vertical" }}
-            placeholder={kind === "live" ? "Where, when, the vibe — e.g. Friday night, candlelit Italian place, she's wearing the red dress" : "What happened — e.g. you beat me twice, I threw a gutter ball, then we got ice cream"} />
+          <span className="row" style={{ gap: 8, marginTop: 4, alignItems: "flex-start" }}>
+            <textarea value={details} onChange={e => setDetails(e.target.value)} maxLength={1000} rows={3} aria-label="Scene details" style={{ flex: 1, minWidth: 0, resize: "vertical" }}
+              placeholder={kind === "live" ? "Where, when, the vibe — e.g. Friday night, candlelit Italian place, she's wearing the red dress" : "What happened — e.g. you beat me twice, I threw a gutter ball, then we got ice cream"} />
+            {micBtn({ m: detailsMic, other: titleMic, value: details, label: "Describe it out loud", id: "scene-details-mic" })}
+          </span>
         </label>
+        {(titleMic.listening || detailsMic.listening) && <div className="muted" style={{ fontSize: 12 }} data-testid="scene-listening">🎙️ Listening… tap ⏹️ when you&apos;re done.</div>}
+        {(titleMic.error || detailsMic.error) && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {titleMic.error || detailsMic.error}</div>}
         {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
         <button className="btn" disabled={busy || !title.trim()} onClick={go} data-testid="scene-go">{busy ? "…" : kind === "live" ? "Start the scene" : `Tell ${who}`}</button>
       </div>
