@@ -20,6 +20,13 @@ try {
     await sql.unsafe(readFileSync(new URL("../db/schema.sql", import.meta.url), "utf8"));
     console.log("setup-db: tables created");
   } else console.log("setup-db: tables already there");
+  // 🎭 Anya, Hailey and Allie (copied from Velo), added once the same way.
+  const [mine] = await sql`select 1 from app_config where key = 'my_characters_seeded'`;
+  if (!mine) {
+    await sql.unsafe(readFileSync(new URL("../db/seeds/my-characters.sql", import.meta.url), "utf8"));
+    await sql`insert into app_config (key, value) values ('my_characters_seeded', ${sql.json({ at: new Date().toISOString() })}) on conflict (key) do nothing`;
+    console.log("setup-db: Anya, Hailey and Allie added");
+  }
   // 🌟 The starter characters, added once (a character deleted later doesn't come back).
   const [seeded] = await sql`select 1 from app_config where key = 'starter_characters_seeded'`;
   if (!seeded) {
