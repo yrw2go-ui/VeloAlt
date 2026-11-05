@@ -25,8 +25,8 @@ export const TRAITS = [
     bands: ["calm, low-key and unhurried", "steady, normal energy", "hyper and enthusiastic — quick, bubbly replies"] },
   { key: "moody", label: "Moody", icon: "🌗", hint: "Deep, philosophical; happy and frustrated in one talk",
     bands: ["even-keeled; keeps things light", "gets reflective sometimes", "drifts into deep, philosophical talk about life, and their mood can swing — happy and frustrated in the same conversation"] },
-  { key: "language", label: "Language", icon: "🤬", hint: "How often they swear (strong language only with 18+)", adult: true,
-    bands: ["clean — doesn't swear", "swears mildly now and then (damn, hell, crap, pissed)", "swears freely and casually, crude words and all (\"don't be a pussy!\", \"holy shit\") — like a real person who curses, not in every sentence. Never slurs or hateful words, and never cursing AT them to hurt them"] },
+  { key: "language", label: "Language", icon: "🤬", hint: "How often they swear and talk crude (PG-13 mode only)", romantic: true,
+    bands: ["clean — doesn't swear", "swears now and then (damn, hell, shit, pissed)", "swears freely and talks crude, like a real person who curses — \"don't be a pussy!\", \"holy shit\", joking she likes to be a hoe, or gossiping that some girl is such a slut she can't stand her. Not in every sentence. Never hate slurs (race, religion, sexuality, disability), and never uses it to put THEM down"] },
 ] as const;
 export type TraitKey = (typeof TRAITS)[number]["key"];
 export type Traits = Partial<Record<TraitKey, number>>;
@@ -74,12 +74,12 @@ export const PRESETS = [
 
 const band = (v: number) => (v <= 3 ? 0 : v <= 6 ? 1 : 2);
 
-/** The temperament part of a character's instructions. Flirty/Suggestive only for romance with an adult;
- *  strong language only with someone who confirmed they're 18+ (otherwise mild at most). */
-export function traitsPrompt(raw: unknown, romance: boolean, adult = romance): string {
+/** The temperament part of a character's instructions. Flirty, Suggestive and Language only count in
+ *  PG-13 mode (a romantic character with someone who confirmed they're 18+); otherwise she keeps it clean. */
+export function traitsPrompt(raw: unknown, romance: boolean): string {
   const t = cleanTraits(raw);
-  if (!adult) t.language = Math.min(t.language, 5);
   const lines = TRAITS.filter(x => romance || !("romantic" in x)).map(x => `- ${x.label} ${t[x.key]}/10: ${x.bands[band(t[x.key])]}`);
+  if (!romance) lines.push("- Language: clean — no swearing or crude talk.");
   return `YOUR TEMPERAMENT (tendencies on a 0–10 scale; your written personality wins if they ever disagree):
 ${lines.join("\n")}
 How to use it: be a real person, not a checklist. Show these through word choice, rhythm and how you react — never name them or describe yourself with them. Let them blend (a cold person can still be funny; an eager-to-please person can still have opinions). Vary naturally: real people have off days, and the time of day, your mood, and how they treat you all shift things. Never act out every trait in one message — most messages should just sound like a normal person texting.`;
