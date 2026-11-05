@@ -49,7 +49,10 @@ export function localNow(rawTz: unknown) {
 }
 
 // "send me a pic", "can I see a selfie?", "show me a video of…", "got any photos?"
-const ASKED_FOR_MEDIA = /\b(send|show|share|snap|take|got|get|see|want|wanna|make)\b[\s\S]{0,40}\b(pics?|pictures?|photos?|selfies?|videos?|vids?|clips?|images?|snaps?)\b|\b(pics?|pictures?|photos?|selfies?|videos?|vids?)\b[\s\S]{0,30}\?/i;
+const ASKED_FOR_MEDIA = /\b(send|show|share|snap|take|got|get|see|want|wanna|make|need|post|drop)\b[\s\S]{0,40}\b(pics?|pictures?|photos?|selfies?|videos?|vids?|clips?|images?|snaps?|shots?)\b|\b(pics?|pictures?|photos?|selfies?|videos?|vids?)\b[\s\S]{0,30}\?|\b(let me|lemme|can i|could i|i wanna|i want to)\s+see\b|\bshow me\b|\bsend (me )?(one|another|it|that|more)\b|\b(another|one more)( one| pic| photo)?\s*(please|pls|plz)?\s*[!?.]*$|\bwhat (do|does) (you|your \w+) look like\b|\bwhat are you wearing\b/i;
+// "Yes please" to her own "want a pic?" counts as asking.
+const YES = /^\s*(yes|yeah|yep|yup|ya|sure|ok(ay)?|please|pls|plz|of course|absolutely|definitely|do it|go ahead|i'?d love (that|one|to)|send it|why not)\b/i;
+const MENTIONS_MEDIA = /\b(pics?|pictures?|photos?|selfies?|videos?|vids?|clips?|snaps?|show you|send you)\b/i;
 
 export interface AskResult { reply: string; changed: boolean; drafts: Draft[]; media: Media[]; saved?: boolean; react?: string }
 
@@ -93,6 +96,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   const about = errand ? "" : await aboutThem(caller.userId, today.date).catch(() => "");
   // 👥 Other characters they've mentioned here are noted, and what's known of them comes along.
   const lastSaid = [...opts.messages].reverse().find(m => m.role === "user")?.content || "";
+  const lastHers = (() => { const i = opts.messages.map(m => m.role).lastIndexOf("user"); return [...opts.messages.slice(0, Math.max(0, i))].reverse().find(m => m.role === "assistant")?.content || ""; })();
   if (mode === "chat" || mode === "talk") await noteMentions(caller.userId, cid, hideSecrets(String(lastSaid).slice(0, 2000)).text).catch(e => console.error("velo: mentions", e instanceof Error ? e.message : e));
   const known = errand ? "" : await acquaintancesNote(caller.userId, cid, !ch).catch(() => "");
   // 💡 What they like to see (reactions, declined offers).
@@ -200,7 +204,9 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
     try {
       const out = name === "send_media" && canSend ? await (async () => {
           // Their own idea → only an offer (nothing is made until they accept). Asked for → made now.
-          const asked = (input as { they_asked?: unknown })?.they_asked === true && ASKED_FOR_MEDIA.test(String(lastSaid));
+          // They asked (in their last message, or "yes" to her offering one) → made now, no Accept step.
+          // Only her own unprompted idea becomes an offer they accept or decline.
+          const asked = ASKED_FOR_MEDIA.test(String(lastSaid)) || (YES.test(String(lastSaid)) && MENTIONS_MEDIA.test(String(lastHers)));
           const who = (input as { of_person?: unknown })?.of_person;
           const other = typeof who === "string" && who.trim() ? await pictureOf(caller.userId, cid, who) : null;
           if (typeof other === "string") throw new MediaError(other);
