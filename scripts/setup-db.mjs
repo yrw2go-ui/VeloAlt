@@ -8,13 +8,29 @@ import postgres from "postgres";
 
 // Also finds prefixed names (e.g. STORAGE_POSTGRES_URL) that Vercel's storage links can add.
 const envAny = (...names) => { for (const n of names) if (process.env[n]) return process.env[n]; for (const n of names) { const k = Object.keys(process.env).find(k => k.endsWith(`_${n}`) && process.env[k]); if (k) return process.env[k]; } return ""; };
-const url = process.env.DATABASE_URL || envAny("POSTGRES_URL_NON_POOLING", "POSTGRES_URL");
-if (!url) { console.log("setup-db: no database URL, skipping"); process.exit(0); }
-if (/neon\.tech/i.test(url)) { console.log("setup-db: Neon database, skipping (migrations are applied by hand)"); process.exit(0); }
+// Candidates in order: the pooled address first — Supabase's direct "db.<ref>.supabase.co" address is
+// IPv6-only, which Vercel's build machines can't reach — then the others.
+const isDirect = url => { try { return /^db\.[a-z0-9]+\.supabase\.co$/i.test(new URL(url).hostname); } catch { return false; } };
+const allOf = name => Object.keys(process.env).filter(k => (k === name || k.endsWith(`_${name}`)) && process.env[k]).map(k => process.env[k]);
+const candidates = [...new Set([process.env.DATABASE_URL, ...allOf("POSTGRES_URL"), ...allOf("POSTGRES_PRISMA_URL"), ...allOf("POSTGRES_URL_NON_POOLING")].filter(Boolean))]
+  .sort((a, b) => Number(isDirect(a)) - Number(isDirect(b)));
+if (!candidates.length) { console.log("setup-db: no database URL, skipping"); process.exit(0); }
+if (/neon\.tech/i.test(candidates[0])) { console.log("setup-db: Neon database, skipping (migrations are applied by hand)"); process.exit(0); }
 
-const clean = (() => { try { const u = new URL(url); u.search = ""; return u.toString(); } catch { return url; } })();
-const local = /localhost|127\.0\.0\.1/.test(clean);
-const sql = postgres(clean, { ssl: local ? false : "require", prepare: false, max: 1, connect_timeout: 20, onnotice: () => {} });
+const clean = url => { try { const u = new URL(url); u.search = ""; return u.toString(); } catch { return url; } };
+let sql = null;
+for (const url of candidates) {
+  const c = clean(url);
+  const s = postgres(c, { ssl: /localhost|127\.0\.0\.1/.test(c) ? false : "require", prepare: false, max: 1, connect_timeout: 15, onnotice: () => {} });
+  try { await s`select 1`; sql = s; break; }
+  catch (e) {
+    const direct = isDirect(url);
+    console.warn(`setup-db: can't reach ${direct ? "Supabase's direct address (IPv6 only)" : "a database address"}: ${e?.code || e?.message || e}`);
+    await s.end({ timeout: 1 }).catch(() => {});
+  }
+}
+// Never block the deploy over this: the app still starts, and /api/health says what's wrong.
+if (!sql) { console.warn("setup-db: no reachable database — skipped. Use Supabase's Transaction pooler connection string (port 6543) as POSTGRES_URL."); process.exit(0); }
 try {
   const [{ ready }] = await sql`select to_regclass('public.users') is not null as ready`;
   if (!ready) {

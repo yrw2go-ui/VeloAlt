@@ -17,6 +17,7 @@ export async function GET() {
       if (r.tables) db.characters = (await sql()`select count(*)::int as n from chat_characters`)[0].n;
     } catch (e) {
       db.reachable = false;
+      try { if (/^db\.[a-z0-9]+\.supabase\.co$/i.test(new URL(url).hostname)) db.fix = "This is Supabase's direct address (IPv6 only). Use the Transaction pooler connection string (port 6543) instead."; } catch { /* not a URL */ }
       db.error = (e instanceof Error ? e.message : String(e)).replace(/postgres(ql)?:\/\/\S+/gi, "[database address]").slice(0, 200);
     }
   }
