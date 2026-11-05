@@ -25,7 +25,12 @@ export function sql(): Sql {
     max: 3,
     idle_timeout: 20,
     connect_timeout: 15,
-    types: { rawDates: { to: 1184, from: [1082, 1083, 1114, 1184, 1266], serialize: (x: unknown) => (x instanceof Date ? x.toISOString() : String(x)), parse: raw } },
+    types: {
+      rawDates: { to: 1184, from: [1082, 1083, 1114, 1184, 1266], serialize: (x: unknown) => (x instanceof Date ? x.toISOString() : String(x)), parse: raw },
+      // JSON text passed for a json/jsonb value (`${JSON.stringify(x)}::jsonb`) goes in as is, as with
+      // Neon — not encoded a second time into a JSON string.
+      json: { to: 3802, from: [114, 3802], serialize: (x: unknown) => (typeof x === "string" ? x : JSON.stringify(x)), parse: (x: string) => JSON.parse(x) },
+    },
   });
   return (client = ((strings: TemplateStringsArray, ...values: unknown[]) =>
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

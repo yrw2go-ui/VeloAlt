@@ -38,6 +38,11 @@ try {
     await sql.unsafe(readFileSync(new URL("../db/schema.sql", import.meta.url), "utf8"));
     console.log("setup-db: tables created");
   } else console.log("setup-db: tables already there");
+  // 🔧 Repair JSON that an earlier version saved as a quoted string instead of as data.
+  for (const [t, c] of [["app_config", "value"], ["chat_characters", "traits"], ["velo_actions", "transcript"]]) {
+    const r = await sql.unsafe(`update public.${t} set ${c} = (${c} #>> '{}')::jsonb where jsonb_typeof(${c}) = 'string' and left(${c} #>> '{}', 1) in ('{', '[')`);
+    if (r.count) console.log(`setup-db: repaired ${r.count} ${t} row(s)`);
+  }
   // 🎭 Anya, Hailey and Allie (copied from Velo), added once the same way.
   const [mine] = await sql`select 1 from app_config where key = 'my_characters_seeded'`;
   if (!mine) {

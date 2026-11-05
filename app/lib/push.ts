@@ -8,11 +8,12 @@ let cached: { publicKey: string; privateKey: string } | null = null;
 export async function vapid(): Promise<{ publicKey: string; privateKey: string }> {
   if (cached) return cached;
   const [row] = await sql()`select value from app_config where key = 'vapid'`;
-  if (row) return (cached = row.value as { publicKey: string; privateKey: string });
+  const keysOf = (v: unknown) => (typeof v === "string" ? JSON.parse(v) : v) as { publicKey: string; privateKey: string };
+  if (row) return (cached = keysOf(row.value));
   const keys = webpush.generateVAPIDKeys();
   await sql()`insert into app_config (key, value) values ('vapid', ${JSON.stringify(keys)}::jsonb) on conflict (key) do nothing`;
   const [again] = await sql()`select value from app_config where key = 'vapid'`;
-  return (cached = again.value as { publicKey: string; privateKey: string });
+  return (cached = keysOf(again.value));
 }
 
 export type PushPayload = { title: string; body: string; url: string; icon?: string; tag?: string };
