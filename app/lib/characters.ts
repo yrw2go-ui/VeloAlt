@@ -6,7 +6,7 @@
 // stay hidden. Each person's chats, calls and memories with a character are
 // theirs alone and never mix with Velo's or another character's.
 import Anthropic from "@anthropic-ai/sdk";
-import { del } from "@vercel/blob";
+import { del, storageReady } from "./storage";
 import { sql } from "./db";
 import { CHARACTER_VOICES, VOICE_ID, FISH_ID } from "./voices";
 import { PG13 } from "./persona";
@@ -136,7 +136,7 @@ Reply with ONLY a JSON object: {"ok": true} or {"ok": false, "reason": "one shor
 // ── Portraits (Atlas Cloud, Seedream v5.0 pro text-to-image) ──
 // Env: ATLASCLOUD_API_KEY, ATLASCLOUD_IMAGE_MODEL (the text-to-image model id).
 const ATLAS = () => process.env.ATLASCLOUD_API_URL || "https://api.atlascloud.ai";
-export const portraitsReady = () => !!(process.env.ATLASCLOUD_API_KEY && process.env.ATLASCLOUD_IMAGE_MODEL && process.env.BLOB_READ_WRITE_TOKEN);
+export const portraitsReady = () => !!(process.env.ATLASCLOUD_API_KEY && process.env.ATLASCLOUD_IMAGE_MODEL && storageReady());
 
 /** Starts a portrait from the written appearance. Returns Atlas Cloud's job id. */
 export async function startPortrait(name: string, appearance: string): Promise<string> {
