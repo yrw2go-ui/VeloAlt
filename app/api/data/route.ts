@@ -15,7 +15,7 @@ import { acceptMedia, declineMedia, mediaNote, checkMedia, sweepMedia, getMedia,
 
 // 📦 Everything the app reads and changes, for the signed-in person only.
 // POST { action, ...args } → { ... }. Every query is scoped to their user_id.
-const REACTIONS = ["❤️", "🔥", "🙌", "😍", "👍"];
+const REACTIONS = ["❤️", "🔥", "🙌", "😍", "👍", "😮"];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const clean = (v: unknown, n: number) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, n);
 const bad = (error: string) => NextResponse.json({ error }, { status: 400 });
@@ -80,14 +80,14 @@ export async function POST(req: NextRequest) {
         // Velo's chat (no characterId) or one character's chat.
         const ch = b.characterId ? await getCharacter(String(b.characterId)) : null;
         if (b.characterId && !ch) return bad("That character wasn't found.");
-        const rows = await db`select m.role, m.content, f.id as file_id, f.url as file_url, f.thumb_url as file_thumb, f.name as file_name, f.content_type as file_type,
+        const rows = await db`select m.id, m.role, m.content, m.reaction, m.their_reaction, f.id as file_id, f.url as file_url, f.thumb_url as file_thumb, f.name as file_name, f.content_type as file_type,
             md.id as media_id, md.kind as media_kind, md.status as media_status, md.reaction as media_reaction, md.description as media_description, md.kept as media_kept, mf.url as media_url, coalesce(mt.url, md.poster_url) as media_thumb
           from velo_messages m left join velo_files f on f.id = m.file_id and f.user_id = m.user_id
           left join velo_media md on md.id = m.media_id and md.user_id = m.user_id
           left join velo_files mf on mf.id = md.file_id
           left join velo_files mt on mt.id = md.thumb_file_id
           where m.user_id = ${me} and m.character_id is not distinct from ${ch?.id || null} order by m.created_at desc, m.id desc limit 60`;
-        return NextResponse.json({ messages: rows.reverse().map(r => ({ role: r.role, content: r.content,
+        return NextResponse.json({ messages: rows.reverse().map(r => ({ id: r.id, role: r.role, content: r.content, reaction: r.reaction || null, theirReaction: r.their_reaction || null,
           ...(r.file_id ? { file: { id: r.file_id, url: r.file_url, thumb: r.file_thumb || null, name: r.file_name, type: r.file_type } } : {}),
           ...(r.media_id ? { media: { id: r.media_id, kind: r.media_kind, status: r.media_status, url: r.media_status === "done" ? r.media_url : null, thumb: r.media_thumb || null, reaction: r.media_reaction || null, description: r.media_description || null, kept: !!r.media_kept } } : {}) })) });
       }
@@ -99,15 +99,24 @@ export async function POST(req: NextRequest) {
           .filter((m: { content: string; fileId: string; mediaId: string }) => m.content || m.fileId || m.mediaId);
         // A millisecond apart so they always sort in the order sent.
         const at = Date.now() - list.length;
+        const ids: string[] = [];
         for (const [i, m] of list.entries()) {
           // Only their own file can be attached.
           const f = m.fileId && m.role === "user" ? await ownFile(me, m.fileId) : null;
           // A photo/video sent in this same chat (theirs, and from this Velo/character).
           const md = m.mediaId && m.role === "assistant" ? await getMedia(me, m.mediaId) : null;
           const mediaId = md && md.character_id === (ch?.id || null) ? md.id : null;
-          await db`insert into velo_messages (user_id, role, content, file_id, media_id, character_id, created_at) values (${me}, ${m.role}, ${m.content || (mediaId ? "(sent a photo)" : "📎")}, ${f?.id || null}, ${mediaId}, ${ch?.id || null}, ${new Date(at + i).toISOString()})`;
+          const [row] = await db`insert into velo_messages (user_id, role, content, file_id, media_id, character_id, created_at) values (${me}, ${m.role}, ${m.content || (mediaId ? "(sent a photo)" : "📎")}, ${f?.id || null}, ${mediaId}, ${ch?.id || null}, ${new Date(at + i).toISOString()}) returning id`;
+          ids.push(String(row.id));
         }
-        return NextResponse.json({ ok: true });
+        return NextResponse.json({ ok: true, ids });
+      }
+      // 😮 React to one of Velo's / a character's messages (null takes it back). They see it from then on.
+      case "messages.react": {
+        const reaction = REACTIONS.includes(b.reaction) ? String(b.reaction) : null;
+        if (!needId()) return bad("Unknown message.");
+        const [m] = await db`update velo_messages set reaction = ${reaction} where id = ${id} and user_id = ${me} and role = 'assistant' returning id`;
+        return m ? NextResponse.json({ ok: true }) : bad("Unknown message.");
       }
       case "messages.clear":
         // Velo's chat only; each character's chat goes when the character is deleted.

@@ -290,3 +290,9 @@ create table if not exists chat_acquaintances (
   last_at timestamptz not null default now()
 );
 create unique index if not exists chat_acquaintances_pair on chat_acquaintances (user_id, coalesce(knower_id, '00000000-0000-0000-0000-000000000000'::uuid), known_id);
+-- 😮 Reactions on any chat message: theirs on Velo's/a character's messages (reaction), and
+-- Velo's/the character's on theirs (their_reaction). Shocked joins the set (photos/videos too).
+alter table velo_messages add column if not exists reaction text check (reaction is null or reaction in ('❤️', '🔥', '🙌', '😍', '👍', '😮'));
+alter table velo_messages add column if not exists their_reaction text check (their_reaction is null or their_reaction in ('❤️', '🔥', '🙌', '😍', '👍', '😮'));
+alter table velo_media drop constraint if exists velo_media_reaction_check;
+alter table velo_media add constraint velo_media_reaction_check check (reaction is null or reaction in ('❤️', '🔥', '🙌', '😍', '👍', '😮'));

@@ -27,12 +27,16 @@ export async function POST(req: NextRequest) {
     if (body.characterId && !character) throw new CharacterGone();
     const r = await askVelo(caller, { mode, messages, timeZone: body.timeZone, name: body.name, character, origin: req.nextUrl.origin });
     if (mode === "remember" || mode === "memo") return NextResponse.json({ ok: !!r.saved, reply: "" });
+    // 😮 Their reaction to the person's latest message, saved as a badge on it.
+    if (r.react && typeof body.replyTo === "string" && /^[0-9a-f-]{36}$/i.test(body.replyTo)) {
+      await sql()`update velo_messages set their_reaction = ${r.react} where id = ${body.replyTo} and user_id = ${caller.userId} and role = 'user' and character_id is not distinct from ${character?.id || null}`;
+    }
     // 🎨 Photos/videos on their way are saved into this chat here (so they're never lost), just after the reply.
     for (const [i, m] of r.media.filter(x => x.status !== "failed").entries()) {
       await sql()`insert into velo_messages (user_id, role, content, media_id, character_id, created_at)
         values (${caller.userId}, 'assistant', ${mediaNote(m.kind, m.status, m.description)}, ${m.id}, ${character?.id || null}, now() + ${`${2000 + i} milliseconds`}::interval)`;
     }
-    return NextResponse.json({ reply: r.reply, ...(r.changed ? { changed: true } : {}), ...(r.drafts.length ? { drafts: r.drafts } : {}), ...(r.media.length ? { media: r.media } : {}) });
+    return NextResponse.json({ reply: r.reply, ...(r.changed ? { changed: true } : {}), ...(r.drafts.length ? { drafts: r.drafts } : {}), ...(r.media.length ? { media: r.media } : {}), ...(r.react ? { react: r.react } : {}) });
   } catch (e) {
     if (e instanceof CharacterGone) return NextResponse.json({ error: "That character was deleted." }, { status: 404 });
     const { error, status } = aiError(e);

@@ -17,7 +17,7 @@ import { MediaView, ReactionBar, type Media } from "./media";
 export type ChatWith = { id: string; name: string; portrait_url: string | null; romantic?: boolean };
 
 export type ChatFile = { id: string; url: string; thumb?: string | null; name: string; type: string };
-export type ChatMsg = { role: "user" | "assistant"; content: string; draft?: Draft; file?: ChatFile; media?: Media };
+export type ChatMsg = { id?: string; role: "user" | "assistant"; content: string; draft?: Draft; file?: ChatFile; media?: Media; reaction?: string | null; theirReaction?: string | null };
 /** How a sent photo/video reads in the history the AI sees. */
 export const mediaNote = (m: Media) => {
   const what = m.kind === "image" ? "photo" : "video", d = m.description ? `"${m.description}"` : "";
@@ -28,7 +28,9 @@ const ACCEPT = "image/jpeg,image/png,image/webp,image/gif,application/pdf,text/p
 // Their messages since the last memo. Kept outside the component so switching tabs doesn't reset it.
 // One count per chat (Velo's and each character's), since each keeps its own memory.
 const unsavedBy = new Map<string, number>();
-const realMsgs = (m: ChatMsg[]) => m.filter(x => !x.draft).map(({ role, content, file }) => ({ role, content, ...(file ? { fileId: file.id } : {}) }));
+// Reactions travel with the history, so she knows what they reacted to (and what she did).
+const withReactions = (x: ChatMsg) => x.role === "assistant" && x.reaction ? `${x.content}\n(they reacted ${x.reaction} to this)` : x.role === "user" && x.theirReaction ? `${x.content}\n(you reacted ${x.theirReaction})` : x.content;
+const realMsgs = (m: ChatMsg[]) => m.filter(x => !x.draft).map(x => ({ role: x.role, content: withReactions(x), ...(x.file ? { fileId: x.file.id } : {}) }));
 const INTRO = "Hi, I'm Velo! 👋 I'm here for whatever you need — planning your day, reminders, to-dos, talking things through, or just keeping you company. What should I call you?";
 const HELLO = (n: string) => [`Hey${n ? ` ${n}` : ""}! What's on your mind?`, `Hi${n ? ` ${n}` : ""} — how's your day going?`, `Hey${n ? ` ${n}` : ""}, good to see you. What can I do for you?`];
 const SUGGESTIONS = ["Plan my day", "Remind me to call Mom tomorrow at 6pm", "I need to vent", "Help me set a goal"];
@@ -124,19 +126,36 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     const next = [...msgs, ...opener, mine];
     setMsgs(next); setText(""); setAttach(null); setBusy(true); setErr("");
     unsaved.current++;
-    await data("messages.add", { ...thread, messages: [...opener, { role: "user", content: mine.content, ...(file ? { fileId: file.id } : {}) }] }).catch(() => {});
+    const saved = await data<{ ids?: string[] }>("messages.add", { ...thread, messages: [...opener, { role: "user", content: mine.content, ...(file ? { fileId: file.id } : {}) }] }).catch(() => ({ ids: [] as string[] }));
+    // Their message gets its id (for reactions), so a reaction from her can land on it.
+    const myId = saved.ids?.at(-1);
+    if (myId) { mine.id = myId; setMsgs(list => (list || []).map(x => (x === mine ? { ...x, id: myId } : x))); }
     try {
-      const r = await api<{ reply: string; changed?: boolean; drafts?: Draft[]; media?: Media[] }>("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name, ...thread });
+      const r = await api<{ reply: string; changed?: boolean; drafts?: Draft[]; media?: Media[]; react?: string }>("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name, ...thread, ...(myId ? { replyTo: myId } : {}) });
+      if (r.react) setMsgs(list => (list || []).map(x => (x.id && x.id === myId ? { ...x, theirReaction: r.react } : x)));
       // 🎨 Photos/videos being made show up right under the reply and fill in when ready.
       const sent: ChatMsg[] = (r.media || []).filter(x => x.status !== "failed").map(media => ({ role: "assistant", content: mediaNote(media), media }));
-      setMsgs(m => [...(m || []), { role: "assistant", content: r.reply }, ...sent, ...(r.drafts || []).map(draft => ({ role: "assistant" as const, content: "", draft }))]);
+      const replyMsg: ChatMsg = { role: "assistant", content: r.reply };
+      setMsgs(m => [...(m || []), replyMsg, ...sent, ...(r.drafts || []).map(draft => ({ role: "assistant" as const, content: "", draft }))]);
       // Free the box as soon as her reply shows; saving it can finish in the background.
       setBusy(false);
-      await data("messages.add", { ...thread, messages: [{ role: "assistant", content: r.reply }] }).catch(() => {});
+      const s2 = await data<{ ids?: string[] }>("messages.add", { ...thread, messages: [{ role: "assistant", content: r.reply }] }).catch(() => ({ ids: [] as string[] }));
+      const replyId = s2.ids?.[0];
+      if (replyId) setMsgs(list => (list || []).map(x => (x === replyMsg ? { ...x, id: replyId } : x)));
       if (r.changed) onChanged();
     } catch (e) {
       setErr(e instanceof Error ? e.message : `${who} didn't answer.`);
     } finally { setBusy(false); }
+  };
+
+  // 😮 React to one of her messages (tap it). Tap the same one again to take it back.
+  const reactMsg = async (id: string, emoji: string) => {
+    const cur = msgsRef.current.find(x => x.id === id);
+    if (!cur) return;
+    const next = cur.reaction === emoji ? null : emoji;
+    const set = (r: string | null) => setMsgs(list => (list || []).map(x => (x.id === id ? { ...x, reaction: r } : x)));
+    set(next);
+    try { await data("messages.react", { id, reaction: next }); } catch { set(cur.reaction || null); }
   };
 
   // 💬 A photo/video arrived: they say something about it ("What do you think?"), right under it.
@@ -192,7 +211,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
         </div>
       )}
       <div data-testid="chat-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-        {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={m.media?.id || i} m={m} face={face(28)} onMedia={mediaArrived} onReact={react} who={who} onAnswer={x => setMsgs(list => (list || []).map(y => (y.media?.id === x.id ? { ...y, content: mediaNote({ ...y.media!, ...x }), media: { ...y.media!, ...x } } : y)))} />)}
+        {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={m.media?.id || m.id || i} m={m} onReactMsg={reactMsg} face={face(28)} onMedia={mediaArrived} onReact={react} who={who} onAnswer={x => setMsgs(list => (list || []).map(y => (y.media?.id === x.id ? { ...y, content: mediaNote({ ...y.media!, ...x }), media: { ...y.media!, ...x } } : y)))} />)}
         {character && msgs && !msgs.length && (
           <div className="muted" style={{ textAlign: "center", fontSize: 14, marginTop: 24, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
             {face(72)}<div>Say hi to {character.name} 👋</div>
@@ -244,8 +263,14 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   );
 }
 
-function Bubble({ m, face, who, onMedia, onReact, onAnswer }: { m: ChatMsg; face: React.ReactNode; who: string; onMedia: (x: Media) => void; onReact: (id: string, r: string) => void; onAnswer: (x: Media) => void }) {
+function Bubble({ m, face, who, onMedia, onReact, onAnswer, onReactMsg }: { m: ChatMsg; face: React.ReactNode; who: string; onMedia: (x: Media) => void; onReact: (id: string, r: string) => void; onAnswer: (x: Media) => void; onReactMsg: (id: string, r: string) => void }) {
   const mine = m.role === "user";
+  const [picking, setPicking] = useState(false);
+  // A small badge on the bubble's corner, like a text-message reaction.
+  const badge = (r: string, who: string) => (
+    <span data-testid={mine ? "their-reaction" : "my-reaction"} aria-label={`${who} reacted ${r}`}
+      style={{ position: "absolute", bottom: -12, [mine ? "left" : "right"]: -6, fontSize: 15, lineHeight: 1, padding: "3px 5px", borderRadius: 999, background: "var(--surface)", border: "1px solid var(--border)", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }}>{r}</span>
+  );
   if (m.media) return (
     <div data-testid="chat-media" style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
       {face}
@@ -256,12 +281,18 @@ function Bubble({ m, face, who, onMedia, onReact, onAnswer }: { m: ChatMsg; face
     </div>
   );
   return (
-    <div style={{ display: "flex", gap: 8, alignItems: "flex-end", justifyContent: mine ? "flex-end" : "flex-start" }}>
+    <div style={{ display: "flex", gap: 8, alignItems: "flex-end", justifyContent: mine ? "flex-end" : "flex-start", marginBottom: (mine ? m.theirReaction : m.reaction) ? 10 : 0 }}>
       {!mine && face}
-      <div style={{ maxWidth: "80%", padding: "10px 14px", borderRadius: 18, borderBottomLeftRadius: mine ? 18 : 4, borderBottomRightRadius: mine ? 4 : 18,
+      <div style={{ maxWidth: "80%", display: "flex", flexDirection: "column", alignItems: mine ? "flex-end" : "flex-start" }}>
+      <div onClick={() => { if (!mine && m.id) setPicking(p => !p); }} data-testid={mine ? "my-bubble" : "her-bubble"}
+        style={{ position: "relative", cursor: !mine && m.id ? "pointer" : undefined, padding: "10px 14px", borderRadius: 18, borderBottomLeftRadius: mine ? 18 : 4, borderBottomRightRadius: mine ? 4 : 18,
         background: mine ? "linear-gradient(135deg, var(--accent), var(--accent2))" : "var(--surface2)", color: "var(--text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", lineHeight: 1.45, fontSize: 15 }}>
         {m.file && <div style={{ marginBottom: m.content && m.content !== "📎" ? 8 : 0 }}><FileThumb f={m.file} size={180} /></div>}
         {m.content !== "📎" && linkify(m.content.replace(/\*\*(.+?)\*\*/g, "$1"))}
+        {mine && m.theirReaction && badge(m.theirReaction, who)}
+        {!mine && m.reaction && badge(m.reaction, "You")}
+      </div>
+      {picking && m.id && <ReactionBar value={m.reaction} onPick={r => { onReactMsg(m.id!, r); setPicking(false); }} />}
       </div>
     </div>
   );

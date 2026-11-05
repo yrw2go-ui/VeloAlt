@@ -46,7 +46,12 @@ export function localNow(rawTz: unknown) {
 // "send me a pic", "can I see a selfie?", "show me a video of…", "got any photos?"
 const ASKED_FOR_MEDIA = /\b(send|show|share|snap|take|got|get|see|want|wanna|make)\b[\s\S]{0,40}\b(pics?|pictures?|photos?|selfies?|videos?|vids?|clips?|images?|snaps?)\b|\b(pics?|pictures?|photos?|selfies?|videos?|vids?)\b[\s\S]{0,30}\?/i;
 
-export interface AskResult { reply: string; changed: boolean; drafts: Draft[]; media: Media[]; saved?: boolean }
+export interface AskResult { reply: string; changed: boolean; drafts: Draft[]; media: Media[]; saved?: boolean; react?: string }
+
+// 😮 Reactions (shown as a little badge on their message, like a text-message tapback).
+export const REACTIONS = ["❤️", "🔥", "🙌", "😍", "👍", "😮"];
+const REACT_HINT = `REACTIONS: they can react to your messages with ❤️ 🔥 🙌 😍 👍 😮 — notes like "(they reacted 🔥 to this)" tell you when they did. You can react to THEIR latest message (or the photo they sent) too, but only now and then — mostly when you really like or love it, or it surprises you: start your reply with [react:❤️] (one of ❤️ 🔥 🙌 😍 👍 😮). It shows as a badge on their message; don't mention it. Most replies have no reaction.`;
+const REACT_TAG = /\[react:\s*([^\]\s]+)\s*\]\s*/gu;
 
 /** Velo, or (with `character`) one of the characters: same chats, calls and memory flow, but in the
  *  character's own voice, with only their own memory of this person and no Velo tools. */
@@ -114,6 +119,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         memory ? `${memory}\n\nYou two have talked before — never introduce yourself; talk like someone who knows them.` : "",
         !ch && (mode === "chat" || mode === "sms" || mode === "talk" || mode === "recap") ? PERSONALITY_PROMPT[personality] : "",
         modeText,
+        mode === "chat" ? REACT_HINT : "",
         arc && (mode === "remember" || mode === "memo") ? FEELINGS_REMEMBER : "",
       ].filter(Boolean).join("\n\n"),
     },
@@ -270,7 +276,10 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
     } catch (e) { console.error("velo: memory", e); }
     return { reply: "", changed: false, drafts, media, saved };
   }
-  return { reply: reply || (errand ? "Sorry, could you say that again?" : "Sorry, I lost my train of thought — could you say that again?"), changed, drafts, media };
+  // Their reaction tag (chat only) becomes a badge on the person's message; it's never shown or spoken.
+  let react: string | undefined;
+  reply = reply.replace(REACT_TAG, (_, e: string) => { if (!react && REACTIONS.includes(e)) react = e; return ""; }).trim();
+  return { reply: reply || (errand ? "Sorry, could you say that again?" : "Sorry, I lost my train of thought — could you say that again?"), changed, drafts, media, ...(mode === "chat" && react ? { react } : {}) };
 }
 
 // 🔎 For Qwen / DeepSeek: web search is a tool they call, answered by Claude with
