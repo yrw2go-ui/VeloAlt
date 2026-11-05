@@ -100,6 +100,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   const [withId, setWithId] = useState<string | null>(null);
   const [editing, setEditing] = useState<Character | "new" | null>(null);
   const [gallery, setGallery] = useState(false);
+  const [chatTick, setChatTick] = useState(0);
   useEffect(() => {
     api<{ characters: Character[]; portraits: boolean; admin: boolean }>("/api/characters", { action: "list" })
       .then(r => { setChars(r.characters); setPortraits(r.portraits); setAdmin(r.admin); }).catch(() => {});
@@ -196,7 +197,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
 
       <main style={{ flex: 1, minHeight: 0, overflowY: tab === "chat" ? "hidden" : "auto", display: "flex", flexDirection: "column" }}>
         {tab === "chat" && <CharacterStrip characters={chars} active={withChar?.id || null} admin={admin} onPick={setWithId} onNew={() => setEditing("new")} onEdit={setEditing} onGallery={() => setGallery(true)} />}
-        {tab === "chat" && <Chat key={withChar?.id || "velo"} userId={userId} name={name} onChanged={bump} added={chatAdd} onAdded={() => setChatAdd(null)} character={withChar} adult={!!profile?.adultConfirmed} onAdult={() => setProfileTick(t => t + 1)} />}
+        {tab === "chat" && <Chat key={`${withChar?.id || "velo"}-${chatTick}`} userId={userId} name={name} onChanged={bump} added={chatAdd} onAdded={() => setChatAdd(null)} character={withChar} adult={!!profile?.adultConfirmed} onAdult={() => setProfileTick(t => t + 1)} />}
         {tab === "today" && <Today refresh={refresh} />}
         {tab === "memory" && <Memory refresh={refresh} />}
         {tab === "settings" && <Settings name={name} setName={setName} onOut={onOut} profile={profile} onProfile={() => setProfileTick(t => t + 1)} />}
@@ -218,6 +219,8 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
           who={callWith ? { name: callWith.name, face: (size: number) => <CharacterFace c={callWith} size={size} /> } : undefined}
           onEnd={(recap) => {
             setCalling(false); if (!callWith) setFirstCall(false);
+            // Photos/videos from the call are in the chat: show them right away.
+            if (!recap) setChatTick(t => t + 1);
             if (recap) { setChatAdd({ msg: { role: "assistant", content: recap }, cid: callWith?.id || null }); setWithId(callWith?.id || null); setTab("chat"); }
           }} />
       )}

@@ -45,6 +45,7 @@ export async function POST(req: NextRequest) {
         const arc = romantic ? clean(b.romanceArc, 1500) : "";
         const traits = cleanTraits(b.traits);
         const presetId = PRESETS.some(p => p.id === b.preset) ? String(b.preset) : "";
+        const bday = typeof b.birthday === "string" && /^(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/.test(b.birthday) ? b.birthday : "";
         const zone = typeof b.timeZone === "string" && b.timeZone && isValidTimeZone(b.timeZone) ? b.timeZone : "";
         // Up to 4 reference pictures: finished photos of this character from the admin's gallery.
         const want = (Array.isArray(b.referenceIds) ? b.referenceIds : []).map(String).filter((x: string) => /^[0-9a-f-]{36}$/i.test(x)).slice(0, 4);
@@ -57,8 +58,8 @@ export async function POST(req: NextRequest) {
         // Same voice as before: keep it (no trip to ElevenLabs).
         const v = prev && (b.voice?.id ?? b.voice) === prev.voice ? { id: prev.voice, name: prev.voice_name, kind: prev.voice_kind } : await chooseVoice(b.voice);
         const [row] = action === "create"
-          ? await sql()`insert into chat_characters (created_by, name, personality, backstory, relation, appearance, voice, voice_name, voice_kind, romantic, romance_arc, traits, preset, time_zone) values (${me}, ${f.name}, ${f.personality}, ${f.backstory}, ${f.relation}, ${f.appearance}, ${v.id}, ${v.name}, ${v.kind}, ${romantic}, ${arc}, ${JSON.stringify(traits)}::jsonb, ${presetId}, ${zone}) returning id`
-          : await sql()`update chat_characters set name = ${f.name}, personality = ${f.personality}, backstory = ${f.backstory}, relation = ${f.relation}, appearance = ${f.appearance}, voice = ${v.id}, voice_name = ${v.name}, voice_kind = ${v.kind}, romantic = ${romantic}, romance_arc = ${arc}, traits = ${JSON.stringify(traits)}::jsonb, preset = ${presetId}, time_zone = ${zone}, reference_ids = ${want.filter((x: string) => refs.includes(x))}::uuid[], updated_at = now() where id = ${id} returning id`;
+          ? await sql()`insert into chat_characters (created_by, name, personality, backstory, relation, appearance, voice, voice_name, voice_kind, romantic, romance_arc, traits, preset, time_zone, birthday) values (${me}, ${f.name}, ${f.personality}, ${f.backstory}, ${f.relation}, ${f.appearance}, ${v.id}, ${v.name}, ${v.kind}, ${romantic}, ${arc}, ${JSON.stringify(traits)}::jsonb, ${presetId}, ${zone}, ${bday}) returning id`
+          : await sql()`update chat_characters set name = ${f.name}, personality = ${f.personality}, backstory = ${f.backstory}, relation = ${f.relation}, appearance = ${f.appearance}, voice = ${v.id}, voice_name = ${v.name}, voice_kind = ${v.kind}, romantic = ${romantic}, romance_arc = ${arc}, traits = ${JSON.stringify(traits)}::jsonb, preset = ${presetId}, time_zone = ${zone}, birthday = ${bday}, reference_ids = ${want.filter((x: string) => refs.includes(x))}::uuid[], updated_at = now() where id = ${id} returning id`;
         return NextResponse.json({ character: await getCharacter(String(row.id)) });
       }
 

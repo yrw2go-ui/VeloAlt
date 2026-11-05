@@ -4,6 +4,7 @@ import { allow } from "../../lib/rateLimit";
 import { askVelo, CharacterGone, aiReady, aiError, type Mode, type Turn } from "../../lib/brain";
 import { getCharacter } from "../../lib/characters";
 import { sql } from "../../lib/db";
+import { mediaNote } from "../../lib/media";
 
 // 💬 Velo in the app: chat, in-app calls, recaps and memory (see lib/brain.ts).
 // POST { mode, messages: [{role, content}], timeZone, name } → { reply, changed?, drafts? }
@@ -29,7 +30,7 @@ export async function POST(req: NextRequest) {
     // 🎨 Photos/videos on their way are saved into this chat here (so they're never lost), just after the reply.
     for (const [i, m] of r.media.filter(x => x.status !== "failed").entries()) {
       await sql()`insert into velo_messages (user_id, role, content, media_id, character_id, created_at)
-        values (${caller.userId}, 'assistant', ${`(sent a ${m.kind === "image" ? "photo" : "video"})`}, ${m.id}, ${character?.id || null}, now() + ${`${2000 + i} milliseconds`}::interval)`;
+        values (${caller.userId}, 'assistant', ${mediaNote(m.kind, m.status, m.description)}, ${m.id}, ${character?.id || null}, now() + ${`${2000 + i} milliseconds`}::interval)`;
     }
     return NextResponse.json({ reply: r.reply, ...(r.changed ? { changed: true } : {}), ...(r.drafts.length ? { drafts: r.drafts } : {}), ...(r.media.length ? { media: r.media } : {}) });
   } catch (e) {

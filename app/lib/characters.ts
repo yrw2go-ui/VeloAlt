@@ -17,7 +17,7 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, authToken:
 export const MAX_CHARACTERS = 50;
 export const DAILY_PORTRAITS = 30;
 
-export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; portrait_url: string | null; portrait_job: string | null };
+export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; portrait_url: string | null; portrait_job: string | null };
 
 export async function isAdmin(userId: string): Promise<boolean> {
   const [u] = await sql()`select is_admin from users where id = ${userId}`;
@@ -26,13 +26,13 @@ export async function isAdmin(userId: string): Promise<boolean> {
 
 export async function getCharacter(id: string): Promise<Character | null> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
-  const [c] = await sql()`select c.id, c.name, c.personality, c.backstory, c.relation, c.appearance, c.voice, c.voice_name, c.voice_kind, c.romantic, c.romance_arc, c.reference_ids, c.time_zone, c.traits, c.preset, c.portrait_job, f.url as portrait_url
+  const [c] = await sql()`select c.id, c.name, c.personality, c.backstory, c.relation, c.appearance, c.voice, c.voice_name, c.voice_kind, c.romantic, c.romance_arc, c.reference_ids, c.time_zone, c.traits, c.preset, c.birthday, c.portrait_job, f.url as portrait_url
     from chat_characters c left join velo_files f on f.id = c.portrait_file_id where c.id = ${id}`;
   return (c as Character) || null;
 }
 
 export async function listCharacters(): Promise<Character[]> {
-  return (await sql()`select c.id, c.name, c.personality, c.backstory, c.relation, c.appearance, c.voice, c.voice_name, c.voice_kind, c.romantic, c.romance_arc, c.reference_ids, c.time_zone, c.traits, c.preset, c.portrait_job, f.url as portrait_url
+  return (await sql()`select c.id, c.name, c.personality, c.backstory, c.relation, c.appearance, c.voice, c.voice_name, c.voice_kind, c.romantic, c.romance_arc, c.reference_ids, c.time_zone, c.traits, c.preset, c.birthday, c.portrait_job, f.url as portrait_url
     from chat_characters c left join velo_files f on f.id = c.portrait_file_id order by c.created_at`) as Character[];
 }
 
@@ -168,4 +168,67 @@ export async function deleteCharacter(id: string): Promise<boolean> {
     if (f) { try { await del(String(f.url)); } catch { /* already gone */ } }
   }
   return true;
+}
+
+// 👥 Characters hearing about each other. When they mention character B while talking to A (or to
+// Velo), A starts to know of B — a little at first, more with each later mention and as time passes,
+// as if A heard about B around or ran into her. Only B's character sheet is shared; never anything
+// they said to B, and never B's memories.
+const firstSentence = (s: string, n = 160) => (s.split(/(?<=[.!?])\s/)[0] || "").slice(0, n);
+
+/** Notes which other characters they mention in a message (case-insensitive, whole name). */
+export async function noteMentions(userId: string, knowerId: string | null, text: string): Promise<void> {
+  if (!text || text.length < 3) return;
+  const others = (await sql()`select id, name from chat_characters where ${knowerId}::uuid is null or id <> ${knowerId}`) as { id: string; name: string }[];
+  for (const o of others) {
+    const name = String(o.name).trim();
+    if (name.length < 3) continue;
+    const re = new RegExp(`(^|[^\\p{L}])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=$|[^\\p{L}])`, "iu");
+    if (!re.test(text)) continue;
+    // A new mention counts once per half hour (talking about her a lot in one sitting is one occasion).
+    await sql()`insert into chat_acquaintances (user_id, knower_id, known_id) values (${userId}, ${knowerId}, ${o.id})
+      on conflict (user_id, coalesce(knower_id, '00000000-0000-0000-0000-000000000000'::uuid), known_id) do update
+      set mentions = chat_acquaintances.mentions + case when chat_acquaintances.last_at < now() - interval '30 minutes' then 1 else 0 end, last_at = now()`;
+  }
+}
+
+/** What this character (or Velo) knows of the other characters in their life, by how well they've "heard of" them. */
+export async function acquaintancesNote(userId: string, knowerId: string | null, knowerIsVelo: boolean): Promise<string> {
+  const rows = await sql()`select c.name, c.personality, c.backstory, c.appearance, c.preset, a.mentions, extract(epoch from now() - a.first_at) / 86400 as days
+    from chat_acquaintances a join chat_characters c on c.id = a.known_id
+    where a.user_id = ${userId} and a.knower_id is not distinct from ${knowerId} order by a.last_at desc limit 6`;
+  if (!rows.length) return "";
+  const lines = rows.map(r => {
+    const m = Number(r.mentions), d = Number(r.days), level = m >= 4 || d >= 3 ? 3 : m >= 2 || d >= 1 ? 2 : 1;
+    const bits = [`${r.name}: they've mentioned talking with her${m > 1 ? ` (${m} times)` : ""}.`];
+    if (level >= 2 && r.personality) bits.push(`What you've picked up about her: ${firstSentence(String(r.personality))}`);
+    if (level >= 3 && r.appearance) bits.push(`You know what she looks like: ${firstSentence(String(r.appearance))}`);
+    if (level >= 3 && r.backstory) bits.push(`A bit of her story: ${firstSentence(String(r.backstory))}`);
+    return `- ${bits.join(" ")}`;
+  });
+  return `OTHER PEOPLE IN THEIR LIFE YOU KNOW OF (secondhand only — as if they told you, you heard it around, or you once ran into her somewhere${knowerIsVelo ? "" : "; you don't know what they say to her"}):
+${lines.join("\n")}
+${rows.some(r => Number(r.mentions) >= 2 || Number(r.days) >= 1) ? "Once you know what someone looks like, you can now and then share a pic of her (send_media with of_person) — usually ask first (\"wanna see her?\"), and only if it fits.\n" : ""}Bring this up only when it fits, a little at a time — a passing remark, a question, "I ran into her at the store…". React the way YOU would, given your personality${knowerIsVelo ? "" : " and your feelings for them (curious, teasing, a bit jealous, unimpressed…)"} — playful jabs are fine, but never cruel or hateful, and never claim to know things you couldn't.`;
+}
+
+/** The pictures that show what a character looks like: their chosen references, else their portrait. */
+export async function referenceUrls(c: Character): Promise<string[]> {
+  const chosen = c.reference_ids?.length
+    ? (await sql()`select f.url from velo_media m join velo_files f on f.id = m.file_id where m.id = any(${c.reference_ids}::uuid[]) and m.status = 'done' and m.kind = 'image'`).map(r => String(r.url))
+    : [];
+  return (chosen.length ? chosen : c.portrait_url ? [c.portrait_url] : []).filter(u => /^https?:\/\//.test(u));
+}
+
+/** 👥 Someone they know of, to put in a photo — only once they've heard enough to know what she looks like. */
+export async function pictureOf(userId: string, knowerId: string | null, name: string): Promise<{ name: string; refs: string[]; appearance: string } | string> {
+  const n = String(name || "").trim().toLowerCase();
+  if (!n) return "Say who should be in it.";
+  const [row] = await sql()`select c.id, a.mentions, extract(epoch from now() - a.first_at) / 86400 as days
+    from chat_acquaintances a join chat_characters c on c.id = a.known_id
+    where a.user_id = ${userId} and a.knower_id is not distinct from ${knowerId} and lower(c.name) = ${n}`;
+  if (!row) return `You don't know anyone called ${name} — only people they've mentioned to you.`;
+  if (!(Number(row.mentions) >= 2 || Number(row.days) >= 1)) return `You've only heard ${name}'s name so far — you don't know what she looks like yet. Say so.`;
+  const c = await getCharacter(String(row.id));
+  if (!c) return `You don't know anyone called ${name}.`;
+  return { name: c.name, refs: await referenceUrls(c), appearance: c.appearance };
 }

@@ -15,16 +15,17 @@ import { MEMORY_TOOLS, isMemoryTool, runMemoryTool, MemoryError, memoryBlock, sa
 import { REMINDER_TOOLS, isReminderTool, runReminderTool, ReminderError } from "./reminders";
 import { proToolsFor, isProTool, runProTool, ProError, type Draft } from "./pro";
 import { twilioReady } from "./twilio";
-import { isValidTimeZone, localDate, formatClock, weekdayOf } from "./localTime";
+import { isValidTimeZone, localDate, formatClock, weekdayOf, zonedParts } from "./localTime";
+import { partOfDay, monthName, calendarNote, ownBirthdayNote } from "./calendar";
 import { hideSecrets, HIDDEN, scrub as scrubText } from "./secrets";
 import { ownFile, fileForAi } from "./files";
-import { characterPrompt, feelingsFor, saveFeelings, type Character } from "./characters";
+import { characterPrompt, feelingsFor, saveFeelings, noteMentions, acquaintancesNote, referenceUrls, pictureOf, type Character } from "./characters";
 import { aboutThem } from "./bio";
 import { mediaMood } from "./traits";
 import { CHARACTER_ZONES } from "./states";
 import { provider, type ChatModel } from "./models";
 import { oaChat, toOaTools, ProviderError, type OaMessage } from "./openai";
-import { SEND_MEDIA_TOOL, startMedia, mediaReady, MediaError, recentMediaNote, type Media } from "./media";
+import { SEND_MEDIA_TOOL, startMedia, mediaReady, MediaError, tasteNote, recentMediaNote, type Media } from "./media";
 import { veloLook } from "./veloAvatars";
 
 // Only ever the app's own key (never another credential in the environment).
@@ -37,8 +38,13 @@ export function localNow(rawTz: unknown) {
   const tz = isValidTimeZone(rawTz) ? rawTz : "America/Chicago";
   const now = Date.now();
   const date = localDate(now, tz);
-  return { date, tz, label: `${weekdayOf(date)}, ${date}, ${formatClock(now, tz)} (time zone ${tz})` };
+  const [y, m, d] = date.split("-").map(Number);
+  // e.g. "Wednesday, November 4, 2026 (2026-11-04), 7:20 PM — evening (time zone America/Chicago)"
+  return { date, tz, label: `${weekdayOf(date)}, ${monthName(m)} ${d}, ${y} (${date}), ${formatClock(now, tz)} — ${partOfDay(zonedParts(now, tz).hour)} (time zone ${tz})` };
 }
+
+// "send me a pic", "can I see a selfie?", "show me a video of…", "got any photos?"
+const ASKED_FOR_MEDIA = /\b(send|show|share|snap|take|got|get|see|want|wanna|make)\b[\s\S]{0,40}\b(pics?|pictures?|photos?|selfies?|videos?|vids?|clips?|images?|snaps?)\b|\b(pics?|pictures?|photos?|selfies?|videos?|vids?)\b[\s\S]{0,30}\?/i;
 
 export interface AskResult { reply: string; changed: boolean; drafts: Draft[]; media: Media[]; saved?: boolean }
 
@@ -64,10 +70,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   // Who's in a selfie: a character's portrait, or Velo's preset face (never a photo someone uploaded).
   const look = String(u?.look || "");
   // A character's 2–4 chosen reference images keep it looking the same (else its portrait).
-  const chRefs = ch && canSend && ch.reference_ids?.length
-    ? (await sql()`select f.url from velo_media m join velo_files f on f.id = m.file_id where m.id = any(${ch.reference_ids}::uuid[]) and m.status = 'done' and m.kind = 'image'`).map(r => String(r.url))
-    : [];
-  const refs = (ch ? (chRefs.length ? chRefs : ch.portrait_url ? [ch.portrait_url] : [])
+  const refs = (ch ? (canSend ? await referenceUrls(ch) : [])
     : look !== "custom" && veloLook(look).round !== false && opts.origin ? [`${opts.origin}${veloLook(look).src256}`] : []).filter(u => /^https?:\/\//.test(u));
   // 💕 PG-13 romance: adults only, with Velo's romantic personality or a romantic character.
   const romantic = !!u?.adult_confirmed_at && (ch ? !!ch.romantic : personality === "romantic");
@@ -77,6 +80,12 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   const memory = errand ? "" : await memoryBlock(caller, today, cid).catch(e => { console.error("velo: memory read", e instanceof Error ? e.message : e); return ""; });
   // 👤 What they've shared about themselves (look, age/birthday, state), for Velo and characters.
   const about = errand ? "" : await aboutThem(caller.userId, today.date).catch(() => "");
+  // 👥 Other characters they've mentioned here are noted, and what's known of them comes along.
+  const lastSaid = [...opts.messages].reverse().find(m => m.role === "user")?.content || "";
+  if (mode === "chat" || mode === "talk") await noteMentions(caller.userId, cid, hideSecrets(String(lastSaid).slice(0, 2000)).text).catch(e => console.error("velo: mentions", e instanceof Error ? e.message : e));
+  const known = errand ? "" : await acquaintancesNote(caller.userId, cid, !ch).catch(() => "");
+  // 💡 What they like to see (reactions, declined offers).
+  const taste = mediaReady() && (mode === "chat" || mode === "talk") ? await tasteNote(caller.userId, cid).catch(() => "") : "";
   // 🕰️ A character can live in another time zone: their own clock, as well as the person's.
   const chZone = ch?.time_zone && isValidTimeZone(ch.time_zone) ? ch.time_zone : null;
   const chClock = chZone ? `Where YOU live (${CHARACTER_ZONES.find(z => z[0] === chZone)?.[1] || chZone}), it's ${localNow(chZone).label}. Live by your own clock — sleepy late at night, busy in your morning — and notice the time difference with them when it matters (like telling them it's late for you). Don't mention the time unless it's relevant.` : "";
@@ -95,7 +104,11 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         errand ? "" : name ? `Their first name is ${name}.` : "You don't know their name yet — if it comes up naturally, ask, and remember it.",
         `Right now it is ${today.label}${errand ? "" : " where they are"}.`,
         chClock,
+        errand ? "" : calendarNote(today.date, !!proTools && !ch),
+        ch?.birthday ? ownBirthdayNote(ch.birthday, chZone ? localNow(chZone).date : today.date) : "",
         about,
+        known,
+        taste,
         canSend ? await recentMediaNote(caller.userId, cid, today.tz).catch(() => "") : "",
         errand || ch ? "" : pro ? SEARCH_INFO + "\n\n" + PRO_INFO + (proTools?.page ? `\nTheir Facebook Page "${proTools.page}" is connected: you can draft posts for it (draft_post).` : "\nNo Facebook Page is connected; if they want you to post, tell them to connect one in Settings → Velo Pro (Facebook only allows Pages, not personal profiles).") : FREE_INFO,
         memory ? `${memory}\n\nYou two have talked before — never introduce yourself; talk like someone who knows them.` : "",
@@ -117,14 +130,14 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   // 📎 The newest message's attachment (chat only): Velo sees the photo or PDF, or reads the text file.
   let attached = false;
   const lastTurn = opts.messages[opts.messages.length - 1];
-  if (mode === "chat" && !ch && lastTurn?.role === "user" && lastTurn.fileId) {
+  if (mode === "chat" && lastTurn?.role === "user" && lastTurn.fileId) {
     const f = await ownFile(caller.userId, String(lastTurn.fileId));
     const block = f ? await fileForAi(f) : null;
     const last = messages[messages.length - 1];
     if (f && block && last?.role === "user") {
       last.content = [block, { type: "text", text: String(last.content) === "📎" ? `(They sent ${f.name} with no message.)` : String(last.content) }];
       attached = true;
-      system.push({ type: "text", text: `They attached a file (${f.name}). Use it to help them. If it shows a password, PIN, code, card number or ID number, never read it out or repeat it — say you'll skip that part to keep them safe.` });
+      system.push({ type: "text", text: `${ch ? `They're showing you something (${f.name}). React to it the way ${ch.name} would — in character, like a friend looking at their photo.` : `They attached a file (${f.name}). Use it to help them.`} If it shows a password, PIN, code, card number or ID number, never read it out or repeat it — say you'll skip that part to keep them safe.` });
     }
   }
   if (hidLast) system.push({ type: "text", text: errand
@@ -153,9 +166,15 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   const runTool = async (name: string, input: unknown): Promise<{ content: string; isError?: boolean }> => {
     try {
       const out = name === "send_media" && canSend ? await (async () => {
-          const m = await startMedia(caller.userId, input, { characterId: cid, who: ch?.name || "Velo", appearance: ch?.appearance || "", refs, romantic, mood: ch ? mediaMood(ch.traits) : "" });
+          // Their own idea → only an offer (nothing is made until they accept). Asked for → made now.
+          const asked = (input as { they_asked?: unknown })?.they_asked === true && ASKED_FOR_MEDIA.test(String(lastSaid));
+          const who = (input as { of_person?: unknown })?.of_person;
+          const other = typeof who === "string" && who.trim() ? await pictureOf(caller.userId, cid, who) : null;
+          if (typeof other === "string") throw new MediaError(other);
+          const m = await startMedia(caller.userId, input, { characterId: cid, who: ch?.name || "Velo", appearance: ch?.appearance || "", refs, romantic, mood: ch ? mediaMood(ch.traits) : "", offer: !asked, other });
           media.push(m);
           if (m.status === "failed") throw new MediaError("The picture service wouldn't make that one. Say so briefly and offer something else.");
+          if (m.status === "offered") return { ok: true, offered: true, tell_them: "Offered — they'll see an Accept / No thanks button. Ask casually if they'd like it (don't say it's sent or on its way), then keep talking." };
           return { ok: true, tell_them: `It's on its way (${m.kind === "image" ? "about a minute" : "a few minutes"}); it'll show up on their screen by itself when ready. Mention you're sending it, then keep the conversation going.` };
         })()
         : isMemoryTool(name) ? await runMemoryTool(caller, name, input, cid)

@@ -11,7 +11,7 @@ import { PERSONALITIES } from "../../lib/persona";
 import { deleteFile, ownFile } from "../../lib/files";
 import { getCharacter } from "../../lib/characters";
 import { US_STATES } from "../../lib/states";
-import { checkMedia, sweepMedia, getMedia, listGallery, deleteMedia, VIDEO_MODELS, DEFAULT_VIDEO_MODEL } from "../../lib/media";
+import { acceptMedia, declineMedia, mediaNote, checkMedia, sweepMedia, getMedia, listGallery, deleteMedia, VIDEO_MODELS, DEFAULT_VIDEO_MODEL } from "../../lib/media";
 
 // 📦 Everything the app reads and changes, for the signed-in person only.
 // POST { action, ...args } → { ... }. Every query is scoped to their user_id.
@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
         const ch = b.characterId ? await getCharacter(String(b.characterId)) : null;
         if (b.characterId && !ch) return bad("That character wasn't found.");
         const rows = await db`select m.role, m.content, f.id as file_id, f.url as file_url, f.thumb_url as file_thumb, f.name as file_name, f.content_type as file_type,
-            md.id as media_id, md.kind as media_kind, md.status as media_status, md.reaction as media_reaction, mf.url as media_url, coalesce(mt.url, md.poster_url) as media_thumb
+            md.id as media_id, md.kind as media_kind, md.status as media_status, md.reaction as media_reaction, md.description as media_description, md.kept as media_kept, mf.url as media_url, coalesce(mt.url, md.poster_url) as media_thumb
           from velo_messages m left join velo_files f on f.id = m.file_id and f.user_id = m.user_id
           left join velo_media md on md.id = m.media_id and md.user_id = m.user_id
           left join velo_files mf on mf.id = md.file_id
@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
           where m.user_id = ${me} and m.character_id is not distinct from ${ch?.id || null} order by m.created_at desc, m.id desc limit 60`;
         return NextResponse.json({ messages: rows.reverse().map(r => ({ role: r.role, content: r.content,
           ...(r.file_id ? { file: { id: r.file_id, url: r.file_url, thumb: r.file_thumb || null, name: r.file_name, type: r.file_type } } : {}),
-          ...(r.media_id ? { media: { id: r.media_id, kind: r.media_kind, status: r.media_status, url: r.media_status === "done" ? r.media_url : null, thumb: r.media_thumb || null, reaction: r.media_reaction || null } } : {}) })) });
+          ...(r.media_id ? { media: { id: r.media_id, kind: r.media_kind, status: r.media_status, url: r.media_status === "done" ? r.media_url : null, thumb: r.media_thumb || null, reaction: r.media_reaction || null, description: r.media_description || null, kept: !!r.media_kept } } : {}) })) });
       }
       case "messages.add": {
         const ch = b.characterId ? await getCharacter(String(b.characterId)) : null;
@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
         const at = Date.now() - list.length;
         for (const [i, m] of list.entries()) {
           // Only their own file can be attached.
-          const f = m.fileId && m.role === "user" && !ch ? await ownFile(me, m.fileId) : null;
+          const f = m.fileId && m.role === "user" ? await ownFile(me, m.fileId) : null;
           // A photo/video sent in this same chat (theirs, and from this Velo/character).
           const md = m.mediaId && m.role === "assistant" ? await getMedia(me, m.mediaId) : null;
           const mediaId = md && md.character_id === (ch?.id || null) ? md.id : null;
@@ -119,9 +119,9 @@ export async function POST(req: NextRequest) {
       case "media.react": {
         const reaction = REACTIONS.includes(b.reaction) ? String(b.reaction) : null;
         if (!needId()) return bad("Unknown media.");
-        const [m] = await db`update velo_media set reaction = ${reaction} where id = ${id} and user_id = ${me} and status = 'done' returning kind`;
+        const [m] = await db`update velo_media set reaction = ${reaction} where id = ${id} and user_id = ${me} and status = 'done' returning kind, description`;
         if (!m) return bad("Unknown media.");
-        const note = `(sent a ${m.kind === "image" ? "photo" : "video"}${reaction ? ` — they reacted ${reaction}` : ""})`;
+        const note = mediaNote(m.kind, "done", m.description, reaction);
         await db`update velo_messages set content = ${note} where media_id = ${id} and user_id = ${me}`;
         return NextResponse.json({ ok: true, note });
       }
@@ -130,6 +130,15 @@ export async function POST(req: NextRequest) {
         const old = await db`select id from velo_files where user_id = ${me} and kind = 'bio'`;
         for (const o of old) await deleteFile(me, String(o.id));
         return NextResponse.json({ ok: true });
+      }
+      // 📸 An offered photo/video: yes (make it now) or no thanks.
+      case "media.accept": {
+        const m = needId() ? await acceptMedia(me, id) : null;
+        return m ? NextResponse.json({ media: m }) : bad("That offer isn't open anymore.");
+      }
+      case "media.decline": {
+        const m = needId() ? await declineMedia(me, id) : null;
+        return m ? NextResponse.json({ media: m }) : bad("That offer isn't open anymore.");
       }
       case "media.check": {
         const m = needId() ? await checkMedia(me, id) : null;

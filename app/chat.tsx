@@ -19,7 +19,10 @@ export type ChatWith = { id: string; name: string; portrait_url: string | null; 
 export type ChatFile = { id: string; url: string; thumb?: string | null; name: string; type: string };
 export type ChatMsg = { role: "user" | "assistant"; content: string; draft?: Draft; file?: ChatFile; media?: Media };
 /** How a sent photo/video reads in the history the AI sees. */
-export const mediaNote = (m: Media) => `(sent a ${m.kind === "image" ? "photo" : "video"})`;
+export const mediaNote = (m: Media) => {
+  const what = m.kind === "image" ? "photo" : "video", d = m.description ? `"${m.description}"` : "";
+  return m.status === "offered" ? `(offered to send a ${what}${d ? `: ${d}` : ""} — waiting for their OK)` : m.status === "declined" ? `(offered a ${what}${d ? ` (${d})` : ""} — they said no thanks)` : `(sent a ${what}${d ? `: ${d}` : ""})`;
+};
 const ACCEPT = "image/jpeg,image/png,image/webp,image/gif,application/pdf,text/plain";
 /** What Velo sees: real messages only (draft cards are local to the screen). */
 // Their messages since the last memo. Kept outside the component so switching tabs doesn't reset it.
@@ -189,7 +192,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
         </div>
       )}
       <div data-testid="chat-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-        {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={m.media?.id || i} m={m} face={face(28)} onMedia={mediaArrived} onReact={react} />)}
+        {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={m.media?.id || i} m={m} face={face(28)} onMedia={mediaArrived} onReact={react} who={who} onAnswer={x => setMsgs(list => (list || []).map(y => (y.media?.id === x.id ? { ...y, content: mediaNote({ ...y.media!, ...x }), media: { ...y.media!, ...x } } : y)))} />)}
         {character && msgs && !msgs.length && (
           <div className="muted" style={{ textAlign: "center", fontSize: 14, marginTop: 24, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
             {face(72)}<div>Say hi to {character.name} 👋</div>
@@ -212,11 +215,11 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
         </div>
       )}
       <form onSubmit={e => { e.preventDefault(); send(text); }} className="row" style={{ padding: "10px 12px", borderTop: "1px solid var(--border)" }}>
-        {!cid && <input ref={picker} type="file" accept={ACCEPT} hidden onChange={e => pick(e.target.files?.[0])} data-testid="chat-file-input" />}
-        {!cid && <button type="button" onClick={() => picker.current?.click()} disabled={!msgs || busy || uploading} aria-label="Attach a photo or file" data-testid="chat-attach"
+        <input ref={picker} type="file" accept={ACCEPT} hidden onChange={e => pick(e.target.files?.[0])} data-testid="chat-file-input" />
+        <button type="button" onClick={() => picker.current?.click()} disabled={!msgs || busy || uploading} aria-label="Attach a photo or file" data-testid="chat-attach"
           style={{ borderRadius: 999, width: 40, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 20, border: "none", background: "transparent", color: "var(--muted)" }}>
           {uploading ? "⏳" : "📎"}
-        </button>}
+        </button>
         <textarea ref={box} rows={1} value={text} onChange={e => setText(e.target.value)} placeholder={msgs ? `Message ${who}…` : "Loading…"} aria-label={`Message ${who}`} disabled={!msgs}
           onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(text); } }}
           style={{ resize: "none", maxHeight: 140, borderRadius: 20 }} />
@@ -241,13 +244,13 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   );
 }
 
-function Bubble({ m, face, onMedia, onReact }: { m: ChatMsg; face: React.ReactNode; onMedia: (x: Media) => void; onReact: (id: string, r: string) => void }) {
+function Bubble({ m, face, who, onMedia, onReact, onAnswer }: { m: ChatMsg; face: React.ReactNode; who: string; onMedia: (x: Media) => void; onReact: (id: string, r: string) => void; onAnswer: (x: Media) => void }) {
   const mine = m.role === "user";
   if (m.media) return (
     <div data-testid="chat-media" style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
       {face}
       <div style={{ maxWidth: "min(80%, 380px)" }}>
-        <MediaView media={m.media} onReady={onMedia} />
+        <MediaView media={m.media} onReady={onMedia} who={who} onAnswer={x => onAnswer(x)} />
         {m.media.status === "done" && <ReactionBar value={m.media.reaction} onPick={r => onReact(m.media!.id, r)} />}
       </div>
     </div>

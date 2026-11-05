@@ -12,7 +12,7 @@ import { CHARACTER_ZONES } from "./lib/states";
 
 type VoiceOption = { id: string; name: string; kind: "female" | "male"; about: string; preview: string; owner?: string };
 
-export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; portrait_url: string | null; portrait_job: string | null };
+export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; portrait_url: string | null; portrait_job: string | null };
 
 /** A character's picture in a circle (their initial until a portrait exists). */
 export function CharacterFace({ c, size }: { c: Pick<Character, "name" | "portrait_url">; size: number }) {
@@ -60,6 +60,7 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
   const [traits, setTraits] = useState<Record<TraitKey, number>>(cleanTraits(initial?.traits && Object.keys(initial.traits).length ? initial.traits : DEFAULT_TRAITS));
   const [preset, setPreset] = useState(initial?.preset || "");
   const [zone, setZone] = useState(initial?.time_zone || "");
+  const [bday, setBday] = useState(initial?.birthday || "");
   // 🎚️ A preset sets the sliders (and the personality, if it's empty or still another preset's text).
   const applyPreset = (id: string) => {
     setPreset(id);
@@ -74,7 +75,7 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const working = !!c?.portrait_job;
-  const dirty = !c || name !== c.name || personality !== c.personality || backstory !== c.backstory || relation !== c.relation || appearance !== c.appearance || voice.id !== c.voice || JSON.stringify(traits) !== JSON.stringify(cleanTraits(c.traits && Object.keys(c.traits).length ? c.traits : DEFAULT_TRAITS)) || preset !== (c.preset || "") || zone !== (c.time_zone || "") || romantic !== !!c.romantic || (romantic ? arc : "") !== (c.romance_arc || "") || refIds.join() !== (c.reference_ids || []).join();
+  const dirty = !c || name !== c.name || personality !== c.personality || backstory !== c.backstory || relation !== c.relation || appearance !== c.appearance || voice.id !== c.voice || JSON.stringify(traits) !== JSON.stringify(cleanTraits(c.traits && Object.keys(c.traits).length ? c.traits : DEFAULT_TRAITS)) || preset !== (c.preset || "") || zone !== (c.time_zone || "") || bday !== (c.birthday || "") || romantic !== !!c.romantic || (romantic ? arc : "") !== (c.romance_arc || "") || refIds.join() !== (c.reference_ids || []).join();
 
   // A portrait in progress: check back every few seconds until it's ready.
   useEffect(() => {
@@ -91,7 +92,7 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
   const save = async () => {
     setBusy(true); setMsg("");
     try {
-      const r = await api<{ character: Character }>("/api/characters", { action: c ? "update" : "create", id: c?.id, name, personality, backstory, relation, appearance, voice: { id: voice.id, name: voice.name, kind: voice.kind, owner: voice.owner }, romantic, romanceArc: romantic ? arc : "", traits, preset, timeZone: zone, referenceIds: refIds });
+      const r = await api<{ character: Character }>("/api/characters", { action: c ? "update" : "create", id: c?.id, name, personality, backstory, relation, appearance, voice: { id: voice.id, name: voice.name, kind: voice.kind, owner: voice.owner }, romantic, romanceArc: romantic ? arc : "", traits, preset, timeZone: zone, birthday: bday, referenceIds: refIds });
       setC(r.character); onSaved(r.character);
       // A library voice is saved as a copy in their ElevenLabs account: follow its new id.
       setVoice(v => ({ ...v, id: r.character.voice, owner: undefined }));
@@ -154,6 +155,17 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
           </select>
           <span className="muted" style={{ fontWeight: 500, display: "block", marginTop: 4 }}>They always know your local time too — and notice when it&apos;s late for one of you.</span>
         </label>
+        <div style={{ fontSize: 13, fontWeight: 700 }}>🎂 Their birthday <span className="muted" style={{ fontWeight: 500 }}>· optional</span>
+          <div className="row" style={{ gap: 8, marginTop: 4 }}>
+            <select value={bday.slice(0, 2)} aria-label="Birthday month" onChange={e => setBday(e.target.value ? `${e.target.value}-${bday.slice(3) || "01"}` : "")} style={{ flex: 2 }}>
+              <option value="">— Month —</option>
+              {["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"].map((mo, i) => <option key={mo} value={String(i + 1).padStart(2, "0")}>{mo}</option>)}
+            </select>
+            <select value={bday.slice(3)} aria-label="Birthday day" disabled={!bday} onChange={e => setBday(`${bday.slice(0, 2)}-${e.target.value}`)} style={{ flex: 1 }}>
+              {Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, "0")).map(d => <option key={d} value={d}>{Number(d)}</option>)}
+            </select>
+          </div>
+        </div>
         <VoicePicker value={voice} onChange={setVoice} />
         <label className="row" style={{ gap: 10, fontSize: 13, fontWeight: 700, alignItems: "flex-start" }}>
           <input type="checkbox" checked={romantic} onChange={e => setRomantic(e.target.checked)} aria-label="Romantic" style={{ width: 20, height: 20, marginTop: 1, flexShrink: 0 }} />

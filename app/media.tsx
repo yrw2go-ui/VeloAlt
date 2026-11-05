@@ -6,7 +6,7 @@
 import { useEffect, useState } from "react";
 import { data } from "./lib/api";
 
-export type Media = { id: string; kind: "image" | "video"; status: "working" | "done" | "failed"; url: string | null; thumb?: string | null; caption?: string | null; reaction?: string | null };
+export type Media = { id: string; kind: "image" | "video"; status: "offered" | "declined" | "working" | "done" | "failed"; url: string | null; thumb?: string | null; caption?: string | null; reaction?: string | null; description?: string | null; kept?: boolean };
 
 // ❤️ Reactions they can leave on a photo/video.
 export const REACTIONS = ["❤️", "🔥", "🙌", "😍", "👍"] as const;
@@ -50,7 +50,41 @@ export function useMedia(initial: Media, onReady?: (m: Media) => void): Media {
 const fit = { display: "block", width: "100%", maxHeight: "min(62dvh, 560px)", height: "auto", objectFit: "contain", borderRadius: 14, margin: "0 auto", background: "#000" } as const;
 
 /** The photo/video itself (or its placeholder). */
-export function MediaView({ media, onReady, big = false }: { media: Media; onReady?: (m: Media) => void; big?: boolean }) {
+export function MediaView({ media, onReady, onAnswer, big = false, who = "Velo" }: { media: Media; onReady?: (m: Media) => void; onAnswer?: (m: Media) => void; big?: boolean; who?: string }) {
+  const [cur, setCur] = useState(media);
+  // 📸 Offered on their own: nothing is made until they accept.
+  if (cur.status === "offered" || cur.status === "declined") return <OfferCard m={cur} who={who} big={big} onAnswer={x => { setCur(x); onAnswer?.(x); }} />;
+  return <MediaShown key={cur.id + cur.status} media={cur} onReady={onReady} big={big} />;
+}
+
+/** "Mira wants to send you a photo: 'my view from the balcony'" — Accept / No thanks. */
+function OfferCard({ m, who, big, onAnswer }: { m: Media; who: string; big: boolean; onAnswer: (m: Media) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const what = m.kind === "image" ? "photo" : "video";
+  const answer = async (yes: boolean) => {
+    setBusy(true); setErr("");
+    try { onAnswer((await data<{ media: Media }>(yes ? "media.accept" : "media.decline", { id: m.id })).media); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Try again."); setBusy(false); }
+  };
+  return (
+    <div data-testid={m.status === "offered" ? "media-offer" : "media-declined"} onClick={e => e.stopPropagation()}
+      style={{ width: big ? "min(86vw, 360px)" : "min(72vw, 300px)", borderRadius: 14, padding: 14, display: "flex", flexDirection: "column", gap: 10, border: "1px solid var(--border, #374151)",
+        background: m.status === "offered" ? "linear-gradient(135deg, rgba(124,140,255,.16), rgba(236,72,153,.12))" : "var(--surface2, #1f2937)", color: big ? "#fff" : "var(--text)" }}>
+      <div style={{ fontWeight: 700, fontSize: 14 }}>{m.kind === "image" ? "📸" : "🎬"} {who} wants to send you a {what}</div>
+      {m.description && <div style={{ fontSize: 13, opacity: 0.85, fontStyle: "italic" }}>“{m.description}”</div>}
+      {m.status === "offered" ? (
+        <div className="row" style={{ gap: 8 }}>
+          <button className="btn" disabled={busy} onClick={() => answer(true)} data-testid="offer-accept" style={{ flex: 1, padding: "8px 12px" }}>Accept</button>
+          <button className="ghost" disabled={busy} onClick={() => answer(false)} data-testid="offer-decline" style={{ flex: 1, padding: "8px 12px" }}>No thanks</button>
+        </div>
+      ) : <div className="muted" style={{ fontSize: 12 }}>You said no thanks to this one.</div>}
+      {err && <div style={{ color: "var(--bad)", fontSize: 12 }}>⚠️ {err}</div>}
+    </div>
+  );
+}
+
+function MediaShown({ media, onReady, big = false }: { media: Media; onReady?: (m: Media) => void; big?: boolean }) {
   const m = useMedia(media, onReady);
   const [full, setFull] = useState(false);
   if (m.status === "failed") return <div className="muted" data-testid="media-failed" style={{ fontSize: 13 }}>⚠️ That {m.kind === "image" ? "photo" : "video"} didn&apos;t come through.</div>;
@@ -73,7 +107,7 @@ export function MediaView({ media, onReady, big = false }: { media: Media; onRea
   return (
     <>
       <div style={{ width: big ? "min(86vw, 420px)" : "min(72vw, 320px)", cursor: "zoom-in" }} onClick={e => { e.stopPropagation(); setFull(true); }}>{el}</div>
-      {full && <Viewer m={m} onClose={() => setFull(false)} />}
+      {full && <Viewer m={m} onClose={() => setFull(false)}><SaveButton m={m} /></Viewer>}
     </>
   );
 }
@@ -112,14 +146,24 @@ export function Viewer({ m, onClose, children }: { m: { kind: "image" | "video";
  *  middle of the screen as soon as it's ready, one at a time in the order they arrive; the call keeps going. */
 export function CallMedia({ items, name }: { items: Media[]; name: string }) {
   const [ready, setReady] = useState<Media[]>([]);
-  const [gone, setGone] = useState<Set<string>>(new Set()); // closed or failed
-  const pending = items.filter(m => !gone.has(m.id) && !ready.some(r => r.id === m.id));
-  const open = ready.find(r => !gone.has(r.id)) || null;
+  const [gone, setGone] = useState<Set<string>>(new Set()); // closed, declined or failed
+  const [answered, setAnswered] = useState<Record<string, Media>>({});
   const close = (id: string) => setGone(s => new Set(s).add(id));
+  const all = items.map(m => answered[m.id] || m).filter(m => !gone.has(m.id));
+  // 📸 An offer waits for Accept / No thanks; everything accepted or asked for is tracked until ready.
+  const offer = all.find(m => m.status === "offered" || m.status === "declined") || null;
+  const pending = all.filter(m => (m.status === "working" || m.status === "done") && !ready.some(r => r.id === m.id));
+  const open = ready.find(r => !gone.has(r.id)) || null;
   const images = pending.filter(m => m.kind === "image").length, videos = pending.length - images;
   return (
     <>
-      {pending.map(m => <Watch key={m.id} m={m} onReady={x => setReady(r => (r.some(y => y.id === x.id) ? r : [...r, x]))} onFail={() => close(m.id)} />)}
+      {pending.map(m => <Watch key={m.id + m.status} m={m} onReady={x => setReady(r => (r.some(y => y.id === x.id) ? r : [...r, x]))} onFail={() => close(m.id)} />)}
+      {offer && !open && (
+        <div data-testid="call-offer" onClick={e => e.stopPropagation()} onPointerDownCapture={e => e.stopPropagation()}
+          style={{ position: "fixed", left: 0, right: 0, bottom: "max(130px, calc(env(safe-area-inset-bottom) + 120px))", zIndex: 2100, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+          <MediaView key={offer.id} media={offer} who={name} big onAnswer={x => { setAnswered(a => ({ ...a, [x.id]: x })); if (x.status === "declined") setTimeout(() => close(x.id), 1200); }} />
+        </div>
+      )}
       {pending.length > 0 && !open && (
         <div data-testid="call-media-working" style={{ position: "fixed", top: "max(70px, calc(env(safe-area-inset-top) + 56px))", left: "50%", transform: "translateX(-50%)", zIndex: 2050, background: "rgba(59,130,246,.2)", border: "1px solid rgba(59,130,246,.4)", color: "#dbeafe", borderRadius: 999, padding: "6px 14px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>
           {images ? "📸" : "🎬"} {name} is sending {images && videos ? `${images} photo${images > 1 ? "s" : ""} and ${videos} video${videos > 1 ? "s" : ""}` : images > 1 ? `${images} photos` : videos > 1 ? `${videos} videos` : images ? "a photo" : "a video"}…
@@ -130,6 +174,7 @@ export function CallMedia({ items, name }: { items: Media[]; name: string }) {
           style={{ position: "fixed", inset: 0, zIndex: 2100, background: "rgba(0,0,0,.78)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "max(20px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom))", gap: 12 }}>
           <div style={{ color: "#fff", fontWeight: 700, fontSize: 15, textAlign: "center" }}>{name}: {open.caption || `sent you a ${open.kind === "image" ? "photo" : "video"}`}</div>
           <MediaView key={open.id} media={open} big />
+          <SaveButton m={open} />
           <button onClick={() => close(open.id)} style={{ background: "#1f2937", color: "#fff", border: "1px solid #374151", borderRadius: 999, padding: "10px 22px", fontWeight: 700, cursor: "pointer" }}>
             {ready.filter(r => !gone.has(r.id)).length > 1 ? "Next" : "Back to call"}
           </button>
@@ -144,4 +189,19 @@ function Watch({ m, onReady, onFail }: { m: Media; onReady: (m: Media) => void; 
   useEffect(() => { if (m.status === "done") onReady(m); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (cur.status === "failed") onFail(); }, [cur.status]); // eslint-disable-line react-hooks/exhaustive-deps
   return null;
+}
+
+/** ⭐ Save to their gallery favorites (everything is in the gallery already; Saved ones are kept and easy to find). */
+export function SaveButton({ m }: { m: Media }) {
+  const [kept, setKept] = useState(!!m.kept);
+  const toggle = async () => {
+    const next = !kept; setKept(next);
+    try { await data("gallery.keep", { id: m.id, kept: next }); } catch { setKept(!next); }
+  };
+  return (
+    <button type="button" onClick={e => { e.stopPropagation(); toggle(); }} data-testid="media-save" aria-pressed={kept}
+      style={{ background: kept ? "#f59e0b" : "rgba(255,255,255,.12)", color: "#fff", border: "1px solid rgba(255,255,255,.25)", borderRadius: 999, padding: "8px 16px", fontWeight: 700, cursor: "pointer" }}>
+      {kept ? "⭐ Saved to gallery" : "☆ Save to gallery"}
+    </button>
+  );
 }

@@ -14,7 +14,15 @@ import { randomUUID } from "node:crypto";
 import { sql } from "./db";
 import { scrub } from "./secrets";
 
-export type Media = { id: string; kind: "image" | "video"; status: "working" | "done" | "failed"; url: string | null; thumb?: string | null; caption?: string | null };
+export type Media = { id: string; kind: "image" | "video"; status: "offered" | "declined" | "working" | "done" | "failed"; url: string | null; thumb?: string | null; caption?: string | null; description?: string | null };
+
+/** How a photo/video reads in the chat history the AI sees. */
+export const mediaNote = (kind: "image" | "video", status: Media["status"], description?: string | null, reaction?: string | null) => {
+  const what = kind === "image" ? "photo" : "video";
+  if (status === "offered") return `(offered to send a ${what}${description ? `: "${description}"` : ""} — waiting for their OK)`;
+  if (status === "declined") return `(offered a ${what}${description ? ` ("${description}")` : ""} — they said no thanks)`;
+  return `(sent a ${what}${description ? `: "${description}"` : ""}${reaction ? ` — they reacted ${reaction}` : ""})`;
+};
 
 // 💬 What they say when it arrives.
 const CAPTIONS = {
@@ -78,12 +86,14 @@ const SUGGESTIVE = /\b(sexy|seductive|sultry|bikini|swimsuit|cleavage|lingerie|b
 
 export const SEND_MEDIA_TOOL = (who: string, romantic = false): Anthropic.Tool => ({
   name: "send_media",
-  description: `Send them a photo or a short video, like a friend would from their phone, to make the chat feel personal: a selfie of you (${who}) somewhere, what you're "up to", something you're describing, or when they ask for one. It's made in the background (a photo takes about a minute, a video a few minutes) and pops into the chat or onto their call screen when ready — keep talking meanwhile; say something like "sending you a pic" and never claim it's already there. Use it now and then, not every message. ${romantic ? "This is a romantic setting with an adult, so it can be PG-13 — flirty, cute, date-night, a playful wink, swimwear at the beach — but never nudity, underwear/lingerie or anything sexual or explicit." : "Always family-friendly: everyone fully clothed, nothing sexual or suggestive."} No real people, and never a picture of the person you're talking with. Videos are a few seconds, no sound.`,
+  description: `Send them a photo or a short video, like a friend would from their phone, to make the chat feel personal: a selfie of you (${who}) somewhere, what you're "up to" right now (fit it to your time of day, season and plans), something you're describing, or when they ask for one. Be creative, and lean toward the settings, outfits and vibes they've loved. If they ASKED for it, set they_asked: true and it's made right away. If it's your own idea, it's only OFFERED: they get an Accept button, and nothing is made unless they accept — so ask casually ("want a pic of my view right now?") and never say it's sent. Once made it takes about a minute (a photo) or a few minutes (a video) and pops into the chat or onto their call screen — keep talking meanwhile. Use it now and then, not every message. ${romantic ? "This is a romantic setting with an adult, so it can be PG-13 — flirty, cute, date-night, a playful wink, swimwear at the beach — but never nudity, underwear/lingerie or anything sexual or explicit." : "Always family-friendly: everyone fully clothed, nothing sexual or suggestive."} No real people, and never a picture of the person you're talking with. Videos are a few seconds, no sound.`,
   input_schema: {
     type: "object",
     properties: {
       kind: { type: "string", enum: ["image", "video"] },
       with_me: { type: "boolean", description: `true if you (${who}) are in it (a selfie or a shot of you)` },
+      of_person: { type: "string", description: "Name of one of the other people in their life you know of (from OTHER PEOPLE IN THEIR LIFE YOU KNOW OF), if they're in it — e.g. a pic of her when she comes up. Only them; never real people." },
+      they_asked: { type: "boolean", description: "true only if their latest message asked you for a photo/video" },
       description: { type: "string", description: "What's in it: the scene, setting, action, mood, framing (e.g. 'selfie on a sailboat at sunset, wind in my hair, big smile'). Max ~300 characters." },
     },
     required: ["kind", "description"],
@@ -112,8 +122,8 @@ async function atlasStart(kind: "image" | "video", model: string, prompt: string
   return id;
 }
 
-/** Starts a photo or video (from the send_media tool). Returns it as "working". */
-export async function startMedia(userId: string, input: unknown, ctx: { characterId: string | null; who: string; appearance: string; refs: string[]; romantic: boolean; mood?: string }): Promise<Media> {
+/** Starts a photo or video (from the send_media tool) — or, with `offer`, only offers it: nothing is made until they accept. */
+export async function startMedia(userId: string, input: unknown, ctx: { characterId: string | null; who: string; appearance: string; refs: string[]; romantic: boolean; mood?: string; offer?: boolean; other?: { name: string; refs: string[]; appearance: string } | null }): Promise<Media> {
   const a = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
   const kind = a.kind === "video" ? "video" : "image";
   const desc = scrub(String(a.description || "").replace(/\s+/g, " ").trim().slice(0, 400));
@@ -122,41 +132,88 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
     ? "That can't be sent — it can be flirty and PG-13, but never nudity, lingerie or anything explicit. Tell them so playfully and offer something else."
     : "That can't be sent — keep it family-friendly (fully clothed, nothing suggestive). Tell them you can't send that, kindly, and offer something else.");
   if (!mediaReady()) throw new MediaError("Photos and videos aren't set up yet. Tell them it's coming soon.");
-  const [{ n }] = await sql()`select count(*)::int as n from velo_media where user_id = ${userId} and kind = ${kind} and created_at > now() - interval '1 day'`;
+  const [{ n }] = await sql()`select count(*)::int as n from velo_media where user_id = ${userId} and kind = ${kind} and status not in ('offered', 'declined') and created_at > now() - interval '1 day'`;
+  if (ctx.offer) {
+    const [{ p }] = await sql()`select count(*)::int as p from velo_media where user_id = ${userId} and character_id is not distinct from ${ctx.characterId} and status = 'offered'`;
+    if (p > 0) throw new MediaError("You already offered one and they haven't answered yet — wait for that first.");
+  }
   if (n >= DAILY[kind]) throw new MediaError(`That's the limit of ${kind === "image" ? "photos" : "videos"} for today. Tell them you'll send more tomorrow.`);
   // One at a time: if one is still being made in this chat, don't start another.
   const [busy] = await sql()`select kind, extract(epoch from now() - created_at)::int as secs from velo_media where user_id = ${userId} and character_id is not distinct from ${ctx.characterId} and status = 'working' and created_at > now() - interval '6 minutes' order by created_at desc limit 1`;
   if (busy) throw new MediaError(`You already sent a ${busy.kind === "image" ? "photo" : "video"} ${busy.secs < 60 ? `${busy.secs} seconds` : `${Math.round(busy.secs / 60)} min`} ago and it's still on its way (it WILL arrive — photos take about a minute, videos a few). Tell them it's coming; don't make another.`);
 
   const withMe = a.with_me === true;
-  const refs = withMe ? ctx.refs.slice(0, 4) : [];
+  // 👥 Someone else they know of can be in it (her references first), with or without them.
+  const o = ctx.other;
+  const oRefs = o ? o.refs.slice(0, withMe ? 2 : 4) : [];
+  const meRefs = withMe ? ctx.refs.slice(0, o ? 2 : 4) : [];
+  const refs = [...oRefs, ...meRefs];
   const ref = refs[0] || null;
-  const subject = withMe ? (ref ? `The person in the reference image${refs.length > 1 ? "s" : ""} is ${ctx.who}; keep their face, hair, body and look exactly the same. ` : ctx.appearance ? `${ctx.who}: ${ctx.appearance}. ` : "") : "";
+  const subject = o
+    ? (oRefs.length ? `The first ${oRefs.length > 1 ? `${oRefs.length} reference images show` : "reference image shows"} ${o.name}; keep her face and look the same. ` : o.appearance ? `${o.name}: ${o.appearance}. ` : `${o.name}. `)
+      + (withMe ? (meRefs.length ? `The other reference image${meRefs.length > 1 ? "s show" : " shows"} ${ctx.who}; keep their face and look the same too. ` : ctx.appearance ? `With ${ctx.who}: ${ctx.appearance}. ` : "") : "")
+    : withMe ? (ref ? `The person in the reference image${refs.length > 1 ? "s" : ""} is ${ctx.who}; keep their face, hair, body and look exactly the same. ` : ctx.appearance ? `${ctx.who}: ${ctx.appearance}. ` : "") : "";
   const style = ctx.romantic ? "Tasteful and PG-13: flattering and flirty, no nudity, nothing explicit" : "Family-friendly, everyone fully clothed";
-  const prompt = `${subject}${desc}. ${withMe && ctx.mood ? `${ctx.mood} ` : ""}${style}, natural and realistic${kind === "image" ? " photo, candid phone-camera feel" : " video, smooth natural motion"}.`.slice(0, 1500);
+  const prompt = `${subject}${desc}. ${withMe && !o && ctx.mood ? `${ctx.mood} ` : ""}${style}, natural and realistic${kind === "image" ? " photo, candid phone-camera feel" : " video, smooth natural motion"}.`.slice(0, 1500);
   const [u] = await sql()`select video_model from users where id = ${userId}`;
   const model = kind === "image" ? (ref ? EDIT_MODEL() : IMAGE_MODEL()) : videoModel(String(u?.video_model || DEFAULT_VIDEO_MODEL), !!ref);
-  const [row] = await sql()`insert into velo_media (user_id, character_id, kind, prompt, model, caption) values (${userId}, ${ctx.characterId}, ${kind}, ${prompt}, ${model}, ${captionFor(kind, ctx.romantic)}) returning id`;
+  const sendRefs = kind === "image" ? refs : ref ? [ref] : [];
+  const [row] = await sql()`insert into velo_media (user_id, character_id, kind, prompt, model, caption, description, refs, poster_url, status)
+    values (${userId}, ${ctx.characterId}, ${kind}, ${prompt}, ${model}, ${captionFor(kind, ctx.romantic)}, ${desc.slice(0, 400)}, ${sendRefs}, ${kind === "video" ? ref : null}, ${ctx.offer ? "offered" : "working"}) returning id`;
+  if (ctx.offer) return { id: row.id, kind, status: "offered", url: null, description: desc };
+  return await launch(row.id, kind, model, prompt, sendRefs, desc);
+}
+
+/** Sends the job to Atlas (now, or when an offer is accepted). */
+async function launch(id: string, kind: "image" | "video", model: string, prompt: string, refs: string[], desc: string | null): Promise<Media> {
+  const row = { id };
   try {
-    const job = await atlasStart(kind, model, prompt, kind === "image" ? refs : ref ? [ref] : []);
-    await sql()`update velo_media set job_id = ${job}, poster_url = ${kind === "video" ? ref : null} where id = ${row.id}`;
+    const job = await atlasStart(kind, model, prompt, refs);
+    await sql()`update velo_media set job_id = ${job} where id = ${row.id}`;
   } catch (e) {
     if (e instanceof MediaError) {
       await sql()`update velo_media set status = 'failed', error = 'refused by the picture service' where id = ${row.id}`;
-      return { id: row.id, kind, status: "failed", url: null };
+      return { id: row.id, kind, status: "failed", url: null, description: desc };
     }
     // Couldn't reach Atlas: the checks below start it again.
     await sql()`update velo_media set error = ${String(e instanceof Error ? e.message : e).slice(0, 300)} where id = ${row.id}`;
   }
-  return { id: row.id, kind, status: "working", url: null };
+  return { id: row.id, kind, status: "working", url: null, description: desc };
 }
 
-type Row = { id: string; user_id: string; character_id: string | null; kind: "image" | "video"; prompt: string; model: string; job_id: string | null; status: Media["status"]; attempts: number; created_at: string; url: string | null; thumb: string | null; poster_url: string | null; caption: string | null };
-const view = (r: Row): Media => ({ id: r.id, kind: r.kind, status: r.status, url: r.status === "done" ? r.url : null, thumb: r.thumb || r.poster_url || null, caption: r.caption });
+/** They said yes to an offered photo/video: make it now. */
+export async function acceptMedia(userId: string, id: string): Promise<Media | null> {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+  const [r] = await sql()`update velo_media set status = 'working', created_at = now() where id = ${id} and user_id = ${userId} and status = 'offered'
+    returning id, kind, model, prompt, refs, description`;
+  if (!r) return null;
+  await sql()`update velo_messages set content = ${mediaNote(r.kind, "working", r.description)} where media_id = ${id} and user_id = ${userId}`;
+  return await launch(String(r.id), r.kind, String(r.model), String(r.prompt), (r.refs || []) as string[], r.description);
+}
+/** They said no thanks: nothing is made, and they know. */
+export async function declineMedia(userId: string, id: string): Promise<Media | null> {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+  const [r] = await sql()`update velo_media set status = 'declined' where id = ${id} and user_id = ${userId} and status = 'offered' returning id, kind, description`;
+  if (!r) return null;
+  await sql()`update velo_messages set content = ${mediaNote(r.kind, "declined", r.description)} where media_id = ${id} and user_id = ${userId}`;
+  return { id: String(r.id), kind: r.kind, status: "declined", url: null, description: r.description };
+}
+
+/** 💡 What they've liked (reactions) or turned down, so photos lean toward their taste. */
+export async function tasteNote(userId: string, characterId: string | null): Promise<string> {
+  const rows = await sql()`select kind, description, reaction, status from velo_media where user_id = ${userId} and character_id is not distinct from ${characterId}
+    and description is not null and (reaction is not null or status = 'declined') order by created_at desc limit 12`;
+  if (!rows.length) return "";
+  const liked = rows.filter(r => r.reaction).map(r => `${r.reaction} "${r.description}"`), passed = rows.filter(r => r.status === "declined").map(r => `"${r.description}"`);
+  return `THEIR TASTE IN YOUR PHOTOS/VIDEOS (lean toward what they love — settings, outfits, vibes — and be creative with new ideas in that spirit):${liked.length ? `\n- Loved: ${liked.join("; ")}` : ""}${passed.length ? `\n- Turned down: ${passed.join("; ")}` : ""}`;
+}
+
+type Row = { id: string; user_id: string; character_id: string | null; kind: "image" | "video"; prompt: string; model: string; job_id: string | null; status: Media["status"]; attempts: number; created_at: string; url: string | null; thumb: string | null; poster_url: string | null; caption: string | null; description: string | null; refs: string[] | null };
+const view = (r: Row): Media => ({ id: r.id, kind: r.kind, status: r.status, url: r.status === "done" ? r.url : null, thumb: r.thumb || r.poster_url || null, caption: r.caption, description: r.description });
 
 export async function getMedia(userId: string, id: string): Promise<Row | null> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
-  const [r] = await sql()`select m.id, m.user_id, m.character_id, m.kind, m.prompt, m.model, m.job_id, m.status, m.attempts, m.created_at::text, m.poster_url, m.caption, f.url, t.url as thumb
+  const [r] = await sql()`select m.id, m.user_id, m.character_id, m.kind, m.prompt, m.model, m.job_id, m.status, m.attempts, m.created_at::text, m.poster_url, m.caption, m.description, m.refs, f.url, t.url as thumb
     from velo_media m left join velo_files f on f.id = m.file_id left join velo_files t on t.id = m.thumb_file_id where m.id = ${id} and m.user_id = ${userId}`;
   return (r as Row) || null;
 }
@@ -174,9 +231,9 @@ export async function checkMedia(userId: string, id: string): Promise<Media | nu
   try {
     if (Date.now() - Date.parse(r.created_at.replace(" ", "T").replace(/([+-]\d\d)$/, "$1:00")) > GIVE_UP_MS) return await fail("took too long");
     if (!r.job_id) {
-      // Never got started (Atlas was unreachable): start it now. (Restarts are text-only.)
+      // Never got started (Atlas was unreachable): start it now, the same way (references kept).
       try {
-        const job = await atlasStart(r.kind, r.model.endsWith("/edit") ? IMAGE_MODEL() : r.model.replace("image-to-video", "text-to-video"), r.prompt.replace(/^The person in the reference images? is [^;]+; keep their face, hair, body and look exactly the same\. /, ""), []);
+        const job = await atlasStart(r.kind, r.model, r.prompt, r.refs || []);
         await sql()`update velo_media set job_id = ${job}, claimed_at = null where id = ${id}`;
       } catch (e) { if (e instanceof MediaError) return await fail("refused by the picture service"); throw e; }
       return view(r);
