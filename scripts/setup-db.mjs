@@ -38,7 +38,14 @@ try {
     console.log("setup-db: empty database, creating the tables…");
     await sql.unsafe(readFileSync(new URL("../db/schema.sql", import.meta.url), "utf8"));
     console.log("setup-db: tables created");
-  } else console.log("setup-db: tables already there");
+  } else {
+    console.log("setup-db: tables already there");
+    // Newer additions (025 onward) are written to be safe to run again; apply them every build.
+    const { readdirSync } = await import("node:fs");
+    for (const f of readdirSync(new URL("../db/migrations/", import.meta.url)).filter(f => /^(\d{3})-.*\.sql$/.test(f) && Number(f.slice(0, 3)) >= 25).sort()) {
+      await sql.unsafe(readFileSync(new URL(`../db/migrations/${f}`, import.meta.url), "utf8"));
+    }
+  }
   // 🔧 Repair JSON that an earlier version saved as a quoted string instead of as data.
   for (const [t, c] of [["app_config", "value"], ["chat_characters", "traits"], ["velo_actions", "transcript"]]) {
     const r = await sql.unsafe(`update public.${t} set ${c} = (${c} #>> '{}')::jsonb where jsonb_typeof(${c}) = 'string' and left(${c} #>> '{}', 1) in ('{', '[')`);
