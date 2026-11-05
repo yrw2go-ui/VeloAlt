@@ -24,7 +24,7 @@ import { mediaMood } from "./traits";
 import { CHARACTER_ZONES } from "./states";
 import { provider, type ChatModel } from "./models";
 import { oaChat, toOaTools, ProviderError, type OaMessage } from "./openai";
-import { SEND_MEDIA_TOOL, startMedia, mediaReady, MediaError, type Media } from "./media";
+import { SEND_MEDIA_TOOL, startMedia, mediaReady, MediaError, recentMediaNote, type Media } from "./media";
 import { veloLook } from "./veloAvatars";
 
 // Only ever the app's own key (never another credential in the environment).
@@ -96,6 +96,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         `Right now it is ${today.label}${errand ? "" : " where they are"}.`,
         chClock,
         about,
+        canSend ? await recentMediaNote(caller.userId, cid, today.tz).catch(() => "") : "",
         errand || ch ? "" : pro ? SEARCH_INFO + "\n\n" + PRO_INFO + (proTools?.page ? `\nTheir Facebook Page "${proTools.page}" is connected: you can draft posts for it (draft_post).` : "\nNo Facebook Page is connected; if they want you to post, tell them to connect one in Settings → Velo Pro (Facebook only allows Pages, not personal profiles).") : FREE_INFO,
         memory ? `${memory}\n\nYou two have talked before — never introduce yourself; talk like someone who knows them.` : "",
         !ch && (mode === "chat" || mode === "sms" || mode === "talk" || mode === "recap") ? PERSONALITY_PROMPT[personality] : "",
@@ -155,7 +156,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
           const m = await startMedia(caller.userId, input, { characterId: cid, who: ch?.name || "Velo", appearance: ch?.appearance || "", refs, romantic, mood: ch ? mediaMood(ch.traits) : "" });
           media.push(m);
           if (m.status === "failed") throw new MediaError("The picture service wouldn't make that one. Say so briefly and offer something else.");
-          return { ok: true, tell_them: `It's on its way (${m.kind === "image" ? "about half a minute" : "a few minutes"}); it'll show up for them when ready. Mention you're sending it, then keep the conversation going.` };
+          return { ok: true, tell_them: `It's on its way (${m.kind === "image" ? "about a minute" : "a few minutes"}); it'll show up on their screen by itself when ready. Mention you're sending it, then keep the conversation going.` };
         })()
         : isMemoryTool(name) ? await runMemoryTool(caller, name, input, cid)
         : isReminderTool(name) && !ch ? await runReminderTool(caller, name, input, today.tz)

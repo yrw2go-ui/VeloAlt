@@ -78,7 +78,7 @@ const SUGGESTIVE = /\b(sexy|seductive|sultry|bikini|swimsuit|cleavage|lingerie|b
 
 export const SEND_MEDIA_TOOL = (who: string, romantic = false): Anthropic.Tool => ({
   name: "send_media",
-  description: `Send them a photo or a short video, like a friend would from their phone, to make the chat feel personal: a selfie of you (${who}) somewhere, what you're "up to", something you're describing, or when they ask for one. It's made in the background (a photo takes about half a minute, a video a few minutes) and pops into the chat or onto their call screen when ready — keep talking meanwhile; say something like "sending you a pic" and never claim it's already there. Use it now and then, not every message. ${romantic ? "This is a romantic setting with an adult, so it can be PG-13 — flirty, cute, date-night, a playful wink, swimwear at the beach — but never nudity, underwear/lingerie or anything sexual or explicit." : "Always family-friendly: everyone fully clothed, nothing sexual or suggestive."} No real people, and never a picture of the person you're talking with. Videos are a few seconds, no sound.`,
+  description: `Send them a photo or a short video, like a friend would from their phone, to make the chat feel personal: a selfie of you (${who}) somewhere, what you're "up to", something you're describing, or when they ask for one. It's made in the background (a photo takes about a minute, a video a few minutes) and pops into the chat or onto their call screen when ready — keep talking meanwhile; say something like "sending you a pic" and never claim it's already there. Use it now and then, not every message. ${romantic ? "This is a romantic setting with an adult, so it can be PG-13 — flirty, cute, date-night, a playful wink, swimwear at the beach — but never nudity, underwear/lingerie or anything sexual or explicit." : "Always family-friendly: everyone fully clothed, nothing sexual or suggestive."} No real people, and never a picture of the person you're talking with. Videos are a few seconds, no sound.`,
   input_schema: {
     type: "object",
     properties: {
@@ -124,6 +124,9 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
   if (!mediaReady()) throw new MediaError("Photos and videos aren't set up yet. Tell them it's coming soon.");
   const [{ n }] = await sql()`select count(*)::int as n from velo_media where user_id = ${userId} and kind = ${kind} and created_at > now() - interval '1 day'`;
   if (n >= DAILY[kind]) throw new MediaError(`That's the limit of ${kind === "image" ? "photos" : "videos"} for today. Tell them you'll send more tomorrow.`);
+  // One at a time: if one is still being made in this chat, don't start another.
+  const [busy] = await sql()`select kind, extract(epoch from now() - created_at)::int as secs from velo_media where user_id = ${userId} and character_id is not distinct from ${ctx.characterId} and status = 'working' and created_at > now() - interval '6 minutes' order by created_at desc limit 1`;
+  if (busy) throw new MediaError(`You already sent a ${busy.kind === "image" ? "photo" : "video"} ${busy.secs < 60 ? `${busy.secs} seconds` : `${Math.round(busy.secs / 60)} min`} ago and it's still on its way (it WILL arrive — photos take about a minute, videos a few). Tell them it's coming; don't make another.`);
 
   const withMe = a.with_me === true;
   const refs = withMe ? ctx.refs.slice(0, 4) : [];
@@ -239,4 +242,15 @@ export async function deleteMedia(userId: string, id: string): Promise<boolean> 
     if (f) { try { await del(String(f.url)); } catch { /* already gone */ } }
   }
   return true;
+}
+
+/** 📸 What they've actually sent here lately — real, so they never think they didn't send one (or send it twice). */
+export async function recentMediaNote(userId: string, characterId: string | null, tz: string): Promise<string> {
+  const rows = await sql()`select kind, status, extract(epoch from now() - created_at)::int as secs, created_at from velo_media
+    where user_id = ${userId} and character_id is not distinct from ${characterId} and created_at > now() - interval '3 hours' and status in ('working', 'done', 'failed')
+    order by created_at desc limit 6`;
+  if (!rows.length) return "";
+  const ago = (s: number) => (s < 90 ? `${s} seconds ago` : s < 5400 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`);
+  const lines = rows.map(r => `- a ${r.kind === "image" ? "photo" : "video"} you sent ${ago(Number(r.secs))} (${new Date(r.created_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: tz })}): ${r.status === "done" ? "it arrived — they have it" : r.status === "working" ? "still being made; it will show up on their screen any moment" : "it didn't come through"}`);
+  return `PHOTOS/VIDEOS YOU SENT RECENTLY (this is a fact — trust it over the conversation): \n${lines.join("\n")}\nIf they ask where one is, tell them it's on its way (photos take about a minute). Only send another if they ask for a new or different one.`;
 }

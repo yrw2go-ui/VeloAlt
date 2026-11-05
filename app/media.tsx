@@ -58,7 +58,7 @@ export function MediaView({ media, onReady, big = false }: { media: Media; onRea
     <div data-testid="media-working" style={{ width: big ? "min(80vw, 320px)" : 220, aspectRatio: "2 / 3", maxHeight: "min(50dvh, 420px)", borderRadius: 14, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, textAlign: "center", fontSize: 13, background: "linear-gradient(135deg, rgba(124,140,255,.18), rgba(236,72,153,.14))", animation: "mediaPulse 1.8s ease-in-out infinite" }}>
       <span style={{ fontSize: 28 }}>{m.kind === "image" ? "📸" : "🎬"}</span>
       <span>{m.kind === "image" ? "Sending a photo…" : "Making a video…"}</span>
-      <span className="muted" style={{ fontSize: 11 }}>{m.kind === "image" ? "about half a minute" : "a few minutes"}</span>
+      <span className="muted" style={{ fontSize: 11 }}>{m.kind === "image" ? "about a minute" : "a few minutes"}</span>
       <style>{`@keyframes mediaPulse { 0%,100% { opacity: .75 } 50% { opacity: 1 } }`}</style>
     </div>
   );
@@ -108,32 +108,40 @@ export function Viewer({ m, onClose, children }: { m: { kind: "image" | "video";
   );
 }
 
-/** 📞 On a call: the newest photo/video pops up in the middle of the screen when ready (the call keeps going). */
+/** 📞 On a call: every photo/video they send is tracked (not just the newest). Each one pops up in the
+ *  middle of the screen as soon as it's ready, one at a time in the order they arrive; the call keeps going. */
 export function CallMedia({ items, name }: { items: Media[]; name: string }) {
-  const [shown, setShown] = useState<Media | null>(null);
-  const [closed, setClosed] = useState<Set<string>>(new Set());
-  const latest = [...items].reverse().find(m => !closed.has(m.id));
-  if (!latest) return null;
-  const open = shown?.id === latest.id ? shown : null;
+  const [ready, setReady] = useState<Media[]>([]);
+  const [gone, setGone] = useState<Set<string>>(new Set()); // closed or failed
+  const pending = items.filter(m => !gone.has(m.id) && !ready.some(r => r.id === m.id));
+  const open = ready.find(r => !gone.has(r.id)) || null;
+  const close = (id: string) => setGone(s => new Set(s).add(id));
+  const images = pending.filter(m => m.kind === "image").length, videos = pending.length - images;
   return (
     <>
-      {!open && <Watch key={latest.id} m={latest} name={name} onReady={setShown} />}
+      {pending.map(m => <Watch key={m.id} m={m} onReady={x => setReady(r => (r.some(y => y.id === x.id) ? r : [...r, x]))} onFail={() => close(m.id)} />)}
+      {pending.length > 0 && !open && (
+        <div data-testid="call-media-working" style={{ position: "fixed", top: "max(70px, calc(env(safe-area-inset-top) + 56px))", left: "50%", transform: "translateX(-50%)", zIndex: 2050, background: "rgba(59,130,246,.2)", border: "1px solid rgba(59,130,246,.4)", color: "#dbeafe", borderRadius: 999, padding: "6px 14px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>
+          {images ? "📸" : "🎬"} {name} is sending {images && videos ? `${images} photo${images > 1 ? "s" : ""} and ${videos} video${videos > 1 ? "s" : ""}` : images > 1 ? `${images} photos` : videos > 1 ? `${videos} videos` : images ? "a photo" : "a video"}…
+        </div>
+      )}
       {open && (
         <div data-testid="call-media" onClick={e => e.stopPropagation()} onPointerDownCapture={e => e.stopPropagation()}
           style={{ position: "fixed", inset: 0, zIndex: 2100, background: "rgba(0,0,0,.78)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "max(20px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom))", gap: 12 }}>
-          <div style={{ color: "#fff", fontWeight: 700, fontSize: 15, textAlign: "center" }}>{name}: {open.caption || `sent you a ${latest.kind === "image" ? "photo" : "video"}`}</div>
-          <MediaView media={open} big />
-          <button onClick={() => { setClosed(s => new Set(s).add(latest.id)); setShown(null); }} style={{ background: "#1f2937", color: "#fff", border: "1px solid #374151", borderRadius: 999, padding: "10px 22px", fontWeight: 700, cursor: "pointer" }}>Back to call</button>
+          <div style={{ color: "#fff", fontWeight: 700, fontSize: 15, textAlign: "center" }}>{name}: {open.caption || `sent you a ${open.kind === "image" ? "photo" : "video"}`}</div>
+          <MediaView key={open.id} media={open} big />
+          <button onClick={() => close(open.id)} style={{ background: "#1f2937", color: "#fff", border: "1px solid #374151", borderRadius: 999, padding: "10px 22px", fontWeight: 700, cursor: "pointer" }}>
+            {ready.filter(r => !gone.has(r.id)).length > 1 ? "Next" : "Back to call"}
+          </button>
         </div>
       )}
     </>
   );
 }
-/** A small "on its way" chip on the call screen while it's being made. */
-function Watch({ m, name, onReady }: { m: Media; name: string; onReady: (m: Media) => void }) {
+/** Keeps checking one photo/video until it's ready (no screen of its own). */
+function Watch({ m, onReady, onFail }: { m: Media; onReady: (m: Media) => void; onFail: () => void }) {
   const cur = useMedia(m, onReady);
   useEffect(() => { if (m.status === "done") onReady(m); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  if (cur.status === "done") return null;
-  if (cur.status === "failed") return null;
-  return <div data-testid="call-media-working" style={{ position: "fixed", top: "max(70px, calc(env(safe-area-inset-top) + 56px))", left: "50%", transform: "translateX(-50%)", zIndex: 2050, background: "rgba(59,130,246,.2)", border: "1px solid rgba(59,130,246,.4)", color: "#dbeafe", borderRadius: 999, padding: "6px 14px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>{cur.kind === "image" ? "📸" : "🎬"} {name} is sending a {cur.kind === "image" ? "photo" : "video"}…</div>;
+  useEffect(() => { if (cur.status === "failed") onFail(); }, [cur.status]); // eslint-disable-line react-hooks/exhaustive-deps
+  return null;
 }
