@@ -27,15 +27,18 @@ const chip = (on: boolean) => ({ display: "flex", alignItems: "center", gap: 6, 
   border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, background: on ? "rgba(124,140,255,0.15)" : "var(--surface2)", color: "var(--text)" } as const);
 
 /** The chips above the chat. Tap a chip to switch chats; admins tap the open one again to edit it. */
-export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdit, onGallery }: {
-  characters: Character[]; active: string | null; admin: boolean; onPick: (id: string | null) => void; onNew: () => void; onEdit: (c: Character) => void; onGallery: () => void;
+/** 🔴 A small number on a chip: their unread messages there. */
+const Badge = ({ n }: { n?: number }) => (n ? <span data-testid="unread-badge" aria-label={`${n} unread`} style={{ position: "absolute", top: -6, right: -4, minWidth: 18, height: 18, padding: "0 5px", borderRadius: 999, background: "#ef4444", color: "#fff", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid var(--bg, #0b0d17)" }}>{n > 99 ? "99+" : n}</span> : null);
+
+export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdit, onGallery, unread = {} }: {
+  characters: Character[]; active: string | null; admin: boolean; onPick: (id: string | null) => void; onNew: () => void; onEdit: (c: Character) => void; onGallery: () => void; unread?: Record<string, number>;
 }) {
   return (
-    <div data-testid="character-strip" style={{ display: "flex", gap: 8, overflowX: "auto", padding: "8px 12px", borderBottom: "1px solid var(--border)" }}>
-      <button style={chip(active === null)} onClick={() => onPick(null)} aria-pressed={active === null}><VeloAvatar size={26} /> Velo</button>
+    <div data-testid="character-strip" style={{ display: "flex", gap: 8, overflowX: "auto", padding: "12px 12px 8px", borderBottom: "1px solid var(--border)" }}>
+      <button style={{ ...chip(active === null), position: "relative" }} onClick={() => onPick(null)} aria-pressed={active === null}><VeloAvatar size={26} /> Velo<Badge n={active === null ? 0 : unread.velo} /></button>
       {characters.map(c => (
-        <button key={c.id} style={chip(active === c.id)} aria-pressed={active === c.id} onClick={() => (active !== c.id ? onPick(c.id) : admin ? onEdit(c) : undefined)}>
-          <CharacterFace c={c} size={26} /> {c.name}{admin && active === c.id ? " ✎" : ""}
+        <button key={c.id} style={{ ...chip(active === c.id), position: "relative" }} aria-pressed={active === c.id} onClick={() => (active !== c.id ? onPick(c.id) : admin ? onEdit(c) : undefined)}>
+          <CharacterFace c={c} size={26} /> {c.name}{admin && active === c.id ? " ✎" : ""}<Badge n={active === c.id ? 0 : unread[c.id]} />
         </button>
       ))}
       {admin && <button style={{ ...chip(false), padding: "4px 12px" }} onClick={onNew} data-testid="character-new">＋ New</button>}
@@ -69,7 +72,8 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
     setTraits({ ...p.traits });
     if (!personality.trim() || PRESETS.some(x => x.about === personality)) setPersonality(p.about);
   };
-  const [shots, setShots] = useState(0); // finished portraits (refreshes the reference picker)
+  const [shots, setShots] = useState(0);
+  const [pending, setPending] = useState<{ files: File[]; headshot: boolean; fictional: boolean }>({ files: [], headshot: true, fictional: false }); // finished portraits (refreshes the reference picker)
   const [refIds, setRefIds] = useState<string[]>(initial?.reference_ids || []);
   const [voice, setVoice] = useState<VoiceOption>(initial ? { id: initial.voice, name: initial.voice_name || "Voice", kind: initial.voice_kind, about: "", preview: "" } : { id: first.voiceId, name: first.name, kind: first.kind, about: first.about, preview: "" });
   const [busy, setBusy] = useState(false);
@@ -92,7 +96,22 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
   const save = async () => {
     setBusy(true); setMsg("");
     try {
-      const r = await api<{ character: Character }>("/api/characters", { action: c ? "update" : "create", id: c?.id, name, personality, backstory, relation, appearance, voice: { id: voice.id, name: voice.name, kind: voice.kind, owner: voice.owner }, romantic, romanceArc: romantic ? arc : "", traits, preset, timeZone: zone, birthday: bday, referenceIds: refIds });
+      const fields = { name, personality, backstory, relation, appearance, voice: { id: voice.id, name: voice.name, kind: voice.kind, owner: voice.owner }, romantic, romanceArc: romantic ? arc : "", traits, preset, timeZone: zone, birthday: bday };
+      const r = await api<{ character: Character }>("/api/characters", { action: c ? "update" : "create", id: c?.id, ...fields, referenceIds: refIds });
+      // 🖼️ Pictures picked while making a new character: upload them now (first one as headshot), as references.
+      if (!c && pending.files.length && pending.fictional) {
+        const ids: string[] = [];
+        for (const [i, f] of pending.files.entries()) {
+          try { ids.push((await uploadCharacterPicture(f, r.character.id, i === 0 && pending.headshot)).mediaId); }
+          catch (e) { setMsg(e instanceof Error ? e.message : "A picture didn't upload."); }
+        }
+        if (ids.length) {
+          const r2 = await api<{ character: Character }>("/api/characters", { action: "update", id: r.character.id, ...fields, voice: { id: r.character.voice, name: r.character.voice_name, kind: r.character.voice_kind }, referenceIds: ids.slice(0, 4) });
+          r.character = r2.character; setRefIds(r2.character.reference_ids || []);
+        }
+        setPending({ files: [], headshot: true, fictional: false });
+        setShots(n => n + 1);
+      }
       setC(r.character); onSaved(r.character);
       // A library voice is saved as a copy in their ElevenLabs account: follow its new id.
       setVoice(v => ({ ...v, id: r.character.voice, owner: undefined }));
@@ -181,6 +200,7 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
         )}
         {c && <ReferencePicker characterId={c.id} value={refIds} onChange={setRefIds} refresh={shots}
           onPortrait={ch => { setC(ch); onSaved(ch); }} />}
+        {!c && <PendingPictures value={pending} onChange={setPending} />}
         <label style={{ fontSize: 13, fontWeight: 700 }}>Appearance (for the portrait)
           <textarea value={appearance} onChange={e => setAppearance(e.target.value)} maxLength={600} rows={2} placeholder="e.g. weathered sea captain, silver braid, navy coat, warm smile" aria-label="Appearance" style={{ marginTop: 4, resize: "vertical" }} />
         </label>
@@ -356,6 +376,52 @@ function TraitSliders({ value, romantic, onChange }: { value: Record<TraitKey, n
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+/** 🖼️ New character: pick pictures (e.g. made in Atlas Cloud) now; they're uploaded when you tap Create. */
+function PendingPictures({ value, onChange }: { value: { files: File[]; headshot: boolean; fictional: boolean }; onChange: (v: { files: File[]; headshot: boolean; fictional: boolean }) => void }) {
+  const input = useRef<HTMLInputElement>(null);
+  const [urls, setUrls] = useState<string[]>([]);
+  useEffect(() => {
+    const u = value.files.map(f => URL.createObjectURL(f));
+    setUrls(u);
+    return () => u.forEach(x => URL.revokeObjectURL(x));
+  }, [value.files]);
+  const add = (list: FileList | null) => {
+    const picked = Array.from(list || []).filter(f => /^image\/(jpeg|png|webp)$/.test(f.type));
+    onChange({ ...value, files: [...value.files, ...picked].slice(0, 4) });
+    if (input.current) input.current.value = "";
+  };
+  return (
+    <div data-testid="pending-pictures" style={{ fontSize: 13, fontWeight: 700 }}>
+      Pictures of her <span className="muted" style={{ fontWeight: 500 }}>· optional, up to 4 — uploaded when you tap Create</span>
+      {urls.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginTop: 6 }}>
+          {urls.map((u, i) => (
+            <div key={u} style={{ position: "relative", aspectRatio: "2 / 3", borderRadius: 10, overflow: "hidden", border: `3px solid ${i === 0 && value.headshot ? "var(--accent)" : "transparent"}` }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={u} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+              <button type="button" aria-label="Remove picture" onClick={() => onChange({ ...value, files: value.files.filter((_, j) => j !== i) })}
+                style={{ position: "absolute", top: 3, right: 3, width: 22, height: 22, borderRadius: 999, border: "none", background: "rgba(0,0,0,.6)", color: "#fff", fontSize: 12, cursor: "pointer" }}>✕</button>
+              {i === 0 && value.headshot && <span style={{ position: "absolute", bottom: 3, left: 3, fontSize: 10, padding: "2px 6px", borderRadius: 999, background: "var(--accent)", color: "#fff" }}>Headshot</span>}
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ marginTop: 8, padding: 10, borderRadius: 12, border: "1px dashed var(--border)", display: "flex", flexDirection: "column", gap: 6, fontWeight: 500 }}>
+        <label className="row" style={{ gap: 8, alignItems: "flex-start" }}>
+          <input type="checkbox" checked={value.fictional} onChange={e => onChange({ ...value, fictional: e.target.checked })} aria-label="AI-made or fictional" style={{ width: 18, height: 18, marginTop: 1, flexShrink: 0 }} />
+          <span>These pictures are AI-made or fictional (e.g. from Atlas Cloud) — not photos of a real person.</span>
+        </label>
+        <label className="row" style={{ gap: 8 }}>
+          <input type="checkbox" checked={value.headshot} onChange={e => onChange({ ...value, headshot: e.target.checked })} aria-label="Use as headshot" style={{ width: 18, height: 18, flexShrink: 0 }} />
+          <span>Use the first one as her main headshot</span>
+        </label>
+        <button type="button" className="ghost" disabled={!value.fictional || value.files.length >= 4} onClick={() => input.current?.click()} data-testid="pending-add" style={{ alignSelf: "flex-start", padding: "6px 12px", fontSize: 13 }}>⬆️ Add pictures</button>
+        <input ref={input} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onChange={e => add(e.target.files)} data-testid="pending-input" />
       </div>
     </div>
   );

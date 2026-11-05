@@ -187,6 +187,22 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true, marker: await marker(`🎬 Something we did together: ${title}${details ? ` — ${details}` : ""}`, String(s.id)) });
       }
 
+      // 🔴 Unread: messages from Velo / each character since they last looked at that chat.
+      case "chats.unread": {
+        const rows = await db`select m.character_id, count(*)::int as n from velo_messages m
+          left join chat_reads r on r.user_id = m.user_id and r.character_id is not distinct from m.character_id
+          where m.user_id = ${me} and m.role = 'assistant' and m.created_at > coalesce(r.read_at, '-infinity'::timestamptz)
+          group by m.character_id`;
+        return NextResponse.json({ unread: Object.fromEntries(rows.map(r => [r.character_id ? String(r.character_id) : "velo", Number(r.n)])) });
+      }
+      case "chats.read": {
+        const ch = b.characterId ? await getCharacter(String(b.characterId)) : null;
+        if (b.characterId && !ch) return bad("That character wasn't found.");
+        await db`insert into chat_reads (user_id, character_id, read_at) values (${me}, ${ch?.id || null}, now())
+          on conflict (user_id, coalesce(character_id, '00000000-0000-0000-0000-000000000000'::uuid)) do update set read_at = now()`;
+        return NextResponse.json({ ok: true });
+      }
+
       // 🤝 How much this character trusts them (null when trust is off for that character).
       case "relationship.get": {
         const ch = b.characterId ? await getCharacter(String(b.characterId)) : null;

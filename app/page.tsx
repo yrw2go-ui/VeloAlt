@@ -108,6 +108,25 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       .then(r => { setChars(r.characters); setPortraits(r.portraits); setAdmin(r.admin); }).catch(() => {});
   }, [userId]);
   const withChar = chars.find(c => c.id === withId) || null;
+  // 🔴 Unread counts per chat ("velo" or character id). The open chat is marked read as it updates.
+  const [unread, setUnread] = useState<Record<string, number>>({});
+  useEffect(() => {
+    const key = withId || "velo";
+    const tick = async () => {
+      if (document.visibilityState !== "visible") return;
+      if (tab === "chat") await data("chats.read", withId ? { characterId: withId } : {}).catch(() => {});
+      const r = await data<{ unread: Record<string, number> }>("chats.unread").catch(() => null);
+      if (!r) return;
+      const u = { ...r.unread };
+      if (tab === "chat") delete u[key];
+      setUnread(u);
+      try { const total = Object.values(u).reduce((a, b) => a + b, 0); const n = navigator as Navigator & { setAppBadge?: (n: number) => Promise<void>; clearAppBadge?: () => Promise<void> }; if (total) n.setAppBadge?.(total); else n.clearAppBadge?.(); } catch { /* no app badge */ }
+    };
+    tick();
+    const t = setInterval(tick, 20000);
+    document.addEventListener("visibilitychange", tick);
+    return () => { clearInterval(t); document.removeEventListener("visibilitychange", tick); };
+  }, [userId, withId, tab, refresh]);
   const savedChar = (c: Character) => { setChars(cs => (cs.some(x => x.id === c.id) ? cs.map(x => (x.id === c.id ? c : x)) : [...cs, c])); setWithId(c.id); };
   const bump = useCallback(() => setRefresh(r => r + 1), []);
 
@@ -198,7 +217,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       )}
 
       <main style={{ flex: 1, minHeight: 0, overflowY: tab === "chat" ? "hidden" : "auto", display: "flex", flexDirection: "column" }}>
-        {tab === "chat" && <CharacterStrip characters={chars} active={withChar?.id || null} admin={admin} onPick={setWithId} onNew={() => setEditing("new")} onEdit={setEditing} onGallery={() => setGallery(true)} />}
+        {tab === "chat" && <CharacterStrip characters={chars} active={withChar?.id || null} admin={admin} onPick={setWithId} onNew={() => setEditing("new")} onEdit={setEditing} onGallery={() => setGallery(true)} unread={unread} />}
         {tab === "chat" && <Chat key={`${withChar?.id || "velo"}-${chatTick}`} userId={userId} name={name} onChanged={bump} added={chatAdd} onAdded={() => setChatAdd(null)} character={withChar} adult={!!profile?.adultConfirmed} onAdult={() => setProfileTick(t => t + 1)} />}
         {tab === "today" && <Today refresh={refresh} />}
         {tab === "memory" && <Memory refresh={refresh} />}
