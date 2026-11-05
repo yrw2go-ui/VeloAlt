@@ -8,7 +8,7 @@
 // (from their portrait) or Velo's own preset faces are used as references — never a
 // photo someone uploaded, and never the person they're talking with.
 import type Anthropic from "@anthropic-ai/sdk";
-import { put, del } from "@vercel/blob";
+import { put, del, storageReady } from "./storage";
 import sharp from "sharp";
 import { randomUUID } from "node:crypto";
 import { sql } from "./db";
@@ -57,7 +57,7 @@ export async function saveImageItem(userId: string, characterId: string | null, 
 export class MediaError extends Error {}
 
 const ATLAS = () => process.env.ATLASCLOUD_API_URL || "https://api.atlascloud.ai";
-export const mediaReady = () => !!(process.env.ATLASCLOUD_API_KEY && process.env.BLOB_READ_WRITE_TOKEN);
+export const mediaReady = () => !!(process.env.ATLASCLOUD_API_KEY && storageReady());
 const IMAGE_MODEL = () => process.env.ATLASCLOUD_IMAGE_MODEL || "bytedance/seedream-v5.0-pro/text-to-image";
 const EDIT_MODEL = () => process.env.ATLASCLOUD_IMAGE_EDIT_MODEL || "bytedance/seedream-v5.0-pro/edit";
 export const DAILY = { image: 30, video: 6 };

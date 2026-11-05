@@ -1,7 +1,7 @@
 // 📎 Files saved to Vercel Blob (store "velo-blob", public access with long
 // random links): chat attachments and Velo's custom face. Server only.
 // Each file has a row in velo_files; every lookup is scoped to its owner.
-import { del } from "@vercel/blob";
+import { del, storageReady } from "./storage";
 import type Anthropic from "@anthropic-ai/sdk";
 import { sql } from "./db";
 import { scrub } from "./secrets";
@@ -11,7 +11,7 @@ export const DOC_TYPES = ["application/pdf", "text/plain"];
 /** Uploads pass through the server, which Vercel caps at 4.5 MB per request. */
 export const MAX_BYTES = 4 * 1024 * 1024;
 export const MAX_FILES = 500;
-export const blobReady = () => !!process.env.BLOB_READ_WRITE_TOKEN;
+export const blobReady = () => storageReady();
 
 export type VeloFile = { id: string; url: string; name: string; content_type: string; size: number; kind: string; created_at?: string };
 
