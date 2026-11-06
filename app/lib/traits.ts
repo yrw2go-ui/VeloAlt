@@ -30,7 +30,7 @@ export const TRAITS = [
   { key: "trust", label: "Trust", icon: "🤝", hint: "How trusting by nature (0 = trust isn't a factor)",
     bands: ["slow to trust — guarded at first; trust has to be earned with time and consistency, and it's lost fast", "trusts at a normal pace", "trusting from the start — gives people the benefit of the doubt"] },
   { key: "language", label: "Language", icon: "🤬", hint: "How often they swear and talk crude", romantic: true,
-    bands: ["clean — doesn't swear", "swears now and then (damn, hell, shit, pissed)", "swears freely and talks crude, like a real person who curses"] },
+    bands: ["clean — doesn't swear", "swears now and then (damn, hell, shit, pissed, fuck, dammit, pussy, cunt, hoe, whore, slut, bitch, ass, tits, asshole)", "swears freely and talks crude, like a real person who curses"] },
 ] as const;
 export type TraitKey = (typeof TRAITS)[number]["key"];
 export type Traits = Partial<Record<TraitKey, number>>;
