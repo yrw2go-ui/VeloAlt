@@ -21,13 +21,13 @@ import { partOfDay, monthName, calendarNote, ownBirthdayNote } from "./calendar"
 import { hideSecrets, HIDDEN, scrub as scrubText } from "./secrets";
 import { ownFile, fileForAi } from "./files";
 import { characterPrompt, feelingsFor, saveFeelings, trustFor, saveTrust, trustNote, activeScene, sceneNote, noteMentions, acquaintancesNote, referenceUrls, pictureOf, type Character } from "./characters";
+import { allowsExplicit } from "./traits";
 import { aboutThem } from "./bio";
 import { mediaMood, allowsSuggestive } from "./traits";
 import { CHARACTER_ZONES } from "./states";
 import { provider, type ChatModel } from "./models";
 import { oaChat, toOaTools, ProviderError, type OaMessage } from "./openai";
 import { PLAN_TOOL, runPlanTool, plansNote } from "./plans";
-import { PROMISE_TOOL, runPromiseTool, promisesNote } from "./promises";
 import { SEND_MEDIA_TOOL, startMedia, mediaReady, MediaError, tasteNote, recentMediaNote, type Media } from "./media";
 import { veloLook } from "./veloAvatars";
 
@@ -36,7 +36,6 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, authToken:
 export type Mode = "chat" | "sms" | "talk" | "recap" | "remember" | "memo" | "errand" | "errandsum" | "checkin";
 
 // 🔔 Texting them first (a check-in, sent as a push notification).
-const PROMISED = `TEXTING THEM AS PROMISED: earlier they asked you to text them at this time (see WHAT YOU PROMISED), and you agreed. Write that ONE text now (1–2 sentences, under 200 characters), in your own voice and mood, as if you remembered on your own — do what you promised (wake them up, remind them, check in, say goodnight). Don't mention apps, notifications or that you were told to write.`;
 const CHECKIN = `REACHING OUT FIRST: they haven't written in a while, and you're texting them first — like a friend (or more) would. Write ONE short text (1–2 sentences, under 160 characters). Make it personal and specific when you can: follow up on something from YOUR MEMORY or your recent chat, react to the time of day, a holiday, the weather of the season, or just say hi in your own way and voice. Don't mention apps, notifications or that you were told to write. No questions lists, no emojis overload, no links.`;
 export type Turn = { role: "user" | "assistant"; content: string; fileId?: string };
 export const aiReady = () => !!(process.env.VELO_MODEL && process.env.ANTHROPIC_API_KEY);
@@ -65,7 +64,7 @@ const REACT_TAG = /\[react:\s*([^\]\s]+)\s*\]\s*/gu;
 
 /** Velo, or (with `character`) one of the characters: same chats, calls and memory flow, but in the
  *  character's own voice, with only their own memory of this person and no Velo tools. */
-export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn[]; timeZone?: unknown; name?: string; goal?: string; toName?: string; character?: Character | null; origin?: string; promise?: string }): Promise<AskResult> {
+export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn[]; timeZone?: unknown; name?: string; goal?: string; toName?: string; character?: Character | null; origin?: string }): Promise<AskResult> {
   const { mode } = opts;
   const ch = opts.character || null;
   const cid = ch?.id || null;
@@ -113,7 +112,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   // 🎬 A scene (date/outing) being played out right now with this character.
   const scene = ch && (mode === "chat" || mode === "talk") ? await activeScene(caller.userId, ch.id).catch(() => null) : null;
   const modeText = {
-    chat: "", checkin: opts.promise ? PROMISED : CHECKIN, sms: SMS_TALK, talk: CALL_TALK, recap: CALL_RECAP, remember: CALL_REMEMBER, memo: CHAT_REMEMBER,
+    chat: "", checkin: CHECKIN, sms: SMS_TALK, talk: CALL_TALK, recap: CALL_RECAP, remember: CALL_REMEMBER, memo: CHAT_REMEMBER,
     errand: errandPrompt(name, opts.toName || "", opts.goal || ""), errandsum: ERRAND_SUMMARY,
   }[mode];
   const system: Anthropic.TextBlockParam[] = [
@@ -137,8 +136,6 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         modeText,
         scene ? sceneNote(scene) : "",
         ch && mode !== "remember" && mode !== "memo" ? await plansNote(caller.userId, ch.id, today.date).catch(() => "") : "",
-        ch && mode !== "remember" && mode !== "memo" && !opts.promise ? await promisesNote(caller.userId, ch.id, today.tz).catch(() => "") : "",
-        opts.promise ? `WHAT YOU PROMISED: ${opts.promise}` : "",
         ch ? "SCENES: lines starting with 🎬 are dates or outings you two did together (played out, or that they told you happened). Treat them as real shared memories — bring them up, tease about them, look back on them." : "",
         mode === "chat" ? REACT_HINT : "",
         arc && (mode === "remember" || mode === "memo") ? FEELINGS_REMEMBER : "",
@@ -193,7 +190,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   // Tools: none on wrap-ups or errands; Pro adds contacts, drafts, Amazon carts and 🔎 web search
   // (Anthropic runs the searches; results come back in the same response).
   const search = !!proTools && (mode === "chat" || mode === "sms" || mode === "talk");
-  const tools: Anthropic.ToolUnion[] | undefined = wrapUp || errand ? undefined : ch ? [...MEMORY_TOOLS, ...(canSend ? [SEND_MEDIA_TOOL(ch.name, romantic)] : []), ...(mode === "chat" || mode === "talk" || mode === "sms" ? [PLAN_TOOL, PROMISE_TOOL] : [])] : [
+  const tools: Anthropic.ToolUnion[] | undefined = wrapUp || errand ? undefined : ch ? [...MEMORY_TOOLS, ...(canSend ? [SEND_MEDIA_TOOL(ch.name, romantic)] : []), ...(mode === "chat" || mode === "talk" || mode === "sms" ? [PLAN_TOOL] : [])] : [
     ...(canSend ? [SEND_MEDIA_TOOL("Velo", romantic)] : []),
     ...MEMORY_TOOLS, ...REMINDER_TOOLS, ...(proTools?.tools || []),
     ...(search ? [{ type: "web_search_20260209" as const, name: "web_search" as const, max_uses: 5, user_location: { type: "approximate" as const, timezone: today.tz } }] : []),
@@ -221,7 +218,6 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
           return { ok: true, tell_them: `It's on its way (${m.kind === "image" ? "about a minute" : "a few minutes"}); it'll show up on their screen by itself when ready. Mention you're sending it, then keep the conversation going.` };
         })()
         : name === "plan_hangout" && ch ? await runPlanTool(caller.userId, ch.id, input, today.date)
-        : name === "text_them_later" && ch ? await runPromiseTool(caller.userId, ch.id, input, today.tz)
         : isMemoryTool(name) ? await runMemoryTool(caller, name, input, cid)
         : isReminderTool(name) && !ch ? await runReminderTool(caller, name, input, today.tz)
         : isProTool(name) && pro ? await runProTool(caller, name, input, drafts)
@@ -234,10 +230,17 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
     }
   };
 
-  // 🧠 Qwen / DeepSeek, when they picked one: the everyday conversation (chat, texts,
-  // calls with them). Wrap-ups, memory and calls Velo makes for them stay on Claude.
-  // If that provider fails, this message falls back to Claude.
-  const chosen = (u?.chat_model || "claude") as ChatModel;
+  // 🧠 Model choice.
+  // High-Lust romantic characters (adult) always go to DeepSeek or Qwen — Claude is gated.
+  // Otherwise use whatever they picked. Wrap-ups and errands stay on Claude.
+  // If the chosen provider fails, this message falls back to Claude.
+  const spicy = !!(ch && u?.adult_confirmed_at && allowsExplicit(ch.traits));
+  let chosen = (u?.chat_model || "claude") as ChatModel;
+  if (spicy && (mode === "chat" || mode === "sms" || mode === "talk")) {
+    // Prefer DeepSeek, then Qwen. Claude is last resort.
+    if (provider("deepseek")) chosen = "deepseek";
+    else if (provider("qwen")) chosen = "qwen";
+  }
   // Messages with an attachment go to Claude (Qwen and DeepSeek are set up for text only here).
   const alt = chosen !== "claude" && !attached && (mode === "chat" || mode === "sms" || mode === "talk") ? provider(chosen) : null;
   let answered = false;
