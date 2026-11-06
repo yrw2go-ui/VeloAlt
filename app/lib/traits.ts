@@ -30,7 +30,7 @@ export const TRAITS = [
   { key: "trust", label: "Trust", icon: "🤝", hint: "How trusting by nature (0 = trust isn't a factor)",
     bands: ["slow to trust — guarded at first; trust has to be earned with time and consistency, and it's lost fast", "trusts at a normal pace", "trusting from the start — gives people the benefit of the doubt"] },
   { key: "language", label: "Language", icon: "🤬", hint: "How often they swear and talk crude", romantic: true,
-    bands: ["clean — doesn't swear", "swears now and then (damn, hell, shit, pissed, fuck, dammit, pussy, cunt, hoe, whore, slut, bitch, ass, tits, asshole)", "swears freely and talks crude, like a real person who curses"] },
+    bands: ["clean — doesn't swear", "swears now and then (damn, hell, shit, pissed)", "swears freely and talks crude, like a real person who curses"] },
 ] as const;
 export type TraitKey = (typeof TRAITS)[number]["key"];
 export type Traits = Partial<Record<TraitKey, number>>;
@@ -85,7 +85,7 @@ const NONE = {
 export const trustOn = (raw: unknown) => !!raw && typeof raw === "object" && Object.keys(raw).length > 0 && cleanTraits(raw).trust > 0;
 export const startingTrust = (raw: unknown) => Math.max(5, Math.min(90, cleanTraits(raw).trust * 9));
 export const allowsSuggestive = (raw: unknown) => !raw || typeof raw !== "object" || !Object.keys(raw).length || cleanTraits(raw).suggestive > 0;
-export const allowsExplicit = (raw: unknown) => !!raw && typeof raw === "object" && cleanTraits(raw).lust >= 7;
+export const allowsExplicit = (raw: unknown) => !!raw && typeof raw === "object" && cleanTraits(raw).lust >= 5;
 
 export function traitsPrompt(raw: unknown, romance: boolean): string {
   const t = cleanTraits(raw);
@@ -98,6 +98,6 @@ export function traitsPrompt(raw: unknown, romance: boolean): string {
 export function mediaMood(raw: unknown): string {
   if (!raw || typeof raw !== "object" || !Object.keys(raw).length) return "";
   const t = cleanTraits(raw);
-  const bits = [t.humor >= 7 ? "smiling or laughing" : t.humor <= 2 ? "a calm, neutral expression" : "", t.coldness >= 7 ? "reserved, cool demeanor" : "", t.energetic >= 7 ? "lively and full of energy" : t.energetic <= 2 ? "relaxed and still" : "", t.moody >= 8 ? "thoughtful, a little wistful" : "", t.lust >= 7 ? "sensual, charged" : ""].filter(Boolean);
+  const bits = [t.humor >= 7 ? "smiling or laughing" : t.humor <= 2 ? "a calm, neutral expression" : "", t.coldness >= 7 ? "reserved, cool demeanor" : "", t.energetic >= 7 ? "lively and full of energy" : t.energetic <= 2 ? "relaxed and still" : "", t.moody >= 8 ? "thoughtful, a little wistful" : "", t.lust >= 5 ? "sensual, charged" : ""].filter(Boolean);
   return bits.length ? `Their vibe: ${bits.join(", ")}.` : "";
 }
