@@ -16,7 +16,7 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, authToken:
 export const MAX_CHARACTERS = 50;
 export const DAILY_PORTRAITS = 30;
 
-export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; portrait_url: string | null; portrait_job: string | null };
+export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; portrait_url: string | null; portrait_job: string | null; prefer_deepseek?: boolean; prefer_qwen?: boolean };
 
 export async function isAdmin(userId: string): Promise<boolean> {
   const [u] = await sql()`select is_admin from users where id = ${userId}`;
@@ -25,13 +25,13 @@ export async function isAdmin(userId: string): Promise<boolean> {
 
 export async function getCharacter(id: string): Promise<Character | null> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
-  const [c] = await sql()`select c.id, c.name, c.personality, c.backstory, c.relation, c.appearance, c.job, c.casual_wear, c.hobbies, c.voice, c.voice_name, c.voice_kind, c.romantic, c.romance_arc, c.reference_ids, c.time_zone, c.traits, c.preset, c.birthday, c.portrait_job, f.url as portrait_url
+  const [c] = await sql()`select c.id, c.name, c.personality, c.backstory, c.relation, c.appearance, c.job, c.casual_wear, c.hobbies, c.voice, c.voice_name, c.voice_kind, c.romantic, c.romance_arc, c.prefer_deepseek, c.prefer_qwen, c.reference_ids, c.time_zone, c.traits, c.preset, c.birthday, c.portrait_job, f.url as portrait_url
     from chat_characters c left join velo_files f on f.id = c.portrait_file_id where c.id = ${id}`;
   return (c as Character) || null;
 }
 
 export async function listCharacters(): Promise<Character[]> {
-  return (await sql()`select c.id, c.name, c.personality, c.backstory, c.relation, c.appearance, c.job, c.casual_wear, c.hobbies, c.voice, c.voice_name, c.voice_kind, c.romantic, c.romance_arc, c.reference_ids, c.time_zone, c.traits, c.preset, c.birthday, c.portrait_job, f.url as portrait_url
+  return (await sql()`select c.id, c.name, c.personality, c.backstory, c.relation, c.appearance, c.job, c.casual_wear, c.hobbies, c.voice, c.voice_name, c.voice_kind, c.romantic, c.romance_arc, c.prefer_deepseek, c.prefer_qwen, c.reference_ids, c.time_zone, c.traits, c.preset, c.birthday, c.portrait_job, f.url as portrait_url
     from chat_characters c left join velo_files f on f.id = c.portrait_file_id order by c.created_at`) as Character[];
 }
 

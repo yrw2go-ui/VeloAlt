@@ -231,15 +231,19 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   };
 
   // 🧠 Model choice.
-  // High-Lust romantic characters (adult) always go to DeepSeek or Qwen — Claude is gated.
-  // Otherwise use whatever they picked. Wrap-ups and errands stay on Claude.
-  // If the chosen provider fails, this message falls back to Claude.
+  // Character can force DeepSeek / Qwen (skips Claude). High-Lust romantic also prefers them.
+  // If neither flag is set and it's not high-Lust, use whatever the user picked.
+  // Wrap-ups and errands stay on Claude. If the provider fails, falls back to Claude.
+  const forceDeep = !!ch?.prefer_deepseek;
+  const forceQwen = !!ch?.prefer_qwen;
   const spicy = !!(ch && u?.adult_confirmed_at && allowsExplicit(ch.traits));
   let chosen = (u?.chat_model || "claude") as ChatModel;
-  if (spicy && (mode === "chat" || mode === "sms" || mode === "talk")) {
-    // Prefer DeepSeek, then Qwen. Claude is last resort.
-    if (provider("deepseek")) chosen = "deepseek";
-    else if (provider("qwen")) chosen = "qwen";
+  if ((forceDeep || forceQwen || spicy) && (mode === "chat" || mode === "sms" || mode === "talk")) {
+    // Prefer DeepSeek if forced or available, else Qwen. Never Claude when a flag is set.
+    if ((forceDeep || spicy) && provider("deepseek")) chosen = "deepseek";
+    else if ((forceQwen || spicy) && provider("qwen")) chosen = "qwen";
+    else if (forceDeep && provider("qwen")) chosen = "qwen"; // deep forced but only qwen set
+    else if (forceQwen && provider("deepseek")) chosen = "deepseek";
   }
   // Messages with an attachment go to Claude (Qwen and DeepSeek are set up for text only here).
   const alt = chosen !== "claude" && !attached && (mode === "chat" || mode === "sms" || mode === "talk") ? provider(chosen) : null;
