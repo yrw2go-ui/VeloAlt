@@ -206,7 +206,7 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
         <VoicePicker value={voice} onChange={setVoice} />
         <label className="row" style={{ gap: 10, fontSize: 13, fontWeight: 700, alignItems: "flex-start" }}>
           <input type="checkbox" checked={romantic} onChange={e => setRomantic(e.target.checked)} aria-label="Romantic" style={{ width: 20, height: 20, marginTop: 1, flexShrink: 0 }} />
-          <span>💕 Romantic <span className="muted" style={{ fontWeight: 500, display: "block" }}>Romance becomes possible with adults who confirmed they're 18+. How far it goes depends on their Lust slider and personality. Others get a friendly, platonic version.</span></span>
+          <span>💕 Romantic <span className="muted" style={{ fontWeight: 500, display: "block" }}>Romance becomes possible with adults who confirmed they&apos;re 18+. How far it goes depends on their Lust slider and personality. Others get a friendly, platonic version.</span></span>
         </label>
         <label className="row" style={{ gap: 10, fontSize: 13, fontWeight: 700, alignItems: "flex-start" }}>
           <input type="checkbox" checked={preferDeep} onChange={e => setPreferDeep(e.target.checked)} aria-label="Use DeepSeek" style={{ width: 20, height: 20, marginTop: 1, flexShrink: 0 }} />
@@ -220,7 +220,7 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
         {romantic && (
           <label style={{ fontSize: 13, fontWeight: 700 }}>💕 Romance arc
             <textarea value={arc} onChange={e => setArc(e.target.value)} maxLength={1500} rows={3} aria-label="Romance arc"
-              placeholder="How their feelings start and can grow, e.g. Not interested in them at first and a bit cold — but if they're patient and kind, she slowly starts to care and could fall for them."
+              placeholder="How their feelings start and can grow, e.g. Not interested in them at first and a bit cold — but if they&apos;re patient and kind, she slowly starts to care and could fall for them."
               style={{ marginTop: 4, resize: "vertical" }} />
             <span className="muted" style={{ fontWeight: 500, display: "block", marginTop: 4 }}>Each person&apos;s relationship develops on its own from here, a little after every chat and call. Edit this any time to add new turns.</span>
           </label>
@@ -408,7 +408,7 @@ function TraitSliders({ value, romantic, onChange }: { value: Record<TraitKey, n
   );
 }
 
-/** 🖼️ New character: pick pictures (e.g. made in Atlas Cloud) now; they're uploaded when you tap Create. */
+/** 🖼️ New character: pick pictures (e.g. made in Atlas Cloud) now; they&apos;re uploaded when you tap Create. */
 function PendingPictures({ value, onChange }: { value: { files: File[]; headshot: boolean; fictional: boolean }; onChange: (v: { files: File[]; headshot: boolean; fictional: boolean }) => void }) {
   const input = useRef<HTMLInputElement>(null);
   const [urls, setUrls] = useState<string[]>([]);
