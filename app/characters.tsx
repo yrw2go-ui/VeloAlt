@@ -138,6 +138,19 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
     try { await api("/api/characters", { action: "delete", id: c.id }); onDeleted(c.id); }
     catch (e) { setMsg(e instanceof Error ? e.message : "Couldn't delete."); setBusy(false); }
   };
+  const duplicate = async () => {
+    if (!c) return;
+    const newName = window.prompt(`Duplicate ${c.name} as:`, `${c.name} (copy)`);
+    if (!newName || !newName.trim()) return;
+    setBusy(true); setMsg("");
+    try {
+      const fields = { name: newName.trim(), personality, backstory, relation, appearance, job, casualWear: wear, hobbies, voice: { id: voice.id, name: voice.name, kind: voice.kind }, romantic, romanceArc: romantic ? arc : "", traits, preset, timeZone: zone, birthday: bday, preferDeepseek: preferDeep, preferQwen: preferQwen };
+      const r = await api<{ character: Character }>("/api/characters", { action: "create", ...fields });
+      onSaved(r.character);
+      setMsg(`Created ${r.character.name}.`);
+    } catch (e) { setMsg(e instanceof Error ? e.message : "Couldn't duplicate."); }
+    finally { setBusy(false); }
+  };
 
   return (
     <div role="dialog" aria-modal="true" data-testid="character-editor" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }}>
@@ -236,7 +249,7 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
         <div className="row" style={{ flexWrap: "wrap" }}>
           <button className="btn" disabled={busy || !name.trim() || (!dirty && !!c)} onClick={save}>{busy ? "…" : c ? "Save" : "Create"}</button>
           {portraits && <button className="ghost" disabled={busy || working || !name.trim() || !appearance.trim()} onClick={portrait} data-testid="character-portrait">{c?.portrait_url ? "🎨 New portrait" : "🎨 Generate portrait"}</button>}
-          {c && <button className="ghost" disabled={busy} onClick={remove} style={{ marginLeft: "auto", color: "var(--bad)" }}>Delete</button>}
+          {c && <button className="ghost" disabled={busy} onClick={duplicate} style={{ marginLeft: "auto" }}>Duplicate</button>}{c && <button className="ghost" disabled={busy} onClick={remove} style={{ color: "var(--bad)" }}>Delete</button>}
         </div>
       </div>
     </div>
