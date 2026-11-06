@@ -12,7 +12,7 @@ import { CHARACTER_ZONES } from "./lib/states";
 
 type VoiceOption = { id: string; name: string; kind: "female" | "male"; about: string; preview: string; owner?: string };
 
-export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; portrait_url: string | null; portrait_job: string | null };
+export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; portrait_url: string | null; portrait_job: string | null; prefer_deepseek?: boolean; prefer_qwen?: boolean };
 
 /** A character's picture in a circle (their initial until a portrait exists). */
 export function CharacterFace({ c, size }: { c: Pick<Character, "name" | "portrait_url">; size: number }) {
@@ -62,6 +62,8 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
   const [hobbies, setHobbies] = useState(initial?.hobbies || "");
   const first = CHARACTER_VOICES[0];
   const [romantic, setRomantic] = useState(!!initial?.romantic);
+  const [preferDeep, setPreferDeep] = useState(!!initial?.prefer_deepseek);
+  const [preferQwen, setPreferQwen] = useState(!!initial?.prefer_qwen);
   const [arc, setArc] = useState(initial?.romance_arc || "");
   const [traits, setTraits] = useState<Record<TraitKey, number>>(cleanTraits(initial?.traits && Object.keys(initial.traits).length ? initial.traits : DEFAULT_TRAITS));
   const [preset, setPreset] = useState(initial?.preset || "");
@@ -82,7 +84,7 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const working = !!c?.portrait_job;
-  const dirty = !c || name !== c.name || personality !== c.personality || backstory !== c.backstory || relation !== c.relation || appearance !== c.appearance || job !== (c.job || "") || wear !== (c.casual_wear || "") || hobbies !== (c.hobbies || "") || voice.id !== c.voice || JSON.stringify(traits) !== JSON.stringify(cleanTraits(c.traits && Object.keys(c.traits).length ? c.traits : DEFAULT_TRAITS)) || preset !== (c.preset || "") || zone !== (c.time_zone || "") || bday !== (c.birthday || "") || romantic !== !!c.romantic || (romantic ? arc : "") !== (c.romance_arc || "") || refIds.join() !== (c.reference_ids || []).join();
+  const dirty = !c || name !== c.name || personality !== c.personality || backstory !== c.backstory || relation !== c.relation || appearance !== c.appearance || job !== (c.job || "") || wear !== (c.casual_wear || "") || hobbies !== (c.hobbies || "") || voice.id !== c.voice || JSON.stringify(traits) !== JSON.stringify(cleanTraits(c.traits && Object.keys(c.traits).length ? c.traits : DEFAULT_TRAITS)) || preset !== (c.preset || "") || zone !== (c.time_zone || "") || bday !== (c.birthday || "") || romantic !== !!c.romantic || preferDeep !== !!c.prefer_deepseek || preferQwen !== !!c.prefer_qwen || (romantic ? arc : "") !== (c.romance_arc || "") || refIds.join() !== (c.reference_ids || []).join();
 
   // A portrait in progress: check back every few seconds until it's ready.
   useEffect(() => {
@@ -99,7 +101,7 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
   const save = async () => {
     setBusy(true); setMsg("");
     try {
-      const fields = { name, personality, backstory, relation, appearance, job, casualWear: wear, hobbies, voice: { id: voice.id, name: voice.name, kind: voice.kind, owner: voice.owner }, romantic, romanceArc: romantic ? arc : "", traits, preset, timeZone: zone, birthday: bday };
+      const fields = { name, personality, backstory, relation, appearance, job, casualWear: wear, hobbies, voice: { id: voice.id, name: voice.name, kind: voice.kind, owner: voice.owner }, romantic, romanceArc: romantic ? arc : "", traits, preset, timeZone: zone, birthday: bday, preferDeepseek: preferDeep, preferQwen: preferQwen };
       const r = await api<{ character: Character }>("/api/characters", { action: c ? "update" : "create", id: c?.id, ...fields, referenceIds: refIds });
       // 🖼️ Pictures picked while making a new character: upload them now (first one as headshot), as references.
       if (!c && pending.files.length && pending.fictional) {
@@ -204,8 +206,17 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
         <VoicePicker value={voice} onChange={setVoice} />
         <label className="row" style={{ gap: 10, fontSize: 13, fontWeight: 700, alignItems: "flex-start" }}>
           <input type="checkbox" checked={romantic} onChange={e => setRomantic(e.target.checked)} aria-label="Romantic" style={{ width: 20, height: 20, marginTop: 1, flexShrink: 0 }} />
-          <span>💕 Romantic (PG-13) <span className="muted" style={{ fontWeight: 500, display: "block" }}>Romance becomes possible with adults who confirmed they&apos;re 18+ (never explicit) — but their personality still leads. Others get a friendly, platonic version.</span></span>
+          <span>💕 Romantic <span className="muted" style={{ fontWeight: 500, display: "block" }}>Romance becomes possible with adults who confirmed they're 18+. How far it goes depends on their Lust slider and personality. Others get a friendly, platonic version.</span></span>
         </label>
+        <label className="row" style={{ gap: 10, fontSize: 13, fontWeight: 700, alignItems: "flex-start" }}>
+          <input type="checkbox" checked={preferDeep} onChange={e => setPreferDeep(e.target.checked)} aria-label="Use DeepSeek" style={{ width: 20, height: 20, marginTop: 1, flexShrink: 0 }} />
+          <span>DeepSeek <span className="muted" style={{ fontWeight: 500, display: "block" }}>Always chat with this character through DeepSeek (skips Claude).</span></span>
+        </label>
+        <label className="row" style={{ gap: 10, fontSize: 13, fontWeight: 700, alignItems: "flex-start" }}>
+          <input type="checkbox" checked={preferQwen} onChange={e => setPreferQwen(e.target.checked)} aria-label="Use Qwen" style={{ width: 20, height: 20, marginTop: 1, flexShrink: 0 }} />
+          <span>Qwen <span className="muted" style={{ fontWeight: 500, display: "block" }}>Always chat with this character through Qwen (skips Claude).</span></span>
+        </label>
+        {(preferDeep || preferQwen) && <div className="muted" style={{ fontSize: 12 }}>If both are checked, DeepSeek is tried first, then Qwen. Claude is never used.</div>}
         {romantic && (
           <label style={{ fontSize: 13, fontWeight: 700 }}>💕 Romance arc
             <textarea value={arc} onChange={e => setArc(e.target.value)} maxLength={1500} rows={3} aria-label="Romance arc"
@@ -220,7 +231,7 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
         <label style={{ fontSize: 13, fontWeight: 700 }}>Appearance (for the portrait)
           <textarea value={appearance} onChange={e => setAppearance(e.target.value)} maxLength={600} rows={2} placeholder="e.g. weathered sea captain, silver braid, navy coat, warm smile" aria-label="Appearance" style={{ marginTop: 4, resize: "vertical" }} />
         </label>
-        <div className="muted" style={{ fontSize: 12 }}>Everyone can chat with and call this character. Each person gets their own chats and memories with them. Characters are fictional: no real people and nothing explicit — romantic characters can be PG-13 (flirty, suggestive, never explicit). A quick safety check runs when you save.</div>
+        <div className="muted" style={{ fontSize: 12 }}>Everyone can chat with and call this character. Each person gets their own chats and memories with them. Characters are fictional: no real people. Romantic characters can be explicit when their Lust is high enough.</div>
         {msg && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {msg}</div>}
         <div className="row" style={{ flexWrap: "wrap" }}>
           <button className="btn" disabled={busy || !name.trim() || (!dirty && !!c)} onClick={save}>{busy ? "…" : c ? "Save" : "Create"}</button>
