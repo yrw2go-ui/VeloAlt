@@ -150,7 +150,16 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   const respond = async (next: ChatMsg[], myId?: string) => {
     setBusy(true); setErr("");
     try {
-      const r = await api<{ reply: string; changed?: boolean; drafts?: Draft[]; media?: Media[]; react?: string }>("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name, ...thread, ...(myId ? { replyTo: myId } : {}) });
+      let r: { reply: string; changed?: boolean; drafts?: Draft[]; media?: Media[]; react?: string };
+      try {
+        r = await api("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name, ...thread, ...(myId ? { replyTo: myId } : {}) });
+      } catch (e) {
+        // App was backgrounded or the connection dropped — retry once.
+        if (e instanceof TypeError && /fetch|network|abort/i.test(e.message)) {
+          await new Promise(res => setTimeout(res, 800));
+          r = await api("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name, ...thread, ...(myId ? { replyTo: myId } : {}) });
+        } else throw e;
+      }
       if (r.react) setMsgs(list => (list || []).map(x => (x.id && x.id === myId ? { ...x, theirReaction: r.react } : x)));
       // 🎨 Photos/videos being made show up right under the reply and fill in when ready.
       const sent: ChatMsg[] = (r.media || []).filter(x => x.status !== "failed").map(media => ({ role: "assistant", content: mediaNote(media), media }));
