@@ -17,7 +17,7 @@ import { MediaView, ReactionBar, type Media } from "./media";
 export type ChatWith = { id: string; name: string; portrait_url: string | null; romantic?: boolean };
 
 export type ChatFile = { id: string; url: string; thumb?: string | null; name: string; type: string };
-export type ChatMsg = { id?: string; role: "user" | "assistant"; content: string; draft?: Draft; file?: ChatFile; media?: Media; reaction?: string | null; theirReaction?: string | null };
+export type ChatMsg = { id?: string; role: "user" | "assistant"; content: string; peek?: boolean; draft?: Draft; file?: ChatFile; media?: Media; reaction?: string | null; theirReaction?: string | null };
 /** How a sent photo/video reads in the history the AI sees. */
 export const mediaNote = (m: Media) => {
   const what = m.kind === "image" ? "photo" : "video", d = m.description ? `"${m.description}"` : "";
@@ -30,7 +30,8 @@ const ACCEPT = "image/jpeg,image/png,image/webp,image/gif,application/pdf,text/p
 const unsavedBy = new Map<string, number>();
 // Reactions travel with the history, so she knows what they reacted to (and what she did).
 const withReactions = (x: ChatMsg) => x.role === "assistant" && x.reaction ? `${x.content}\n(they reacted ${x.reaction} to this)` : x.role === "user" && x.theirReaction ? `${x.content}\n(you reacted ${x.theirReaction})` : x.content;
-const realMsgs = (m: ChatMsg[]) => m.filter(x => !x.draft).map(x => ({ role: x.role, content: withReactions(x), ...(x.file ? { fileId: x.file.id } : {}) }));
+// 👀 Peeks are only theirs: she never sees them.
+const realMsgs = (m: ChatMsg[]) => m.filter(x => !x.draft && !x.peek).map(x => ({ role: x.role, content: withReactions(x), ...(x.file ? { fileId: x.file.id } : {}) }));
 const INTRO = "Hi, I'm Velo! 👋 I'm here for whatever you need — planning your day, reminders, to-dos, talking things through, or just keeping you company. What should I call you?";
 const HELLO = (n: string) => [`Hey${n ? ` ${n}` : ""}! What's on your mind?`, `Hi${n ? ` ${n}` : ""} — how's your day going?`, `Hey${n ? ` ${n}` : ""}, good to see you. What can I do for you?`];
 const SUGGESTIONS = ["Plan my day", "Remind me to call Mom tomorrow at 6pm", "I need to vent", "Help me set a goal"];
@@ -121,6 +122,19 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     const t = hideSecrets(raw.trim()).text;
     const file = attach;
     if ((!t && !file) || busy || uploading || !msgs) return;
+    // 👀 "*peek*" during a scene: a picture of the moment, as if they were there. She doesn't reply or know.
+    if (cid && scene && !file && /^\s*\*?\s*pe(e|a)k\s*\*?\s*[.!]?\s*$/i.test(t)) {
+      const mine: ChatMsg = { role: "user", content: "*peek*", peek: true };
+      setMsgs([...msgs, mine]); setText(""); setBusy(true); setErr("");
+      try {
+        const r = await data<{ media: Media; userMsgId: string; mediaMsgId: string }>("scene.peek", { characterId: cid });
+        setMsgs(list => [...(list || []).map(x => (x === mine ? { ...x, id: r.userMsgId } : x)), { id: r.mediaMsgId, role: "assistant", content: "(peek)", media: r.media, peek: true }]);
+      } catch (e) {
+        setMsgs(list => (list || []).filter(x => x !== mine));
+        setErr(e instanceof Error ? e.message : "Couldn't peek right now.");
+      } finally { setBusy(false); }
+      return;
+    }
     const opener: ChatMsg[] = msgs.length || cid ? [] : [{ role: "assistant", content: openingLine }];
     const mine: ChatMsg = { role: "user", content: t || "📎", ...(file ? { file } : {}) };
     const next = [...msgs, ...opener, mine];
@@ -225,7 +239,8 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   };
   // ❤️ They reacted to a photo/video: it's saved where Velo/the character sees it, and sometimes they answer.
   const react = async (id: string, emoji: string) => {
-    const cur = msgsRef.current.find(x => x.media?.id === id)?.media;
+    const holder = msgsRef.current.find(x => x.media?.id === id);
+    const cur = holder?.media;
     if (!cur) return;
     const next = cur.reaction === emoji ? null : emoji;
     const set = (reaction: string | null, content?: string) => setMsgs(list => (list || []).map(x => (x.media?.id === id ? { ...x, ...(content ? { content } : {}), media: { ...x.media!, reaction } } : x)));
@@ -233,7 +248,8 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     let note = "";
     try { note = (await data<{ note: string }>("media.react", { id, reaction: next })).note; set(next, note); }
     catch { set(cur.reaction || null); return; }
-    if (!next || busy || Math.random() > 0.55) return;
+    // A peek is theirs alone: she never sees it, or their reaction to it.
+    if (!next || busy || holder?.peek || Math.random() > 0.55) return;
     setBusy(true);
     try {
       const history = realMsgs(msgsRef.current.map(x => (x.media?.id === id ? { ...x, content: note } : x)));
@@ -352,6 +368,18 @@ function Bubble({ m, face, who, onMedia, onReact, onAnswer, onReactMsg }: { m: C
   const badge = (r: string, who: string) => (
     <span data-testid={mine ? "their-reaction" : "my-reaction"} aria-label={`${who} reacted ${r}`}
       style={{ position: "absolute", bottom: -12, [mine ? "left" : "right"]: -6, fontSize: 15, lineHeight: 1, padding: "3px 5px", borderRadius: 999, background: "var(--surface)", border: "1px solid var(--border)", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }}>{r}</span>
+  );
+  if (m.peek && mine) return (
+    <div data-testid="peek-note" style={{ alignSelf: "flex-end", fontSize: 12, padding: "4px 10px", borderRadius: 999, border: "1px dashed var(--border)" }} className="muted">👀 you peeked</div>
+  );
+  if (m.peek && m.media) return (
+    <div data-testid="peek-media" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+      <div className="muted" style={{ fontSize: 11 }}>👀 Peek · {who} doesn&apos;t know</div>
+      <div style={{ maxWidth: "min(86%, 400px)" }}>
+        <MediaView media={m.media} onReady={onMedia} who={who} onAnswer={x => onAnswer(x)} />
+        {m.media.status === "done" && <ReactionBar value={m.media.reaction} onPick={r => onReact(m.media!.id, r)} />}
+      </div>
+    </div>
   );
   if (m.content.startsWith("🎬 ")) return (
     <div data-testid="scene-note" style={{ alignSelf: "center", maxWidth: "90%", textAlign: "center", fontSize: 12, padding: "6px 12px", borderRadius: 999, background: "var(--surface2)", border: "1px solid var(--border)" }} className="muted">{m.content}</div>

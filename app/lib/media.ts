@@ -124,7 +124,7 @@ async function atlasStart(kind: "image" | "video", model: string, prompt: string
 }
 
 /** Starts a photo or video (from the send_media tool) — or, with `offer`, only offers it: nothing is made until they accept. */
-export async function startMedia(userId: string, input: unknown, ctx: { characterId: string | null; who: string; appearance: string; refs: string[]; romantic: boolean; mood?: string; offer?: boolean; other?: { name: string; refs: string[]; appearance: string } | null }): Promise<Media> {
+export async function startMedia(userId: string, input: unknown, ctx: { characterId: string | null; who: string; appearance: string; refs: string[]; romantic: boolean; mood?: string; offer?: boolean; other?: { name: string; refs: string[]; appearance: string } | null; peek?: boolean }): Promise<Media> {
   const a = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
   const kind = a.kind === "video" ? "video" : "image";
   const desc = scrub(String(a.description || "").replace(/\s+/g, " ").trim().slice(0, 400));
@@ -143,7 +143,7 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
   }
   if (n >= DAILY[kind]) throw new MediaError(`That's the limit of ${kind === "image" ? "photos" : "videos"} for today. Tell them you'll send more tomorrow.`);
   // One at a time: if one is still being made in this chat, don't start another.
-  const [busy] = await sql()`select kind, extract(epoch from now() - created_at)::int as secs from velo_media where user_id = ${userId} and character_id is not distinct from ${ctx.characterId} and status = 'working' and created_at > now() - interval '6 minutes' order by created_at desc limit 1`;
+  const [busy] = await sql()`select kind, extract(epoch from now() - created_at)::int as secs from velo_media where user_id = ${userId} and character_id is not distinct from ${ctx.characterId} and status = 'working' and not peek and created_at > now() - interval '6 minutes' order by created_at desc limit 1`;
   if (busy) throw new MediaError(`You already sent a ${busy.kind === "image" ? "photo" : "video"} ${busy.secs < 60 ? `${busy.secs} seconds` : `${Math.round(busy.secs / 60)} min`} ago and it's still on its way (it WILL arrive — photos take about a minute, videos a few). Tell them it's coming; don't make another.`);
   await sql()`update velo_media set status = 'declined' where user_id = ${userId} and character_id is not distinct from ${ctx.characterId} and status = 'offered'`;
 
@@ -153,7 +153,7 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
   // 📸 Same moment as her last photo (same day, place, outfit): that photo leads the references.
   const [prev] = withMe && !o && a.same_moment === true
     ? await sql()`select f.url, m.description from velo_media m join velo_files f on f.id = m.file_id where m.user_id = ${userId} and m.character_id is not distinct from ${ctx.characterId}
-        and m.kind = 'image' and m.status = 'done' and m.created_at > now() - interval '14 hours' order by m.created_at desc limit 1`
+        and m.kind = 'image' and m.status = 'done' and not m.peek and m.created_at > now() - interval '14 hours' order by m.created_at desc limit 1`
     : [];
   const oRefs = o ? o.refs.slice(0, withMe ? 2 : 4) : [];
   const meRefs = withMe ? ctx.refs.slice(0, o ? 2 : prev ? 3 : 4) : [];
@@ -177,8 +177,8 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
   const [u] = await sql()`select video_model from users where id = ${userId}`;
   const model = kind === "image" ? (ref ? EDIT_MODEL() : IMAGE_MODEL()) : videoModel(String(u?.video_model || DEFAULT_VIDEO_MODEL), !!ref);
   const sendRefs = kind === "image" ? refs : ref ? [ref] : [];
-  const [row] = await sql()`insert into velo_media (user_id, character_id, kind, prompt, model, caption, description, refs, poster_url, status)
-    values (${userId}, ${ctx.characterId}, ${kind}, ${prompt}, ${model}, ${captionFor(kind, ctx.romantic)}, ${desc.slice(0, 400)}, ${sendRefs}, ${kind === "video" ? ref : null}, ${ctx.offer ? "offered" : "working"}) returning id`;
+  const [row] = await sql()`insert into velo_media (user_id, character_id, kind, prompt, model, caption, description, refs, poster_url, status, peek)
+    values (${userId}, ${ctx.characterId}, ${kind}, ${prompt}, ${model}, ${ctx.peek ? null : captionFor(kind, ctx.romantic)}, ${desc.slice(0, 400)}, ${sendRefs}, ${kind === "video" ? ref : null}, ${ctx.offer ? "offered" : "working"}, ${!!ctx.peek}) returning id`;
   if (ctx.offer) return { id: row.id, kind, status: "offered", url: null, description: desc };
   return await launch(row.id, kind, model, prompt, sendRefs, desc);
 }
@@ -221,7 +221,7 @@ export async function declineMedia(userId: string, id: string): Promise<Media | 
 /** 💡 What they've liked (reactions) or turned down, so photos lean toward their taste. */
 export async function tasteNote(userId: string, characterId: string | null): Promise<string> {
   const rows = await sql()`select kind, description, reaction, status from velo_media where user_id = ${userId} and character_id is not distinct from ${characterId}
-    and description is not null and (reaction is not null or status = 'declined') order by created_at desc limit 12`;
+    and description is not null and not peek and (reaction is not null or status = 'declined') order by created_at desc limit 12`;
   if (!rows.length) return "";
   const liked = rows.filter(r => r.reaction).map(r => `${r.reaction} "${r.description}"`), passed = rows.filter(r => r.status === "declined").map(r => `"${r.description}"`);
   return `THEIR TASTE IN YOUR PHOTOS/VIDEOS (lean toward what they love — settings, outfits, vibes — and be creative with new ideas in that spirit):${liked.length ? `\n- Loved: ${liked.join("; ")}` : ""}${passed.length ? `\n- Turned down: ${passed.join("; ")}` : ""}`;
@@ -323,7 +323,7 @@ export async function deleteMedia(userId: string, id: string): Promise<boolean> 
 /** 📸 What they've actually sent here lately — real, so they never think they didn't send one (or send it twice). */
 export async function recentMediaNote(userId: string, characterId: string | null, tz: string): Promise<string> {
   const rows = await sql()`select kind, status, description, extract(epoch from now() - created_at)::int as secs, created_at from velo_media
-    where user_id = ${userId} and character_id is not distinct from ${characterId} and created_at > now() - interval '12 hours' and status in ('working', 'done', 'failed')
+    where user_id = ${userId} and character_id is not distinct from ${characterId} and created_at > now() - interval '12 hours' and status in ('working', 'done', 'failed') and not peek
     order by created_at desc limit 6`;
   if (!rows.length) return "";
   const ago = (s: number) => (s < 90 ? `${s} seconds ago` : s < 5400 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`);

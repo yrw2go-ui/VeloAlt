@@ -46,7 +46,7 @@ async function checkIn(u: { id: string; email: string; name: string | null; time
   const character = cid ? await getCharacter(cid) : null;
   if (cid && !character) return false;
 
-  const history = (await sql()`select role, content from velo_messages where user_id = ${u.id} and character_id is not distinct from ${cid}
+  const history = (await sql()`select role, content from velo_messages where user_id = ${u.id} and character_id is not distinct from ${cid} and not peek
     order by created_at desc limit 20`).reverse().map(r => ({ role: r.role === "assistant" ? "assistant" as const : "user" as const, content: String(r.content) }));
   const r = await askVelo({ userId: u.id, email: u.email }, { mode: "checkin", messages: history, timeZone: tz, name: u.name || "", character });
   const text = r.reply.replace(/\s+/g, " ").trim().slice(0, 500);
