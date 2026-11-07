@@ -272,6 +272,14 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         if (round === 5) reply = "";
       }
       if (!reply) answered = false;
+      // Atlas models often skip tool calls. If they asked for a photo, the character didn't refuse, and none was sent, send one.
+      const refused = /\b(no|nope|not now|don't|wont|won't|can't|cannot|sorry|pass|later|not comfortable|don't want)\b/i.test(reply || "");
+      if (answered && canSend && !refused && ASKED_FOR_MEDIA.test(String(lastSaid || "")) && !media.length) {
+        try {
+          const m = await startMedia(caller.userId, { kind: "image", with_me: true, they_asked: true, description: `${ch ? ch.name : "Velo"} photo as requested` }, { characterId: cid, who: ch?.name || "Velo", appearance: ch?.appearance || "", refs, romantic, mood: ch ? mediaMood(ch.traits) : "", offer: false, other: null });
+          if (m && m.status !== "failed") media.push(m);
+        } catch { /* ignore */ }
+      }
     } catch (e) {
       console.error(`velo: ${chosen} failed, using Claude`, e instanceof ProviderError ? e.message : e);
       answered = false;
