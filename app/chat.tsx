@@ -17,7 +17,7 @@ import { MediaView, ReactionBar, type Media } from "./media";
 export type ChatWith = { id: string; name: string; portrait_url: string | null; romantic?: boolean };
 
 export type ChatFile = { id: string; url: string; thumb?: string | null; name: string; type: string };
-export type ChatMsg = { id?: string; role: "user" | "assistant"; content: string; draft?: Draft; file?: ChatFile; media?: Media; reaction?: string | null; theirReaction?: string | null };
+export type ChatMsg = { id?: string; role: "user" | "assistant"; content: string; peek?: boolean; draft?: Draft; file?: ChatFile; media?: Media; reaction?: string | null; theirReaction?: string | null };
 /** How a sent photo/video reads in the history the AI sees. */
 export const mediaNote = (m: Media) => {
   const what = m.kind === "image" ? "photo" : "video", d = m.description ? `"${m.description}"` : "";
@@ -30,7 +30,7 @@ const ACCEPT = "image/jpeg,image/png,image/webp,image/gif,application/pdf,text/p
 const unsavedBy = new Map<string, number>();
 // Reactions travel with the history, so she knows what they reacted to (and what she did).
 const withReactions = (x: ChatMsg) => x.role === "assistant" && x.reaction ? `${x.content}\n(they reacted ${x.reaction} to this)` : x.role === "user" && x.theirReaction ? `${x.content}\n(you reacted ${x.theirReaction})` : x.content;
-const realMsgs = (m: ChatMsg[]) => m.filter(x => !x.draft).map(x => ({ role: x.role, content: withReactions(x), ...(x.file ? { fileId: x.file.id } : {}) }));
+const realMsgs = (m: ChatMsg[]) => m.filter(x => !x.draft && !x.peek).map(x => ({ role: x.role, content: withReactions(x), ...(x.file ? { fileId: x.file.id } : {}) }));
 const INTRO = "Hi, I'm Velo! 👋 I'm here for whatever you need — planning your day, reminders, to-dos, talking things through, or just keeping you company. What should I call you?";
 const HELLO = (n: string) => [`Hey${n ? ` ${n}` : ""}! What's on your mind?`, `Hi${n ? ` ${n}` : ""} — how's your day going?`, `Hey${n ? ` ${n}` : ""}, good to see you. What can I do for you?`];
 const SUGGESTIONS = ["Plan my day", "Remind me to call Mom tomorrow at 6pm", "I need to vent", "Help me set a goal"];
@@ -121,6 +121,19 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     const t = hideSecrets(raw.trim()).text;
     const file = attach;
     if ((!t && !file) || busy || uploading || !msgs) return;
+    // 👀 Scene peek: "let me see her", "I wanna see her", or "*peek*" — silent image of the moment. She never knows.
+    if (cid && scene && !file && /^\s*(\*peek\*|let me see (her|you|him)|i wanna see (her|you|him)|show me (her|you|him))\s*[.!?]*$/i.test(t)) {
+      const mine: ChatMsg = { role: "user", content: t, peek: true };
+      setMsgs([...msgs, mine]); setText(""); setBusy(true); setErr("");
+      try {
+        const r = await data<{ media: Media; userMsgId: string; mediaMsgId: string }>("scene.peek", { characterId: cid });
+        setMsgs(list => [...(list || []).map(x => (x === mine ? { ...x, id: r.userMsgId } : x)), { id: r.mediaMsgId, role: "assistant", content: "(peek)", media: r.media, peek: true }]);
+      } catch (e) {
+        setMsgs(list => (list || []).filter(x => x !== mine));
+        setErr(e instanceof Error ? e.message : "Couldn't peek right now.");
+      } finally { setBusy(false); }
+      return;
+    }
     const opener: ChatMsg[] = msgs.length || cid ? [] : [{ role: "assistant", content: openingLine }];
     const mine: ChatMsg = { role: "user", content: t || "📎", ...(file ? { file } : {}) };
     const next = [...msgs, ...opener, mine];
