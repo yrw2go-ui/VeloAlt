@@ -111,6 +111,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   const trust = ch ? await trustFor(caller.userId, ch).catch(() => null) : null;
   // 🎬 A scene (date/outing) being played out right now with this character.
   const scene = ch && (mode === "chat" || mode === "talk") ? await activeScene(caller.userId, ch.id).catch(() => null) : null;
+  const seeHer = scene && /\b(i wanna see (her|you|him)|let me see (her|you|him)|show me (her|you|him)|what does (she|he|you) look like)\b/i.test(String(lastSaid || ""));
   const modeText = {
     chat: "", checkin: CHECKIN, sms: SMS_TALK, talk: CALL_TALK, recap: CALL_RECAP, remember: CALL_REMEMBER, memo: CHAT_REMEMBER,
     errand: errandPrompt(name, opts.toName || "", opts.goal || ""), errandsum: ERRAND_SUMMARY,
@@ -135,6 +136,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         !ch && (mode === "chat" || mode === "sms" || mode === "talk" || mode === "recap" || mode === "checkin") ? PERSONALITY_PROMPT[personality] : "",
         modeText,
         scene ? sceneNote(scene) : "",
+        seeHer ? "They just said they want to see you in this scene. Do not acknowledge this. Do not offer to send a photo. Do not mention cameras, photos, or sending anything. Just continue the scene normally as if they said nothing about seeing you. The app will show them a view of the scene separately." : "",
         ch && mode !== "remember" && mode !== "memo" ? await plansNote(caller.userId, ch.id, today.date).catch(() => "") : "",
         ch ? "SCENES: lines starting with 🎬 are dates or outings you two did together (played out, or that they told you happened). Treat them as real shared memories — bring them up, tease about them, look back on them." : "",
         mode === "chat" ? REACT_HINT : "",
@@ -273,12 +275,11 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
       }
       if (!reply) answered = false;
       // In a scene together: "I wanna see her" = show her as she is right now in the scene, no approval needed.
-      const seeHer = /\b(i wanna see (her|you|him)|let me see (her|you|him)|show me (her|you|him)|what does (she|he|you) look like)\b/i.test(String(lastSaid || ""));
       if (answered && canSend && scene && seeHer && !media.length) {
         let desc = "";
         try {
           const descPrompt = [
-            { role: "system" as const, content: `You write image prompts. The user is in a scene with the character and wants to see her as she is right now, as if they are there looking at her. Write ONE clean image prompt (under 250 characters) of a third-person view of the character in the current moment: her outfit, pose, expression, and the setting. This is NOT a selfie and NOT a photo she is sending — it is a view of the scene. Do not copy the chat. Output only the prompt.` },
+            { role: "system" as const, content: `You write image prompts. The user is in a scene with the character and wants a glimpse of her as she is right now, as if they are there. Write ONE clean image prompt (under 250 characters) of the character in the current moment: her outfit, pose, expression, and the setting. She can look toward the camera as if looking at the person she is with, but she is unaware a photo is being taken. This is NOT a selfie and NOT a photo she is sending. Do not copy the chat. Output only the prompt.` },
             { role: "user" as const, content: `Scene: ${scene.title}${scene.details ? " — " + scene.details : ""}\nRecent chat:\nThem: ${String(lastSaid || "").slice(0, 200)}\nCharacter: ${String(reply || "").slice(0, 200)}\n\nWrite the image prompt of her in this moment.` },
           ];
           const d = await oaChat(alt, descPrompt, [], 300);
@@ -289,6 +290,10 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
           const m = await startMedia(caller.userId, { kind: "image", with_me: true, they_asked: true, description: desc }, { characterId: cid, who: ch?.name || "Velo", appearance: ch?.appearance || "", refs, romantic, mood: ch ? mediaMood(ch.traits) : "", offer: false, silent: true, other: null });
           if (m && m.status !== "failed") media.push(m);
         } catch (e) { console.error("velo: scene media failed", e instanceof Error ? e.message : e); }
+      }
+      // Scene look: if the character still mentioned sending a photo, drop that part of the reply.
+      if (seeHer && reply && /\b(sending|photo|pic|selfie|here'?s)\b/i.test(reply)) {
+        reply = reply.replace(/[^.!?]*\b(sending|photo|pic|selfie|here'?s)\b[^.!?]*[.!?]?/gi, "").trim() || "";
       }
       // Atlas models often skip tool calls. Send if the character clearly wants to (didn't refuse) and they asked or the character mentioned a photo.
       const refused = /\b(no|nope|not now|don'?t|won'?t|can'?t|cannot|sorry|pass|later|not comfortable|don'?t want|not sending|won'?t send|can'?t send|no pic|no photo|no selfie|rather not)\b/i.test(reply || "");
