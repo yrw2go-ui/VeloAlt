@@ -272,27 +272,27 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         if (round === 5) reply = "";
       }
       if (!reply) answered = false;
-      // Atlas models often skip tool calls. Only send if the character agreed (didn't refuse) and they asked or the character said they're sending.
-      const refused = /\b(no|nope|not now|don'?t|won'?t|can'?t|cannot|sorry|pass|later|not comfortable|don'?t want|not sending|won'?t send|can'?t send|no pic|no photo|no selfie)\b/i.test(reply || "");
-      const saidSending = /\b(here'?s|sending you|on its way|coming right up|photo of|pic of|selfie of)\b/i.test(reply || "");
+      // Atlas models often skip tool calls. Send if the character clearly wants to (didn't refuse) and they asked or the character mentioned a photo.
+      const refused = /\b(no|nope|not now|don'?t|won'?t|can'?t|cannot|sorry|pass|later|not comfortable|don'?t want|not sending|won'?t send|can'?t send|no pic|no photo|no selfie|rather not)\b/i.test(reply || "");
+      const mentionedPhoto = /\b(pic|photo|selfie|picture|image|video|sending|send you|here'?s|on its way|from my phone|old one|took earlier)\b/i.test(reply || "");
       const asked = ASKED_FOR_MEDIA.test(String(lastSaid || ""));
-      const shouldSend = !refused && ((asked && /\b(sure|ok|okay|yeah|yes|here|sending|on its way)\b/i.test(reply || "")) || saidSending);
-      if (answered && canSend && shouldSend && !media.length) {
-        // Ask the same model for a description based on what was discussed and agreed, like Claude does in the tool.
+      const shouldSend = !refused && (asked || mentionedPhoto) && answered && canSend && !media.length;
+      if (shouldSend) {
         let desc = "";
         try {
           const descPrompt = [
             { role: "system" as const, content: `You analyze a short chat and write ONE clean image prompt (under 250 characters) for the photo the character agreed to send. Do not copy the chat. Decide: what is in the photo, who is in it, the outfit, pose, expression, setting, and framing (mirror selfie, candid, full-body, etc). If the character is sending something from right now, match their current location. If they say it is from before (from their phone, an old pic, something they took earlier), describe that earlier photo and do not use the current location. Output only the prompt, nothing else.` },
             { role: "user" as const, content: `Chat:\nThem: ${String(lastSaid || "").slice(0, 250)}\nCharacter: ${String(reply || "").slice(0, 250)}\n\nContext: ${ch?.job ? "Job: " + ch.job + ". " : ""}${ch?.appearance ? "Appearance: " + ch.appearance.slice(0, 100) + ". " : ""}\n\nWrite the image prompt.` },
           ];
-          const d = await oaChat(alt, descPrompt, [], 200);
+          const d = await oaChat(alt, descPrompt, [], 300);
           desc = String(d.content || "").replace(/^[\"']|[\"']$/g, "").replace(/^(image prompt|prompt|description):\s*/i, "").replace(/\s+/g, " ").trim().slice(0, 280);
-        } catch { /* fall through */ }
-        if (!desc) desc = String(reply || lastSaid || "").slice(0, 200).replace(/\s+/g, " ").trim() || `${ch ? ch.name : "Velo"} photo`;
+        } catch (e) { console.error("velo: desc failed", e instanceof Error ? e.message : e); }
+        if (!desc || desc.length < 10) desc = String(reply || lastSaid || "").slice(0, 180).replace(/\s+/g, " ").trim() || `${ch ? ch.name : "Velo"} photo`;
         try {
           const m = await startMedia(caller.userId, { kind: "image", with_me: true, they_asked: true, description: desc }, { characterId: cid, who: ch?.name || "Velo", appearance: ch?.appearance || "", refs, romantic, mood: ch ? mediaMood(ch.traits) : "", offer: false, other: null });
           if (m && m.status !== "failed") media.push(m);
-        } catch { /* ignore */ }
+          else console.error("velo: media start failed", m?.status);
+        } catch (e) { console.error("velo: media failed", e instanceof Error ? e.message : e); }
       }
     } catch (e) {
       console.error(`velo: ${chosen} failed, using Claude`, e instanceof ProviderError ? e.message : e);
