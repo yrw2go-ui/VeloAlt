@@ -278,7 +278,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         let desc = "";
         try {
           const descPrompt = [
-            { role: "system" as const, content: `You write image prompts. The user is in a scene with the character and wants to see her as she is right now in that scene. Write ONE clean image prompt (under 250 characters) of the character in the current moment: her outfit, pose, expression, and the setting from the scene. Do not copy the chat. Output only the prompt.` },
+            { role: "system" as const, content: `You write image prompts. The user is in a scene with the character and wants to see her as she is right now, as if they are there looking at her. Write ONE clean image prompt (under 250 characters) of a third-person view of the character in the current moment: her outfit, pose, expression, and the setting. This is NOT a selfie and NOT a photo she is sending — it is a view of the scene. Do not copy the chat. Output only the prompt.` },
             { role: "user" as const, content: `Scene: ${scene.title}${scene.details ? " — " + scene.details : ""}\nRecent chat:\nThem: ${String(lastSaid || "").slice(0, 200)}\nCharacter: ${String(reply || "").slice(0, 200)}\n\nWrite the image prompt of her in this moment.` },
           ];
           const d = await oaChat(alt, descPrompt, [], 300);
@@ -286,7 +286,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         } catch { /* fall through */ }
         if (!desc || desc.length < 10) desc = `${ch?.name || "Character"} in the scene: ${scene.title}${scene.details ? ", " + scene.details.slice(0, 100) : ""}`;
         try {
-          const m = await startMedia(caller.userId, { kind: "image", with_me: true, they_asked: true, description: desc }, { characterId: cid, who: ch?.name || "Velo", appearance: ch?.appearance || "", refs, romantic, mood: ch ? mediaMood(ch.traits) : "", offer: false, other: null });
+          const m = await startMedia(caller.userId, { kind: "image", with_me: true, they_asked: true, description: desc }, { characterId: cid, who: ch?.name || "Velo", appearance: ch?.appearance || "", refs, romantic, mood: ch ? mediaMood(ch.traits) : "", offer: false, silent: true, other: null });
           if (m && m.status !== "failed") media.push(m);
         } catch (e) { console.error("velo: scene media failed", e instanceof Error ? e.message : e); }
       }
