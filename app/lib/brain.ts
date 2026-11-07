@@ -272,13 +272,25 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         if (round === 5) reply = "";
       }
       if (!reply) answered = false;
-      // Atlas models often skip tool calls. Trigger media if they asked and the character didn't refuse, or if the character said they're sending one.
-      const refused = /\b(no|nope|not now|don't|wont|won't|can't|cannot|sorry|pass|later|not comfortable|don't want)\b/i.test(reply || "");
-      const saidSending = /\b(here'?s|sending|on its way|coming|photo|pic|selfie|video)\b/i.test(reply || "");
-      const shouldSend = (ASKED_FOR_MEDIA.test(String(lastSaid || "")) && !refused) || saidSending;
+      // Atlas models often skip tool calls. Only send if the character agreed (didn't refuse) and they asked or the character said they're sending.
+      const refused = /\b(no|nope|not now|don'?t|won'?t|can'?t|cannot|sorry|pass|later|not comfortable|don'?t want|not sending|won'?t send|can'?t send|no pic|no photo|no selfie)\b/i.test(reply || "");
+      const saidSending = /\b(here'?s|sending you|on its way|coming right up|photo of|pic of|selfie of)\b/i.test(reply || "");
+      const asked = ASKED_FOR_MEDIA.test(String(lastSaid || ""));
+      const shouldSend = !refused && ((asked && /\b(sure|ok|okay|yeah|yes|here|sending|on its way)\b/i.test(reply || "")) || saidSending);
       if (answered && canSend && shouldSend && !media.length) {
+        // Ask the same model for a description based on what was discussed and agreed, like Claude does in the tool.
+        let desc = "";
         try {
-          const m = await startMedia(caller.userId, { kind: "image", with_me: true, they_asked: true, description: `${ch ? ch.name : "Velo"} photo` }, { characterId: cid, who: ch?.name || "Velo", appearance: ch?.appearance || "", refs, romantic, mood: ch ? mediaMood(ch.traits) : "", offer: false, other: null });
+          const descPrompt = [
+            { role: "system" as const, content: `You write image prompts. Based on the conversation, write ONE short description (under 300 characters) of the photo the character agreed to send. Match what they concluded, not the original ask if they changed it. Include outfit, pose, setting, and framing (mirror selfie, candid, etc). If they are sending something from right now, match their current location and situation. If they say they are sending something from before (from their phone, an old pic, something they took earlier, not right now), describe that earlier photo instead and do not force the current location. No commentary, just the description.` },
+            { role: "user" as const, content: `They said: ${String(lastSaid || "").slice(0, 300)}\nCharacter replied: ${String(reply || "").slice(0, 300)}\nCharacter context: ${ch?.job ? "Job: " + ch.job + ". " : ""}${ch?.appearance ? "Look: " + ch.appearance + ". " : ""}Write the image description.` },
+          ];
+          const d = await oaChat(alt, descPrompt, [], 200);
+          desc = String(d.content || "").replace(/\s+/g, " ").trim().slice(0, 300);
+        } catch { /* fall through */ }
+        if (!desc) desc = String(reply || lastSaid || "").slice(0, 200).replace(/\s+/g, " ").trim() || `${ch ? ch.name : "Velo"} photo`;
+        try {
+          const m = await startMedia(caller.userId, { kind: "image", with_me: true, they_asked: true, description: desc }, { characterId: cid, who: ch?.name || "Velo", appearance: ch?.appearance || "", refs, romantic, mood: ch ? mediaMood(ch.traits) : "", offer: false, other: null });
           if (m && m.status !== "failed") media.push(m);
         } catch { /* ignore */ }
       }
