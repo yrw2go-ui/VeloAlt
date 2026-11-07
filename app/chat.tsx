@@ -238,8 +238,16 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   };
   // ❤️ They reacted to a photo/video: it's saved where Velo/the character sees it, and sometimes they answer.
   const react = async (id: string, emoji: string) => {
-    const cur = msgsRef.current.find(x => x.media?.id === id)?.media;
+    const msg = msgsRef.current.find(x => x.media?.id === id);
+    const cur = msg?.media;
     if (!cur) return;
+    // Peeks are silent — she never sees them or reacts to them.
+    if (msg?.peek) {
+      const next = cur.reaction === emoji ? null : emoji;
+      setMsgs(list => (list || []).map(x => (x.media?.id === id ? { ...x, media: { ...x.media!, reaction: next } } : x)));
+      await data("media.react", { id, reaction: next }).catch(() => {});
+      return;
+    }
     const next = cur.reaction === emoji ? null : emoji;
     const set = (reaction: string | null, content?: string) => setMsgs(list => (list || []).map(x => (x.media?.id === id ? { ...x, ...(content ? { content } : {}), media: { ...x.media!, reaction } } : x)));
     set(next);
