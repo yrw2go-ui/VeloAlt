@@ -124,7 +124,7 @@ async function atlasStart(kind: "image" | "video", model: string, prompt: string
 }
 
 /** Starts a photo or video (from the send_media tool) — or, with `offer`, only offers it: nothing is made until they accept. */
-export async function startMedia(userId: string, input: unknown, ctx: { characterId: string | null; who: string; appearance: string; refs: string[]; romantic: boolean; mood?: string; offer?: boolean; silent?: boolean; other?: { name: string; refs: string[]; appearance: string } | null }): Promise<Media> {
+export async function startMedia(userId: string, input: unknown, ctx: { characterId: string | null; who: string; appearance: string; refs: string[]; romantic: boolean; mood?: string; offer?: boolean; silent?: boolean; peek?: boolean; other?: { name: string; refs: string[]; appearance: string } | null }): Promise<Media> {
   const a = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
   const kind = a.kind === "video" ? "video" : "image";
   const desc = scrub(String(a.description || "").replace(/\s+/g, " ").trim().slice(0, 400));
@@ -175,8 +175,8 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
   const [u] = await sql()`select video_model from users where id = ${userId}`;
   const model = kind === "image" ? (ref ? EDIT_MODEL() : IMAGE_MODEL()) : videoModel(String(u?.video_model || DEFAULT_VIDEO_MODEL), !!ref);
   const sendRefs = kind === "image" ? refs : ref ? [ref] : [];
-  const [row] = await sql()`insert into velo_media (user_id, character_id, kind, prompt, model, caption, description, refs, poster_url, status)
-    values (${userId}, ${ctx.characterId}, ${kind}, ${prompt}, ${model}, ${ctx.silent ? "" : captionFor(kind, ctx.romantic)}, ${desc.slice(0, 400)}, ${sendRefs}, ${kind === "video" ? ref : null}, ${ctx.offer ? "offered" : "working"}) returning id`;
+  const [row] = await sql()`insert into velo_media (user_id, character_id, kind, prompt, model, caption, description, refs, poster_url, status, peek)
+    values (${userId}, ${ctx.characterId}, ${kind}, ${prompt}, ${model}, ${ctx.silent || ctx.peek ? "" : captionFor(kind, ctx.romantic)}, ${desc.slice(0, 400)}, ${sendRefs}, ${kind === "video" ? ref : null}, ${ctx.offer ? "offered" : "working"}, ${!!ctx.peek}) returning id`;
   if (ctx.offer) return { id: row.id, kind, status: "offered", url: null, description: desc };
   return await launch(row.id, kind, model, prompt, sendRefs, desc);
 }
