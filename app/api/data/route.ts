@@ -12,6 +12,7 @@ import { availableModels, CHAT_MODELS, MODEL_INFO, type ChatModel } from "../../
 import { PERSONALITIES } from "../../lib/persona";
 import { deleteFile, ownFile } from "../../lib/files";
 import { getCharacter, trustFor, activeScene } from "../../lib/characters";
+import { peekAt } from "../../lib/peek";
 import { US_STATES } from "../../lib/states";
 import { acceptMedia, declineMedia, mediaNote, checkMedia, sweepMedia, getMedia, listGallery, deleteMedia, VIDEO_MODELS, DEFAULT_VIDEO_MODEL } from "../../lib/media";
 
@@ -84,14 +85,14 @@ export async function POST(req: NextRequest) {
         // Velo's chat (no characterId) or one character's chat.
         const ch = b.characterId ? await getCharacter(String(b.characterId)) : null;
         if (b.characterId && !ch) return bad("That character wasn't found.");
-        const rows = await db`select m.id, m.role, m.content, m.reaction, m.their_reaction, f.id as file_id, f.url as file_url, f.thumb_url as file_thumb, f.name as file_name, f.content_type as file_type,
+        const rows = await db`select m.id, m.role, m.content, m.peek, m.reaction, m.their_reaction, f.id as file_id, f.url as file_url, f.thumb_url as file_thumb, f.name as file_name, f.content_type as file_type,
             md.id as media_id, md.kind as media_kind, md.status as media_status, md.reaction as media_reaction, md.description as media_description, md.kept as media_kept, mf.url as media_url, coalesce(mt.url, md.poster_url) as media_thumb
           from velo_messages m left join velo_files f on f.id = m.file_id and f.user_id = m.user_id
           left join velo_media md on md.id = m.media_id and md.user_id = m.user_id
           left join velo_files mf on mf.id = md.file_id
           left join velo_files mt on mt.id = md.thumb_file_id
           where m.user_id = ${me} and m.character_id is not distinct from ${ch?.id || null} order by m.created_at desc, m.id desc limit 60`;
-        return NextResponse.json({ messages: rows.reverse().filter(r => r.role === "user" || r.file_id || r.media_id || cleanTags(String(r.content))).map(r => ({ id: r.id, role: r.role, content: r.role === "assistant" ? cleanTags(String(r.content)) : r.content, reaction: r.reaction || null, theirReaction: r.their_reaction || null,
+        return NextResponse.json({ messages: rows.reverse().filter(r => r.role === "user" || r.file_id || r.media_id || cleanTags(String(r.content))).map(r => ({ id: r.id, role: r.role, ...(r.peek ? { peek: true } : {}), content: r.role === "assistant" ? cleanTags(String(r.content)) : r.content, reaction: r.reaction || null, theirReaction: r.their_reaction || null,
           ...(r.file_id ? { file: { id: r.file_id, url: r.file_url, thumb: r.file_thumb || null, name: r.file_name, type: r.file_type } } : {}),
           ...(r.media_id ? { media: { id: r.media_id, kind: r.media_kind, status: r.media_status, url: r.media_status === "done" ? r.media_url : null, thumb: r.media_thumb || null, reaction: r.media_reaction || null, description: r.media_description || null, kept: !!r.media_kept } } : {}) })) });
       }
@@ -156,6 +157,17 @@ export async function POST(req: NextRequest) {
         return m ? NextResponse.json({ media: m }) : bad("That offer isn't open anymore.");
       }
       // 🎬 Scenes with a character: play one out (start → chat → end), or say one already happened.
+      case "scene.peek": {
+        const ch = b.characterId ? await getCharacter(String(b.characterId)) : null;
+        if (!ch) return bad("That character wasn't found.");
+        const scene = await activeScene(me, ch.id);
+        if (!scene) return bad("There's no scene going on.");
+        const [u] = await db`select adult_confirmed_at from users where id = ${me}`;
+        try {
+          const r = await peekAt(me, ch, scene, !!u?.adult_confirmed_at);
+          return NextResponse.json(r);
+        } catch (e) { return bad(e instanceof Error ? e.message : "Couldn't peek right now."); }
+      }
       case "scene.active":
       case "scene.start":
       case "scene.past":
