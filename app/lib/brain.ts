@@ -282,11 +282,11 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         let desc = "";
         try {
           const descPrompt = [
-            { role: "system" as const, content: `You write image prompts. Based on the conversation, write ONE short description (under 300 characters) of the photo the character agreed to send. Match what they concluded, not the original ask if they changed it. Include outfit, pose, setting, and framing (mirror selfie, candid, etc). If they are sending something from right now, match their current location and situation. If they say they are sending something from before (from their phone, an old pic, something they took earlier, not right now), describe that earlier photo instead and do not force the current location. No commentary, just the description.` },
-            { role: "user" as const, content: `They said: ${String(lastSaid || "").slice(0, 300)}\nCharacter replied: ${String(reply || "").slice(0, 300)}\nCharacter context: ${ch?.job ? "Job: " + ch.job + ". " : ""}${ch?.appearance ? "Look: " + ch.appearance + ". " : ""}Write the image description.` },
+            { role: "system" as const, content: `You analyze a short chat and write ONE clean image prompt (under 250 characters) for the photo the character agreed to send. Do not copy the chat. Decide: what is in the photo, who is in it, the outfit, pose, expression, setting, and framing (mirror selfie, candid, full-body, etc). If the character is sending something from right now, match their current location. If they say it is from before (from their phone, an old pic, something they took earlier), describe that earlier photo and do not use the current location. Output only the prompt, nothing else.` },
+            { role: "user" as const, content: `Chat:\nThem: ${String(lastSaid || "").slice(0, 250)}\nCharacter: ${String(reply || "").slice(0, 250)}\n\nContext: ${ch?.job ? "Job: " + ch.job + ". " : ""}${ch?.appearance ? "Appearance: " + ch.appearance.slice(0, 100) + ". " : ""}\n\nWrite the image prompt.` },
           ];
           const d = await oaChat(alt, descPrompt, [], 200);
-          desc = String(d.content || "").replace(/\s+/g, " ").trim().slice(0, 300);
+          desc = String(d.content || "").replace(/^[\"']|[\"']$/g, "").replace(/^(image prompt|prompt|description):\s*/i, "").replace(/\s+/g, " ").trim().slice(0, 280);
         } catch { /* fall through */ }
         if (!desc) desc = String(reply || lastSaid || "").slice(0, 200).replace(/\s+/g, " ").trim() || `${ch ? ch.name : "Velo"} photo`;
         try {
