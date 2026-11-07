@@ -275,9 +275,12 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
     } catch (e) {
       console.error(`velo: ${chosen} failed, using Claude`, e instanceof ProviderError ? e.message : e);
       answered = false;
+      // Clue for the user that we switched to Claude.
+      reply = "hey, gotta run, be back shortly";
     }
   }
 
+  const switched = !answered && reply === "hey, gotta run, be back shortly";
   for (let round = 0; !answered && round < (tools ? 6 : 1); round++) {
     const res = await client.messages.create({
       model: process.env.VELO_MODEL!,
@@ -328,6 +331,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   reply = reply.replace(REACT_TAG, (_, e: string) => { if (!react && REACTIONS.includes(e)) react = e; return ""; });
   reply = cleanTags(reply);
   if (!reply && media?.length) reply = media.some(m => m.kind === "video") ? "Here you go 😊" : "Here you go — what do you think? 😊";
+  if (switched && reply && reply !== "hey, gotta run, be back shortly") reply = "hey, gotta run, be back shortly\n\n" + reply;
   return { reply: reply || (errand ? "Sorry, could you say that again?" : "Sorry, I lost my train of thought — could you say that again?"), changed, drafts, media, ...(mode === "chat" && react ? { react } : {}) };
 }
 
