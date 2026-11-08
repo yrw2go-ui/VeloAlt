@@ -446,7 +446,7 @@ export function VeloVoiceCard({ profile, onChange }: { profile: Profile; onChang
   };
   return (
     <div className="card">
-      <div style={{ fontWeight: 700 }}>🔊 Velo's voice</div>
+      <div style={{ fontWeight: 700 }}>🔊 Velo voice</div>
       <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>Her voice on calls. From look uses the voice for her current face.</div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
         {voices.map(v => {
