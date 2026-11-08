@@ -7,6 +7,7 @@ import { listGallery } from "../../lib/media";
 import { cleanTraits, PRESETS } from "../../lib/traits";
 import { isValidTimeZone } from "../../lib/localTime";
 import { MAX_CHARACTERS, DAILY_PORTRAITS, isAdmin, listCharacters, getCharacter, screenCharacter, startPortrait, checkPortrait, deleteCharacter, portraitsReady, chooseVoice, VoiceError } from "../../lib/characters";
+import { listLinks, setLink, removeLink, writeStory } from "../../lib/friends";
 
 // 🎭 Characters. Everyone can list them and chat; only admins create and edit. POST { action, ... }:
 //   list                     → { characters, portraits, admin }
@@ -76,6 +77,24 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ items: (await listGallery(me, id, null, 60)).filter(x => x.kind === "image") });
       }
 
+      case "links": {
+        if (!(await getCharacter(id))) return bad("That character wasn't found.");
+        return NextResponse.json({ links: await listLinks(id) });
+      }
+      case "link.set": {
+        const other = String(b.otherId || "");
+        const [a, o] = [await getCharacter(id), other !== id ? await getCharacter(other) : null];
+        if (!a || !o) return bad("Pick another character.");
+        const kind = clean(b.kind, 60).replace(/\n/g, " ") || "friends";
+        let story = clean(b.story, 600);
+        if (!story) story = await writeStory(a, o, kind);
+        await setLink(id, other, kind, story);
+        return NextResponse.json({ links: await listLinks(id) });
+      }
+      case "link.remove": {
+        await removeLink(id, String(b.otherId || ""));
+        return NextResponse.json({ links: await listLinks(id) });
+      }
       case "delete":
         return (await deleteCharacter(id)) ? NextResponse.json({ ok: true }) : bad("That character wasn't found.");
 
