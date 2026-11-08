@@ -239,6 +239,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   const forceDeep = !!ch?.prefer_deepseek;
   const forceQwen = !!ch?.prefer_qwen;
   const spicy = !!(ch && u?.adult_confirmed_at && allowsExplicit(ch.traits));
+  console.log(`velo: route char=${ch?.name} deep=${forceDeep} qwen=${forceQwen} spicy=${spicy} deepOk=${!!provider("deepseek")} qwenOk=${!!provider("qwen")}`);
   let chosen = (u?.chat_model || "claude") as ChatModel;
   if ((forceDeep || forceQwen || spicy) && (mode === "chat" || mode === "sms" || mode === "talk")) {
     // Prefer DeepSeek if forced or available, else Qwen. Never Claude when a flag is set.
