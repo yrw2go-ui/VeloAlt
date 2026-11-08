@@ -6,6 +6,7 @@ import { scrub } from "../../lib/secrets";
 import { listGallery } from "../../lib/media";
 import { cleanTraits, PRESETS } from "../../lib/traits";
 import { isValidTimeZone } from "../../lib/localTime";
+import { listLinks, setLink, removeLink, writeStory } from "../../lib/friends";
 import { MAX_CHARACTERS, DAILY_PORTRAITS, isAdmin, listCharacters, getCharacter, screenCharacter, startPortrait, checkPortrait, deleteCharacter, portraitsReady, chooseVoice, VoiceError } from "../../lib/characters";
 
 // 🎭 Characters. Everyone can list them and chat; only admins create and edit. POST { action, ... }:
@@ -15,6 +16,7 @@ import { MAX_CHARACTERS, DAILY_PORTRAITS, isAdmin, listCharacters, getCharacter,
 //   delete { id }            (admin; everyone's chats and memories with it go too)
 //   portrait.start { id }    (admin) starts an Atlas Cloud portrait from the appearance
 //   portrait.check { id }    (admin) → { status: working | done | failed, character }
+//   links { id } → { links }; link.set { id, otherId, kind, story? }; link.remove { id, otherId }   (admin) 👭 friends & family
 const clean = (v: unknown, n: number) => scrub(String(v ?? "").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim().slice(0, n));
 const bad = (error: string, status = 400) => NextResponse.json({ error }, { status });
 
@@ -75,6 +77,27 @@ export async function POST(req: NextRequest) {
       case "gallery": {
         if (!(await getCharacter(id))) return bad("That character wasn't found.");
         return NextResponse.json({ items: (await listGallery(me, id, null, 60)).filter(x => x.kind === "image") });
+      }
+
+      // 👭 Friends & family between characters.
+      case "links": {
+        if (!(await getCharacter(id))) return bad("That character wasn't found.");
+        return NextResponse.json({ links: await listLinks(id) });
+      }
+      case "link.set": {
+        const other = String(b.otherId || "");
+        const [a, o] = [await getCharacter(id), other !== id ? await getCharacter(other) : null];
+        if (!a || !o) return bad("Pick another character.");
+        const kind = clean(b.kind, 60).replace(/\n/g, " ") || "friends";
+        let story = clean(b.story, 600);
+        if (!story) story = await writeStory(a, o, kind);
+        if (story && (await screenCharacter({ name: `${a.name} & ${o.name}`, personality: "", backstory: story, relation: "", appearance: "" }))) return bad("That story isn't allowed — try different wording.");
+        await setLink(id, other, kind, story);
+        return NextResponse.json({ links: await listLinks(id) });
+      }
+      case "link.remove": {
+        await removeLink(id, String(b.otherId || ""));
+        return NextResponse.json({ links: await listLinks(id) });
       }
 
       case "delete":

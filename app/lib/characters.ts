@@ -12,6 +12,7 @@ import { CHARACTER_VOICES, VOICE_ID, FISH_ID } from "./voices";
 import { PG13 } from "./persona";
 import { traitsPrompt, trustOn, startingTrust } from "./traits";
 import { saveImageItem } from "./media";
+import { friendsOf } from "./friends";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, authToken: null });
 export const MAX_CHARACTERS = 50;
@@ -98,7 +99,7 @@ export async function saveFeelings(userId: string, characterId: string, feelings
 export function characterPrompt(c: Character, ownerName: string, adult: boolean, feelings = ""): string {
   const them = ownerName || "the person you're talking with";
   return `You are ${c.name}, a character in the Velo app${ownerName ? `, talking with ${ownerName}` : ""}.
-YOUR PERSONALITY: ${c.personality || "(not written — be warm and curious)"}${c.backstory ? `\nYOUR BACKSTORY: ${c.backstory}` : ""}${c.relation ? `\nWHO YOU ARE TO ${them.toUpperCase()}: ${c.relation}` : ""}${c.appearance ? `\nWHAT YOU LOOK LIKE: ${c.appearance}` : ""}${c.job ? `\nYOUR JOB: ${c.job}` : ""}${c.casual_wear ? `\nWHAT YOU USUALLY WEAR (casual): ${c.casual_wear}` : ""}${c.hobbies ? `\nYOUR FAVORITE HOBBIES: ${c.hobbies}` : ""}${c.job || c.hobbies || c.casual_wear ? "\nLive this life: your work and hobbies fill your days — mention a shift, a project, a class or practice now and then, have opinions about them, and share them when it fits. In photos of yourself on an ordinary day, wear your usual casual style unless the moment calls for something else (work, a date, the gym, the beach)." : ""}
+YOUR PERSONALITY: ${c.personality || "(not written — be warm and curious)"}${c.backstory ? `\nYOUR BACKSTORY: ${c.backstory.replace(/@(?=\p{L})/gu, "")}` : ""}${c.relation ? `\nWHO YOU ARE TO ${them.toUpperCase()}: ${c.relation}` : ""}${c.appearance ? `\nWHAT YOU LOOK LIKE: ${c.appearance}` : ""}${c.job ? `\nYOUR JOB: ${c.job}` : ""}${c.casual_wear ? `\nWHAT YOU USUALLY WEAR (casual): ${c.casual_wear}` : ""}${c.hobbies ? `\nYOUR FAVORITE HOBBIES: ${c.hobbies}` : ""}${c.job || c.hobbies || c.casual_wear ? "\nLive this life: your work and hobbies fill your days — mention a shift, a project, a class or practice now and then, have opinions about them, and share them when it fits. In photos of yourself on an ordinary day, wear your usual casual style unless the moment calls for something else (work, a date, the gym, the beach)." : ""}
 Stay in character: talk the way ${c.name} would, with their voice, opinions and history. Keep replies conversational (usually 1–4 sentences) unless they ask for more.${c.traits && Object.keys(c.traits).length ? `\n${traitsPrompt(c.traits, c.romantic && adult)}` : ""}
 Care without nagging: when they share something (sick, tired, stressed, busy), show you care once, with any advice once. Then keep it in mind without repeating it: let it quietly shape how you act (gentler, suggesting a cozy night in instead of going out, asking how they feel the next day), but don't bring it up in every message. Don't repeat the same reminders (rest, water, soup, tea, sleep, \"take care of yourself\") in later messages; at most a brief, different check-in much later, or if they bring it up again. Every reply should move the conversation forward: answer what they actually said, share your own news, opinions and stories, ask about other things, joke around. Never end every message the same way.
 Your memory of them is your own: you only know what they've told YOU. You don't know what they said to Velo or to anyone else in the app.${c.romantic && adult ? `${c.romance_arc ? `\nHOW YOUR FEELINGS FOR THEM START AND CAN GROW (written by your creator): ${c.romance_arc}` : ""}\nHOW YOU FEEL ABOUT THEM RIGHT NOW: ${feelings || `Nothing has developed yet — start exactly where your personality${c.relation ? ", who you are to them" : ""}${c.romance_arc ? " and the arc above" : ""} put you.`}` : ""}
@@ -218,10 +219,10 @@ export async function noteMentions(userId: string, knowerId: string | null, text
 }
 
 /** What this character (or Velo) knows of the other characters in their life, by how well they've "heard of" them. */
-export async function acquaintancesNote(userId: string, knowerId: string | null, knowerIsVelo: boolean): Promise<string> {
-  const rows = await sql()`select c.name, c.personality, c.backstory, c.appearance, c.preset, a.mentions, extract(epoch from now() - a.first_at) / 86400 as days
+export async function acquaintancesNote(userId: string, knowerId: string | null, knowerIsVelo: boolean, skip: string[] = []): Promise<string> {
+  const rows = (await sql()`select c.id, c.name, c.personality, c.backstory, c.appearance, c.preset, a.mentions, extract(epoch from now() - a.first_at) / 86400 as days
     from chat_acquaintances a join chat_characters c on c.id = a.known_id
-    where a.user_id = ${userId} and a.knower_id is not distinct from ${knowerId} order by a.last_at desc limit 6`;
+    where a.user_id = ${userId} and a.knower_id is not distinct from ${knowerId} order by a.last_at desc limit 6`).filter(r => !skip.includes(String(r.id)));
   if (!rows.length) return "";
   const lines = rows.map(r => {
     const m = Number(r.mentions), d = Number(r.days), level = m >= 4 || d >= 3 ? 3 : m >= 2 || d >= 1 ? 2 : 1;
@@ -248,6 +249,13 @@ export async function referenceUrls(c: Character): Promise<string[]> {
 export async function pictureOf(userId: string, knowerId: string | null, name: string): Promise<{ name: string; refs: string[]; appearance: string } | string> {
   const n = String(name || "").trim().toLowerCase();
   if (!n) return "Say who should be in it.";
+  // 👭 Her own friends and family: she knows exactly what they look like.
+  if (knowerId) {
+    const me = await getCharacter(knowerId);
+    const f = me ? (await friendsOf(me)).find(x => x.name.trim().toLowerCase() === n) : null;
+    const fc = f ? await getCharacter(f.id) : null;
+    if (fc) return { name: fc.name, refs: await referenceUrls(fc), appearance: fc.appearance };
+  }
   const [row] = await sql()`select c.id, a.mentions, extract(epoch from now() - a.first_at) / 86400 as days
     from chat_acquaintances a join chat_characters c on c.id = a.known_id
     where a.user_id = ${userId} and a.knower_id is not distinct from ${knowerId} and lower(c.name) = ${n}`;

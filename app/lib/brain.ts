@@ -20,6 +20,7 @@ import { isValidTimeZone, localDate, formatClock, weekdayOf, zonedParts } from "
 import { partOfDay, monthName, calendarNote, ownBirthdayNote } from "./calendar";
 import { hideSecrets, HIDDEN, scrub as scrubText } from "./secrets";
 import { ownFile, fileForAi } from "./files";
+import { friendsOf, friendsNote } from "./friends";
 import { characterPrompt, feelingsFor, saveFeelings, trustFor, saveTrust, trustNote, activeScene, sceneNote, noteMentions, acquaintancesNote, referenceUrls, pictureOf, type Character } from "./characters";
 import { aboutThem } from "./bio";
 import { mediaMood, allowsSuggestive } from "./traits";
@@ -119,7 +120,10 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   const lastSaid = [...opts.messages].reverse().find(m => m.role === "user")?.content || "";
   const lastHers = (() => { const i = opts.messages.map(m => m.role).lastIndexOf("user"); return [...opts.messages.slice(0, Math.max(0, i))].reverse().find(m => m.role === "assistant")?.content || ""; })();
   if (mode === "chat" || mode === "talk") await noteMentions(caller.userId, cid, hideSecrets(String(lastSaid).slice(0, 2000)).text).catch(e => console.error("velo: mentions", e instanceof Error ? e.message : e));
-  const known = errand ? "" : await acquaintancesNote(caller.userId, cid, !ch).catch(() => "");
+  // 👭 Her friends and family (firsthand), and nothing about how close they are with them.
+  const friends = ch && !errand ? await friendsOf(ch).catch(() => []) : [];
+  const friendNote = ch && friends.length ? await friendsNote(ch, name, friends).catch(() => "") : "";
+  const known = errand ? "" : await acquaintancesNote(caller.userId, cid, !ch, friends.map(f => f.id)).catch(() => "");
   // 💡 What they like to see (reactions, declined offers).
   const taste = mediaReady() && (mode === "chat" || mode === "talk") ? await tasteNote(caller.userId, cid).catch(() => "") : "";
   // 🕰️ A character can live in another time zone: their own clock, as well as the person's.
@@ -151,6 +155,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         errand ? "" : calendarNote(today.date, !!proTools && !ch),
         ch?.birthday ? ownBirthdayNote(ch.birthday, chZone ? localNow(chZone).date : today.date) : "",
         about,
+        friendNote,
         known,
         taste,
         canSend ? await recentMediaNote(caller.userId, cid, today.tz).catch(() => "") : "",
