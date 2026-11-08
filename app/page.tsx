@@ -68,7 +68,7 @@ function SignIn({ onIn }: { onIn: (u: User) => void }) {
       <form onSubmit={go} style={{ width: "100%", maxWidth: 380, display: "flex", flexDirection: "column", gap: 12, alignItems: "stretch" }}>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, marginBottom: 8 }}>
           <VeloLogo size={112} />
-          <h1 style={{ margin: 0, fontSize: 32 }}>Velo</h1>
+          <h1 style={{ margin: 0, fontSize: 32 }}>velo 2</h1>
           <div className="muted" style={{ textAlign: "center" }}>Your personal assistant and companion.</div>
         </div>
         <input type="email" inputMode="email" autoCapitalize="none" autoComplete="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} aria-label="Email" />
@@ -231,7 +231,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       <header className="row" style={{ padding: "max(12px, env(safe-area-inset-top)) 16px 12px", borderBottom: "1px solid var(--border)" }}>
         <VeloLogo size={40} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 800, fontSize: 18 }}>Velo</div>
+          <div style={{ fontWeight: 800, fontSize: 18 }}>velo 2</div>
           <div className="muted" style={{ fontSize: 12 }}>{name ? `Here for you, ${name.split(" ")[0]}` : "Your assistant & companion"}</div>
         </div>
         {canCallVelo() && !calling && tab === "chat" && (
