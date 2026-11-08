@@ -39,16 +39,16 @@ const SUGGESTIONS = ["Plan my day", "Remind me to call Mom tomorrow at 6pm", "I 
 export type ChatAdd = { msg: ChatMsg; cid: string | null };
 
 export default function Chat({ userId, name, onChanged, added, onAdded, character, adult = false, onAdult, onContinue }: { userId: string; name: string; onChanged: () => void; added: ChatAdd | null; onAdded?: () => void; character?: ChatWith | null; adult?: boolean; onAdult?: () => void; onContinue?: (turns: { role: "user" | "assistant"; content: string }[]) => void }) {
+  const unsaved = { get current() { return unsavedBy.get(key) || 0; }, set current(v: number) { unsavedBy.set(key, v); } };
+  const face = (size: number) => (character ? <CharacterFace c={character} size={size} /> : <VeloAvatar size={size} />);
+  const [msgs, setMsgs] = useState<ChatMsg[] | null>(null);
+  const [characters, setCharacters] = useState<Character[]>([]);
   const [activeId, setActiveId] = useState<string | null>(character?.id || null);
   const cid = activeId;
   const activeChar = characters.find(c => c.id === cid) || character;
   const thread = cid ? { characterId: cid } : {};
   const who = activeChar?.name || "Velo";
   const key = cid || "velo";
-  const unsaved = { get current() { return unsavedBy.get(key) || 0; }, set current(v: number) { unsavedBy.set(key, v); } };
-  const face = (size: number) => (character ? <CharacterFace c={character} size={size} /> : <VeloAvatar size={size} />);
-  const [msgs, setMsgs] = useState<ChatMsg[] | null>(null);
-  const [characters, setCharacters] = useState<Character[]>([]);
   const [admin, setAdmin] = useState(false);
   const [editing, setEditing] = useState<Character | null | undefined>(undefined);
   const [text, setText] = useState("");
