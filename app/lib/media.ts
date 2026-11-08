@@ -227,12 +227,12 @@ export async function tasteNote(userId: string, characterId: string | null): Pro
   return `THEIR TASTE IN YOUR PHOTOS/VIDEOS (lean toward what they love — settings, outfits, vibes — and be creative with new ideas in that spirit):${liked.length ? `\n- Loved: ${liked.join("; ")}` : ""}${passed.length ? `\n- Turned down: ${passed.join("; ")}` : ""}`;
 }
 
-type Row = { id: string; user_id: string; character_id: string | null; kind: "image" | "video"; prompt: string; model: string; job_id: string | null; status: Media["status"]; attempts: number; created_at: string; url: string | null; thumb: string | null; poster_url: string | null; caption: string | null; description: string | null; refs: string[] | null };
+type Row = { id: string; user_id: string; character_id: string | null; kind: "image" | "video"; prompt: string; model: string; job_id: string | null; status: Media["status"]; attempts: number; created_at: string; url: string | null; thumb: string | null; poster_url: string | null; caption: string | null; description: string | null; refs: string[] | null; retried?: boolean };
 const view = (r: Row): Media => ({ id: r.id, kind: r.kind, status: r.status, url: r.status === "done" ? r.url : null, thumb: r.thumb || r.poster_url || null, caption: r.caption, description: r.description });
 
 export async function getMedia(userId: string, id: string): Promise<Row | null> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
-  const [r] = await sql()`select m.id, m.user_id, m.character_id, m.kind, m.prompt, m.model, m.job_id, m.status, m.attempts, m.created_at::text, m.poster_url, m.caption, m.description, m.refs, f.url, t.url as thumb
+  const [r] = await sql()`select m.id, m.user_id, m.character_id, m.kind, m.prompt, m.model, m.job_id, m.status, m.attempts, m.created_at::text, m.poster_url, m.caption, m.description, m.refs, m.retried, f.url, t.url as thumb
     from velo_media m left join velo_files f on f.id = m.file_id left join velo_files t on t.id = m.thumb_file_id where m.id = ${id} and m.user_id = ${userId}`;
   return (r as Row) || null;
 }
@@ -247,8 +247,18 @@ export async function checkMedia(userId: string, id: string): Promise<Media | nu
     where id = ${id} and status = 'working' and (claimed_at is null or claimed_at < now() - interval '45 seconds') returning id`;
   if (!claimed) return view(r);
   const fail = async (why: string) => { await sql()`update velo_media set status = 'failed', error = ${why.slice(0, 300)}, claimed_at = null where id = ${id}`; return { ...view(r), status: "failed" as const }; };
+  // 🔁 Failed or stuck at the picture service: start it once more (same prompt and references) before giving up.
+  const retryOnce = async (why: string) => {
+    if (r.retried) return await fail(why);
+    try {
+      const job = await atlasStart(r.kind, r.model, r.prompt, r.refs || []);
+      await sql()`update velo_media set job_id = ${job}, retried = true, claimed_at = null, created_at = now(), error = ${`retrying — ${why}`.slice(0, 300)} where id = ${id}`;
+      console.warn(`media: retrying ${id} (${why})`);
+      return view(r);
+    } catch { return await fail(why); }
+  };
   try {
-    if (Date.now() - Date.parse(r.created_at.replace(" ", "T").replace(/([+-]\d\d)$/, "$1:00")) > GIVE_UP_MS) return await fail("took too long");
+    if (Date.now() - Date.parse(r.created_at.replace(" ", "T").replace(/([+-]\d\d)$/, "$1:00")) > GIVE_UP_MS) return await retryOnce("took too long");
     if (!r.job_id) {
       // Never got started (Atlas was unreachable): start it now, the same way (references kept).
       try {
@@ -261,7 +271,7 @@ export async function checkMedia(userId: string, id: string): Promise<Media | nu
     if (!res.ok) throw new Error(`poll ${res.status}`);
     const p = await res.json().catch(() => ({}));
     const status = String(p?.data?.status || "");
-    if (status === "failed") { console.error(`media: Atlas job failed ${String(p?.data?.error || "").slice(0, 200)}`); return await fail("the picture service couldn't make it"); }
+    if (status === "failed") { console.error(`media: Atlas job failed ${String(p?.data?.error || "").slice(0, 200)}`); return await retryOnce("the picture service couldn't make it"); }
     const out = String(p?.data?.outputs?.[0] || "");
     if (status !== "completed" || !/^https:\/\//.test(out)) { await sql()`update velo_media set claimed_at = null where id = ${id}`; return view(r); }
 

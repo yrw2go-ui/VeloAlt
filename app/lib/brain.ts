@@ -61,6 +61,10 @@ export interface AskResult { reply: string; changed: boolean; drafts: Draft[]; m
 // 😮 Reactions (shown as a little badge on their message, like a text-message tapback).
 export const REACTIONS = ["❤️", "🔥", "🙌", "😍", "👍", "😮", "😂"];
 const REACT_HINT = `REACTIONS: they can react to your messages with ❤️ 🔥 🙌 😍 👍 😮 😂 — notes like "(they reacted 🔥 to this)" tell you when they did. You can react to THEIR latest message (or the photo they sent) too, but only now and then — mostly when you really like or love it, or it surprises you: start your reply with [react:❤️] (one of ❤️ 🔥 🙌 😍 👍 😮 😂). It shows as a badge on their message; don't mention it. Most replies have no reaction.`;
+// "Sending you a pic", "here's a selfie", "snapping one now 📸" — and a refusal to tell them apart.
+const CLAIMS_MEDIA = /\b(send(ing)?|sent|here'?s|here you go|snapp(ing|ed)|taking|took|coming (your way|right up)|on (its|it's) way)\b[\s\S]{0,50}\b(pics?|pictures?|photos?|selfies?|videos?|vids?|clips?|snaps?|shots?)\b|📸|🤳/i;
+const STRONG_CLAIM = /\b(sending|sent|snapping|snapped|taking one|took one|coming (your way|right up))\b|📸|🤳/i;
+const REFUSES_MEDIA = /\b(can'?t|cannot|won'?t|not (going to|gonna)|no (pics?|photos?|selfies?)|maybe later|not right now|limit)\b/i;
 const REACT_TAG = /\[react:\s*([^\]\s]+)\s*\]\s*/gu;
 
 /** Velo, or (with `character`) one of the characters: same chats, calls and memory flow, but in the
@@ -298,6 +302,24 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
     }));
     messages.push({ role: "user", content: results });
     if (round === 5) reply = "";
+  }
+  // 📸 She said a photo/video is on its way but never actually sent one (the model skipped the tool):
+  // send it now, as she described — so what she says and what arrives always match.
+  if (canSend && (mode === "chat" || mode === "talk") && reply && !media.some(m => m.status !== "failed")
+    && CLAIMS_MEDIA.test(reply) && !REFUSES_MEDIA.test(reply)
+    && (ASKED_FOR_MEDIA.test(String(lastSaid)) || (YES.test(String(lastSaid)) && MENTIONS_MEDIA.test(String(lastHers))) || STRONG_CLAIM.test(reply))) {
+    try {
+      const forced = await client.messages.create({
+        model: process.env.VELO_MODEL!, max_tokens: 600, system,
+        tools: [SEND_MEDIA_TOOL(ch?.name || "Velo", romantic)], tool_choice: { type: "tool", name: "send_media" },
+        messages: [...messages, { role: "assistant", content: reply }, { role: "user", content: "(Your photo/video didn't actually go out. Send it now with send_media — exactly what you just told them you're sending.)" }],
+      });
+      const call = forced.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
+      if (call) {
+        const out = await runTool("send_media", { ...(call.input as Record<string, unknown>), they_asked: true });
+        if (out.isError) console.warn("velo: photo retry", out.content.slice(0, 200));
+      }
+    } catch (e) { console.error("velo: photo retry", e instanceof Error ? e.message : e); }
   }
   // Where she found it: up to 3 links under a chat reply, 2 in a text, none spoken on a call.
   if (sources.size && reply && (mode === "chat" || mode === "sms")) {

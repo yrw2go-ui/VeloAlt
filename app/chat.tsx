@@ -39,7 +39,7 @@ const SUGGESTIONS = ["Plan my day", "Remind me to call Mom tomorrow at 6pm", "I 
 /** A message to drop into one chat (a call recap): cid null = Velo's chat. */
 export type ChatAdd = { msg: ChatMsg; cid: string | null };
 
-export default function Chat({ userId, name, onChanged, added, onAdded, character, adult = false, onAdult }: { userId: string; name: string; onChanged: () => void; added: ChatAdd | null; onAdded?: () => void; character?: ChatWith | null; adult?: boolean; onAdult?: () => void }) {
+export default function Chat({ userId, name, onChanged, added, onAdded, character, adult = false, onAdult, onHistory }: { userId: string; name: string; onChanged: () => void; added: ChatAdd | null; onAdded?: () => void; character?: ChatWith | null; adult?: boolean; onAdult?: () => void; onHistory?: (m: { role: "user" | "assistant"; content: string }[]) => void }) {
   const cid = character?.id || null;
   const thread = cid ? { characterId: cid } : {};
   const who = character?.name || "Velo";
@@ -82,6 +82,8 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   }, [cid]); // eslint-disable-line react-hooks/exhaustive-deps
   const end = useRef<HTMLDivElement>(null);
   const msgsRef = useRef<ChatMsg[]>([]);
+  // 📞 The chat so far (what she sees), for "Continue in call".
+  useEffect(() => { onHistory?.(realMsgs(msgs || []).map(m => ({ role: m.role, content: m.content }))); }, [msgs]); // eslint-disable-line react-hooks/exhaustive-deps
   const [hello] = useState(() => Math.floor(Math.random() * 3));
   msgsRef.current = msgs || [];
 

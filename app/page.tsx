@@ -1,10 +1,10 @@
 "use client";
 // Velo — the app shell: sign-in, the four tabs (💬 Chat, ☀️ Today, 🧠 Memory,
 // ⚙️ Settings), the 📞 call screen, and due-reminder pop-ups.
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { api, data } from "./lib/api";
 import { VersionCard } from "./version";
-import { currentAsk, subscribeAsk } from "./lib/dialog";
+import { confirmAsk, currentAsk, subscribeAsk } from "./lib/dialog";
 import { VeloLogo, VeloLookPicker, applyVeloLook, useVeloLook } from "./avatar";
 import VeloCall, { canCallVelo, primeSpeech } from "./call";
 import Chat, { type ChatAdd } from "./chat";
@@ -172,7 +172,26 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   const [callMini, setCallMini] = useState(false);
   // 🎨 Photos/videos sent during the call: shown on the call screen, and saved to that chat.
   const [callMedia, setCallMedia] = useState<Media[]>([]);
-  const startCall = () => { primeSpeech(); setCallWith(tab === "chat" ? withChar : null); setCallMedia([]); setCallMini(false); setCalling(true); };
+  const startCall = () => { primeSpeech(); setCallContext([]); setCallOpener(null); setCallWith(tab === "chat" ? withChar : null); setCallMedia([]); setCallMini(false); setCalling(true); };
+  // 📞↩ Continue in call: the call picks up the chat — her first line follows on from the last 12 messages.
+  const chatHistory = useRef<{ role: "user" | "assistant"; content: string }[]>([]);
+  const [historyCount, setHistoryCount] = useState(0);
+  const [callContext, setCallContext] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
+  const [callOpener, setCallOpener] = useState<string | null>(null);
+  const [continuing, setContinuing] = useState(false);
+  const CONTINUE_MIN = 12;
+  const continueCall = async () => {
+    if (continuing || chatHistory.current.length < CONTINUE_MIN) return;
+    primeSpeech(); setContinuing(true);
+    const who = tab === "chat" ? withChar : null;
+    const context = chatHistory.current.slice(-CONTINUE_MIN);
+    try {
+      const r = await api<{ reply: string }>("/api/velo", { mode: "talk", messages: [...context, { role: "user", content: "(They just called you to keep talking — you're on the phone now. Say your first line: pick up naturally right where the chat left off, short and warm. Don't mention apps or that you were told to.)" }], timeZone: timeZone(), name, ...(who ? { characterId: who.id } : {}) });
+      setCallContext(context); setCallOpener(r.reply || null);
+      setCallWith(who); setCallMedia([]); setCallMini(false); setCalling(true);
+    } catch (e) { await confirmAsk(e instanceof Error ? e.message : "Couldn't start the call.", { yes: "OK" }); }
+    finally { setContinuing(false); }
+  };
   // Unfinished photos/videos keep getting finished in the background while the app is open.
   useEffect(() => {
     const sweep = () => { if (document.visibilityState === "visible") data("media.sweep").catch(() => {}); };
@@ -182,7 +201,9 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   }, [userId]);
   const callRequest = async (turns: { role: "user" | "assistant"; content: string }[], mode: "talk" | "recap" | "remember") => {
     const thread = callWith ? { characterId: callWith.id } : {};
-    const r = await api<{ reply: string; changed?: boolean; media?: Media[] }>("/api/velo", { mode, messages: turns, timeZone: timeZone(), name, ...thread });
+    // A continued call keeps the chat it came from in mind (the conversation only; the call's own memory notes use the call).
+    const messages = mode === "talk" && callContext.length ? [...callContext, ...turns] : turns;
+    const r = await api<{ reply: string; changed?: boolean; media?: Media[] }>("/api/velo", { mode, messages, timeZone: timeZone(), name, ...thread });
     if (r.changed) bump();
     const sent = (r.media || []).filter(m => m.status !== "failed");
     if (sent.length) setCallMedia(list => [...list, ...sent]);
@@ -204,6 +225,11 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
           <div style={{ fontWeight: 800, fontSize: 18 }}>Velo</div>
           <div className="muted" style={{ fontSize: 12 }}>{name ? `Here for you, ${name.split(" ")[0]}` : "Your assistant & companion"}</div>
         </div>
+        {canCallVelo() && !calling && tab === "chat" && (
+          <button className="ghost" onClick={continueCall} disabled={continuing || historyCount < CONTINUE_MIN} data-testid="continue-call"
+            title={historyCount < CONTINUE_MIN ? `Chat a little more first (${historyCount}/${CONTINUE_MIN} messages)` : "Call and pick up where the chat left off"}
+            aria-label={`Continue the chat in a call with ${withChar ? withChar.name : "Velo"}`} style={{ borderRadius: 999, padding: "10px 12px", whiteSpace: "nowrap" }}>{continuing ? "…" : "📞↩ Continue"}</button>
+        )}
         {canCallVelo() && !calling && <button className="btn" onClick={startCall} aria-label={`Call ${tab === "chat" && withChar ? withChar.name : "Velo"}`} data-testid="call-velo" style={{ borderRadius: 999, padding: "10px 16px" }}>📞 Call</button>}
       </header>
 
@@ -221,7 +247,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
 
       <main style={{ flex: 1, minHeight: 0, overflowY: tab === "chat" ? "hidden" : "auto", display: "flex", flexDirection: "column" }}>
         {tab === "chat" && <CharacterStrip characters={chars} active={withChar?.id || null} admin={admin} onPick={setWithId} onNew={() => setEditing("new")} onEdit={setEditing} onGallery={() => setGallery(true)} unread={unread} />}
-        {tab === "chat" && <Chat key={`${withChar?.id || "velo"}-${chatTick}`} userId={userId} name={name} onChanged={bump} added={chatAdd} onAdded={() => setChatAdd(null)} character={withChar} adult={!!profile?.adultConfirmed} onAdult={() => setProfileTick(t => t + 1)} />}
+        {tab === "chat" && <Chat key={`${withChar?.id || "velo"}-${chatTick}`} userId={userId} name={name} onChanged={bump} added={chatAdd} onAdded={() => setChatAdd(null)} character={withChar} adult={!!profile?.adultConfirmed} onAdult={() => setProfileTick(t => t + 1)} onHistory={h => { chatHistory.current = h; setHistoryCount(h.length); }} />}
         {tab === "today" && <Today refresh={refresh} />}
         {tab === "memory" && <Memory refresh={refresh} />}
         {tab === "settings" && <Settings name={name} setName={setName} onOut={onOut} profile={profile} onProfile={() => setProfileTick(t => t + 1)} />}
@@ -239,7 +265,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       {calling && (
         <VeloCall key={look + (callWith?.id || "")} name={name} firstCall={!callWith && firstCall} request={callRequest} fetchVoice={fetchVoice}
           voice={callWith ? callWith.voice_kind : undefined}
-          opener={callWith ? `Hey${name ? ` ${name.split(" ")[0]}` : ""}, it's ${callWith.name}! What's going on?` : undefined}
+          opener={callOpener || (callWith ? `Hey${name ? ` ${name.split(" ")[0]}` : ""}, it's ${callWith.name}! What's going on?` : undefined)}
           who={callWith ? { name: callWith.name, face: (size: number) => <CharacterFace c={callWith} size={size} /> } : undefined}
           mini={callMini} onMinimize={() => setCallMini(true)} onExpand={() => setCallMini(false)}
           onEnd={(recap) => {
