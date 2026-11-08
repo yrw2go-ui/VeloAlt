@@ -10,7 +10,7 @@ import { hideSecrets } from "./lib/secrets";
 import { timeZone } from "./lib/tz";
 import { confirmAsk } from "./lib/dialog";
 import { useDictation } from "./dictate";
-import { CharacterFace, CharacterStrip, type Character } from "./characters";
+import { CharacterFace, CharacterStrip, CharacterEditor, type Character } from "./characters";
 import { MediaView, ReactionBar, type Media } from "./media";
 
 /** Who this chat is with: Velo (no character) or one of their characters. */
@@ -48,6 +48,8 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   const [msgs, setMsgs] = useState<ChatMsg[] | null>(null);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [activeId, setActiveId] = useState<string | null>(character?.id || null);
+  const [admin, setAdmin] = useState(false);
+  const [editing, setEditing] = useState<Character | null | undefined>(undefined);
   const [text, setText] = useState("");
   const mic = useDictation(setText);
   // The box grows with the message (typed or spoken), up to about 5 lines.
@@ -87,7 +89,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   msgsRef.current = msgs || [];
 
   useEffect(() => {
-    api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => setCharacters(r.characters || [])).catch(() => {});
+    api<{ characters: Character[]; admin?: boolean }>("/api/characters", { action: "list" }).then(r => { setCharacters(r.characters || []); setAdmin(!!r.admin); }).catch(() => {});
   }, [userId]);
   useEffect(() => {
     // History, then drafts still waiting for a Send and calls still going.
@@ -292,7 +294,8 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      <CharacterStrip characters={characters} active={activeId} admin={false} onPick={id => { setActiveId(id); window.dispatchEvent(new CustomEvent("velo:character", { detail: id ? characters.find(c => c.id === id) : null })); }} onNew={() => {}} onEdit={() => {}} onGallery={() => {}} />
+      {editing !== undefined && <CharacterEditor initial={editing} portraits={false} onClose={() => setEditing(undefined)} onSaved={c => { setCharacters(cs => cs.some(x => x.id === c.id) ? cs.map(x => x.id === c.id ? c : x) : [...cs, c]); setEditing(undefined); }} onDeleted={id => { setCharacters(cs => cs.filter(x => x.id !== id)); if (activeId === id) setActiveId(null); setEditing(undefined); }} />}
+      <CharacterStrip characters={characters} active={activeId} admin={admin} onPick={id => { setActiveId(id); window.dispatchEvent(new CustomEvent("velo:character", { detail: id ? characters.find(c => c.id === id) : null })); }} onNew={() => setEditing(null)} onEdit={c => setEditing(c)} onGallery={() => {}} />
       {character?.romantic && !adult && !skipRomance && (
         <div data-testid="romance-confirm" className="row" style={{ gap: 10, padding: "10px 14px", borderBottom: "1px solid var(--border)", background: "rgba(236,72,153,0.10)", fontSize: 13, flexWrap: "wrap" }}>
           <div style={{ flex: "1 1 200px" }}>💕 {character.name} is a romantic character. Confirm you&apos;re 18+ to unlock romance (PG-13) — until then {character.name} keeps it friendly.</div>
