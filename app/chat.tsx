@@ -39,15 +39,16 @@ const SUGGESTIONS = ["Plan my day", "Remind me to call Mom tomorrow at 6pm", "I 
 export type ChatAdd = { msg: ChatMsg; cid: string | null };
 
 export default function Chat({ userId, name, onChanged, added, onAdded, character, adult = false, onAdult, onContinue }: { userId: string; name: string; onChanged: () => void; added: ChatAdd | null; onAdded?: () => void; character?: ChatWith | null; adult?: boolean; onAdult?: () => void; onContinue?: (turns: { role: "user" | "assistant"; content: string }[]) => void }) {
-  const cid = character?.id || null;
+  const [activeId, setActiveId] = useState<string | null>(character?.id || null);
+  const cid = activeId;
+  const activeChar = characters.find(c => c.id === cid) || character;
   const thread = cid ? { characterId: cid } : {};
-  const who = character?.name || "Velo";
+  const who = activeChar?.name || "Velo";
   const key = cid || "velo";
   const unsaved = { get current() { return unsavedBy.get(key) || 0; }, set current(v: number) { unsavedBy.set(key, v); } };
   const face = (size: number) => (character ? <CharacterFace c={character} size={size} /> : <VeloAvatar size={size} />);
   const [msgs, setMsgs] = useState<ChatMsg[] | null>(null);
   const [characters, setCharacters] = useState<Character[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(character?.id || null);
   const [admin, setAdmin] = useState(false);
   const [editing, setEditing] = useState<Character | null | undefined>(undefined);
   const [text, setText] = useState("");
@@ -295,7 +296,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       {editing !== undefined && <CharacterEditor initial={editing} portraits={false} onClose={() => setEditing(undefined)} onSaved={c => { setCharacters(cs => cs.some(x => x.id === c.id) ? cs.map(x => x.id === c.id ? c : x) : [...cs, c]); setEditing(undefined); }} onDeleted={id => { setCharacters(cs => cs.filter(x => x.id !== id)); if (activeId === id) setActiveId(null); setEditing(undefined); }} />}
-      <CharacterStrip characters={characters} active={activeId} admin={admin} onPick={id => { setActiveId(id); window.dispatchEvent(new CustomEvent("velo:character", { detail: id ? characters.find(c => c.id === id) : null })); }} onNew={() => setEditing(null)} onEdit={c => setEditing(c)} onGallery={() => {}} />
+      <CharacterStrip characters={characters} active={activeId} admin={admin} onPick={id => setActiveId(id)} onNew={() => setEditing(null)} onEdit={c => setEditing(c)} onGallery={() => {}} />
       {character?.romantic && !adult && !skipRomance && (
         <div data-testid="romance-confirm" className="row" style={{ gap: 10, padding: "10px 14px", borderBottom: "1px solid var(--border)", background: "rgba(236,72,153,0.10)", fontSize: 13, flexWrap: "wrap" }}>
           <div style={{ flex: "1 1 200px" }}>💕 {character.name} is a romantic character. Confirm you&apos;re 18+ to unlock romance (PG-13) — until then {character.name} keeps it friendly.</div>
