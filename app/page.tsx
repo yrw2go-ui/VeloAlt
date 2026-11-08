@@ -172,11 +172,10 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   const [callMini, setCallMini] = useState(false);
   // 🎨 Photos/videos sent during the call: shown on the call screen, and saved to that chat.
   const [callMedia, setCallMedia] = useState<Media[]>([]);
-  const startCall = () => { primeSpeech(); setCallContext([]); setCallOpener(null); setCallWith(tab === "chat" ? withChar : null); setCallMedia([]); setCallMini(false); setCalling(true); };
+  const startCall = () => { primeSpeech(); setCallOpener(null); setCallWith(tab === "chat" ? withChar : null); setCallMedia([]); setCallMini(false); setCalling(true); };
   // 📞↩ Continue in call: the call picks up the chat — her first line follows on from the last 12 messages.
   const chatHistory = useRef<{ role: "user" | "assistant"; content: string }[]>([]);
   const [historyCount, setHistoryCount] = useState(0);
-  const [callContext, setCallContext] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
   const [callOpener, setCallOpener] = useState<string | null>(null);
   const [continuing, setContinuing] = useState(false);
   const CONTINUE_MIN = 12;
@@ -186,8 +185,9 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
     const who = tab === "chat" ? withChar : null;
     const context = chatHistory.current.slice(-CONTINUE_MIN);
     try {
+      // Her chat with them comes along on every call; here she just picks up where the last 12 messages left off.
       const r = await api<{ reply: string }>("/api/velo", { mode: "talk", messages: [...context, { role: "user", content: "(They just called you to keep talking — you're on the phone now. Say your first line: pick up naturally right where the chat left off, short and warm. Don't mention apps or that you were told to.)" }], timeZone: timeZone(), name, ...(who ? { characterId: who.id } : {}) });
-      setCallContext(context); setCallOpener(r.reply || null);
+      setCallOpener(r.reply || null);
       setCallWith(who); setCallMedia([]); setCallMini(false); setCalling(true);
     } catch (e) { await confirmAsk(e instanceof Error ? e.message : "Couldn't start the call.", { yes: "OK" }); }
     finally { setContinuing(false); }
@@ -201,9 +201,8 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   }, [userId]);
   const callRequest = async (turns: { role: "user" | "assistant"; content: string }[], mode: "talk" | "recap" | "remember") => {
     const thread = callWith ? { characterId: callWith.id } : {};
-    // A continued call keeps the chat it came from in mind (the conversation only; the call's own memory notes use the call).
-    const messages = mode === "talk" && callContext.length ? [...callContext, ...turns] : turns;
-    const r = await api<{ reply: string; changed?: boolean; media?: Media[] }>("/api/velo", { mode, messages, timeZone: timeZone(), name, ...thread });
+    // (The server gives every call her text chat with them, so the call only sends its own turns.)
+    const r = await api<{ reply: string; changed?: boolean; media?: Media[] }>("/api/velo", { mode, messages: turns, timeZone: timeZone(), name, ...thread });
     if (r.changed) bump();
     const sent = (r.media || []).filter(m => m.status !== "failed");
     if (sent.length) setCallMedia(list => [...list, ...sent]);
