@@ -6,7 +6,7 @@ import { api, data } from "./lib/api";
 import { currentAsk, subscribeAsk } from "./lib/dialog";
 import { VeloLogo, VeloLookPicker, applyVeloLook, useVeloLook } from "./avatar";
 import VeloCall, { canCallVelo, primeSpeech } from "./call";
-import Chat, { type ChatMsg } from "./chat";
+import Chat, { type ChatAdd } from "./chat";
 import Today from "./today";
 import Memory from "./memory";
 import { timeZone } from "./lib/tz";
@@ -94,7 +94,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   const [firstCall, setFirstCall] = useState(false);
   const [due, setDue] = useState<DueReminder[]>([]);
   const [refresh, setRefresh] = useState(0);
-  const [chatAdd, setChatAdd] = useState<ChatMsg | null>(null);
+  const [chatAdd, setChatAdd] = useState<ChatAdd | null>(null);
   const look = useVeloLook();
   const [activeChar, setActiveChar] = useState<{ name: string; image: string }>({ name: "Velo", image: "" });
   useEffect(() => {
@@ -199,7 +199,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
         <VeloCall key={activeChar.name || "Velo"} name={name} who={activeChar.name || "Velo"} faceUrl={activeChar.image} firstCall={firstCall && (activeChar.name || "Velo") === "Velo"} continueFrom={continueTurns || undefined} request={callRequest} fetchVoice={fetchVoice}
           onEnd={(recap) => {
             setCalling(false); setFirstCall(false); setContinueTurns(null);
-            if (recap) { setChatAdd({ role: "assistant", content: recap }); setTab("chat"); }
+            if (recap) { setChatAdd({ msg: { role: "assistant", content: recap }, cid: null }); setTab("chat"); }
           }} />
       )}
       <ConfirmHost />
