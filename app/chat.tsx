@@ -124,17 +124,11 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     const t = hideSecrets(raw.trim()).text;
     const file = attach;
     if ((!t && !file) || busy || uploading || !msgs) return;
-    // 👀 "*peek*" during a scene: a picture of the moment, as if they were there. She doesn't reply or know.
+    // 👀 "*peek*" during a scene: first the picture's description pops up to check or tweak, then exactly that is made.
     if (cid && scene && !file && /^\s*\*?\s*pe(e|a)k\s*\*?\s*[.!]?\s*$/i.test(t)) {
-      const mine: ChatMsg = { role: "user", content: "*peek*", peek: true };
-      setMsgs([...msgs, mine]); setText(""); setBusy(true); setErr("");
-      try {
-        const r = await data<{ media: Media; userMsgId: string; mediaMsgId: string }>("scene.peek", { characterId: cid });
-        setMsgs(list => [...(list || []).map(x => (x === mine ? { ...x, id: r.userMsgId } : x)), { id: r.mediaMsgId, role: "assistant", content: "(peek)", media: r.media, peek: true }]);
-      } catch (e) {
-        setMsgs(list => (list || []).filter(x => x !== mine));
-        setErr(e instanceof Error ? e.message : "Couldn't peek right now.");
-      } finally { setBusy(false); }
+      setText(""); setErr(""); setPeekSheet({ description: "", loading: true });
+      try { setPeekSheet({ description: (await data<{ description: string }>("scene.peek.draft", { characterId: cid })).description, loading: false }); }
+      catch (e) { setPeekSheet(null); setErr(e instanceof Error ? e.message : "Couldn't peek right now."); }
       return;
     }
     const opener: ChatMsg[] = msgs.length || cid ? [] : [{ role: "assistant", content: openingLine }];
@@ -173,6 +167,21 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   // 🎬 Scenes: a date or outing, played out here, or something that already happened.
   const [scene, setScene] = useState<{ id: string; title: string; details: string } | null>(null);
   const [sceneSheet, setSceneSheet] = useState(false);
+  // 👀 The peek being set up: its description (editable) before the picture is made.
+  const [peekSheet, setPeekSheet] = useState<{ description: string; loading: boolean; error?: string } | null>(null);
+  const rewritePeek = async () => {
+    setPeekSheet(p => (p ? { ...p, loading: true, error: undefined } : p));
+    try { const r = await data<{ description: string }>("scene.peek.draft", { characterId: cid }); setPeekSheet({ description: r.description, loading: false }); }
+    catch (e) { setPeekSheet(p => (p ? { ...p, loading: false, error: e instanceof Error ? e.message : "Couldn't rewrite it." } : p)); }
+  };
+  const sendPeek = async (description: string) => {
+    setPeekSheet(p => (p ? { ...p, loading: true, error: undefined } : p));
+    try {
+      const r = await data<{ media: Media; userMsgId: string; mediaMsgId: string }>("scene.peek", { characterId: cid, description });
+      setPeekSheet(null);
+      setMsgs(list => [...(list || []), { id: r.userMsgId, role: "user", content: "*peek*", peek: true }, { id: r.mediaMsgId, role: "assistant", content: "(peek)", media: r.media, peek: true }]);
+    } catch (e) { setPeekSheet(p => (p ? { ...p, loading: false, error: e instanceof Error ? e.message : "Couldn't peek right now." } : p)); }
+  };
   // 📅 A hangout/date you two planned for today: set the scene for it.
   type Plan = { id: string; title: string; details: string; day: string };
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -307,6 +316,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
           </div>
         </div>
       )}
+      {peekSheet && character && <PeekSheet who={character.name} sheet={peekSheet} onChange={d => setPeekSheet(p => (p ? { ...p, description: d } : p))} onRewrite={rewritePeek} onSend={sendPeek} onClose={() => setPeekSheet(null)} />}
       {sceneSheet && character && <SceneSheet key={fromPlan?.id || "new"} who={character.name} plan={fromPlan} onClose={() => { setSceneSheet(false); setFromPlan(null); }} onStart={startScene} />}
       <div data-testid="chat-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
         {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={m.media?.id || m.id || i} m={m} onReactMsg={reactMsg} face={face(28)} onMedia={mediaArrived} onReact={react} who={who} onAnswer={x => setMsgs(list => (list || []).map(y => (y.media?.id === x.id ? { ...y, content: mediaNote({ ...y.media!, ...x }), media: { ...y.media!, ...x } } : y)))} />)}
@@ -439,6 +449,29 @@ export function FileThumb({ f, size }: { f: { url: string; thumb?: string | null
 }
 
 /** 🎬 Set up a scene: play it out now, or say it already happened. */
+/** 👀 The peek, before it's made: the picture's description to check, tweak or rewrite. */
+function PeekSheet({ who, sheet, onChange, onRewrite, onSend, onClose }: { who: string; sheet: { description: string; loading: boolean; error?: string }; onChange: (d: string) => void; onRewrite: () => void; onSend: (d: string) => void; onClose: () => void }) {
+  return (
+    <div role="dialog" aria-modal="true" data-testid="peek-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }} onClick={onClose}>
+      <div className="card" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          <div style={{ fontWeight: 800, fontSize: 17 }}>👀 Peek at {who}</div>
+          <button className="ghost" onClick={onClose} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
+        </div>
+        <div className="muted" style={{ fontSize: 12 }}>This is the picture that will be made, using her reference pictures. Fix anything that&apos;s off — where you are, what she&apos;s wearing, her pose or look. She won&apos;t know.</div>
+        <textarea value={sheet.description} onChange={e => onChange(e.target.value)} maxLength={400} rows={5} aria-label="Peek description" disabled={sheet.loading && !sheet.description}
+          placeholder={sheet.loading ? "Writing what you'd see…" : "e.g. Her at a candlelit corner table in an emerald dress, laughing and glancing up at me"} style={{ resize: "vertical" }} />
+        <div className="muted" style={{ fontSize: 11, textAlign: "right" }}>{sheet.description.length}/400</div>
+        {sheet.error && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {sheet.error}</div>}
+        <div className="row" style={{ gap: 8 }}>
+          <button className="ghost" onClick={onRewrite} disabled={sheet.loading} data-testid="peek-rewrite" style={{ flexShrink: 0 }}>↻ Rewrite</button>
+          <button className="btn" onClick={() => onSend(sheet.description)} disabled={sheet.loading || sheet.description.trim().length < 10} data-testid="peek-go" style={{ flex: 1 }}>{sheet.loading ? "…" : "👀 Peek"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const todayYmd = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 
 function SceneSheet({ who, plan, onClose, onStart }: { who: string; plan?: { title: string; details: string } | null; onClose: () => void; onStart: (kind: "live" | "past", title: string, details: string) => Promise<void> }) {

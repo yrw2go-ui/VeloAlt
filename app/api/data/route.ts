@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { duePlans, setPlanStatus } from "../../lib/plans";
-import { peekAt } from "../../lib/peek";
+import { peekAt, draftPeek } from "../../lib/peek";
 import { cleanTags } from "../../lib/text";
 import { sql } from "../../lib/db";
 import { resolveCaller } from "../../lib/caller";
@@ -205,6 +205,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true });
       }
       // 👀 A peek at the scene going on with a character: a picture of the moment, which she never knows about.
+      case "scene.peek.draft":
       case "scene.peek": {
         const ch = b.characterId ? await getCharacter(String(b.characterId)) : null;
         if (!ch) return bad("That character wasn't found.");
@@ -213,9 +214,16 @@ export async function POST(req: NextRequest) {
         if (!mediaReady()) return bad("Photos aren't set up yet.");
         const [u] = await db`select adult_confirmed_at from users where id = ${me}`;
         try {
-          const p = await peekAt(me, ch, cur, !!u?.adult_confirmed_at);
+          if (b.action === "scene.peek.draft") return NextResponse.json({ description: await draftPeek(me, ch, cur, !!u?.adult_confirmed_at) });
+          const description = String(b.description || "").trim();
+          if (description.length < 10) return bad("Describe the moment in a few words first.");
+          const p = await peekAt(me, ch, cur, !!u?.adult_confirmed_at, description);
+          if (p.media.status === "failed") return bad("The picture service wouldn't make that one — try changing the description.");
           return NextResponse.json(p);
-        } catch (e) { return bad(e instanceof MediaError ? "Couldn't peek right now — try again in a moment." : "Couldn't peek right now."); }
+        } catch (e) {
+          if (e instanceof MediaError && /can't be sent/.test(e.message)) return bad(/PG-13/.test(e.message) ? "That's past PG-13 — it can be flirty, but no nudity, lingerie or anything explicit. Try changing the description." : "Keep it family-friendly (fully clothed, nothing suggestive) — try changing the description.");
+          return bad(e instanceof MediaError ? "Couldn't peek right now — try again in a moment." : "Couldn't peek right now.");
+        }
       }
       // 🔴 Unread: messages from Velo / each character since they last looked at that chat.
       case "chats.unread": {

@@ -1,11 +1,13 @@
 // 👀 Scene peeks: during a live scene, "*peek*" shows a photo of the moment — the place, her outfit
 // for the outing, what she's doing right now — as if they were standing there looking. She never
 // knows: no reply, and the peek and its picture are left out of everything she reads.
+// Two steps: the description is shown first so they can fix it, then exactly that is made.
 import Anthropic from "@anthropic-ai/sdk";
 import { sql } from "./db";
 import { type Character, referenceUrls, type Scene } from "./characters";
 import { startMedia, type Media } from "./media";
 import { allowsSuggestive, mediaMood } from "./traits";
+import { scrub } from "./secrets";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, authToken: null });
 export const PEEK = /^\s*\*?\s*pe(e|a)k\s*\*?\s*[.!]?\s*$/i;
@@ -23,12 +25,20 @@ async function describeMoment(ch: Character, scene: Scene, lines: { role: string
   return text.slice(0, 380) || `${ch.name} during ${scene.title}, candid, natural light`;
 }
 
-export async function peekAt(userId: string, ch: Character, scene: Scene, adult: boolean): Promise<{ media: Media; userMsgId: string; mediaMsgId: string }> {
+/** Step 1: the description of the moment, for them to check (and tweak) before anything is made. */
+export async function draftPeek(userId: string, ch: Character, scene: Scene, adult: boolean): Promise<string> {
   const lines = (await sql()`select role, content from velo_messages where user_id = ${userId} and character_id = ${ch.id} and scene_id = ${scene.id} and not peek
     order by created_at desc limit 16`).reverse().map(r => ({ role: String(r.role), content: String(r.content) }));
-  const romantic = adult && !!ch.romantic && allowsSuggestive(ch.traits);
-  const description = await describeMoment(ch, scene, lines, romantic);
-  const media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description },
+  return describeMoment(ch, scene, lines, romanticFor(ch, adult));
+}
+
+const romanticFor = (ch: Character, adult: boolean) => adult && !!ch.romantic && allowsSuggestive(ch.traits);
+
+/** Step 2: make the picture from their (possibly edited) description, with her chosen reference pictures. */
+export async function peekAt(userId: string, ch: Character, scene: Scene, adult: boolean, description: string): Promise<{ media: Media; userMsgId: string; mediaMsgId: string }> {
+  const romantic = romanticFor(ch, adult);
+  const desc = scrub(description.replace(/\s+/g, " ").trim()).slice(0, 400);
+  const media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: desc },
     { characterId: ch.id, who: ch.name, appearance: ch.appearance, refs: await referenceUrls(ch), romantic, mood: mediaMood(ch.traits), offer: false, other: null, peek: true });
   const [mine] = await sql()`insert into velo_messages (user_id, role, content, character_id, scene_id, peek) values (${userId}, 'user', '*peek*', ${ch.id}, ${scene.id}, true) returning id`;
   const [pic] = await sql()`insert into velo_messages (user_id, role, content, media_id, character_id, scene_id, peek, created_at)
