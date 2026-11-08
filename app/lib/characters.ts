@@ -8,6 +8,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { del, storageReady } from "./storage";
 import { sql } from "./db";
+import { friendsOf } from "./friends";
 import { CHARACTER_VOICES, VOICE_ID, FISH_ID } from "./voices";
 import { traitsPrompt, trustOn, startingTrust, cleanTraits, allowsExplicit } from "./traits";
 import { saveImageItem } from "./media";
@@ -230,6 +231,12 @@ export async function referenceUrls(c: Character): Promise<string[]> {
 export async function pictureOf(userId: string, knowerId: string | null, name: string): Promise<{ name: string; refs: string[]; appearance: string } | string> {
   const n = String(name || "").trim().toLowerCase();
   if (!n) return "Say who should be in it.";
+  if (knowerId) {
+    const me = await getCharacter(knowerId);
+    const f = me ? (await friendsOf(me)).find(x => x.name.trim().toLowerCase() === n) : null;
+    const fc = f ? await getCharacter(f.id) : null;
+    if (fc) return { name: fc.name, refs: await referenceUrls(fc), appearance: fc.appearance };
+  }
   const [row] = await sql()`select c.id, a.mentions, extract(epoch from now() - a.first_at) / 86400 as days
     from chat_acquaintances a join chat_characters c on c.id = a.known_id
     where a.user_id = ${userId} and a.knower_id is not distinct from ${knowerId} and lower(c.name) = ${n}`;
