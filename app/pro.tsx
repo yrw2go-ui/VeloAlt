@@ -19,6 +19,8 @@ export type Profile = {
   personality: string; adultConfirmed: boolean; isAdmin?: boolean; mode?: string; customFace?: string;
   videoModel?: string; videoModels?: { id: string; label: string }[]; checkins?: string;
   bio?: { text: string; birthday: string; age: number | null; state: string; photo: string; photoNote: string };
+  notifySpicy?: boolean; notifyProductivity?: boolean;
+  spicyVoice?: string; secretVoice?: string; spicyApiVoice?: string;
 };
 type Contact = { id: string; name: string; phone: string };
 

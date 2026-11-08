@@ -10,7 +10,7 @@ import Chat, { type ChatAdd } from "./chat";
 import Today from "./today";
 import Memory from "./memory";
 import { timeZone } from "./lib/tz";
-import ProCard, { BrainCard, PersonalityCard, type Profile } from "./pro";
+import ProCard, { BrainCard, PersonalityCard, UpdateCard, type Profile } from "./pro";
 
 type Tab = "chat" | "today" | "memory" | "settings";
 const TABS: { id: Tab; icon: string; label: string }[] = [
@@ -235,6 +235,7 @@ function Settings({ name, setName, onOut, profile, onProfile }: { name: string; 
             {profile && <PersonalityCard profile={profile} onChange={onProfile} />}
             {profile && <BrainCard profile={profile} onChange={onProfile} />}
       {profile && <ProCard profile={profile} onChange={onProfile} />}
+      <UpdateCard />
       <button className="ghost" onClick={() => api("/api/auth", { action: "signout" }).finally(onOut)}>Sign out</button>
     </div>
   );
