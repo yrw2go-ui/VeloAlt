@@ -296,7 +296,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       {editing !== undefined && <CharacterEditor initial={editing} portraits={false} onClose={() => setEditing(undefined)} onSaved={c => { setCharacters(cs => cs.some(x => x.id === c.id) ? cs.map(x => x.id === c.id ? c : x) : [...cs, c]); setEditing(undefined); }} onDeleted={id => { setCharacters(cs => cs.filter(x => x.id !== id)); if (activeId === id) setActiveId(null); setEditing(undefined); }} />}
-      <CharacterStrip characters={characters} active={activeId} admin={admin} onPick={id => setActiveId(id)} onNew={() => setEditing(null)} onEdit={c => setEditing(c)} onGallery={() => {}} />
+      <CharacterStrip characters={characters} active={activeId} admin={admin} onPick={id => { setActiveId(id); const c = characters.find(x => x.id === id); window.dispatchEvent(new CustomEvent("velo:character", { detail: c ? { name: c.name, image: c.portrait_url || "" } : { name: "Velo", image: "" } })); }} onNew={() => setEditing(null)} onEdit={c => setEditing(c)} onGallery={() => {}} />
       {character?.romantic && !adult && !skipRomance && (
         <div data-testid="romance-confirm" className="row" style={{ gap: 10, padding: "10px 14px", borderBottom: "1px solid var(--border)", background: "rgba(236,72,153,0.10)", fontSize: 13, flexWrap: "wrap" }}>
           <div style={{ flex: "1 1 200px" }}>💕 {character.name} is a romantic character. Confirm you&apos;re 18+ to unlock romance (PG-13) — until then {character.name} keeps it friendly.</div>
