@@ -180,10 +180,11 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
           <textarea value={personality} onChange={e => setPersonality(e.target.value)} maxLength={2000} rows={3} placeholder="How do they talk and act? e.g. gruff but kind, loves bad puns, never gives up" aria-label="Personality" style={{ marginTop: 4, resize: "vertical" }} />
         </label>
         <label style={{ fontSize: 13, fontWeight: 700 }}>Backstory
-          <textarea value={backstory} onChange={e => setBackstory(e.target.value)} maxLength={3000} rows={4} placeholder="Where they come from, what they've been through, what they care about" aria-label="Backstory" style={{ marginTop: 4, resize: "vertical" }} />
+          <textarea value={backstory} onChange={e => setBackstory(e.target.value)} maxLength={3000} rows={4} placeholder="Where they come from, what they've been through, what they care about. Type @Name to have them know another character (e.g. 'Her best friend since college is @Mia')." aria-label="Backstory" style={{ marginTop: 4, resize: "vertical" }} />
         </label>
         <label style={{ fontSize: 13, fontWeight: 700 }}>Relation to the user
           <textarea value={relation} onChange={e => setRelation(e.target.value)} maxLength={600} rows={2} placeholder="Who they are to the person chatting, e.g. an old friend from the navy, a mentor, a big sister" aria-label="Relation to the user" style={{ marginTop: 4, resize: "vertical" }} />
+        {c && <FriendsCard id={c.id} />}
         </label>
         <div data-testid="character-life" style={{ display: "flex", flexDirection: "column", gap: 10, padding: 12, borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface2)" }}>
           <div style={{ fontWeight: 800, fontSize: 14 }}>💼 Their everyday life</div>
@@ -463,6 +464,61 @@ function PendingPictures({ value, onChange }: { value: { files: File[]; headshot
         <button type="button" className="ghost" disabled={!value.fictional || value.files.length >= 4} onClick={() => input.current?.click()} data-testid="pending-add" style={{ alignSelf: "flex-start", padding: "6px 12px", fontSize: 13 }}>⬆️ Add pictures</button>
         <input ref={input} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onChange={e => add(e.target.files)} data-testid="pending-input" />
       </div>
+    </div>
+  );
+}
+
+type Link = { id: string; name: string; kind: string; story: string };
+function FriendsCard({ id }: { id: string }) {
+  const [links, setLinks] = useState<Link[]>([]);
+  const [others, setOthers] = useState<{ id: string; name: string }[]>([]);
+  const [other, setOther] = useState("");
+  const [kind, setKind] = useState("");
+  const [story, setStory] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    api<{ links: Link[] }>("/api/characters", { action: "links", id }).then(r => setLinks(r.links)).catch(() => {});
+    api<{ characters: { id: string; name: string }[] }>("/api/characters", { action: "list" }).then(r => setOthers(r.characters.filter(x => x.id !== id).map(x => ({ id: x.id, name: x.name })))).catch(() => {});
+  }, [id]);
+  const add = async () => {
+    if (!other) return;
+    setBusy(true); setErr("");
+    try {
+      const r = await api<{ links: Link[] }>("/api/characters", { action: "link.set", id, otherId: other, kind: kind.trim() || "friends", story });
+      setLinks(r.links); setOther(""); setKind(""); setStory("");
+    } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't link them."); }
+    setBusy(false);
+  };
+  const remove = async (l: Link) => {
+    if (!(await confirmAsk(`Unlink ${l.name}? Are you sure?`, { yes: "Yes, unlink", danger: true }))) return;
+    try { setLinks((await api<{ links: Link[] }>("/api/characters", { action: "link.remove", id, otherId: l.id })).links); } catch { /* keep */ }
+  };
+  const free = others.filter(o => !links.some(l => l.id === o.id));
+  return (
+    <div style={{ display: "grid", gap: 8, border: "1px solid var(--border)", borderRadius: 12, padding: 12 }}>
+      <b style={{ fontSize: 13 }}>Friends and family</b>
+      <span className="muted" style={{ fontSize: 12 }}>Characters who know each other firsthand. They can talk about each other, but only know you are friends with the other one, not how close you are (unless you tell them). Family ties to you are shared.</span>
+      {links.map(l => (
+        <div key={l.id} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+          <div style={{ flex: 1, fontSize: 13 }}><b>{l.name}</b> · {l.kind}{l.story && <div className="muted" style={{ fontSize: 12 }}>{l.story}</div>}</div>
+          <button className="ghost" style={{ padding: "2px 10px" }} onClick={() => remove(l)}>✕</button>
+        </div>
+      ))}
+      {free.length > 0 && (
+        <div style={{ display: "grid", gap: 6 }}>
+          <div style={{ display: "flex", gap: 6 }}>
+            <select value={other} onChange={e => setOther(e.target.value)} style={{ flex: 1 }}>
+              <option value="">Add someone…</option>
+              {free.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
+            <input value={kind} onChange={e => setKind(e.target.value)} maxLength={60} placeholder="friends, sister…" style={{ flex: 1 }} />
+          </div>
+          {other && <textarea value={story} onChange={e => setStory(e.target.value)} maxLength={600} rows={2} placeholder="How they know each other (optional)" style={{ resize: "vertical" }} />}
+          {other && <button disabled={busy} onClick={add}>{busy ? "Linking…" : "Link them"}</button>}
+        </div>
+      )}
+      {err && <span style={{ color: "var(--bad)", fontSize: 12 }}>{err}</span>}
     </div>
   );
 }
