@@ -143,13 +143,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   const startCall = () => { primeSpeech(); setContinueTurns(null); setCalling(true); };
   const continueCall = (turns: { role: "user" | "assistant"; content: string }[]) => { primeSpeech(); setContinueTurns(turns.slice(-12)); setCalling(true); };
   const callRequest = async (turns: { role: "user" | "assistant"; content: string }[], mode: "talk" | "recap" | "remember") => {
-    const character = activeChar.name || "Velo";
-    if (profile?.isAdmin) {
-      const r = await data<{ reply: string; changed?: boolean }>("character.call", { mode, messages: turns, timeZone: timeZone(), name, character });
-      if (r.changed) bump();
-      return r.reply;
-    }
-    const r = await api<{ reply: string; changed?: boolean }>("/api/velo", { mode, messages: turns, timeZone: timeZone(), name });
+    const r = await api<{ reply: string; changed?: boolean }>("/api/velo", { mode, messages: turns, timeZone: timeZone(), name, ...(activeChar.id ? { characterId: activeChar.id } : {}) });
     if (r.changed) bump();
     return r.reply;
   };
