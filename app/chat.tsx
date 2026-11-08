@@ -38,7 +38,7 @@ const SUGGESTIONS = ["Plan my day", "Remind me to call Mom tomorrow at 6pm", "I 
 /** A message to drop into one chat (a call recap): cid null = Velo's chat. */
 export type ChatAdd = { msg: ChatMsg; cid: string | null };
 
-export default function Chat({ userId, name, onChanged, added, onAdded, character, adult = false, onAdult }: { userId: string; name: string; onChanged: () => void; added: ChatAdd | null; onAdded?: () => void; character?: ChatWith | null; adult?: boolean; onAdult?: () => void }) {
+export default function Chat({ userId, name, onChanged, added, onAdded, character, adult = false, onAdult, onContinue }: { userId: string; name: string; onChanged: () => void; added: ChatAdd | null; onAdded?: () => void; character?: ChatWith | null; adult?: boolean; onAdult?: () => void; onContinue?: (turns: { role: "user" | "assistant"; content: string }[]) => void }) {
   const cid = character?.id || null;
   const thread = cid ? { characterId: cid } : {};
   const who = character?.name || "Velo";
@@ -301,6 +301,11 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
             <div style={{ width: `${trust}%`, height: "100%", borderRadius: 999, background: trust >= 70 ? "#10b981" : trust >= 40 ? "#f59e0b" : "#ef4444", transition: "width .4s" }} />
           </div>
           <span className="muted" style={{ minWidth: 30, textAlign: "right" }}>{trust}%</span>
+        </div>
+      )}
+      {onContinue && msgs && msgs.length > 1 && (
+        <div style={{ padding: "6px 14px", borderBottom: "1px solid var(--border)" }}>
+          <button className="ghost" onClick={() => onContinue(realMsgs(msgs).slice(-12))} style={{ fontSize: 13, padding: "6px 12px" }}>📞 Continue conversation</button>
         </div>
       )}
       {character && scene && (
