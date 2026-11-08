@@ -3,7 +3,7 @@
 // that checks for a newer version and loads it.
 import { useEffect, useState } from "react";
 
-const ID = process.env.NEXT_PUBLIC_BUILD_ID || "dev";
+const ID = process.env.NEXT_PUBLIC_BUILD_ID || "velo 2";
 const TIME = process.env.NEXT_PUBLIC_BUILD_TIME || "";
 const when = (iso: string) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? "" : d.toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }); };
 

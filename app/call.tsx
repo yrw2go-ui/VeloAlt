@@ -475,7 +475,7 @@ export default function VeloCall({ request, onEnd, voice = "female", name, who =
         <button onClick={e => { e.stopPropagation(); onMinimize(); }} style={{ position: "absolute", top: "max(32px, env(safe-area-inset-top))", right: 16, background: "#1f2937", color: "#f1f1f3", border: "1px solid #374151", borderRadius: 999, padding: "8px 14px", fontSize: 14, fontWeight: 800, cursor: "pointer" }}>⤡ Minimize</button>
       )}
       <div style={{ marginTop: small ? 12 : 34, width: small ? 84 : 150, height: small ? 84 : 150, flexShrink: 0, borderRadius: "50%", background: "#111827", border: `3px solid ${ring}`, display: "flex", alignItems: "center", justifyContent: "center", animation: phase === "ended" || phase === "muted" ? undefined : "vcRing 1.6s infinite" }}>
-        {face ? <img src={"/api/pic?u=" + encodeURIComponent(face)} alt="" style={{ width: small ? 78 : 144, height: small ? 78 : 144, borderRadius: "50%", objectFit: "cover" }} /> : <VeloAvatar size={small ? 78 : 144} />}
+        {faceUrl ? <img src={faceUrl} alt="" style={{ width: small ? 78 : 144, height: small ? 78 : 144, borderRadius: "50%", objectFit: "cover" }} /> : <VeloAvatar size={small ? 78 : 144} />}
       </div>
       <div style={{ marginTop: small ? 10 : 18, fontSize: small ? 22 : 26, fontWeight: 800 }}>{who}</div>
       <div style={{ marginTop: 6, fontSize: 14, color: ring, fontWeight: 700, minHeight: 20 }}>

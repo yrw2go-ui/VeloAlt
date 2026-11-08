@@ -226,7 +226,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
         {canCallVelo() && !calling && tab === "chat" && (
           <button className="ghost" onClick={continueCall} disabled={continuing || historyCount < CONTINUE_MIN} data-testid="continue-call"
             title={historyCount < CONTINUE_MIN ? `Chat a little more first (${historyCount}/${CONTINUE_MIN} messages)` : "Call and pick up where the chat left off"}
-            aria-label={`Continue the chat in a call with ${withChar ? withChar.name : "Velo"}`} style={{ borderRadius: 999, padding: "10px 12px", whiteSpace: "nowrap" }}>{continuing ? "…" : "📞↩ Continue"}</button>
+            aria-label={`Continue the chat in a call with ${withChar ? withChar.name : "Velo"}`} style={{ borderRadius: 999, padding: "6px 10px", fontSize: 13, whiteSpace: "nowrap" }}>{continuing ? "…" : "📞↩"}</button>
         )}
         {canCallVelo() && !calling && <button className="btn" onClick={startCall} aria-label={`Call ${tab === "chat" && withChar ? withChar.name : "Velo"}`} data-testid="call-velo" style={{ borderRadius: 999, padding: "10px 16px" }}>📞 Call</button>}
       </header>
