@@ -316,6 +316,13 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
           if (m && m.status !== "failed") media.push(m);
           else console.error("velo: media start failed", m?.status);
         } catch (e) { console.error("velo: media failed", e instanceof Error ? e.message : e); }
+        // Retry once if she said she's sending a selfie/photo and nothing went out.
+        if (!media.length && /\b(selfie|sending|send you|here'?s a (pic|photo|selfie))\b/i.test(reply || "")) {
+          try {
+            const m = await startMedia(caller.userId, { kind: "image", with_me: true, they_asked: true, description: desc || `${ch ? ch.name : "Velo"} selfie` }, { characterId: cid, who: ch?.name || "Velo", appearance: ch?.appearance || "", refs, romantic, mood: ch ? mediaMood(ch.traits) : "", offer: false, other: null });
+            if (m && m.status !== "failed") media.push(m);
+          } catch (e) { console.error("velo: media retry failed", e instanceof Error ? e.message : e); }
+        }
       }
     } catch (e) {
       console.error(`velo: ${chosen} failed, using Claude`, e instanceof ProviderError ? e.message : e);
