@@ -142,7 +142,7 @@ const greetingFor = (name?: string, first = false, who = "Velo") => {
   return options[Math.floor(Math.random() * options.length)];
 };
 
-export default function VeloCall({ request, onEnd, voice = "female", name, who = "Velo", faceUrl = "", firstCall = false, fetchVoice, opener, startPrivate = false, continueFrom }: {
+export default function VeloCall({ request, onEnd, voice = "female", name, who = "Velo", faceUrl = "", firstCall = false, fetchVoice, opener, startPrivate = false, continueFrom, mini = false, onMinimize, onExpand }: {
   /** 📞 Check-in call: what Velo says first (instead of her usual hello). */
   opener?: string;
   /** Start like a normal phone call: on the earpiece (📱 Private), with a 🔊 Speaker button. */
@@ -158,6 +158,10 @@ export default function VeloCall({ request, onEnd, voice = "female", name, who =
   firstCall?: boolean;
   /** Recent chat messages to continue from (instead of a fresh greeting). */
   continueFrom?: Turn[];
+  /** Shrunk to a bar so they can use the app while they talk. */
+  mini?: boolean;
+  onMinimize?: () => void;
+  onExpand?: () => void;
   /** Sends the conversation to Velo; returns its reply. */
   request: (turns: Turn[], mode: "talk" | "recap" | "remember") => Promise<string>;
   /** The call closed — with the recap to add to the chat, or null. */
@@ -452,12 +456,24 @@ export default function VeloCall({ request, onEnd, voice = "female", name, who =
   const pill = (on: boolean) => ({ flexShrink: 0, background: on ? "#3b82f6" : "#1f2937", color: "#fff", border: `1px solid ${on ? "#60a5fa" : "#374151"}`, borderRadius: 999, padding: "8px 12px", fontSize: 14, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" } as const);
   const btn = (bg: string) => ({ width: 64, height: 64, borderRadius: "50%", border: "none", background: bg, color: "#fff", fontSize: 26, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" } as const);
 
+  if (mini && phase !== "ended") return (
+    <div data-testid="velo-call-mini" style={{ position: "fixed", left: 0, right: 0, top: 0, zIndex: 2000, padding: "max(8px, env(safe-area-inset-top)) 12px 8px", background: "linear-gradient(90deg, #1e3a8a, #1e2a4a)", borderBottom: "1px solid #3b82f6", color: "#f1f1f3", display: "flex", alignItems: "center", gap: 10, boxShadow: "0 6px 20px rgba(0,0,0,0.45)" }}>
+      <button onClick={onExpand} aria-label="Back to the call" style={{ all: "unset", flex: 1, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+        {faceUrl ? <img src={faceUrl} alt="" style={{ width: 34, height: 34, borderRadius: "50%", objectFit: "cover" }} /> : <VeloAvatar size={34} />}
+        <div style={{ minWidth: 0 }}><div style={{ fontWeight: 800 }}>{who}</div><div style={{ fontSize: 12, opacity: 0.8 }}>{label}</div></div>
+      </button>
+    </div>
+  );
+
   return (
     <div role="dialog" aria-label="Call with Velo" data-testid="velo-call" onClick={interrupt} onPointerDownCapture={touched}
       style={{ position: "fixed", inset: 0, zIndex: 2000, background: "radial-gradient(circle at 50% 30%, #1e2a4a 0%, #0a0a0f 70%)", color: "#f1f1f3", display: "flex", flexDirection: "column", alignItems: "center", padding: "max(40px, env(safe-area-inset-top)) 20px max(28px, env(safe-area-inset-bottom))", fontFamily: "'Inter', -apple-system, sans-serif" }}>
       <style>{`@keyframes vcRing { 0% { box-shadow: 0 0 0 0 ${ring}88 } 70% { box-shadow: 0 0 0 26px ${ring}00 } 100% { box-shadow: 0 0 0 0 ${ring}00 } }
         @keyframes vcDot { 0%,80%,100% { opacity: .25 } 40% { opacity: 1 } }`}</style>
       <div style={{ fontSize: 13, color: "#9ca3af", letterSpacing: 1 }}>{phase === "ended" ? "CALL ENDED" : "ON A CALL"} · {clock(secs)}</div>
+      {onMinimize && phase !== "ended" && (
+        <button onClick={e => { e.stopPropagation(); onMinimize(); }} style={{ position: "absolute", top: "max(32px, env(safe-area-inset-top))", right: 16, background: "#1f2937", color: "#f1f1f3", border: "1px solid #374151", borderRadius: 999, padding: "8px 14px", fontSize: 14, fontWeight: 800, cursor: "pointer" }}>⤡ Minimize</button>
+      )}
       <div style={{ marginTop: small ? 12 : 34, width: small ? 84 : 150, height: small ? 84 : 150, flexShrink: 0, borderRadius: "50%", background: "#111827", border: `3px solid ${ring}`, display: "flex", alignItems: "center", justifyContent: "center", animation: phase === "ended" || phase === "muted" ? undefined : "vcRing 1.6s infinite" }}>
         {face ? <img src={"/api/pic?u=" + encodeURIComponent(face)} alt="" style={{ width: small ? 78 : 144, height: small ? 78 : 144, borderRadius: "50%", objectFit: "cover" }} /> : <VeloAvatar size={small ? 78 : 144} />}
       </div>

@@ -9,7 +9,7 @@ import { VeloLogo, VeloLookPicker, applyVeloLook, useVeloLook } from "./avatar";
 import VeloCall, { canCallVelo, primeSpeech } from "./call";
 import Chat, { type ChatAdd } from "./chat";
 import { CallMedia, type Media } from "./media";
-import { CharacterStrip, CharacterEditor, CharacterFace, type Character } from "./characters";
+import { CharacterStrip, CharacterEditor, type Character } from "./characters";
 import Gallery from "./gallery";
 import AboutCard from "./about";
 import CheckinsCard from "./notify";
@@ -170,7 +170,6 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   // 📞 Calls whoever's chat is open: Velo, or that character (in their own voice, with their own memory).
   const [callWith, setCallWith] = useState<Character | null>(null);
   const [callMini, setCallMini] = useState(false);
-  // 🎨 Photos/videos sent during the call: shown on the call screen, and saved to that chat.
   const [callMedia, setCallMedia] = useState<Media[]>([]);
   const startCall = () => { primeSpeech(); setCallContext([]); setCallOpener(null); setCallWith(tab === "chat" ? withChar : null); setCallMedia([]); setCallMini(false); setCalling(true); };
   // 📞↩ Continue in call: the call picks up the chat — her first line follows on from the last 12 messages.
@@ -188,7 +187,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
     try {
       const r = await api<{ reply: string }>("/api/velo", { mode: "talk", messages: [...context, { role: "user", content: "(They just called you to keep talking — you're on the phone now. Say your first line: pick up naturally right where the chat left off, short and warm. Don't mention apps or that you were told to.)" }], timeZone: timeZone(), name, ...(who ? { characterId: who.id } : {}) });
       setCallContext(context); setCallOpener(r.reply || null);
-      setCallWith(who); setCallMedia([]); setCallMini(false); setCalling(true);
+      setCallWith(who); setCalling(true);
     } catch (e) { await confirmAsk(e instanceof Error ? e.message : "Couldn't start the call.", { yes: "OK" }); }
     finally { setContinuing(false); }
   };
@@ -203,7 +202,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
     const thread = callWith ? { characterId: callWith.id } : {};
     // A continued call keeps the chat it came from in mind (the conversation only; the call's own memory notes use the call).
     const messages = mode === "talk" && callContext.length ? [...callContext, ...turns] : turns;
-    const r = await api<{ reply: string; changed?: boolean; media?: Media[] }>("/api/velo", { mode, messages, timeZone: timeZone(), name, ...thread });
+    const r = await api<{ reply: string; changed?: boolean }>("/api/velo", { mode, messages, timeZone: timeZone(), name, ...thread });
     if (r.changed) bump();
     const sent = (r.media || []).filter(m => m.status !== "failed");
     if (sent.length) setCallMedia(list => [...list, ...sent]);
@@ -218,7 +217,6 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
 
   return (
     <div style={{ height: "100dvh", display: "flex", flexDirection: "column", maxWidth: 720, margin: "0 auto" }}>
-      {calling && callMini && <div aria-hidden style={{ height: "calc(max(8px, env(safe-area-inset-top)) + 50px)", flexShrink: 0 }} />}
       <header className="row" style={{ padding: "max(12px, env(safe-area-inset-top)) 16px 12px", borderBottom: "1px solid var(--border)" }}>
         <VeloLogo size={40} />
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -266,8 +264,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
         <VeloCall key={look + (callWith?.id || "")} name={name} firstCall={!callWith && firstCall} request={callRequest} fetchVoice={fetchVoice}
           voice={callWith ? callWith.voice_kind : undefined}
           opener={callOpener || (callWith ? `Hey${name ? ` ${name.split(" ")[0]}` : ""}, it's ${callWith.name}! What's going on?` : undefined)}
-          who={callWith?.name || "Velo"} faceUrl={callWith?.portrait_url || ""}
-          mini={callMini} onMinimize={() => setCallMini(true)} onExpand={() => setCallMini(false)}
+          who={callWith?.name || "Velo"} faceUrl={callWith?.portrait_url || ""} mini={callMini} onMinimize={() => setCallMini(true)} onExpand={() => setCallMini(false)}
           onEnd={(recap) => {
             setCalling(false); setCallMini(false); if (!callWith) setFirstCall(false);
             // Photos/videos from the call are in the chat: show them right away.
