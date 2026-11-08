@@ -1,5 +1,6 @@
-// 👭 Characters who know each other firsthand — friends or family. Set in the character editor, or
-// by writing "@Name" in a backstory. Each knows the other's character sheet (job, hobbies, look,
+// 👭 Characters who know each other firsthand — friends or family. Links go ONE way: set in a
+// character's editor, or by writing "@Name" in her backstory, she knows that character. The other one
+// only knows her once linked from her side too (when they mention her there, the app offers to). Each knows the other's character sheet (job, hobbies, look,
 // personality) and can talk about her. What stays private: how close each one is with the person.
 // They only know the person and their friend are friends — unless the person tells them more
 // themselves (then it's in that character's own chat and memory). Family ties are known.
@@ -30,29 +31,39 @@ export const plainAt = (s: string) => s.replace(/@(?=\p{L})/gu, "");
 
 type Friend = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; kind: string; story: string };
 
-/** Everyone this character knows firsthand: links from the editor, plus @mentions either way. */
+/** Everyone this character knows firsthand: her own links from the editor, plus @mentions in her own backstory. */
 export async function friendsOf(ch: Pick<Character, "id" | "name" | "backstory">): Promise<Friend[]> {
   const all = (await sql()`select id, name, personality, backstory, relation, appearance, job, casual_wear, hobbies from chat_characters where id <> ${ch.id}`) as Omit<Friend, "kind" | "story">[];
-  const links = await sql()`select a_id, b_id, kind, story from chat_character_links where a_id = ${ch.id} or b_id = ${ch.id}`;
+  const links = await sql()`select known_id, kind, story from chat_character_links where knower_id = ${ch.id}`;
   const byId = new Map<string, Friend>();
   for (const l of links) {
-    const other = all.find(o => o.id === (String(l.a_id) === ch.id ? String(l.b_id) : String(l.a_id)));
+    const other = all.find(o => o.id === String(l.known_id));
     if (other) byId.set(other.id, { ...other, kind: String(l.kind), story: String(l.story || "") });
   }
-  // "@Mia" in my backstory → I know Mia; "@Anya" in Mia's backstory → Mia knows me too.
   for (const m of atMentions(ch.backstory || "", all)) {
     const o = all.find(x => x.id === m.id)!;
     const f = byId.get(o.id);
     byId.set(o.id, f ? { ...f, story: f.story || m.sentence } : { ...o, kind: "", story: `From your own story: ${m.sentence}` });
   }
-  for (const o of all) {
-    if (byId.has(o.id) && byId.get(o.id)!.story) continue;
-    const mine = atMentions(o.backstory || "", [{ id: ch.id, name: ch.name }])[0];
-    if (!mine) continue;
-    const f = byId.get(o.id);
-    byId.set(o.id, f ? { ...f, story: `From ${o.name}'s story: ${mine.sentence}` } : { ...o, kind: "", story: `From ${o.name}'s story: ${mine.sentence}` });
-  }
   return [...byId.values()].slice(0, 8);
+}
+
+/** 💬 They mentioned someone to this character who knows HER, but she doesn't know them back:
+ *  the chance to link them in this direction too. */
+export async function linkSuggestions(ch: Character, text: string): Promise<{ id: string; name: string; kind: string; story: string }[]> {
+  if (!text || text.length < 3) return [];
+  const mine = new Set((await friendsOf(ch)).map(f => f.id));
+  const others = (await sql()`select id, name, backstory from chat_characters where id <> ${ch.id}`) as { id: string; name: string; backstory: string }[];
+  const out: { id: string; name: string; kind: string; story: string }[] = [];
+  for (const o of others) {
+    const name = String(o.name).trim();
+    if (name.length < 2 || mine.has(o.id)) continue;
+    if (!new RegExp(`(^|[^\\p{L}])@?${esc(name)}(?=$|[^\\p{L}])`, "iu").test(text)) continue;
+    const [l] = await sql()`select kind, story from chat_character_links where knower_id = ${o.id} and known_id = ${ch.id}`;
+    const at = l ? null : atMentions(o.backstory || "", [{ id: ch.id, name: ch.name }])[0];
+    if (l || at) out.push({ id: o.id, name, kind: l ? String(l.kind) : "friends", story: l ? String(l.story || "") : at!.sentence });
+  }
+  return out;
 }
 
 /** For the character's system prompt: who they know, and what they must not know. */
@@ -93,17 +104,19 @@ export async function writeStory(a: Character, b: Character, kind: string): Prom
   }
 }
 
+/** Who this character knows (her links), and who knows her without her knowing them back. */
 export async function listLinks(id: string) {
-  return (await sql()`select case when l.a_id = ${id} then l.b_id else l.a_id end as other_id, c.name, l.kind, l.story
-    from chat_character_links l join chat_characters c on c.id = case when l.a_id = ${id} then l.b_id else l.a_id end
-    where l.a_id = ${id} or l.b_id = ${id} order by c.name`).map(r => ({ id: String(r.other_id), name: String(r.name), kind: String(r.kind), story: String(r.story) }));
+  const links = (await sql()`select l.known_id as other_id, c.name, l.kind, l.story from chat_character_links l join chat_characters c on c.id = l.known_id
+    where l.knower_id = ${id} order by c.name`).map(r => ({ id: String(r.other_id), name: String(r.name), kind: String(r.kind), story: String(r.story) }));
+  const knownBy = (await sql()`select l.knower_id as other_id, c.name, l.kind, l.story from chat_character_links l join chat_characters c on c.id = l.knower_id
+    where l.known_id = ${id} and not exists (select 1 from chat_character_links x where x.knower_id = ${id} and x.known_id = l.knower_id) order by c.name`).map(r => ({ id: String(r.other_id), name: String(r.name), kind: String(r.kind), story: String(r.story) }));
+  return { links, knownBy };
 }
-export async function setLink(x: string, y: string, kind: string, story: string) {
-  const [a, b] = x < y ? [x, y] : [y, x];
-  await sql()`insert into chat_character_links (a_id, b_id, kind, story) values (${a}, ${b}, ${kind}, ${story})
-    on conflict (a_id, b_id) do update set kind = excluded.kind, story = excluded.story`;
+/** She (knower) knows the other one (known), from now on. */
+export async function setLink(knower: string, known: string, kind: string, story: string) {
+  await sql()`insert into chat_character_links (knower_id, known_id, kind, story) values (${knower}, ${known}, ${kind}, ${story})
+    on conflict (knower_id, known_id) do update set kind = excluded.kind, story = excluded.story`;
 }
-export async function removeLink(x: string, y: string) {
-  const [a, b] = x < y ? [x, y] : [y, x];
-  await sql()`delete from chat_character_links where a_id = ${a} and b_id = ${b}`;
+export async function removeLink(knower: string, known: string) {
+  await sql()`delete from chat_character_links where knower_id = ${knower} and known_id = ${known}`;
 }

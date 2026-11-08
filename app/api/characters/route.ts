@@ -6,7 +6,7 @@ import { scrub } from "../../lib/secrets";
 import { listGallery } from "../../lib/media";
 import { cleanTraits, PRESETS } from "../../lib/traits";
 import { isValidTimeZone } from "../../lib/localTime";
-import { listLinks, setLink, removeLink, writeStory } from "../../lib/friends";
+import { listLinks, setLink, removeLink, writeStory, linkSuggestions } from "../../lib/friends";
 import { MAX_CHARACTERS, DAILY_PORTRAITS, isAdmin, listCharacters, getCharacter, screenCharacter, startPortrait, checkPortrait, deleteCharacter, portraitsReady, chooseVoice, VoiceError } from "../../lib/characters";
 
 // 🎭 Characters. Everyone can list them and chat; only admins create and edit. POST { action, ... }:
@@ -16,7 +16,8 @@ import { MAX_CHARACTERS, DAILY_PORTRAITS, isAdmin, listCharacters, getCharacter,
 //   delete { id }            (admin; everyone's chats and memories with it go too)
 //   portrait.start { id }    (admin) starts an Atlas Cloud portrait from the appearance
 //   portrait.check { id }    (admin) → { status: working | done | failed, character }
-//   links { id } → { links }; link.set { id, otherId, kind, story? }; link.remove { id, otherId }   (admin) 👭 friends & family
+//   links { id } → { links, knownBy }; link.set { id, otherId, kind, story? }; link.remove { id, otherId }   (admin) 👭 friends & family — one way: id knows otherId
+//   link.suggest { id, text } → { suggest }  (admin; others get []) someone they mentioned to her who knows her, but she doesn't know back
 const clean = (v: unknown, n: number) => scrub(String(v ?? "").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim().slice(0, n));
 const bad = (error: string, status = 400) => NextResponse.json({ error }, { status });
 
@@ -30,6 +31,10 @@ export async function POST(req: NextRequest) {
     const admin = await isAdmin(me);
 
     if (action === "list") return NextResponse.json({ characters: await listCharacters(), portraits: portraitsReady(), admin });
+    if (action === "link.suggest") {
+      const ch = admin ? await getCharacter(id) : null;
+      return NextResponse.json({ suggest: ch ? await linkSuggestions(ch, clean(b.text, 2000)).catch(() => []) : [] });
+    }
     if (!admin) return bad("Only an admin can create or change characters.", 403);
 
     switch (action) {
@@ -82,7 +87,7 @@ export async function POST(req: NextRequest) {
       // 👭 Friends & family between characters.
       case "links": {
         if (!(await getCharacter(id))) return bad("That character wasn't found.");
-        return NextResponse.json({ links: await listLinks(id) });
+        return NextResponse.json(await listLinks(id));
       }
       case "link.set": {
         const other = String(b.otherId || "");
@@ -90,14 +95,16 @@ export async function POST(req: NextRequest) {
         if (!a || !o) return bad("Pick another character.");
         const kind = clean(b.kind, 60).replace(/\n/g, " ") || "friends";
         let story = clean(b.story, 600);
+        // Linking back: their shared history is already written from the other side.
+        if (!story) story = String((await sql()`select story from chat_character_links where knower_id = ${other} and known_id = ${id}`)[0]?.story || "");
         if (!story) story = await writeStory(a, o, kind);
         if (story && (await screenCharacter({ name: `${a.name} & ${o.name}`, personality: "", backstory: story, relation: "", appearance: "" }))) return bad("That story isn't allowed — try different wording.");
         await setLink(id, other, kind, story);
-        return NextResponse.json({ links: await listLinks(id) });
+        return NextResponse.json(await listLinks(id));
       }
       case "link.remove": {
         await removeLink(id, String(b.otherId || ""));
-        return NextResponse.json({ links: await listLinks(id) });
+        return NextResponse.json(await listLinks(id));
       }
 
       case "delete":

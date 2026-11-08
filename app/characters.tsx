@@ -445,10 +445,13 @@ function PendingPictures({ value, onChange }: { value: { files: File[]; headshot
 }
 
 type Link = { id: string; name: string; kind: string; story: string };
-/** 👭 Friends & family: other characters this one knows firsthand. They can talk about each other,
- *  but never learn how close the person is with the other one (only that they're friends, and any family tie). */
+/** 👭 Friends & family: other characters this one knows firsthand (one way — the other knows her only
+ *  once linked from her side too). She can talk about them, but never learns how close the person is
+ *  with them (only that they're friends, and any family tie). */
 function FriendsCard({ id }: { id: string }) {
   const [links, setLinks] = useState<Link[]>([]);
+  const [knownBy, setKnownBy] = useState<Link[]>([]);
+  const show = (r: { links: Link[]; knownBy: Link[] }) => { setLinks(r.links); setKnownBy(r.knownBy || []); };
   const [others, setOthers] = useState<{ id: string; name: string }[]>([]);
   const [other, setOther] = useState("");
   const [kind, setKind] = useState("");
@@ -456,31 +459,37 @@ function FriendsCard({ id }: { id: string }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   useEffect(() => {
-    api<{ links: Link[] }>("/api/characters", { action: "links", id }).then(r => setLinks(r.links)).catch(() => {});
+    api<{ links: Link[]; knownBy: Link[] }>("/api/characters", { action: "links", id }).then(show).catch(() => {});
     api<{ characters: { id: string; name: string }[] }>("/api/characters", { action: "list" }).then(r => setOthers(r.characters.filter(x => x.id !== id).map(x => ({ id: x.id, name: x.name })))).catch(() => {});
   }, [id]);
-  const add = async () => {
-    if (!other) return;
+  const add = async (otherId = other, k = kind.trim() || "friends") => {
+    if (!otherId) return;
     setBusy(true); setErr("");
     try {
-      const r = await api<{ links: Link[] }>("/api/characters", { action: "link.set", id, otherId: other, kind: kind.trim() || "friends", story });
-      setLinks(r.links); setOther(""); setKind(""); setStory("");
+      show(await api<{ links: Link[]; knownBy: Link[] }>("/api/characters", { action: "link.set", id, otherId, kind: k, story: otherId === other ? story : "" }));
+      if (otherId === other) { setOther(""); setKind(""); setStory(""); }
     } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't link them."); }
     setBusy(false);
   };
   const remove = async (l: Link) => {
-    if (!(await confirmAsk(`Unlink ${l.name}? Are you sure? They'll no longer know each other (unless an @mention in a backstory links them).`, { yes: "Yes, unlink", danger: true }))) return;
-    try { setLinks((await api<{ links: Link[] }>("/api/characters", { action: "link.remove", id, otherId: l.id })).links); } catch { /* keep */ }
+    if (!(await confirmAsk(`Unlink ${l.name}? Are you sure? She'll no longer know ${l.name} (unless an @mention in her backstory links them).`, { yes: "Yes, unlink", danger: true }))) return;
+    try { show(await api<{ links: Link[]; knownBy: Link[] }>("/api/characters", { action: "link.remove", id, otherId: l.id })); } catch { /* keep */ }
   };
   const free = others.filter(o => !links.some(l => l.id === o.id));
   return (
     <div data-testid="friends-card" style={{ display: "grid", gap: 8, border: "1px solid var(--border)", borderRadius: 12, padding: 12 }}>
       <b style={{ fontSize: 13 }}>👭 Friends &amp; family</b>
-      <span className="muted" style={{ fontSize: 12 }}>Characters who know each other firsthand. They can talk about each other with you, but only know you&apos;re friends with the other one, not how close you are (unless you tell them). Family ties to you are shared.</span>
+      <span className="muted" style={{ fontSize: 12 }}>Who she knows firsthand (one way: they only know her back if linked from their side too). She can talk about them with you, but only knows you&apos;re friends with them, not how close you are (unless you tell her). Family ties to you are shared.</span>
       {links.map(l => (
         <div key={l.id} data-testid={`friend-${l.name}`} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
           <div style={{ flex: 1, fontSize: 13 }}><b>{l.name}</b> · {l.kind}{l.story && <div className="muted" style={{ fontSize: 12 }}>{l.story}</div>}</div>
           <button className="ghost" style={{ padding: "2px 10px" }} onClick={() => remove(l)} aria-label={`Unlink ${l.name}`}>✕</button>
+        </div>
+      ))}
+      {knownBy.map(l => (
+        <div key={l.id} data-testid={`knownby-${l.name}`} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
+          <span className="muted" style={{ flex: 1 }}>{l.name} knows her ({l.kind}), but she doesn&apos;t know {l.name} yet.</span>
+          <button className="ghost" style={{ padding: "2px 10px" }} disabled={busy} onClick={() => add(l.id, l.kind)}>Link back</button>
         </div>
       ))}
       {free.length > 0 && (
@@ -493,7 +502,7 @@ function FriendsCard({ id }: { id: string }) {
             <input value={kind} onChange={e => setKind(e.target.value)} maxLength={60} placeholder="friends, sister…" aria-label="How they're related" data-testid="friend-kind" style={{ flex: 1 }} />
           </div>
           {other && <textarea value={story} onChange={e => setStory(e.target.value)} maxLength={600} rows={2} placeholder="How they know each other (optional — left blank, it's written for you)" aria-label="How they know each other" style={{ resize: "vertical" }} />}
-          {other && <button disabled={busy} onClick={add} data-testid="friend-add">{busy ? "Linking…" : "Link them"}</button>}
+          {other && <button disabled={busy} onClick={() => add()} data-testid="friend-add">{busy ? "Linking…" : "Link them"}</button>}
         </div>
       )}
       {err && <span style={{ color: "var(--bad)", fontSize: 12 }}>{err}</span>}
