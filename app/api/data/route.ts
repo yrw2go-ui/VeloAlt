@@ -12,7 +12,8 @@ import { availableModels, CHAT_MODELS, MODEL_INFO, type ChatModel } from "../../
 import { PERSONALITIES } from "../../lib/persona";
 import { deleteFile, ownFile } from "../../lib/files";
 import { getCharacter, trustFor, activeScene } from "../../lib/characters";
-import { peekAt } from "../../lib/peek";
+import { peekAt, describeMoment, generatePeek } from "../../lib/peek";
+import { allowsExplicit } from "../../lib/traits";
 import { US_STATES } from "../../lib/states";
 import { acceptMedia, declineMedia, mediaNote, checkMedia, sweepMedia, getMedia, listGallery, deleteMedia, VIDEO_MODELS, DEFAULT_VIDEO_MODEL } from "../../lib/media";
 
@@ -78,6 +79,7 @@ export async function POST(req: NextRequest) {
         }
         if (["off", "sometimes", "often"].includes(b.checkins)) await db`update users set checkins = ${b.checkins}, updated_at = now() where id = ${me}`;
         if (VIDEO_MODELS.some(m => m.id === b.videoModel)) await db`update users set video_model = ${b.videoModel}, updated_at = now() where id = ${me}`;
+        if (typeof b.veloVoice === "string") await db`update users set velo_voice = ${b.veloVoice || null}, updated_at = now() where id = ${me}`;
         return NextResponse.json({ ok: true });
       }
 
@@ -157,6 +159,31 @@ export async function POST(req: NextRequest) {
         return m ? NextResponse.json({ media: m }) : bad("That offer isn't open anymore.");
       }
       // 🎬 Scenes with a character: play one out (start → chat → end), or say one already happened.
+      case "scene.peekDescribe": {
+        const ch = b.characterId ? await getCharacter(String(b.characterId)) : null;
+        if (!ch) return bad("That character wasn't found.");
+        const scene = await activeScene(me, ch.id);
+        if (!scene) return bad("There's no scene going on.");
+        const [u] = await db`select adult_confirmed_at from users where id = ${me}`;
+        const lines = (await db`select role, content from velo_messages where user_id = ${me} and character_id = ${ch.id} and scene_id = ${scene.id} and not peek
+          order by created_at desc limit 16`).reverse().map(r => ({ role: String(r.role), content: String(r.content) }));
+        const spicy = !!u?.adult_confirmed_at && !!ch.romantic && allowsExplicit(ch.traits);
+        const description = await describeMoment(ch, scene, lines, spicy);
+        return NextResponse.json({ description });
+      }
+      case "scene.peekGenerate": {
+        const ch = b.characterId ? await getCharacter(String(b.characterId)) : null;
+        if (!ch) return bad("That character wasn't found.");
+        const scene = await activeScene(me, ch.id);
+        if (!scene) return bad("There's no scene going on.");
+        const desc = String(b.description || "").trim().slice(0, 400);
+        if (!desc) return bad("Add a description.");
+        const [u] = await db`select adult_confirmed_at from users where id = ${me}`;
+        try {
+          const r = await generatePeek(me, ch, scene, desc, !!u?.adult_confirmed_at);
+          return NextResponse.json(r);
+        } catch (e) { return bad(e instanceof Error ? e.message : "Couldn't peek right now."); }
+      }
       case "scene.peek": {
         const ch = b.characterId ? await getCharacter(String(b.characterId)) : null;
         if (!ch) return bad("That character wasn't found.");
