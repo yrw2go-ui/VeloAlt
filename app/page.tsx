@@ -16,7 +16,7 @@ import CheckinsCard from "./notify";
 import Today from "./today";
 import Memory from "./memory";
 import { timeZone } from "./lib/tz";
-import ProCard, { BrainCard, PersonalityCard, type Profile } from "./pro";
+import ProCard, { BrainCard, PersonalityCard, VeloVoiceCard, type Profile } from "./pro";
 
 type Tab = "chat" | "today" | "memory" | "settings";
 const TABS: { id: Tab; icon: string; label: string }[] = [
@@ -171,7 +171,16 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   const [callWith, setCallWith] = useState<Character | null>(null);
   const [callMini, setCallMini] = useState(false);
   const [callMedia, setCallMedia] = useState<Media[]>([]);
-  const startCall = () => { primeSpeech(); setCallContext([]); setCallOpener(null); setCallWith(tab === "chat" ? withChar : null); setCallMedia([]); setCallMini(false); setCalling(true); };
+  const startCall = () => { 
+    primeSpeech(); 
+    const ctx = tab === "chat" && chatHistory.current.length ? chatHistory.current : [];
+    setCallContext(ctx); 
+    setCallOpener(null); 
+    setCallWith(tab === "chat" ? withChar : null); 
+    setCallMedia([]); 
+    setCallMini(false); 
+    setCalling(true); 
+  };
   // 📞↩ Continue in call: the call picks up the chat — her first line follows on from the last 12 messages.
   const chatHistory = useRef<{ role: "user" | "assistant"; content: string }[]>([]);
   const [historyCount, setHistoryCount] = useState(0);
@@ -183,7 +192,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
     if (continuing || chatHistory.current.length < CONTINUE_MIN) return;
     primeSpeech(); setContinuing(true);
     const who = tab === "chat" ? withChar : null;
-    const context = chatHistory.current.slice(-CONTINUE_MIN);
+    const context = chatHistory.current;
     try {
       const r = await api<{ reply: string }>("/api/velo", { mode: "talk", messages: [...context, { role: "user", content: "(They just called you to keep talking — you're on the phone now. Say your first line: pick up naturally right where the chat left off, short and warm. Don't mention apps or that you were told to.)" }], timeZone: timeZone(), name, ...(who ? { characterId: who.id } : {}) });
       setCallContext(context); setCallOpener(r.reply || null);
@@ -314,6 +323,7 @@ function Settings({ name, setName, onOut, profile, onProfile }: { name: string; 
       {profile && <CheckinsCard profile={profile} onChange={onProfile} />}
       {profile && <PersonalityCard profile={profile} onChange={onProfile} />}
       {profile && <BrainCard profile={profile} onChange={onProfile} />}
+      {profile && <VeloVoiceCard profile={profile} onChange={onProfile} />}
       {profile && <ProCard profile={profile} onChange={onProfile} />}
       <button className="ghost" onClick={() => api("/api/auth", { action: "signout" }).finally(onOut)}>Sign out</button>
       <VersionCard />
