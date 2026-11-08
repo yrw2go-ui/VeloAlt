@@ -202,7 +202,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
     const thread = callWith ? { characterId: callWith.id } : {};
     // A continued call keeps the chat it came from in mind (the conversation only; the call's own memory notes use the call).
     const messages = mode === "talk" && callContext.length ? [...callContext, ...turns] : turns;
-    const r = await api<{ reply: string; changed?: boolean }>("/api/velo", { mode, messages, timeZone: timeZone(), name, ...thread });
+    const r = await api<{ reply: string; changed?: boolean; media?: Media[] }>("/api/velo", { mode, messages, timeZone: timeZone(), name, ...thread });
     if (r.changed) bump();
     const sent = (r.media || []).filter(m => m.status !== "failed");
     if (sent.length) setCallMedia(list => [...list, ...sent]);
