@@ -20,7 +20,7 @@ export type Profile = {
   videoModel?: string; videoModels?: { id: string; label: string }[]; checkins?: string;
   bio?: { text: string; birthday: string; age: number | null; state: string; photo: string; photoNote: string };
   notifySpicy?: boolean; notifyProductivity?: boolean;
-  spicyVoice?: string; secretVoice?: string; spicyApiVoice?: string;
+  spicyVoice?: string; secretVoice?: string; spicyApiVoice?: string; veloVoice?: string;
 };
 type Contact = { id: string; name: string; phone: string };
 
@@ -423,6 +423,42 @@ export function StorageCard({ profile }: { profile: Profile }) {
           {rows.length > 40 && <div className="muted" style={{ fontSize: 12 }}>+{rows.length - 40} more</div>}
         </div>
       )}
+    </div>
+  );
+}
+
+export function VeloVoiceCard({ profile, onChange }: { profile: Profile; onChange: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const voices = [
+    { id: "", name: "From look", about: "Uses the voice for her current face" },
+    { id: "rachel", name: "Rachel", about: "calm, American" },
+    { id: "sarah", name: "Sarah", about: "warm, young adult" },
+    { id: "aria", name: "Aria", about: "expressive, American" },
+    { id: "charlotte", name: "Charlotte", about: "smooth, Swedish-English" },
+    { id: "jessica", name: "Jessica", about: "bright, playful" },
+    { id: "lily", name: "Lily", about: "velvety, British" },
+  ];
+  const pick = async (id: string) => {
+    if (id === (profile.veloVoice || "")) return;
+    setBusy(true);
+    await data("profile.update", { veloVoice: id }).catch(() => {});
+    setBusy(false); onChange();
+  };
+  return (
+    <div className="card">
+      <div style={{ fontWeight: 700 }}>🔊 Velo's voice</div>
+      <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>Her voice on calls. From look uses the voice for her current face.</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        {voices.map(v => {
+          const on = (profile.veloVoice || "") === v.id;
+          return (
+            <button key={v.id} disabled={busy} onClick={() => pick(v.id)}
+              style={{ background: on ? "rgba(124,140,255,0.12)" : "var(--surface2)", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, borderRadius: 999, padding: "8px 14px", color: "var(--text)", fontWeight: 700, cursor: on ? "default" : "pointer" }}>
+              {on ? "✓ " : ""}{v.name}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
