@@ -10,7 +10,7 @@ import { hideSecrets } from "./lib/secrets";
 import { timeZone } from "./lib/tz";
 import { confirmAsk } from "./lib/dialog";
 import { useDictation } from "./dictate";
-import { CharacterFace } from "./characters";
+import { CharacterFace, CharacterStrip, type Character } from "./characters";
 import { MediaView, ReactionBar, type Media } from "./media";
 
 /** Who this chat is with: Velo (no character) or one of their characters. */
@@ -46,6 +46,8 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   const unsaved = { get current() { return unsavedBy.get(key) || 0; }, set current(v: number) { unsavedBy.set(key, v); } };
   const face = (size: number) => (character ? <CharacterFace c={character} size={size} /> : <VeloAvatar size={size} />);
   const [msgs, setMsgs] = useState<ChatMsg[] | null>(null);
+  const [characters, setCharacters] = useState<Character[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(character?.id || null);
   const [text, setText] = useState("");
   const mic = useDictation(setText);
   // The box grows with the message (typed or spoken), up to about 5 lines.
@@ -84,6 +86,9 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   const [hello] = useState(() => Math.floor(Math.random() * 3));
   msgsRef.current = msgs || [];
 
+  useEffect(() => {
+    api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => setCharacters(r.characters || [])).catch(() => {});
+  }, [userId]);
   useEffect(() => {
     // History, then drafts still waiting for a Send and calls still going.
     Promise.all([
@@ -287,6 +292,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      <CharacterStrip characters={characters} active={activeId} admin={false} onPick={id => { setActiveId(id); window.dispatchEvent(new CustomEvent("velo:character", { detail: id ? characters.find(c => c.id === id) : null })); }} onNew={() => {}} onEdit={() => {}} onGallery={() => {}} />
       {character?.romantic && !adult && !skipRomance && (
         <div data-testid="romance-confirm" className="row" style={{ gap: 10, padding: "10px 14px", borderBottom: "1px solid var(--border)", background: "rgba(236,72,153,0.10)", fontSize: 13, flexWrap: "wrap" }}>
           <div style={{ flex: "1 1 200px" }}>💕 {character.name} is a romantic character. Confirm you&apos;re 18+ to unlock romance (PG-13) — until then {character.name} keeps it friendly.</div>
