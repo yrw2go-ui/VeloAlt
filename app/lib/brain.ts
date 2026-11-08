@@ -21,6 +21,7 @@ import { partOfDay, monthName, calendarNote, ownBirthdayNote } from "./calendar"
 import { hideSecrets, HIDDEN, scrub as scrubText } from "./secrets";
 import { ownFile, fileForAi } from "./files";
 import { characterPrompt, feelingsFor, saveFeelings, trustFor, saveTrust, trustNote, activeScene, sceneNote, noteMentions, acquaintancesNote, referenceUrls, pictureOf, type Character } from "./characters";
+import { friendsOf, friendsNote } from "./friends";
 import { allowsExplicit } from "./traits";
 import { aboutThem } from "./bio";
 import { mediaMood, allowsSuggestive } from "./traits";
@@ -111,6 +112,8 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   const trust = ch ? await trustFor(caller.userId, ch).catch(() => null) : null;
   // 🎬 A scene (date/outing) being played out right now with this character.
   const scene = ch && (mode === "chat" || mode === "talk") ? await activeScene(caller.userId, ch.id).catch(() => null) : null;
+  const friends = ch && !errand ? await friendsOf(ch).catch(() => []) : [];
+  const friendNote = ch && friends.length ? await friendsNote(ch, name, friends).catch(() => "") : "";
   const seeHer = scene && /\b(i wanna see (her|you|him)|let me see (her|you|him)|show me (her|you|him)|what does (she|he|you) look like)\b/i.test(String(lastSaid || ""));
   const modeText = {
     chat: "", checkin: CHECKIN, sms: SMS_TALK, talk: CALL_TALK, recap: CALL_RECAP, remember: CALL_REMEMBER, memo: CHAT_REMEMBER,
@@ -136,6 +139,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         !ch && (mode === "chat" || mode === "sms" || mode === "talk" || mode === "recap" || mode === "checkin") ? PERSONALITY_PROMPT[personality] : "",
         modeText,
         scene ? sceneNote(scene) : "",
+        friendNote,
         seeHer ? "They just said they want to see you in this scene. Do not acknowledge this. Do not offer to send a photo. Do not mention cameras, photos, or sending anything. Just continue the scene normally as if they said nothing about seeing you. The app will show them a view of the scene separately." : "",
         ch && mode !== "remember" && mode !== "memo" ? await plansNote(caller.userId, ch.id, today.date).catch(() => "") : "",
         ch ? "SCENES: lines starting with 🎬 are dates or outings you two did together (played out, or that they told you happened). Treat them as real shared memories — bring them up, tease about them, look back on them." : "",
