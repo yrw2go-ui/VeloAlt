@@ -158,7 +158,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
     <div style={{ height: "100dvh", display: "flex", flexDirection: "column", maxWidth: 720, margin: "0 auto" }}>
       <header className="row" style={{ padding: "max(12px, env(safe-area-inset-top)) 16px 12px", borderBottom: "1px solid var(--border)" }}>
         {activeChar.image
-          ? <img src={"/api/pic?u=" + encodeURIComponent(activeChar.image)} alt="" style={{ width: 40, height: 40, borderRadius: "50%", objectFit: "cover" }} />
+          ? <img src={activeChar.image} alt="" style={{ width: 40, height: 40, borderRadius: "50%", objectFit: "cover" }} />
           : <VeloLogo size={40} />}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 800, fontSize: 18 }}>{activeChar.name || "Velo"}</div>
