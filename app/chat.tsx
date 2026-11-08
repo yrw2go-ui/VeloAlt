@@ -42,6 +42,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   const unsaved = { get current() { return unsavedBy.get(key) || 0; }, set current(v: number) { unsavedBy.set(key, v); } };
   const face = (size: number) => (character ? <CharacterFace c={character} size={size} /> : <VeloAvatar size={size} />);
   const [msgs, setMsgs] = useState<ChatMsg[] | null>(null);
+  const [peekDraft, setPeekDraft] = useState<string | null>(null);
   const cid = character?.id || null;
   const thread = cid ? { characterId: cid } : {};
   const who = character?.name || "Velo";
@@ -124,14 +125,12 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     if ((!t && !file) || busy || uploading || !msgs) return;
     // 👀 Scene peek: "let me see her", "I wanna see her", or "*peek*" — silent image of the moment. She never knows.
     if (cid && scene && !file && /^\s*(\*peek\*|let me see (her|you|him)|i wanna see (her|you|him)|show me (her|you|him))\s*[.!?]*$/i.test(t)) {
-      const mine: ChatMsg = { role: "user", content: t, peek: true };
-      setMsgs([...msgs, mine]); setText(""); setBusy(true); setErr("");
+      setText(""); setBusy(true); setErr("");
       try {
-        const r = await data<{ media: Media; userMsgId: string; mediaMsgId: string }>("scene.peek", { characterId: cid });
-        setMsgs(list => [...(list || []).map(x => (x === mine ? { ...x, id: r.userMsgId } : x)), { id: r.mediaMsgId, role: "assistant", content: "(peek)", media: r.media, peek: true }]);
+        const r = await data<{ description: string }>("scene.peekDescribe", { characterId: cid });
+        setPeekDraft(r.description || "");
       } catch (e) {
-        setMsgs(list => (list || []).filter(x => x !== mine));
-        setErr(e instanceof Error ? e.message : "Couldn't peek right now.");
+        setErr(e instanceof Error ? e.message : "Couldn't describe the scene.");
       } finally { setBusy(false); }
       return;
     }
@@ -286,8 +285,33 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   const openingLine = msgs && !msgs.length && !name ? INTRO : HELLO(name.split(" ")[0])[hello];
   const shown: ChatMsg[] = msgs && !msgs.length && !cid ? [{ role: "assistant", content: openingLine }] : msgs || [];
 
+  const doPeek = async () => {
+    if (!peekDraft?.trim() || !cid) return;
+    setBusy(true); setErr("");
+    try {
+      const r = await data<{ media: Media; userMsgId: string; mediaMsgId: string }>("scene.peekGenerate", { characterId: cid, description: peekDraft });
+      setMsgs(list => [...(list || []), { id: r.userMsgId, role: "user", content: "*peek*", peek: true }, { id: r.mediaMsgId, role: "assistant", content: "(peek)", media: r.media, peek: true }]);
+      setPeekDraft(null);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Couldn't peek right now.");
+    } finally { setBusy(false); }
+  };
+
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      {peekDraft !== null && (
+        <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 3000 }}>
+          <div className="card" style={{ maxWidth: 400, width: "100%" }}>
+            <div style={{ fontWeight: 700, marginBottom: 8 }}>👀 Peek description</div>
+            <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>Edit the location, attire, and scene before generating.</div>
+            <textarea value={peekDraft} onChange={e => setPeekDraft(e.target.value)} rows={4} style={{ width: "100%", marginBottom: 10 }} />
+            <div className="row" style={{ justifyContent: "flex-end", gap: 8 }}>
+              <button className="ghost" onClick={() => setPeekDraft(null)}>Cancel</button>
+              <button className="btn" disabled={busy || !peekDraft.trim()} onClick={doPeek}>{busy ? "…" : "Generate"}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {character?.romantic && !adult && !skipRomance && (
         <div data-testid="romance-confirm" className="row" style={{ gap: 10, padding: "10px 14px", borderBottom: "1px solid var(--border)", background: "rgba(236,72,153,0.10)", fontSize: 13, flexWrap: "wrap" }}>
