@@ -210,9 +210,11 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   };
   const fetchVoice = async (text: string, _voice: string, lookId: string) => {
     try {
+      console.log("voice: look=", lookId, "char=", callWith?.id);
       const res = await fetch("/api/voice", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, look: lookId, ...(callWith ? { characterId: callWith.id } : {}) }) });
+      if (!res.ok) console.log("voice: failed", res.status);
       return res.ok ? await res.blob() : null;
-    } catch { return null; }
+    } catch (e) { console.log("voice: error", e); return null; }
   };
 
   return (
