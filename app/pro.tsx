@@ -11,7 +11,7 @@ export type Profile = {
   name: string; look: string; plan: "free" | "pro"; proForSale: boolean; phone: string; phoneVerified: boolean; veloNumber: string;
   chatModel: string; models: { id: string; label: string; by: string; where: string }[];
   personality: string; adultConfirmed: boolean; customFace?: string;
-  videoModel?: string; videoModels?: { id: string; label: string }[]; checkins?: string;
+  videoModel?: string; videoModels?: { id: string; label: string }[]; checkins?: string; replyLength?: string;
   bio?: { text: string; birthday: string; age: number | null; state: string; photo: string; photoNote: string };
 };
 type Contact = { id: string; name: string; phone: string };
@@ -214,6 +214,36 @@ export function BrainCard({ profile, onChange }: { profile: Profile; onChange: (
 }
 
 /** 🎬 Which model makes the short videos Velo and characters send. */
+/** 💬 How long replies usually are — for Velo and every character, in chats and on calls. */
+export function ReplyLengthCard({ profile, onChange }: { profile: Profile; onChange: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [cur, setCur] = useState(profile.replyLength || "normal");
+  const pick = async (id: string) => {
+    if (id === cur) return;
+    setBusy(true); setCur(id);
+    await data("profile.update", { replyLength: id }).catch(() => setCur(profile.replyLength || "normal"));
+    setBusy(false); onChange();
+  };
+  const opts = [{ id: "short", label: "Short", hint: "1–2 sentences" }, { id: "normal", label: "Normal", hint: "2–4 sentences" }, { id: "long", label: "Long", hint: "a paragraph or more" }];
+  return (
+    <div className="card" data-testid="reply-length">
+      <div style={{ fontWeight: 700 }}>💬 Reply length</div>
+      <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>How long Velo&apos;s and your characters&apos; replies usually are, in chats and on calls (calls stay a bit shorter). They&apos;ll still go longer if you ask for a list or a story.</div>
+      <div role="radiogroup" aria-label="Reply length" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        {opts.map(o => {
+          const on = o.id === cur;
+          return (
+            <button key={o.id} role="radio" aria-checked={on} disabled={busy} onClick={() => pick(o.id)} data-testid={`reply-length-${o.id}`}
+              style={{ background: on ? "rgba(124,140,255,0.12)" : "var(--surface2)", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, borderRadius: 999, padding: "8px 14px", color: "var(--text)", fontWeight: 700, cursor: on ? "default" : "pointer" }}>
+              {on ? "✓ " : ""}{o.label} <span className="muted" style={{ fontWeight: 500, fontSize: 12 }}>· {o.hint}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function VideoCard({ profile, onChange }: { profile: Profile; onChange: () => void }) {
   const [busy, setBusy] = useState(false);
   const list = profile.videoModels || [];

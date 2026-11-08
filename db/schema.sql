@@ -400,3 +400,6 @@ alter table velo_media add column if not exists peek boolean not null default fa
 
 -- 🔁 A photo/video that the picture service failed (or took too long on) is started again once.
 alter table velo_media add column if not exists retried boolean not null default false;
+
+-- 💬 How long Velo's and the characters' replies usually are (their setting).
+alter table users add column if not exists reply_length text not null default 'normal' check (reply_length in ('short', 'normal', 'long'));

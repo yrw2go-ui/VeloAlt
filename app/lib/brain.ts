@@ -38,6 +38,20 @@ export type Mode = "chat" | "sms" | "talk" | "recap" | "remember" | "memo" | "er
 
 // 🔔 Texting them first (a check-in, sent as a push notification).
 const PROMISED = `TEXTING THEM AS PROMISED: earlier they asked you to text them at this time (see WHAT YOU PROMISED), and you agreed. Write that ONE text now (1–2 sentences, under 200 characters), in your own voice and mood, as if you remembered on your own — do what you promised (wake them up, remind them, check in, say goodnight). Don't mention apps, notifications or that you were told to write.`;
+// 💬 Their "Reply length" setting (Settings): how long replies usually are in chats, texts and calls.
+// It sets the usual length only — a list they ask for, or a story they want, can still run longer.
+function replyLengthNote(mode: Mode, raw: unknown): string {
+  const len = raw === "short" || raw === "long" ? raw : "normal";
+  const talk = mode === "talk", text = mode === "chat" || mode === "sms";
+  if (!talk && !text) return "";
+  const how = talk
+    ? { short: "1–2 short spoken sentences", normal: "1–3 spoken sentences", long: "3–6 spoken sentences — tell a little more, share your own thoughts and stories" }[len]
+    : mode === "sms"
+      ? { short: "1–2 short sentences", normal: "1–3 sentences", long: "3–5 sentences" }[len]
+      : { short: "1–2 short sentences — quick and snappy, like texting", normal: "2–4 sentences", long: "a full paragraph or two (5–10 sentences) — more detail, more of your own thoughts, feelings and stories" }[len];
+  return `REPLY LENGTH (their setting — this overrides any other length guidance): usually ${how}. Go longer only when they ask for more (a list, a plan, a story), or shorter when a quick answer is all it needs.`;
+}
+
 const CHECKIN = `REACHING OUT FIRST: they haven't written in a while, and you're texting them first — like a friend (or more) would. Write ONE short text (1–2 sentences, under 160 characters). Make it personal and specific when you can: follow up on something from YOUR MEMORY or your recent chat, react to the time of day, a holiday, the weather of the season, or just say hi in your own way and voice. Don't mention apps, notifications or that you were told to write. No questions lists, no emojis overload, no links.`;
 export type Turn = { role: "user" | "assistant"; content: string; fileId?: string };
 export const aiReady = () => !!(process.env.VELO_MODEL && process.env.ANTHROPIC_API_KEY);
@@ -76,7 +90,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   const cid = ch?.id || null;
   const today = localNow(opts.timeZone);
   const name = String(opts.name || "").trim().split(/\s+/)[0].slice(0, 40);
-  const [u] = await sql()`select plan, chat_model, personality, adult_confirmed_at, look from users where id = ${caller.userId}`;
+  const [u] = await sql()`select plan, chat_model, personality, adult_confirmed_at, look, reply_length from users where id = ${caller.userId}`;
   // 💬 Their chosen personality (romantic only after the adult confirmation). Calls Velo makes
   // to other people and memory notes always use her plain voice.
   let personality: Personality = PERSONALITIES.includes(u?.personality) ? u.personality : "friend";
@@ -144,6 +158,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         memory ? `${memory}\n\nYou two have talked before — never introduce yourself; talk like someone who knows them.` : "",
         !ch && (mode === "chat" || mode === "sms" || mode === "talk" || mode === "recap" || mode === "checkin") ? PERSONALITY_PROMPT[personality] : "",
         modeText,
+        replyLengthNote(mode, u?.reply_length),
         scene ? sceneNote(scene) : "",
         ch && mode !== "remember" && mode !== "memo" ? await plansNote(caller.userId, ch.id, today.date).catch(() => "") : "",
         ch && mode !== "remember" && mode !== "memo" && !opts.promise ? await promisesNote(caller.userId, ch.id, today.tz).catch(() => "") : "",
