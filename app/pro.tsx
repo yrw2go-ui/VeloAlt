@@ -16,7 +16,9 @@ function picSrc(url: string) {
 export type Profile = {
   name: string; look: string; plan: "free" | "pro"; proForSale: boolean; phone: string; phoneVerified: boolean; veloNumber: string;
   chatModel: string; models: { id: string; label: string; by: string; where: string }[];
-  personality: string; adultConfirmed: boolean; isAdmin?: boolean; mode?: string;
+  personality: string; adultConfirmed: boolean; isAdmin?: boolean; mode?: string; customFace?: string;
+  videoModel?: string; videoModels?: { id: string; label: string }[]; checkins?: string;
+  bio?: { text: string; birthday: string; age: number | null; state: string; photo: string; photoNote: string };
 };
 type Contact = { id: string; name: string; phone: string };
 
