@@ -4,6 +4,7 @@ import { peekAt, draftPeek } from "../../lib/peek";
 import { cleanTags } from "../../lib/text";
 import { sql } from "../../lib/db";
 import { resolveCaller } from "../../lib/caller";
+import { allow } from "../../lib/rateLimit";
 import { isValidTimeZone, localDate } from "../../lib/localTime";
 import { VELO_LOOKS } from "../../lib/veloAvatars";
 import { toE164, showPhone, twilioReady, veloNumber } from "../../lib/twilio";
@@ -214,6 +215,8 @@ export async function POST(req: NextRequest) {
         const cur = await activeScene(me, ch.id);
         if (!cur) return bad("Peeks work during a scene you're playing out together.");
         if (!mediaReady()) return bad("Photos aren't set up yet.");
+        // Each draft is an AI call: a per-person limit so one account can't run up the bill.
+        if (!allow(`peek:${me}`, [{ ms: 60_000, max: 10 }, { ms: 86_400_000, max: 300 }])) return NextResponse.json({ error: "That's a lot of peeks — try again in a bit." }, { status: 429 });
         const [u] = await db`select adult_confirmed_at from users where id = ${me}`;
         try {
           if (b.action === "scene.peek.draft") return NextResponse.json({ description: await draftPeek(me, ch, cur, !!u?.adult_confirmed_at) });
