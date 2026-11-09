@@ -85,13 +85,14 @@ function pickSpeakers(text: string, chars: Character[], rows: GroupMsg[]): Chara
 }
 
 /** They said something: it's saved, then each character who answers replies in turn, seeing the others' replies. */
-export async function sendToGroup(caller: Caller, g: Group, text: string, timeZone: unknown, personName: string): Promise<GroupMsg[]> {
+export async function sendToGroup(caller: Caller, g: Group, text: string, timeZone: unknown, personName: string): Promise<{ replies: GroupMsg[]; banter: boolean }> {
   const clean = scrub(text).trim().slice(0, 4000);
   if (!clean) throw new GroupError("Say something first.");
   const chars = await members(g);
   if (chars.length < 2) throw new GroupError("This group needs at least 2 characters.");
   await sql()`insert into chat_group_messages (group_id, user_id, content) values (${g.id}, ${caller.userId}, ${clean})`;
-  await sql()`update chat_groups set updated_at = now() where id = ${g.id}`;
+  // They spoke: any back-and-forth between the characters stops right here.
+  await sql()`update chat_groups set updated_at = now(), banter_left = 0, since_banter = since_banter + 1 where id = ${g.id}`;
   const names = new Map(chars.map(c => [c.id, c.name]));
   const out: GroupMsg[] = [];
   let rows = await groupMessages(caller.userId, g.id, 40);
@@ -104,7 +105,38 @@ export async function sendToGroup(caller: Caller, g: Group, text: string, timeZo
     rows = [...rows, m as GroupMsg];
   }
   await closer(caller.userId, chars);
-  return out;
+  // 💬 Every 5–10 of their messages, the characters talk among themselves for a few lines.
+  const [due] = await sql()`update chat_groups set banter_left = ${2 + Math.floor(Math.random() * 3)}, since_banter = 0, banter_at = ${5 + Math.floor(Math.random() * 6)}
+    where id = ${g.id} and user_id = ${caller.userId} and since_banter >= banter_at returning banter_left`;
+  return { replies: out, banter: !!due };
+}
+
+/** 💬 The next line when the characters are talking among themselves (until it runs out, or the person speaks up). */
+export async function banterNext(caller: Caller, g: Group, timeZone: unknown, personName: string): Promise<{ message: GroupMsg | null; more: boolean }> {
+  const [left] = await sql()`update chat_groups set banter_left = banter_left - 1 where id = ${g.id} and user_id = ${caller.userId} and banter_left > 0 returning banter_left, now()::text as started`;
+  if (!left) return { message: null, more: false };
+  const started = String(left.started);
+  const chars = await members(g);
+  if (chars.length < 2) return { message: null, more: false };
+  const names = new Map(chars.map(c => [c.id, c.name]));
+  const rows = await groupMessages(caller.userId, g.id, 40);
+  const said = seen(rows);
+  const last = said[said.length - 1];
+  // Whoever was just spoken to answers; otherwise someone other than the last speaker.
+  const others = chars.filter(c => c.id !== last?.speaker_id);
+  const named = last?.speaker_id ? others.find(c => new RegExp(`(^|[^\\p{L}])${esc(c.name)}(?=$|[^\\p{L}])`, "iu").test(last.content)) : undefined;
+  const c = named || others[Math.floor(Math.random() * others.length)];
+  const turns = turnsFor(c.id, rows, names, personName);
+  turns.push({ role: "user", content: `(The group chat goes on: ${personName || "they"} went quiet for a moment, so talk with ${chars.filter(x => x.id !== c.id).map(x => x.name).join(" and ")} — not to ${personName || "them"}.)` });
+  const r = await askVelo(caller, { mode: "chat", messages: turns, timeZone, name: personName, character: c, group: { others: chars.filter(x => x.id !== c.id).map(x => x.name), scene: g.scene_title ? { title: g.scene_title, details: g.scene_details || "" } : null, banter: true } });
+  const reply = scrub(r.reply.replace(/^\s*\[[^\]]{1,40}\]:\s*/, "")).trim().slice(0, 4000);
+  // They may have spoken up meanwhile: then this line is dropped.
+  const [spoke] = await sql()`select 1 from chat_group_messages where group_id = ${g.id} and speaker_id is null and not peek and created_at > ${started}::timestamptz limit 1`;
+  const still = !spoke;
+  if (!reply || !still) return { message: null, more: false };
+  const [m] = await sql()`insert into chat_group_messages (group_id, user_id, speaker_id, content) values (${g.id}, ${caller.userId}, ${c.id}, ${reply}) returning id, speaker_id, content, created_at`;
+  await closer(caller.userId, chars);
+  return { message: m as GroupMsg, more: Number(left.banter_left) > 0 };
 }
 
 /** 🤝 Chatting together brings them closer: every message counts a little; a new day (6h+ apart) counts more. */

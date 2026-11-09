@@ -29,6 +29,25 @@ export function GroupChat({ group: initial, chars, name, onDeleted }: { group: G
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const unsaved = useRef(0);
+  // 💬 The characters talking among themselves now and then; anything they send stops it.
+  const run = useRef(0);
+  const [chatting, setChatting] = useState(false);
+  const banter = async () => {
+    const me = ++run.current;
+    setChatting(true);
+    try {
+      for (let i = 0; i < 6; i++) {
+        await new Promise(r => setTimeout(r, 1200 + Math.random() * 1500));
+        if (run.current !== me) return;
+        const r = await api<{ message: Msg | null; more: boolean }>("/api/groups", { action: "banter", id: group.id, timeZone: timeZone(), name });
+        if (run.current !== me) return;
+        if (r.message) { setMsgs(m => [...(m || []), r.message!]); unsaved.current++; }
+        if (!r.more) break;
+      }
+    } catch { /* they'll pick it up next time */ }
+    finally { if (run.current === me) setChatting(false); }
+  };
+  useEffect(() => () => { run.current++; }, []);
   const log = useRef<HTMLDivElement>(null);
   const members = group.member_ids.map(id => chars.find(c => c.id === id)).filter((c): c is Character => !!c);
   const byId = new Map(members.map(c => [c.id, c]));
@@ -56,12 +75,14 @@ export function GroupChat({ group: initial, chars, name, onDeleted }: { group: G
     if (!t || busy || !msgs) return;
     // 👀 "*peek*" in a scene: pick who's in it, check the description, then it's made. Nobody knows.
     if (group.scene_title && PEEK.test(t)) { setText(""); setPeek(true); return; }
+    run.current++; setChatting(false);
     const mine: Msg = { id: `tmp-${Date.now()}`, speaker_id: null, content: t, created_at: new Date().toISOString(), pending: true };
     setMsgs(m => [...(m || []), mine]); setText(""); setBusy(true); setErr("");
     try {
-      const r = await api<{ replies: Msg[] }>("/api/groups", { action: "send", id: group.id, text: t, timeZone: timeZone(), name });
+      const r = await api<{ replies: Msg[]; banter?: boolean }>("/api/groups", { action: "send", id: group.id, text: t, timeZone: timeZone(), name });
       setMsgs(m => [...(m || []).map(x => (x === mine ? { ...x, pending: false } : x)), ...r.replies]);
       unsaved.current++;
+      if (r.banter) banter();
     } catch (e) { setErr(e instanceof Error ? e.message : "No one answered."); }
     setBusy(false);
   };
@@ -120,7 +141,7 @@ export function GroupChat({ group: initial, chars, name, onDeleted }: { group: G
             </div>
           );
         })}
-        {busy && <div className="muted" style={{ fontSize: 14 }}>💬 typing…</div>}
+        {(busy || chatting) && <div className="muted" style={{ fontSize: 14 }} data-testid={chatting && !busy ? "group-banter-typing" : undefined}>💬 typing…{chatting && !busy ? <span style={{ fontSize: 12 }}> (they&apos;re chatting — jump in anytime)</span> : null}</div>}
         {err && <div style={{ color: "var(--bad)", fontSize: 14 }}>⚠️ {err}</div>}
       </div>
       <form onSubmit={e => { e.preventDefault(); send(); }} className="row" style={{ padding: "10px 12px", borderTop: "1px solid var(--border)" }}>

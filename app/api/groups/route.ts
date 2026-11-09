@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import { aiReady, aiError } from "../../lib/brain";
-import { listGroups, getGroup, createGroup, deleteGroup, groupMessages, sendToGroup, rememberGroup, startGroupScene, endGroupScene, draftGroupPeek, groupPeekAt, GroupError } from "../../lib/groups";
+import { listGroups, getGroup, createGroup, deleteGroup, groupMessages, sendToGroup, rememberGroup, startGroupScene, endGroupScene, banterNext, draftGroupPeek, groupPeekAt, GroupError } from "../../lib/groups";
 import { MediaError } from "../../lib/media";
 import { sql } from "../../lib/db";
 
 // 👥 Group chats. POST { action, ... }:
 //   list → { groups }                         create { memberIds, title?, name? } → { group }
 //   messages { id } → { messages }            send { id, text, timeZone, name } → { replies }
+//   send → { replies, banter }   banter { id, timeZone, name } → { message, more }   (💬 the characters chatting among themselves)
 //   memo { id, timeZone, name } → { saved }   (each character saves her own memory)
 //   delete { id }
 //   scene.start { id, kind: live|past, title, details } → { marker, group }   scene.end { id } → { marker }
@@ -35,7 +36,12 @@ export async function POST(req: NextRequest) {
       case "send": {
         if (!aiReady()) return bad("Velo isn't set up yet (missing AI settings).", 503);
         if (!allow(c.userId)) return bad("That's a lot of messages — give it a minute and try again.", 429);
-        return NextResponse.json({ replies: await sendToGroup(c, g, String(b.text || ""), b.timeZone, name) });
+        return NextResponse.json(await sendToGroup(c, g, String(b.text || ""), b.timeZone, name));
+      }
+      // 💬 The next line of the characters talking among themselves → { message, more }.
+      case "banter": {
+        if (!aiReady()) return NextResponse.json({ message: null, more: false });
+        return NextResponse.json(await banterNext(c, g, b.timeZone, name));
       }
       case "scene.start": {
         const marker = await startGroupScene(c.userId, g, b.kind === "past" ? "past" : "live", String(b.title || ""), String(b.details || ""));

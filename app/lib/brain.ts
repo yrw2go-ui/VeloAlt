@@ -54,13 +54,13 @@ function replyLengthNote(mode: Mode, raw: unknown): string {
 }
 
 /** 👥 A group chat: who's there, and how to talk in it. */
-function groupNote(me: string, them: string, others: string[], wrapUp: boolean, scene: { title: string; details: string } | null = null, romance = false): string {
+function groupNote(me: string, them: string, others: string[], wrapUp: boolean, scene: { title: string; details: string } | null = null, romance = false, banter = false): string {
   const person = them || "the person";
   const all = [person, ...others].join(", ");
   const love = romance ? `\nROMANCE IN THE GROUP: ${person} may be close with, flirt with or date more than one of you. React the way YOU would, from your personality, backstory, feelings and your romance arc: jealous, hurt, competitive, curious, or — only if who you are and your arc truly allow it — open to sharing ${person} in a polyamorous relationship (that's a slow, believable, mutual thing, never assumed). Whatever you feel, never be cruel, controlling or threatening. Any romance stays PG-13.` : "";
   const sc = scene ? `\n🎬 YOU'RE ALL IN A SCENE TOGETHER RIGHT NOW (role-play ${person} set up): "${scene.title}"${scene.details ? ` — ${scene.details}` : ""}. Everyone in the group is there. Play it out as if it's really happening: present tense, your actions in *italics*, your words in plain text, small details of the place, react to what ${person} and the others do — never decide their actions for them. 1–4 sentences per turn. Keep it within PG-13. If someone steps out of the scene (brackets or "OOC"), answer normally, then go back in.` : "";
   if (wrapUp) return `This was a GROUP CHAT with ${all}. Lines starting with [Name] are what that person said. Remember what matters to YOU: what ${person} shared, what happened, and what you learned about the others (save facts about ${person} as usual; what you learned about ${others.join(" or ")} goes in the summary).`;
-  return `GROUP CHAT: you're in a group text with ${all}. Lines starting with [Name]: are what that person said; your own earlier lines are yours. Reply ONLY as ${me}, with no name tag — never write lines for anyone else. Stay fully yourself: your personality, your feelings for ${person}, how well you know each of the others (see YOUR FRIENDS AND FAMILY). Keep it short like a group text (usually 1–2 sentences), react to what others just said, talk to them by name, joke, ask them things. Don't repeat what someone else already said. Private things you know only from your one-on-one chats with ${person} stay private unless ${person} brings them up here.${sc}${love}`;
+  return `GROUP CHAT: you're in a group text with ${all}. Lines starting with [Name]: are what that person said; your own earlier lines are yours. Reply ONLY as ${me}, with no name tag — never write lines for anyone else. Stay fully yourself: your personality, your feelings for ${person}, how well you know each of the others (see YOUR FRIENDS AND FAMILY). Keep it short like a group text (usually 1–2 sentences), react to what others just said, talk to them by name, joke, ask them things. Don't repeat what someone else already said. Private things you know only from your one-on-one chats with ${person} stay private unless ${person} brings them up here.${sc}${love}${banter ? `\nRIGHT NOW: talk to ${others.join(" or ")} directly (by name) — answer what they just said, tease, ask them something, share your news or an opinion. It's between you for a moment; ${person} can read it and may jump in anytime. One or two short sentences.` : ""}`;
 }
 
 const CHECKIN = `REACHING OUT FIRST: they haven't written in a while, and you're texting them first — like a friend (or more) would. Write ONE short text (1–2 sentences, under 160 characters). Make it personal and specific when you can: follow up on something from YOUR MEMORY or your recent chat, react to the time of day, a holiday, the weather of the season, or just say hi in your own way and voice. Don't mention apps, notifications or that you were told to write. No questions lists, no emojis overload, no links.`;
@@ -95,7 +95,7 @@ const REACT_TAG = /\[react:\s*([^\]\s]+)\s*\]\s*/gu;
 
 /** Velo, or (with `character`) one of the characters: same chats, calls and memory flow, but in the
  *  character's own voice, with only their own memory of this person and no Velo tools. */
-export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn[]; timeZone?: unknown; name?: string; goal?: string; toName?: string; character?: Character | null; origin?: string; promise?: string; group?: { others: string[]; scene?: { title: string; details: string } | null } }): Promise<AskResult> {
+export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn[]; timeZone?: unknown; name?: string; goal?: string; toName?: string; character?: Character | null; origin?: string; promise?: string; group?: { others: string[]; scene?: { title: string; details: string } | null; banter?: boolean } }): Promise<AskResult> {
   const { mode } = opts;
   const ch = opts.character || null;
   const cid = ch?.id || null;
@@ -182,7 +182,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         opts.promise ? `WHAT YOU PROMISED: ${opts.promise}` : "",
         ch ? "SCENES: lines starting with 🎬 are dates or outings you two did together (played out, or that they told you happened). Treat them as real shared memories — bring them up, tease about them, look back on them." : "",
         mode === "chat" && !group ? REACT_HINT : "",
-        group && ch ? groupNote(ch.name, name, group.others, mode === "memo", group.scene || null, !!ch.romantic && !!u?.adult_confirmed_at) : "",
+        group && ch ? groupNote(ch.name, name, group.others, mode === "memo", group.scene || null, !!ch.romantic && !!u?.adult_confirmed_at, !!group.banter) : "",
         arc && (mode === "remember" || mode === "memo") ? FEELINGS_REMEMBER : "",
         trust !== null && mode !== "remember" && mode !== "memo" ? trustNote(trust, arc) : "",
         trust !== null && (mode === "remember" || mode === "memo") ? `YOUR TRUST IN THEM: ${trust}/100. ${TRUST_REMEMBER(arc)}` : "",
