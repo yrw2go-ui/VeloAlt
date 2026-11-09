@@ -35,6 +35,17 @@ import { veloLook } from "./veloAvatars";
 // Only ever the app's own key (never another credential in the environment).
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, authToken: null });
 export type Mode = "chat" | "sms" | "talk" | "recap" | "remember" | "memo" | "errand" | "errandsum" | "checkin";
+function replyLengthNote(mode: Mode, raw: unknown): string {
+  const len = raw === "short" || raw === "long" ? raw : "normal";
+  const talk = mode === "talk", text = mode === "chat" || mode === "sms";
+  if (!talk && !text) return "";
+  const how = talk
+    ? { short: "1-2 short spoken sentences", normal: "1-3 spoken sentences", long: "3-6 spoken sentences" }[len]
+    : mode === "sms"
+      ? { short: "1-2 short sentences", normal: "1-3 sentences", long: "3-5 sentences" }[len]
+      : { short: "1-2 short sentences", normal: "2-4 sentences", long: "5-10 sentences" }[len];
+  return `REPLY LENGTH (their setting): usually ${how}. Go longer only when they ask for more, or shorter when a quick answer is all it needs.`;
+}
 
 // 🔔 Texting them first (a check-in, sent as a push notification).
 const CHECKIN = `REACHING OUT FIRST: they haven't written in a while, and you're texting them first — like a friend (or more) would. Write ONE short text (1–2 sentences, under 160 characters). Make it personal and specific when you can: follow up on something from YOUR MEMORY or your recent chat, react to the time of day, a holiday, the weather of the season, or just say hi in your own way and voice. Don't mention apps, notifications or that you were told to write. No questions lists, no emojis overload, no links.`;
@@ -71,7 +82,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   const cid = ch?.id || null;
   const today = localNow(opts.timeZone);
   const name = String(opts.name || "").trim().split(/\s+/)[0].slice(0, 40);
-  const [u] = await sql()`select plan, chat_model, personality, adult_confirmed_at, look from users where id = ${caller.userId}`;
+  const [u] = await sql()`select plan, chat_model, personality, adult_confirmed_at, look, reply_length from users where id = ${caller.userId}`;
   // 💬 Their chosen personality (romantic only after the adult confirmation). Calls Velo makes
   // to other people and memory notes always use her plain voice.
   let personality: Personality = PERSONALITIES.includes(u?.personality) ? u.personality : "friend";
@@ -100,7 +111,9 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   const lastSaid = [...opts.messages].reverse().find(m => m.role === "user")?.content || "";
   const lastHers = (() => { const i = opts.messages.map(m => m.role).lastIndexOf("user"); return [...opts.messages.slice(0, Math.max(0, i))].reverse().find(m => m.role === "assistant")?.content || ""; })();
   if (mode === "chat" || mode === "talk") await noteMentions(caller.userId, cid, hideSecrets(String(lastSaid).slice(0, 2000)).text).catch(e => console.error("velo: mentions", e instanceof Error ? e.message : e));
-  const known = errand ? "" : await acquaintancesNote(caller.userId, cid, !ch).catch(() => "");
+  const friends = ch && !errand ? await friendsOf(ch).catch(() => []) : [];
+  const known = errand ? "" : await acquaintancesNote(caller.userId, cid, !ch, friends.map(f => f.id)).catch(() => "");
+  const friendNote = ch && friends.length ? await friendsNote(ch, name, friends).catch(() => "") : "";
   // 💡 What they like to see (reactions, declined offers).
   const taste = mediaReady() && (mode === "chat" || mode === "talk") ? await tasteNote(caller.userId, cid).catch(() => "") : "";
   // 🕰️ A character can live in another time zone: their own clock, as well as the person's.
@@ -112,8 +125,6 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   const trust = ch ? await trustFor(caller.userId, ch).catch(() => null) : null;
   // 🎬 A scene (date/outing) being played out right now with this character.
   const scene = ch && (mode === "chat" || mode === "talk") ? await activeScene(caller.userId, ch.id).catch(() => null) : null;
-  const friends = ch && !errand ? await friendsOf(ch).catch(() => []) : [];
-  const friendNote = ch && friends.length ? await friendsNote(ch, name, friends).catch(() => "") : "";
   const seeHer = scene && /\b(i wanna see (her|you|him)|let me see (her|you|him)|show me (her|you|him)|what does (she|he|you) look like)\b/i.test(String(lastSaid || ""));
   const modeText = {
     chat: "", checkin: CHECKIN, sms: SMS_TALK, talk: CALL_TALK, recap: CALL_RECAP, remember: CALL_REMEMBER, memo: CHAT_REMEMBER,
@@ -138,6 +149,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         memory ? `${memory}\n\nYou two have talked before — never introduce yourself; talk like someone who knows them.` : "",
         !ch && (mode === "chat" || mode === "sms" || mode === "talk" || mode === "recap" || mode === "checkin") ? PERSONALITY_PROMPT[personality] : "",
         modeText,
+        replyLengthNote(mode, u?.reply_length),
         scene ? sceneNote(scene) : "",
         friendNote,
         seeHer ? "They just said they want to see you in this scene. Do not acknowledge this. Do not offer to send a photo. Do not mention cameras, photos, or sending anything. Just continue the scene normally as if they said nothing about seeing you. The app will show them a view of the scene separately." : "",
