@@ -84,9 +84,21 @@ function SignIn({ onIn }: { onIn: (u: User) => void }) {
 
 type DueReminder = { id: string; text: string };
 
+// 📍 Where they are in the app (tab, open chat or group, scroll), so a reload or an update brings them right back.
+type Place = { tab?: Tab; withId?: string | null; groupId?: string | null; scroll?: Partial<Record<Tab, number>> };
+const placeKey = (userId: string) => `velo:place:${userId}`;
+function readPlace(userId: string): Place {
+  try { const p = JSON.parse(localStorage.getItem(placeKey(userId)) || "{}"); return p && typeof p === "object" ? p : {}; } catch { return {}; }
+}
+function savePlace(userId: string, patch: Place) {
+  try { localStorage.setItem(placeKey(userId), JSON.stringify({ ...readPlace(userId), ...patch })); } catch { /* private mode: fine */ }
+}
+const urlParam = (k: string) => (typeof location === "undefined" ? null : new URLSearchParams(location.search).get(k));
+
 function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
-  // Back from Stripe checkout / billing: open Settings.
-  const [tab, setTab] = useState<Tab>(() => (typeof location !== "undefined" && new URLSearchParams(location.search).get("tab") === "settings" ? "settings" : "chat"));
+  // Back from Stripe checkout / billing: open Settings. A tapped notification opens that chat. Otherwise: right where they were.
+  const [place] = useState<Place>(() => (typeof window === "undefined" ? {} : readPlace(userId)));
+  const [tab, setTab] = useState<Tab>(() => (urlParam("tab") === "settings" ? "settings" : urlParam("chat") ? "chat" : place.tab && TABS.some(t => t.id === place.tab) ? place.tab : "chat"));
   const [name, setName] = useState("");
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profileTick, setProfileTick] = useState(0);
@@ -101,7 +113,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   const [portraits, setPortraits] = useState(false);
   const [admin, setAdmin] = useState(false);
   // A tapped notification opens that chat (?chat=<character id>, or "velo").
-  const [withId, setWithId] = useState<string | null>(() => { if (typeof location === "undefined") return null; const c = new URLSearchParams(location.search).get("chat"); return c && c !== "velo" ? c : null; });
+  const [withId, setWithId] = useState<string | null>(() => { const c = urlParam("chat"); return c ? (c !== "velo" ? c : null) : place.withId || null; });
   const [editing, setEditing] = useState<Character | "new" | null>(null);
   const [gallery, setGallery] = useState(false);
   const [chatTick, setChatTick] = useState(0);
@@ -112,9 +124,32 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   const withChar = chars.find(c => c.id === withId) || null;
   // 👥 Group chats (you and 2–6 characters).
   const [groups, setGroups] = useState<Group[]>([]);
-  const [groupId, setGroupId] = useState<string | null>(null);
+  const [groupId, setGroupId] = useState<string | null>(() => (urlParam("chat") ? null : place.groupId || null));
+  const [groupsLoaded, setGroupsLoaded] = useState(false);
   const [makingGroup, setMakingGroup] = useState(false);
-  useEffect(() => { if (userId) api<{ groups: Group[] }>("/api/groups", { action: "list" }).then(r => setGroups(r.groups)).catch(() => {}); }, [userId]);
+  useEffect(() => { if (userId) api<{ groups: Group[] }>("/api/groups", { action: "list" }).then(r => setGroups(r.groups)).catch(() => {}).finally(() => setGroupsLoaded(true)); }, [userId]);
+  // 📍 Remember where they are.
+  useEffect(() => { savePlace(userId, { tab, withId, groupId }); }, [userId, tab, withId, groupId]);
+  // …and how far down they'd scrolled (Today, Memory, Settings): put back once the page has loaded after a reload.
+  const mainRef = useRef<HTMLElement>(null);
+  const scrollSave = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const restoring = useRef(true);
+  const onMainScroll = () => {
+    if (tab === "chat" || restoring.current) return;
+    if (scrollSave.current) clearTimeout(scrollSave.current);
+    scrollSave.current = setTimeout(() => { const y = mainRef.current?.scrollTop || 0; savePlace(userId, { scroll: { ...readPlace(userId).scroll, [tab]: y } }); }, 250);
+  };
+  useEffect(() => {
+    const y = tab !== "chat" ? place.scroll?.[tab] || 0 : 0;
+    if (!y) { restoring.current = false; return; }
+    const started = Date.now();
+    const t = setInterval(() => {
+      const el = mainRef.current;
+      if (el && el.scrollHeight - el.clientHeight >= y - 4) el.scrollTop = y;
+      if ((el && Math.abs(el.scrollTop - y) < 4) || Date.now() - started > 4000) { clearInterval(t); restoring.current = false; }
+    }, 100);
+    return () => { clearInterval(t); restoring.current = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const inGroup = tab === "chat" && groups.find(g => g.id === groupId) || null;
   const pickChat = (id: string | null) => { setGroupId(null); setWithId(id); };
   // 🔴 Unread counts per chat ("velo" or character id). The open chat is marked read as it updates.
@@ -253,11 +288,11 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
         </div>
       )}
 
-      <main style={{ flex: 1, minHeight: 0, overflowY: tab === "chat" ? "hidden" : "auto", display: "flex", flexDirection: "column" }}>
+      <main ref={mainRef} onScroll={onMainScroll} style={{ flex: 1, minHeight: 0, overflowY: tab === "chat" ? "hidden" : "auto", display: "flex", flexDirection: "column" }}>
         {tab === "chat" && <CharacterStrip characters={chars} active={withChar?.id || null} admin={admin} onPick={pickChat} onNew={() => setEditing("new")} onEdit={setEditing} onGallery={() => setGallery(true)} unread={unread}
           groups={groups} activeGroup={inGroup?.id || null} onPickGroup={setGroupId} onNewGroup={() => setMakingGroup(true)} />}
         {inGroup && <GroupChat key={inGroup.id} group={inGroup} chars={chars} name={name} onDeleted={id => { setGroups(gs => gs.filter(g => g.id !== id)); setGroupId(null); }} />}
-        {tab === "chat" && !inGroup && <Chat key={`${withChar?.id || "velo"}-${chatTick}`} userId={userId} name={name} onChanged={bump} added={chatAdd} onAdded={() => setChatAdd(null)} character={withChar} adult={!!profile?.adultConfirmed} onAdult={() => setProfileTick(t => t + 1)} onHistory={h => { chatHistory.current = h; setHistoryCount(h.length); }} />}
+        {tab === "chat" && !inGroup && !(groupId && !groupsLoaded) && <Chat key={`${withChar?.id || "velo"}-${chatTick}`} userId={userId} name={name} onChanged={bump} added={chatAdd} onAdded={() => setChatAdd(null)} character={withChar} adult={!!profile?.adultConfirmed} onAdult={() => setProfileTick(t => t + 1)} onHistory={h => { chatHistory.current = h; setHistoryCount(h.length); }} />}
         {tab === "today" && <Today refresh={refresh} />}
         {tab === "memory" && <Memory refresh={refresh} />}
         {tab === "settings" && <Settings name={name} setName={setName} onOut={onOut} profile={profile} onProfile={() => setProfileTick(t => t + 1)} />}
