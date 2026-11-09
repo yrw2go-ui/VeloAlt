@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
 
     switch (String(b.action || "")) {
       case "profile.get": {
-        const [u] = await db`select name, look, time_zone, plan, phone, phone_verified_at, chat_model, personality, adult_confirmed_at, video_model, checkins, bio, birthday::text, age, home_state, (select url from velo_files where id = users.bio_photo_file_id) as bio_photo, (select thumb_url from velo_files where id = users.bio_photo_file_id) as bio_thumb, bio_photo_note from users where id = ${me}`;
+        const [u] = await db`select name, look, time_zone, plan, phone, phone_verified_at, chat_model, personality, adult_confirmed_at, video_model, checkins, bio, birthday::text, age, home_state, reply_length, (select url from velo_files where id = users.bio_photo_file_id) as bio_photo, (select thumb_url from velo_files where id = users.bio_photo_file_id) as bio_thumb, bio_photo_note from users where id = ${me}`;
         const [{ n }] = await db`select count(*)::int as n from velo_memories where user_id = ${me} and kind = 'call' and character_id is null`;
         const [face] = await db`select url from velo_files where user_id = ${me} and kind = 'face' order by created_at desc limit 1`;
         return NextResponse.json({
@@ -52,6 +52,7 @@ export async function POST(req: NextRequest) {
           // Anything unknown (or romantic without the 18+ confirmation) shows as Friend.
           personality: !PERSONALITIES.includes(u?.personality) || (u?.personality === "romantic" && !u?.adult_confirmed_at) ? "friend" : u?.personality,
           adultConfirmed: !!u?.adult_confirmed_at,
+          replyLength: u?.reply_length || "normal",
         });
       }
       case "profile.update": {
@@ -80,6 +81,7 @@ export async function POST(req: NextRequest) {
         if (["off", "sometimes", "often"].includes(b.checkins)) await db`update users set checkins = ${b.checkins}, updated_at = now() where id = ${me}`;
         if (VIDEO_MODELS.some(m => m.id === b.videoModel)) await db`update users set video_model = ${b.videoModel}, updated_at = now() where id = ${me}`;
         if (typeof b.veloVoice === "string") await db`update users set velo_voice = ${b.veloVoice || null}, updated_at = now() where id = ${me}`;
+        if (["short", "normal", "long"].includes(b.replyLength)) await db`update users set reply_length = ${b.replyLength}, updated_at = now() where id = ${me}`;
         return NextResponse.json({ ok: true });
       }
 
