@@ -43,6 +43,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   const face = (size: number) => (character ? <CharacterFace c={character} size={size} /> : <VeloAvatar size={size} />);
   const [msgs, setMsgs] = useState<ChatMsg[] | null>(null);
   const [peekDraft, setPeekDraft] = useState<string | null>(null);
+  const [linkAsk, setLinkAsk] = useState<{ id: string; name: string; kind: string } | null>(null);
   const cid = character?.id || null;
   const thread = cid ? { characterId: cid } : {};
   const who = character?.name || "Velo";
@@ -143,6 +144,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     // Their message gets its id (for reactions), so a reaction from her can land on it.
     const myId = saved.ids?.at(-1);
     if (myId) { mine.id = myId; setMsgs(list => (list || []).map(x => (x === mine ? { ...x, id: myId } : x))); }
+    if (cid && t) checkLinks(t);
     await respond(next, myId);
   };
 
@@ -285,6 +287,22 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   const openingLine = msgs && !msgs.length && !name ? INTRO : HELLO(name.split(" ")[0])[hello];
   const shown: ChatMsg[] = msgs && !msgs.length && !cid ? [{ role: "assistant", content: openingLine }] : msgs || [];
 
+  const askedKey = (other: string) => `velo:linkask:${cid}:${other}`;
+  const checkLinks = (t: string) => {
+    api<{ suggest: { id: string; name: string; kind: string }[] }>("/api/characters", { action: "link.suggest", id: cid, text: t }).then(r => {
+      const s = (r.suggest || []).find(x => { try { return !localStorage.getItem(askedKey(x.id)); } catch { return true; } });
+      if (s) setLinkAsk(s);
+    }).catch(() => {});
+  };
+  const answerLink = async (yes: boolean, kind: string) => {
+    const a = linkAsk;
+    if (!a) return;
+    setLinkAsk(null);
+    if (!yes) { try { localStorage.setItem(askedKey(a.id), "1"); } catch { /* fine */ } return; }
+    try { await api("/api/characters", { action: "link.set", id: cid, otherId: a.id, kind: kind.trim() || a.kind }); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't link them."); }
+  };
+
   const doPeek = async () => {
     if (!peekDraft?.trim() || !cid) return;
     setBusy(true); setErr("");
@@ -299,6 +317,18 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      {linkAsk && (
+        <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 3000 }}>
+          <div className="card" style={{ maxWidth: 360, width: "100%" }}>
+            <div style={{ fontWeight: 700, marginBottom: 8 }}>{linkAsk.name} knows {who}</div>
+            <div className="muted" style={{ fontSize: 13, marginBottom: 10 }}>Should {who} know {linkAsk.name} too?</div>
+            <div className="row" style={{ justifyContent: "flex-end", gap: 8 }}>
+              <button className="ghost" onClick={() => answerLink(false, "")}>Not now</button>
+              <button className="btn" onClick={() => answerLink(true, linkAsk.kind)}>Yes, link them</button>
+            </div>
+          </div>
+        </div>
+      )}
       {peekDraft !== null && (
         <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 3000 }}>
           <div className="card" style={{ maxWidth: 400, width: "100%" }}>
