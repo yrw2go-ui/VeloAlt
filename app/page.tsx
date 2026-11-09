@@ -3,7 +3,7 @@
 // ⚙️ Settings), the 📞 call screen, and due-reminder pop-ups.
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { api, data } from "./lib/api";
-import { VersionCard } from "./version";
+import { VersionCard, UpdateBanner } from "./version";
 import { confirmAsk, currentAsk, subscribeAsk } from "./lib/dialog";
 import { VeloLogo, VeloLookPicker, applyVeloLook, useVeloLook } from "./avatar";
 import VeloCall, { canCallVelo, primeSpeech } from "./call";
@@ -240,6 +240,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
         {canCallVelo() && !calling && !inGroup && <button className="btn" onClick={startCall} aria-label={`Call ${tab === "chat" && withChar ? withChar.name : "Velo"}`} data-testid="call-velo" style={{ borderRadius: 999, padding: "10px 16px" }}>📞 Call</button>}
       </header>
 
+      <UpdateBanner />
       {due.length > 0 && (
         <div data-testid="due-reminders" style={{ padding: "10px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
           {due.map(r => (
