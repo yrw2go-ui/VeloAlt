@@ -2,16 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import { aiReady, aiError } from "../../lib/brain";
-import { listGroups, getGroup, createGroup, deleteGroup, groupMessages, sendToGroup, rememberGroup, startGroupScene, endGroupScene, banterNext, draftGroupPeek, groupPeekAt, GroupError } from "../../lib/groups";
+import { listGroups, getGroup, createGroup, deleteGroup, groupMessages, sendToGroup, rememberGroup, startGroupScene, endGroupScene, banterNext, reactInGroup, draftGroupPeek, groupPeekAt, GroupError } from "../../lib/groups";
 import { MediaError } from "../../lib/media";
 import { sql } from "../../lib/db";
+import { isReaction } from "../../lib/reactions";
 
 // 👥 Group chats. POST { action, ... }:
 //   list → { groups }                         create { memberIds, title?, name? } → { group }
 //   messages { id } → { messages }            send { id, text, timeZone, name } → { replies }
 //   send → { replies, banter }   banter { id, timeZone, name } → { message, more }   (💬 the characters chatting among themselves)
 //   memo { id, timeZone, name } → { saved }   (each character saves her own memory)
-//   delete { id }
+//   delete { id }   react { id, msgId, reaction|null } (😮 theirs on a character's message)
 //   scene.start { id, kind: live|past, title, details } → { marker, group }   scene.end { id } → { marker }
 //   peek.draft { id, ids } → { description }   peek { id, ids, description } → { added }   (👀 nobody in the group knows)
 const bad = (error: string, status = 400) => NextResponse.json({ error }, { status });
@@ -42,6 +43,10 @@ export async function POST(req: NextRequest) {
       case "banter": {
         if (!aiReady()) return NextResponse.json({ message: null, more: false });
         return NextResponse.json(await banterNext(c, g, b.timeZone, name));
+      }
+      case "react": {
+        const reaction = isReaction(b.reaction) ? b.reaction : null;
+        return NextResponse.json({ ok: await reactInGroup(c.userId, g, String(b.msgId || ""), reaction) });
       }
       case "scene.start": {
         const marker = await startGroupScene(c.userId, g, b.kind === "past" ? "past" : "live", String(b.title || ""), String(b.details || ""));

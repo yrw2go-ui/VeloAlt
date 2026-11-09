@@ -9,7 +9,8 @@ import { data } from "./lib/api";
 export type Media = { id: string; kind: "image" | "video"; status: "offered" | "declined" | "working" | "done" | "failed"; url: string | null; thumb?: string | null; caption?: string | null; reaction?: string | null; description?: string | null; kept?: boolean };
 
 // ❤️ Reactions they can leave on a photo/video.
-export const REACTIONS = ["❤️", "🔥", "🙌", "😍", "👍", "😮", "😂"] as const;
+import { REACTIONS } from "./lib/reactions";
+export { REACTIONS };
 
 /** The reaction row right under a photo/video. Tap one to react; tap it again to take it back. */
 export function ReactionBar({ value, onPick }: { value: string | null | undefined; onPick: (r: string) => void }) {

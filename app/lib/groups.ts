@@ -14,7 +14,7 @@ import { writeText } from "./llm";
 
 
 export type Group = { id: string; title: string; member_ids: string[]; updated_at: string; scene_title: string | null; scene_details: string | null };
-export type GroupMsg = { id: string; speaker_id: string | null; content: string; created_at: string; peek?: boolean; media?: Media | null };
+export type GroupMsg = { id: string; speaker_id: string | null; content: string; created_at: string; peek?: boolean; media?: Media | null; reaction?: string | null; their_reactions?: Record<string, string> };
 const ALL = /\b(everyone|everybody|y'?all|you guys|guys|all of you|girls|ladies|both of you)\b/i;
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -58,10 +58,11 @@ async function meet(userId: string, chars: Character[], personName: string) {
 }
 
 export async function groupMessages(userId: string, groupId: string, limit = 200): Promise<GroupMsg[]> {
-  const rows = await sql()`select g.id, g.speaker_id, g.content, g.created_at, g.peek, md.id as media_id, md.kind as media_kind, md.status as media_status, md.description as media_description, mf.url as media_url
+  const rows = await sql()`select g.id, g.speaker_id, g.content, g.created_at, g.peek, g.reaction, g.their_reactions, md.id as media_id, md.kind as media_kind, md.status as media_status, md.description as media_description, mf.url as media_url
     from chat_group_messages g left join velo_media md on md.id = g.media_id left join velo_files mf on mf.id = md.file_id
     where g.group_id = ${groupId} and g.user_id = ${userId} order by g.created_at desc limit ${limit}`;
   return rows.reverse().map(r => ({ id: String(r.id), speaker_id: r.speaker_id ? String(r.speaker_id) : null, content: String(r.content), created_at: String(r.created_at), ...(r.peek ? { peek: true } : {}),
+    reaction: r.reaction || null, their_reactions: r.their_reactions && typeof r.their_reactions === "object" ? r.their_reactions : {},
     ...(r.media_id ? { media: { id: String(r.media_id), kind: r.media_kind, status: r.media_status, url: r.media_status === "done" ? r.media_url : null, description: r.media_description || null } as Media } : {}) }));
 }
 /** What the characters read: never the peeks (they don't know). */
@@ -69,9 +70,25 @@ const seen = (rows: GroupMsg[]) => rows.filter(r => !r.peek);
 
 /** The thread as one character sees it: her own lines are hers, everyone else's carry their name. */
 function turnsFor(me: string, rows: GroupMsg[], names: Map<string, string>, personName: string): Turn[] {
-  return seen(rows).map(r => r.speaker_id === me
-    ? { role: "assistant" as const, content: r.content }
-    : { role: "user" as const, content: `[${r.speaker_id ? names.get(r.speaker_id) || "Someone" : personName || "Them"}]: ${r.content}` });
+  const who = personName || "they";
+  // 😮 Reactions travel with the thread: theirs on a character's line, and the characters' on theirs.
+  const notes = (r: GroupMsg) => [
+    r.reaction ? (r.speaker_id === me ? `(${who} reacted ${r.reaction} to this)` : `(${who} reacted ${r.reaction})`) : "",
+    ...Object.entries(r.their_reactions || {}).map(([id, e]) => (id === me ? `(you reacted ${e} to this)` : `(${names.get(id) || "someone"} reacted ${e})`)),
+  ].filter(Boolean).join(" ");
+  return seen(rows).map(r => {
+    const n = notes(r);
+    return r.speaker_id === me
+      ? { role: "assistant" as const, content: `${r.content}${n ? `\n${n}` : ""}` }
+      : { role: "user" as const, content: `[${r.speaker_id ? names.get(r.speaker_id) || "Someone" : personName || "Them"}]: ${r.content}${n ? `\n${n}` : ""}` };
+  });
+}
+
+/** 😮 They react to a character's message in the group (tap the same one again to take it back). */
+export async function reactInGroup(userId: string, g: Group, msgId: string, reaction: string | null): Promise<boolean> {
+  if (!/^[0-9a-f-]{36}$/i.test(msgId)) return false;
+  const r = await sql()`update chat_group_messages set reaction = ${reaction} where id = ${msgId} and group_id = ${g.id} and user_id = ${userId} and speaker_id is not null returning id`;
+  return r.length > 0;
 }
 
 /** Who answers: whoever they named (or everyone, for "you guys"); otherwise one or two of them, whoever's been quietest. */
@@ -85,12 +102,12 @@ function pickSpeakers(text: string, chars: Character[], rows: GroupMsg[]): Chara
 }
 
 /** They said something: it's saved, then each character who answers replies in turn, seeing the others' replies. */
-export async function sendToGroup(caller: Caller, g: Group, text: string, timeZone: unknown, personName: string): Promise<{ replies: GroupMsg[]; banter: boolean }> {
+export async function sendToGroup(caller: Caller, g: Group, text: string, timeZone: unknown, personName: string): Promise<{ replies: GroupMsg[]; banter: boolean; mine: { id: string; their_reactions: Record<string, string> } }> {
   const clean = scrub(text).trim().slice(0, 4000);
   if (!clean) throw new GroupError("Say something first.");
   const chars = await members(g);
   if (chars.length < 2) throw new GroupError("This group needs at least 2 characters.");
-  await sql()`insert into chat_group_messages (group_id, user_id, content) values (${g.id}, ${caller.userId}, ${clean})`;
+  const [mineRow] = await sql()`insert into chat_group_messages (group_id, user_id, content) values (${g.id}, ${caller.userId}, ${clean}) returning id`;
   // They spoke: any back-and-forth between the characters stops right here.
   await sql()`update chat_groups set updated_at = now(), banter_left = 0, since_banter = since_banter + 1 where id = ${g.id}`;
   const names = new Map(chars.map(c => [c.id, c.name]));
@@ -99,6 +116,8 @@ export async function sendToGroup(caller: Caller, g: Group, text: string, timeZo
   for (const c of pickSpeakers(clean, chars, seen(rows))) {
     const r = await askVelo(caller, { mode: "chat", messages: turnsFor(c.id, rows, names, personName), timeZone, name: personName, character: c, group: { others: chars.filter(x => x.id !== c.id).map(x => x.name), scene: g.scene_title ? { title: g.scene_title, details: g.scene_details || "" } : null } });
     const reply = scrub(r.reply.replace(/^\s*\[[^\]]{1,40}\]:\s*/, "")).trim().slice(0, 4000);
+    // 😮 Her reaction to their message: a little badge on it.
+    if (r.react) await sql()`update chat_group_messages set their_reactions = their_reactions || ${JSON.stringify({ [c.id]: r.react })}::jsonb where id = ${mineRow.id}`;
     if (!reply) continue;
     const [m] = await sql()`insert into chat_group_messages (group_id, user_id, speaker_id, content) values (${g.id}, ${caller.userId}, ${c.id}, ${reply}) returning id, speaker_id, content, created_at`;
     out.push(m as GroupMsg);
@@ -108,7 +127,8 @@ export async function sendToGroup(caller: Caller, g: Group, text: string, timeZo
   // 💬 Every 5–10 of their messages, the characters talk among themselves for a few lines.
   const [due] = await sql()`update chat_groups set banter_left = ${2 + Math.floor(Math.random() * 3)}, since_banter = 0, banter_at = ${5 + Math.floor(Math.random() * 6)}
     where id = ${g.id} and user_id = ${caller.userId} and since_banter >= banter_at returning banter_left`;
-  return { replies: out, banter: !!due };
+  const [mine] = await sql()`select their_reactions from chat_group_messages where id = ${mineRow.id}`;
+  return { replies: out, banter: !!due, mine: { id: String(mineRow.id), their_reactions: mine?.their_reactions || {} } };
 }
 
 /** 💬 The next line when the characters are talking among themselves (until it runs out, or the person speaks up). */

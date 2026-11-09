@@ -8,10 +8,10 @@ import { timeZone } from "./lib/tz";
 import { confirmAsk } from "./lib/dialog";
 import { CharacterFace, type Character } from "./characters";
 import { SceneSheet } from "./chat";
-import { MediaView, type Media } from "./media";
+import { MediaView, ReactionBar, type Media } from "./media";
 
 export type Group = { id: string; title: string; member_ids: string[]; updated_at: string; scene_title?: string | null; scene_details?: string | null };
-type Msg = { id: string; speaker_id: string | null; content: string; created_at: string; pending?: boolean; peek?: boolean; media?: Media | null };
+type Msg = { id: string; speaker_id: string | null; content: string; created_at: string; pending?: boolean; peek?: boolean; media?: Media | null; reaction?: string | null; their_reactions?: Record<string, string> };
 const PEEK = /^\s*\*?\s*pe(e|a)k\s*\*?\s*[.!]?\s*$/i;
 
 /** Up to three faces, overlapping, for a group's chip. */
@@ -79,8 +79,8 @@ export function GroupChat({ group: initial, chars, name, onDeleted }: { group: G
     const mine: Msg = { id: `tmp-${Date.now()}`, speaker_id: null, content: t, created_at: new Date().toISOString(), pending: true };
     setMsgs(m => [...(m || []), mine]); setText(""); setBusy(true); setErr("");
     try {
-      const r = await api<{ replies: Msg[]; banter?: boolean }>("/api/groups", { action: "send", id: group.id, text: t, timeZone: timeZone(), name });
-      setMsgs(m => [...(m || []).map(x => (x === mine ? { ...x, pending: false } : x)), ...r.replies]);
+      const r = await api<{ replies: Msg[]; banter?: boolean; mine?: { id: string; their_reactions: Record<string, string> } }>("/api/groups", { action: "send", id: group.id, text: t, timeZone: timeZone(), name });
+      setMsgs(m => [...(m || []).map(x => (x === mine ? { ...x, pending: false, ...(r.mine ? { id: r.mine.id, their_reactions: r.mine.their_reactions } : {}) } : x)), ...r.replies]);
       unsaved.current++;
       if (r.banter) banter();
     } catch (e) { setErr(e instanceof Error ? e.message : "No one answered."); }
@@ -94,6 +94,15 @@ export function GroupChat({ group: initial, chars, name, onDeleted }: { group: G
     if (!(await confirmAsk(`End the scene "${group.scene_title}"? It'll become a memory you all share.`, { yes: "End scene" }))) return;
     try { const r = await api<{ marker: Msg | null }>("/api/groups", { action: "scene.end", id: group.id }); setGroup(g => ({ ...g, scene_title: null, scene_details: null })); if (r.marker) setMsgs(m => [...(m || []), r.marker!]); unsaved.current++; }
     catch (e) { setErr(e instanceof Error ? e.message : "Couldn't end it."); }
+  };
+  // 😮 Tap one of their messages to react (tap the same reaction again to take it back).
+  const [picking, setPicking] = useState<string | null>(null);
+  const react = async (id: string, emoji: string) => {
+    const cur = (msgs || []).find(x => x.id === id);
+    const next = cur?.reaction === emoji ? null : emoji;
+    const set = (r: string | null) => setMsgs(list => (list || []).map(x => (x.id === id ? { ...x, reaction: r } : x)));
+    set(next); setPicking(null);
+    try { await api("/api/groups", { action: "react", id: group.id, msgId: id, reaction: next }); unsaved.current++; } catch { set(cur?.reaction || null); }
   };
   const remove = async () => {
     if (!(await confirmAsk(`Delete the group "${group.title}"? Are you sure? The group's messages are deleted (what each of them remembers stays).`))) return;
@@ -129,14 +138,29 @@ export function GroupChat({ group: initial, chars, name, onDeleted }: { group: G
           if (m.peek) return <div key={m.id} className="muted" style={{ alignSelf: "flex-end", fontSize: 12, padding: "4px 10px", borderRadius: 999, border: "1px dashed var(--border)" }}>👀 you peeked</div>;
           if (!m.speaker_id && m.content.startsWith("🎬")) return <div key={m.id} data-testid="group-scene-note" className="muted" style={{ alignSelf: "center", maxWidth: "90%", textAlign: "center", fontSize: 12, padding: "6px 12px", borderRadius: 999, background: "var(--surface2)", border: "1px solid var(--border)" }}>{m.content}</div>;
           if (!m.speaker_id) return (
-            <div key={m.id} style={{ alignSelf: "flex-end", maxWidth: "80%", padding: "10px 14px", borderRadius: 18, background: "linear-gradient(135deg, var(--accent), var(--accent2))", whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 15, opacity: m.pending ? 0.75 : 1 }}>{m.content}</div>
+            <div key={m.id} style={{ alignSelf: "flex-end", maxWidth: "80%", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+              <div style={{ padding: "10px 14px", borderRadius: 18, background: "linear-gradient(135deg, var(--accent), var(--accent2))", whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 15, opacity: m.pending ? 0.75 : 1 }}>{m.content}</div>
+              {Object.keys(m.their_reactions || {}).length > 0 && (
+                <div data-testid="group-their-reactions" style={{ display: "flex", gap: 4 }}>
+                  {Object.entries(m.their_reactions || {}).map(([id, e]) => (
+                    <span key={id} title={`${byId.get(id)?.name || "Someone"} reacted`} style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 13, padding: "2px 6px", borderRadius: 999, background: "var(--surface)", border: "1px solid var(--border)" }}>
+                      {e}{byId.get(id) && <CharacterFace c={byId.get(id)!} size={14} />}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
           );
           return (
             <div key={m.id} data-testid="group-reply" className="row" style={{ alignItems: "flex-end", gap: 8, maxWidth: "85%" }}>
               {c ? <CharacterFace c={c} size={28} /> : <span style={{ width: 28 }} />}
               <div>
                 <div className="muted" style={{ fontSize: 11, fontWeight: 700, margin: "0 0 2px 6px" }}>{c?.name || "Someone"}</div>
-                <div style={{ padding: "10px 14px", borderRadius: 18, background: "var(--surface2)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 15, lineHeight: 1.45 }}>{m.content}</div>
+                <div onClick={() => setPicking(p => (p === m.id ? null : m.id))} style={{ position: "relative", cursor: "pointer", padding: "10px 14px", borderRadius: 18, background: "var(--surface2)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 15, lineHeight: 1.45 }}>
+                  {m.content}
+                  {m.reaction && <span data-testid="group-reaction" style={{ position: "absolute", bottom: -12, right: -6, fontSize: 15, lineHeight: 1, padding: "3px 5px", borderRadius: 999, background: "var(--surface)", border: "1px solid var(--border)" }}>{m.reaction}</span>}
+                </div>
+                {picking === m.id && <ReactionBar value={m.reaction} onPick={r => react(m.id, r)} />}
               </div>
             </div>
           );

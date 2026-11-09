@@ -86,8 +86,9 @@ const MENTIONS_MEDIA = /\b(phone|pics?|pictures?|photos?|selfies?|videos?|vids?|
 export interface AskResult { reply: string; changed: boolean; drafts: Draft[]; media: Media[]; saved?: boolean; react?: string }
 
 // 😮 Reactions (shown as a little badge on their message, like a text-message tapback).
-export const REACTIONS = ["❤️", "🔥", "🙌", "😍", "👍", "😮", "😂"];
-const REACT_HINT = `REACTIONS: they can react to your messages with ❤️ 🔥 🙌 😍 👍 😮 😂 — notes like "(they reacted 🔥 to this)" tell you when they did. You can react to THEIR latest message (or the photo they sent) too, but only now and then — mostly when you really like or love it, or it surprises you: start your reply with [react:❤️] (one of ❤️ 🔥 🙌 😍 👍 😮 😂). It shows as a badge on their message; don't mention it. Most replies have no reaction.`;
+import { REACTIONS as REACTION_LIST } from "./reactions";
+export const REACTIONS: string[] = [...REACTION_LIST];
+const REACT_HINT = `REACTIONS: they can react to your messages with ${REACTIONS.join(" ")} — notes like "(they reacted 🔥 to this)" tell you when they did. You can react to THEIR latest message (or the photo they sent) too, but only now and then — mostly when you really like or love it, or it surprises you: start your reply with [react:❤️] (one of ${REACTIONS.join(" ")}). 😏 is teasing or flirty, 😅 is awkward, and 🥵 / 🤤 only when romance is part of it (PG-13). It shows as a badge on their message; don't mention it. Most replies have no reaction.`;
 // "Sending you a pic", "here's a selfie", "snapping one now 📸" — and a refusal to tell them apart.
 const CLAIMS_MEDIA = /\b(send(ing)?|sent|here'?s|here you go|snapp(ing|ed)|taking|took|coming (your way|right up)|on (its|it's) way)\b[\s\S]{0,50}\b(pics?|pictures?|photos?|selfies?|videos?|vids?|clips?|snaps?|shots?)\b|📸|🤳/i;
 const STRONG_CLAIM = /\b(sending|sent|snapping|snapped|taking one|took one|coming (your way|right up))\b|📸|🤳/i;
@@ -184,7 +185,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         ch && mode !== "remember" && mode !== "memo" && !opts.promise ? await promisesNote(caller.userId, ch.id, today.tz).catch(() => "") : "",
         opts.promise ? `WHAT YOU PROMISED: ${opts.promise}` : "",
         ch ? "SCENES: lines starting with 🎬 are dates or outings you two did together (played out, or that they told you happened). Treat them as real shared memories — bring them up, tease about them, look back on them." : "",
-        mode === "chat" && !group ? REACT_HINT : "",
+        mode === "chat" ? REACT_HINT : "",
         photoMoment ? PHOTO_MOMENT : "",
         group && ch ? groupNote(ch.name, name, group.others, mode === "memo", group.scene || null, !!ch.romantic && !!u?.adult_confirmed_at, !!group.banter) : "",
         arc && (mode === "remember" || mode === "memo") ? FEELINGS_REMEMBER : "",
