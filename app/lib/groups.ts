@@ -8,11 +8,10 @@ import { getCharacter, referenceUrls, type Character } from "./characters";
 import { friendsOf, writeStory } from "./friends";
 import { scrub } from "./secrets";
 import type { Caller } from "./caller";
-import Anthropic from "@anthropic-ai/sdk";
 import { startMedia, type Media } from "./media";
 import { allowsSuggestive } from "./traits";
+import { writeText } from "./llm";
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, authToken: null });
 
 export type Group = { id: string; title: string; member_ids: string[]; updated_at: string; scene_title: string | null; scene_details: string | null };
 export type GroupMsg = { id: string; speaker_id: string | null; content: string; created_at: string; peek?: boolean; media?: Media | null };
@@ -167,14 +166,10 @@ export async function draftGroupPeek(userId: string, g: Group, ids: string[], ad
   const transcript = rows.filter((r, i) => !r.peek || i === lastIdx).map(r => (r.peek ? "— (your last peek was here) —" : `${r.speaker_id ? names.get(r.speaker_id) || "Someone" : personName || "Them"}: ${r.content}`)).join("\n");
   const who = chars.map(c => c.name).join(" and ");
   const romantic = chars.every(c => romanticFor(c, adult));
-  const res = await client.messages.create({
-    model: process.env.VELO_MODEL!, max_tokens: 350,
-    system: `You write the description for ONE photo for an image generator. The person is out with a group (the scene below) and is quietly looking at ${who} right now — the photo is exactly what they see: they are behind the camera and NOT in the picture. Show ONLY ${who}${chars.length < all.length ? ` (not ${all.filter(c => !chars.some(x => x.id === c.id)).map(c => c.name).join(" or ")})` : ""}. Describe the place (time of day, lighting), what each of them is wearing, what each is doing, their poses and expressions — candid and unaware, or glancing at the camera.
+  const raw = await writeText(chars[0].brain, `You write the description for ONE photo for an image generator. The person is out with a group (the scene below) and is quietly looking at ${who} right now — the photo is exactly what they see: they are behind the camera and NOT in the picture. Show ONLY ${who}${chars.length < all.length ? ` (not ${all.filter(c => !chars.some(x => x.id === c.id)).map(c => c.name).join(" or ")})` : ""}. Describe the place (time of day, lighting), what each of them is wearing, what each is doing, their poses and expressions — candid and unaware, or glancing at the camera.
 OUTFIT CONTINUITY: each of them wears ONE outfit for the whole scene. ${lastPeek ? "Start from what they wore in THE LAST PEEK" : "Start from the outfits in the scene's details or what they said they're wearing (else what fits the outing and their usual style)"}, then apply only the changes that actually happened, in order (a jacket taken off stays off until it's put back on, and so on). Keep every other detail identical. The same goes for the place.
-${romantic ? "PG-13 at most: flattering and flirty is fine, never nudity, underwear or anything sexual." : "Family-friendly, fully clothed."} Two or three sentences, under 380 characters, no names of real people, output only the description.`,
-    messages: [{ role: "user", content: `SCENE: ${g.scene_title}${g.scene_details ? ` — ${g.scene_details}` : ""}\n${chars.map(c => `${c.name.toUpperCase()}'S LOOK: ${c.appearance || "(see reference pictures)"}${c.casual_wear ? `; usual style: ${c.casual_wear}` : ""}`).join("\n")}${lastPeek ? `\nTHE LAST PEEK: ${lastPeek}` : ""}\n\nTHE SCENE SO FAR:\n${(transcript.length > 12000 ? "…" + transcript.slice(-12000) : transcript) || "(it just started)"}` }],
-  });
-  const text = res.content.map(b => (b.type === "text" ? b.text : "")).join(" ").replace(/\s+/g, " ").trim();
+${romantic ? "PG-13 at most: flattering and flirty is fine, never nudity, underwear or anything sexual." : "Family-friendly, fully clothed."} Two or three sentences, under 380 characters, no names of real people, output only the description.`, `SCENE: ${g.scene_title}${g.scene_details ? ` — ${g.scene_details}` : ""}\n${chars.map(c => `${c.name.toUpperCase()}'S LOOK: ${c.appearance || "(see reference pictures)"}${c.casual_wear ? `; usual style: ${c.casual_wear}` : ""}`).join("\n")}${lastPeek ? `\nTHE LAST PEEK: ${lastPeek}` : ""}\n\nTHE SCENE SO FAR:\n${(transcript.length > 12000 ? "…" + transcript.slice(-12000) : transcript) || "(it just started)"}`, 350);
+  const text = raw.replace(/\s+/g, " ").trim();
   return text.slice(0, 400) || `${who} during ${g.scene_title}, candid, natural light`;
 }
 export async function groupPeekAt(userId: string, g: Group, ids: string[], adult: boolean, description: string): Promise<GroupMsg[]> {

@@ -15,11 +15,11 @@ export const toOaTools = (tools: Anthropic.Tool[]) =>
 
 export class ProviderError extends Error {}
 
-export async function oaChat(p: OpenAiProvider, messages: OaMessage[], tools: ReturnType<typeof toOaTools>, maxTokens: number): Promise<{ content: string; toolCalls: OaToolCall[] }> {
+export async function oaChat(p: OpenAiProvider, messages: OaMessage[], tools: ReturnType<typeof toOaTools>, maxTokens: number, mustUse?: string): Promise<{ content: string; toolCalls: OaToolCall[] }> {
   const res = await fetch(`${p.baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${p.key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: p.model, messages, max_tokens: maxTokens, ...(tools.length ? { tools, tool_choice: "auto" } : {}), ...(p.extra || {}) }),
+    body: JSON.stringify({ model: p.model, messages, max_tokens: maxTokens, ...(tools.length ? { tools, tool_choice: mustUse ? { type: "function", function: { name: mustUse } } : "auto" } : {}), ...(p.extra || {}) }),
     signal: AbortSignal.timeout(60_000),
   });
   const data = await res.json().catch(() => ({}));

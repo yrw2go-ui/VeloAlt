@@ -111,6 +111,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   // 🎭 Their characters: a chip row above the chat; the open chat is Velo (null) or one character.
   const [chars, setChars] = useState<Character[]>([]);
   const [portraits, setPortraits] = useState(false);
+  const [brains, setBrains] = useState<string[]>([]);
   const [admin, setAdmin] = useState(false);
   // A tapped notification opens that chat (?chat=<character id>, or "velo").
   const [withId, setWithId] = useState<string | null>(() => { const c = urlParam("chat"); return c ? (c !== "velo" ? c : null) : place.withId || null; });
@@ -118,8 +119,8 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   const [gallery, setGallery] = useState(false);
   const [chatTick, setChatTick] = useState(0);
   useEffect(() => {
-    api<{ characters: Character[]; portraits: boolean; admin: boolean }>("/api/characters", { action: "list" })
-      .then(r => { setChars(r.characters); setPortraits(r.portraits); setAdmin(r.admin); }).catch(() => {});
+    api<{ characters: Character[]; portraits: boolean; admin: boolean; brains?: string[] }>("/api/characters", { action: "list" })
+      .then(r => { setChars(r.characters); setPortraits(r.portraits); setAdmin(r.admin); setBrains(r.brains || []); }).catch(() => {});
   }, [userId]);
   const withChar = chars.find(c => c.id === withId) || null;
   // 👥 Group chats (you and 2–6 characters).
@@ -323,7 +324,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       {calling && <CallMedia items={callMedia} name={callWith?.name || "Velo"} />}
       {gallery && <Gallery key={withChar?.id || "velo"} characterId={withChar?.id || null} name={withChar?.name || "Velo"} onClose={() => setGallery(false)} />}
       {editing && (
-        <CharacterEditor key={editing === "new" ? "new" : editing.id} initial={editing === "new" ? null : editing} portraits={portraits}
+        <CharacterEditor key={editing === "new" ? "new" : editing.id} initial={editing === "new" ? null : editing} portraits={portraits} brains={brains}
           onClose={() => setEditing(null)} onSaved={savedChar}
           onDeleted={id => { setChars(cs => cs.filter(c => c.id !== id)); setWithId(null); setEditing(null); }} />
       )}

@@ -28,3 +28,17 @@ export function provider(m: ChatModel): OpenAiProvider | null {
 
 /** The choices this server can offer (Claude always). */
 export const availableModels = (): ChatModel[] => CHAT_MODELS.filter(m => m === "claude" || !!provider(m));
+
+// 🧠 A character's own brain: Qwen or DeepSeek through Atlas Cloud (OpenAI-compatible), for everything
+// she does. Uses the Atlas key the photos already use; model ids come from ATLASCLOUD_QWEN_MODEL /
+// ATLASCLOUD_DEEPSEEK_MODEL (base URL ATLASCLOUD_LLM_URL, default Atlas's /v1).
+export type Brain = "qwen" | "deepseek";
+export const BRAINS: Brain[] = ["qwen", "deepseek"];
+export function atlasBrain(b: unknown): OpenAiProvider | null {
+  const key = process.env.ATLASCLOUD_API_KEY;
+  const model = b === "qwen" ? process.env.ATLASCLOUD_QWEN_MODEL : b === "deepseek" ? process.env.ATLASCLOUD_DEEPSEEK_MODEL : "";
+  if (!key || !model) return null;
+  return { baseUrl: process.env.ATLASCLOUD_LLM_URL || "https://api.atlascloud.ai/v1", key, model };
+}
+/** Which brains this server can give a character (set up in the environment). */
+export const availableBrains = (): Brain[] => BRAINS.filter(b => !!atlasBrain(b));

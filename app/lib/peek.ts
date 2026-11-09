@@ -2,14 +2,13 @@
 // for the outing, what she's doing right now — as if they were standing there looking. She never
 // knows: no reply, and the peek and its picture are left out of everything she reads.
 // Two steps: the description is shown first so they can fix it, then exactly that is made.
-import Anthropic from "@anthropic-ai/sdk";
 import { sql } from "./db";
 import { type Character, referenceUrls, type Scene } from "./characters";
 import { startMedia, type Media } from "./media";
 import { allowsSuggestive, mediaMood } from "./traits";
 import { scrub } from "./secrets";
+import { writeText } from "./llm";
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, authToken: null });
 export const PEEK = /^\s*\*?\s*pe(e|a)k\s*\*?\s*[.!]?\s*$/i;
 
 /** What the camera would see right now, written from the whole scene so far. Her outfit stays the
@@ -17,15 +16,10 @@ export const PEEK = /^\s*\*?\s*pe(e|a)k\s*\*?\s*[.!]?\s*$/i;
 async function describeMoment(ch: Character, scene: Scene, lines: { role: string; content: string; peek?: boolean }[], romantic: boolean, lastPeek: string): Promise<string> {
   const all = lines.map(l => (l.peek ? "— (your last peek was here) —" : `${l.role === "assistant" ? ch.name : "Them"}: ${l.content}`)).join("\n");
   const transcript = all.length > 12000 ? "…" + all.slice(-12000) : all;
-  const res = await client.messages.create({
-    model: process.env.VELO_MODEL!,
-    max_tokens: 300,
-    system: `You write the description for ONE photo for an image generator. ${ch.name} and the person are out together (the scene below). The person is quietly looking at her right now — the photo is exactly what they see from where they are: they are behind the camera and NOT in the picture. Describe ${ch.name} in this exact moment: where they are (the place, time of day, lighting), what she is wearing, what she is doing, her pose and expression — either candid and unaware, or glancing at them.
+  const raw = await writeText(ch.brain, `You write the description for ONE photo for an image generator. ${ch.name} and the person are out together (the scene below). The person is quietly looking at her right now — the photo is exactly what they see from where they are: they are behind the camera and NOT in the picture. Describe ${ch.name} in this exact moment: where they are (the place, time of day, lighting), what she is wearing, what she is doing, her pose and expression — either candid and unaware, or glancing at them.
 OUTFIT CONTINUITY: she wears ONE outfit for the whole scene. ${lastPeek ? "Start from exactly what she wore in THE LAST PEEK" : `Start from the outfit in the scene's details or what she said she's wearing (else what fits the outing and her usual style${ch.casual_wear ? `: ${ch.casual_wear}` : ""})`}, then apply only the changes that actually happened in the scene, in order${lastPeek ? " (especially after the last peek)" : ""}: took off a jacket → no jacket from then on, until she puts it back on; same for shoes, a hat, glasses, hair up or down, a spill, getting wet. Keep every other detail identical — the same colors, items and accessories. Nothing changes just because time passed. The same goes for the place: stay where the scene says they are now.
-${romantic ? "PG-13 at most: flattering and flirty is fine, never nudity, underwear or anything sexual." : "Family-friendly, fully clothed."} One or two sentences, under 300 characters, no names of real people, output only the description.`,
-    messages: [{ role: "user", content: `SCENE: ${scene.title}${scene.details ? ` — ${scene.details}` : ""}\nHER LOOK: ${ch.appearance || "(see reference pictures)"}${lastPeek ? `\nTHE LAST PEEK: ${lastPeek}` : ""}\n\nTHE SCENE SO FAR:\n${transcript || "(it just started)"}` }],
-  });
-  const text = res.content.map(b => (b.type === "text" ? b.text : "")).join(" ").replace(/\s+/g, " ").trim();
+${romantic ? "PG-13 at most: flattering and flirty is fine, never nudity, underwear or anything sexual." : "Family-friendly, fully clothed."} One or two sentences, under 300 characters, no names of real people, output only the description.`, `SCENE: ${scene.title}${scene.details ? ` — ${scene.details}` : ""}\nHER LOOK: ${ch.appearance || "(see reference pictures)"}${lastPeek ? `\nTHE LAST PEEK: ${lastPeek}` : ""}\n\nTHE SCENE SO FAR:\n${transcript || "(it just started)"}`, 300);
+  const text = raw.replace(/\s+/g, " ").trim();
   return text.slice(0, 380) || `${ch.name} during ${scene.title}, candid, natural light`;
 }
 

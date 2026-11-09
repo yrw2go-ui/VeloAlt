@@ -4,11 +4,10 @@
 // personality) and can talk about her. What stays private: how close each one is with the person.
 // They only know the person and their friend are friends — unless the person tells them more
 // themselves (then it's in that character's own chat and memory). Family ties are known.
-import Anthropic from "@anthropic-ai/sdk";
+import { writeText } from "./llm";
 import { sql } from "./db";
 import type { Character } from "./characters";
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, authToken: null });
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const first = (s: string, n = 200) => (String(s || "").split(/(?<=[.!?])\s/)[0] || "").slice(0, n);
 export const FAMILY = /\b(sister|brother|sibling|twin|mom|mum|mother|dad|father|parent|daughter|son|cousin|aunt|auntie|uncle|niece|nephew|grand\w*|step\w*|half[- ]?(sister|brother)|\w+-in-law|family|related)\b/i;
@@ -112,13 +111,8 @@ WHAT YOU DON'T KNOW: beyond friendship (and any family tie above), you do NOT kn
 /** A short "how they know each other", written when a link is made without one (no mention of the person). */
 export async function writeStory(a: Character, b: Character, kind: string): Promise<string> {
   try {
-    const res = await client.messages.create({
-      model: process.env.VELO_MODEL!,
-      max_tokens: 160,
-      system: "Write one or two short sentences (under 280 characters) about how these two characters know each other and what they like doing together, as their shared history. Use 'they'. Don't mention any user, romance with anyone, or real people. Output only the sentences.",
-      messages: [{ role: "user", content: `RELATIONSHIP: ${kind}\nA: ${a.name} — ${first(a.personality)} Job: ${a.job || "?"}. Hobbies: ${a.hobbies || "?"}\nB: ${b.name} — ${first(b.personality)} Job: ${b.job || "?"}. Hobbies: ${b.hobbies || "?"}` }],
-    });
-    return res.content.map(x => (x.type === "text" ? x.text : "")).join(" ").replace(/\s+/g, " ").trim().slice(0, 600);
+    const raw = await writeText(a.brain, "Write one or two short sentences (under 280 characters) about how these two characters know each other and what they like doing together, as their shared history. Use 'they'. Don't mention any user, romance with anyone, or real people. Output only the sentences.", `RELATIONSHIP: ${kind}\nA: ${a.name} — ${first(a.personality)} Job: ${a.job || "?"}. Hobbies: ${a.hobbies || "?"}\nB: ${b.name} — ${first(b.personality)} Job: ${b.job || "?"}. Hobbies: ${b.hobbies || "?"}`, 160);
+    return raw.replace(/\s+/g, " ").trim().slice(0, 600);
   } catch (e) {
     console.error("friends: story", e instanceof Error ? e.message : e);
     return "";

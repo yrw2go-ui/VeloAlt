@@ -13,7 +13,7 @@ import { GroupFaces, type Group } from "./groups";
 
 type VoiceOption = { id: string; name: string; kind: "female" | "male"; about: string; preview: string; owner?: string };
 
-export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; portrait_url: string | null; portrait_job: string | null };
+export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; brain?: string; portrait_url: string | null; portrait_job: string | null };
 
 /** A character's picture in a circle (their initial until a portrait exists). */
 export function CharacterFace({ c, size }: { c: Pick<Character, "name" | "portrait_url">; size: number }) {
@@ -57,8 +57,8 @@ export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdi
 }
 
 /** Create or edit a character, and generate their portrait. */
-export function CharacterEditor({ initial, portraits, onClose, onSaved, onDeleted }: {
-  initial: Character | null; portraits: boolean; onClose: () => void; onSaved: (c: Character) => void; onDeleted: (id: string) => void;
+export function CharacterEditor({ initial, portraits, brains = [], onClose, onSaved, onDeleted }: {
+  initial: Character | null; portraits: boolean; brains?: string[]; onClose: () => void; onSaved: (c: Character) => void; onDeleted: (id: string) => void;
 }) {
   const [c, setC] = useState<Character | null>(initial);
   const [name, setName] = useState(initial?.name || "");
@@ -76,6 +76,7 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
   const [preset, setPreset] = useState(initial?.preset || "");
   const [zone, setZone] = useState(initial?.time_zone || "");
   const [bday, setBday] = useState(initial?.birthday || "");
+  const [brain, setBrain] = useState(initial?.brain || "");
   // 🎚️ A preset sets the sliders (and the personality, if it's empty or still another preset's text).
   const applyPreset = (id: string) => {
     setPreset(id);
@@ -91,7 +92,7 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const working = !!c?.portrait_job;
-  const dirty = !c || name !== c.name || personality !== c.personality || backstory !== c.backstory || relation !== c.relation || appearance !== c.appearance || job !== (c.job || "") || wear !== (c.casual_wear || "") || hobbies !== (c.hobbies || "") || voice.id !== c.voice || JSON.stringify(traits) !== JSON.stringify(cleanTraits(c.traits && Object.keys(c.traits).length ? c.traits : DEFAULT_TRAITS)) || preset !== (c.preset || "") || zone !== (c.time_zone || "") || bday !== (c.birthday || "") || romantic !== !!c.romantic || (romantic ? arc : "") !== (c.romance_arc || "") || refIds.join() !== (c.reference_ids || []).join();
+  const dirty = !c || name !== c.name || personality !== c.personality || backstory !== c.backstory || relation !== c.relation || appearance !== c.appearance || job !== (c.job || "") || wear !== (c.casual_wear || "") || hobbies !== (c.hobbies || "") || voice.id !== c.voice || JSON.stringify(traits) !== JSON.stringify(cleanTraits(c.traits && Object.keys(c.traits).length ? c.traits : DEFAULT_TRAITS)) || preset !== (c.preset || "") || zone !== (c.time_zone || "") || bday !== (c.birthday || "") || romantic !== !!c.romantic || (romantic ? arc : "") !== (c.romance_arc || "") || refIds.join() !== (c.reference_ids || []).join() || brain !== (c.brain || "");
 
   // A portrait in progress: check back every few seconds until it's ready.
   useEffect(() => {
@@ -108,7 +109,7 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
   const save = async () => {
     setBusy(true); setMsg("");
     try {
-      const fields = { name, personality, backstory, relation, appearance, job, casualWear: wear, hobbies, voice: { id: voice.id, name: voice.name, kind: voice.kind, owner: voice.owner }, romantic, romanceArc: romantic ? arc : "", traits, preset, timeZone: zone, birthday: bday };
+      const fields = { name, personality, backstory, relation, appearance, job, casualWear: wear, hobbies, voice: { id: voice.id, name: voice.name, kind: voice.kind, owner: voice.owner }, romantic, romanceArc: romantic ? arc : "", traits, preset, timeZone: zone, birthday: bday, brain };
       const r = await api<{ character: Character }>("/api/characters", { action: c ? "update" : "create", id: c?.id, ...fields, referenceIds: refIds });
       // 🖼️ Pictures picked while making a new character: upload them now (first one as headshot), as references.
       if (!c && pending.files.length && pending.fictional) {
@@ -192,6 +193,7 @@ export function CharacterEditor({ initial, portraits, onClose, onSaved, onDelete
           </label>
           <span className="muted" style={{ fontSize: 12 }}>They&apos;ll talk about their work and hobbies, and usually wear their casual style in everyday photos.</span>
         </div>
+        <BrainPick value={brain} onChange={setBrain} available={brains} />
         {c && <FriendsCard id={c.id} />}
         <TraitSliders value={traits} romantic={romantic} onChange={(k, v) => { setTraits(t => ({ ...t, [k]: v })); }} />
         <label style={{ fontSize: 13, fontWeight: 700 }}>Where they live (time zone)
@@ -560,6 +562,29 @@ export function LinkBackForm({ id, other, who, onLinked, onCancel, cancelLabel =
         <button className="ghost" onClick={write} disabled={busy} data-testid="link-back-rewrite">✍️ Rewrite it</button>
         <button className="ghost" onClick={onCancel} data-testid="link-back-cancel">{cancelLabel}</button>
       </div>
+    </div>
+  );
+}
+
+/** 🧠 Her own brain: Qwen or DeepSeek through Atlas Cloud handles everything for her (check one, or neither). */
+function BrainPick({ value, onChange, available }: { value: string; onChange: (v: string) => void; available: string[] }) {
+  const opts = [{ id: "qwen", label: "Qwen" }, { id: "deepseek", label: "DeepSeek" }];
+  return (
+    <div data-testid="brain-pick" style={{ display: "grid", gap: 6, border: "1px solid var(--border)", borderRadius: 12, padding: 12 }}>
+      <b style={{ fontSize: 13 }}>🧠 Her brain</b>
+      <span className="muted" style={{ fontSize: 12 }}>Check one to have it handle everything for her through Atlas Cloud: chats, texts, calls, check-ins, her memories and peek descriptions. Leave both unchecked to use the brain picked in Settings.</span>
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+        {opts.map(o => {
+          const ready = available.includes(o.id);
+          return (
+            <label key={o.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14, fontWeight: 600, opacity: ready || value === o.id ? 1 : 0.5 }}>
+              <input type="checkbox" checked={value === o.id} disabled={!ready && value !== o.id} onChange={e => onChange(e.target.checked ? o.id : "")} data-testid={`brain-${o.id}`} style={{ width: 18, height: 18 }} />
+              {o.label} <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}>via Atlas Cloud</span>
+            </label>
+          );
+        })}
+      </div>
+      {opts.some(o => !available.includes(o.id)) && <span className="muted" style={{ fontSize: 11 }}>Greyed out = not set up yet: add {opts.filter(o => !available.includes(o.id)).map(o => `ATLASCLOUD_${o.id.toUpperCase()}_MODEL`).join(" / ")} (the Atlas model id) in Vercel.</span>}
     </div>
   );
 }

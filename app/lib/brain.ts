@@ -25,7 +25,7 @@ import { characterPrompt, feelingsFor, saveFeelings, trustFor, saveTrust, trustN
 import { aboutThem } from "./bio";
 import { mediaMood, allowsSuggestive } from "./traits";
 import { CHARACTER_ZONES } from "./states";
-import { provider, type ChatModel } from "./models";
+import { provider, atlasBrain, type ChatModel } from "./models";
 import { oaChat, toOaTools, ProviderError, type OaMessage } from "./openai";
 import { PLAN_TOOL, runPlanTool, plansNote } from "./plans";
 import { PROMISE_TOOL, runPromiseTool, promisesNote } from "./promises";
@@ -205,7 +205,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
     return all;
   }, []);
   // 📎 The newest message's attachment (chat only): Velo sees the photo or PDF, or reads the text file.
-  let attached = false;
+  let attached = false, attachedName = "";
   const lastTurn = opts.messages[opts.messages.length - 1];
   if (mode === "chat" && lastTurn?.role === "user" && lastTurn.fileId) {
     const f = await ownFile(caller.userId, String(lastTurn.fileId));
@@ -213,7 +213,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
     const last = messages[messages.length - 1];
     if (f && block && last?.role === "user") {
       last.content = [block, { type: "text", text: String(last.content) === "📎" ? `(They sent ${f.name} with no message.)` : String(last.content) }];
-      attached = true;
+      attached = true; attachedName = f.name;
       system.push({ type: "text", text: `${ch ? `They're showing you something (${f.name}). React to it the way ${ch.name} would — in character, like a friend looking at their photo.` : `They attached a file (${f.name}). Use it to help them.`} If it shows a password, PIN, code, card number or ID number, never read it out or repeat it — say you'll skip that part to keep them safe.` });
     }
   }
@@ -279,18 +279,24 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   // 🧠 Qwen / DeepSeek, when they picked one: the everyday conversation (chat, texts,
   // calls with them). Wrap-ups, memory and calls Velo makes for them stay on Claude.
   // If that provider fails, this message falls back to Claude.
+  // A character with her OWN brain (Qwen / DeepSeek through Atlas Cloud) uses it for everything:
+  // chats, texts, calls, check-ins and her memory notes (attachments become a short note).
   const chosen = (u?.chat_model || "claude") as ChatModel;
+  const herBrain = ch?.brain ? atlasBrain(ch.brain) : null;
   // Messages with an attachment go to Claude (Qwen and DeepSeek are set up for text only here).
-  const alt = chosen !== "claude" && !attached && (mode === "chat" || mode === "sms" || mode === "talk") ? provider(chosen) : null;
+  const alt = herBrain || (chosen !== "claude" && !attached && (mode === "chat" || mode === "sms" || mode === "talk") ? provider(chosen) : null);
+  const asText = (c: Anthropic.MessageParam["content"]) => typeof c === "string" ? c
+    : c.map(b => (b.type === "text" ? b.text : b.type === "image" || b.type === "document" ? `(They attached ${attachedName || "a file"} — you can't open it here, so ask them about it.)` : "")).filter(Boolean).join("\n");
+  const oaBase = (): OaMessage[] => [
+    { role: "system", content: system.map(b => b.text).join("\n\n") },
+    ...messages.map(m => ({ role: m.role, content: asText(m.content) }) as OaMessage),
+  ];
   let answered = false;
-  if (alt && tools) {
+  if (alt && (tools || herBrain)) {
     try {
-      const own = tools.filter((t): t is Anthropic.Tool => "input_schema" in t);
+      const own = (tools || []).filter((t): t is Anthropic.Tool => "input_schema" in t);
       const oaTools = toOaTools([...own, ...(search ? [WEB_SEARCH_TOOL] : [])]);
-      const oa: OaMessage[] = [
-        { role: "system", content: system.map(b => b.text).join("\n\n") },
-        ...messages.map(m => ({ role: m.role, content: String(m.content) }) as OaMessage),
-      ];
+      const oa: OaMessage[] = oaBase();
       for (let round = 0; round < 6; round++) {
         const r = await oaChat(alt, oa, oaTools, maxTokens);
         reply = r.content;
@@ -347,6 +353,14 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
     && CLAIMS_MEDIA.test(reply) && !REFUSES_MEDIA.test(reply)
     && (ASKED_FOR_MEDIA.test(String(lastSaid)) || (YES.test(String(lastSaid)) && MENTIONS_MEDIA.test(String(lastHers))) || STRONG_CLAIM.test(reply))) {
     try {
+      if (herBrain) {
+        // Her own brain sends it (made to call send_media).
+        const r = await oaChat(herBrain, [...oaBase(), { role: "assistant", content: reply }, { role: "user", content: "(Your photo/video didn't actually go out. Send it now with send_media — exactly what you just told them you're sending.)" }],
+          toOaTools([SEND_MEDIA_TOOL(ch?.name || "Velo", romantic)]), 600, "send_media");
+        const c = r.toolCalls[0];
+        if (c) { let input: Record<string, unknown> = {}; try { input = JSON.parse(c.function.arguments || "{}"); } catch { /* none */ } const out = await runTool("send_media", { ...input, they_asked: true }); if (out.isError) console.warn("velo: photo retry", out.content.slice(0, 200)); }
+        throw new HandledRetry();
+      }
       const forced = await client.messages.create({
         model: process.env.VELO_MODEL!, max_tokens: 600, system,
         tools: [SEND_MEDIA_TOOL(ch?.name || "Velo", romantic)], tool_choice: { type: "tool", name: "send_media" },
@@ -357,7 +371,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         const out = await runTool("send_media", { ...(call.input as Record<string, unknown>), they_asked: true });
         if (out.isError) console.warn("velo: photo retry", out.content.slice(0, 200));
       }
-    } catch (e) { console.error("velo: photo retry", e instanceof Error ? e.message : e); }
+    } catch (e) { if (!(e instanceof HandledRetry)) console.error("velo: photo retry", e instanceof Error ? e.message : e); }
   }
   // Where she found it: up to 3 links under a chat reply, 2 in a text, none spoken on a call.
   if (sources.size && reply && (mode === "chat" || mode === "sms")) {
@@ -419,6 +433,7 @@ async function searchWithClaude(query: string, tz: string, sources: Map<string, 
 }
 
 export class CharacterGone extends Error {}
+class HandledRetry extends Error {}
 
 /** Logs an Anthropic failure and turns it into a friendly message. */
 export function aiError(e: unknown): { error: string; status: number } {

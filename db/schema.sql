@@ -466,3 +466,5 @@ alter table chat_groups add column if not exists scene_title text check (scene_t
 alter table chat_groups add column if not exists scene_details text check (scene_details is null or char_length(scene_details) <= 1000);
 alter table chat_group_messages add column if not exists media_id uuid references velo_media(id) on delete set null;
 alter table chat_group_messages add column if not exists peek boolean not null default false;
+-- 🧠 A character's own brain: Qwen or DeepSeek through Atlas Cloud handles everything for her ('' = the person's choice in Settings).
+alter table chat_characters add column if not exists brain text not null default '' check (brain in ('', 'qwen', 'deepseek'));

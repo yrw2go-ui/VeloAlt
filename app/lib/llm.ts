@@ -1,0 +1,20 @@
+// ✍️ One-shot writing (peek descriptions, "how they met" stories): by the character's own brain
+// (Qwen / DeepSeek through Atlas Cloud) when she has one, else Claude. If her brain fails, Claude
+// writes it instead, so it still works.
+import Anthropic from "@anthropic-ai/sdk";
+import { atlasBrain } from "./models";
+import { oaChat } from "./openai";
+
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, authToken: null });
+
+export async function writeText(brain: unknown, system: string, user: string, maxTokens: number): Promise<string> {
+  const p = atlasBrain(brain);
+  if (p) {
+    try {
+      const r = await oaChat(p, [{ role: "system", content: system }, { role: "user", content: user }], [], maxTokens);
+      if (r.content) return r.content;
+    } catch (e) { console.error("llm: character brain failed, using Claude", e instanceof Error ? e.message : e); }
+  }
+  const res = await client.messages.create({ model: process.env.VELO_MODEL!, max_tokens: maxTokens, system, messages: [{ role: "user", content: user }] });
+  return res.content.map(b => (b.type === "text" ? b.text : "")).join(" ");
+}
