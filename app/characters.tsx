@@ -509,7 +509,7 @@ function FriendsCard({ id }: { id: string }) {
       ))}
       {knownBy.map(l => (
         <div key={l.id} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
-          <span className="muted" style={{ flex: 1 }}>{l.name} knows her ({l.kind}), but she doesn't know {l.name} yet.</span>
+          <span className="muted" style={{ flex: 1 }}>{l.name} knows her ({l.kind}), but she does not know {l.name} yet.</span>
           <button className="ghost" style={{ padding: "2px 10px" }} disabled={busy} onClick={() => add(l.id, l.kind)}>Link back</button>
         </div>
       ))}
