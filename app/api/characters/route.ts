@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     if (action === "list") return NextResponse.json({ characters: await listCharacters(), portraits: portraitsReady(), admin });
     if (action === "link.suggest") {
       const ch = admin ? await getCharacter(id) : null;
-      return NextResponse.json({ suggest: ch ? await linkSuggestions(ch, clean(b.text, 2000)).catch(() => []) : [] });
+      return NextResponse.json({ suggest: ch ? await linkSuggestions(ch, clean(b.text, 2000), me).catch(() => []) : [] });
     }
     if (!admin) return bad("Only an admin can create or change characters.", 403);
 

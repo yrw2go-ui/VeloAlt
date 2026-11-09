@@ -53,6 +53,16 @@ function replyLengthNote(mode: Mode, raw: unknown): string {
   return `REPLY LENGTH (their setting — this overrides any other length guidance): usually ${how}. Go longer only when they ask for more (a list, a plan, a story), or shorter when a quick answer is all it needs.`;
 }
 
+/** 👥 A group chat: who's there, and how to talk in it. */
+function groupNote(me: string, them: string, others: string[], wrapUp: boolean, scene: { title: string; details: string } | null = null, romance = false): string {
+  const person = them || "the person";
+  const all = [person, ...others].join(", ");
+  const love = romance ? `\nROMANCE IN THE GROUP: ${person} may be close with, flirt with or date more than one of you. React the way YOU would, from your personality, backstory, feelings and your romance arc: jealous, hurt, competitive, curious, or — only if who you are and your arc truly allow it — open to sharing ${person} in a polyamorous relationship (that's a slow, believable, mutual thing, never assumed). Whatever you feel, never be cruel, controlling or threatening. Any romance stays PG-13.` : "";
+  const sc = scene ? `\n🎬 YOU'RE ALL IN A SCENE TOGETHER RIGHT NOW (role-play ${person} set up): "${scene.title}"${scene.details ? ` — ${scene.details}` : ""}. Everyone in the group is there. Play it out as if it's really happening: present tense, your actions in *italics*, your words in plain text, small details of the place, react to what ${person} and the others do — never decide their actions for them. 1–4 sentences per turn. Keep it within PG-13. If someone steps out of the scene (brackets or "OOC"), answer normally, then go back in.` : "";
+  if (wrapUp) return `This was a GROUP CHAT with ${all}. Lines starting with [Name] are what that person said. Remember what matters to YOU: what ${person} shared, what happened, and what you learned about the others (save facts about ${person} as usual; what you learned about ${others.join(" or ")} goes in the summary).`;
+  return `GROUP CHAT: you're in a group text with ${all}. Lines starting with [Name]: are what that person said; your own earlier lines are yours. Reply ONLY as ${me}, with no name tag — never write lines for anyone else. Stay fully yourself: your personality, your feelings for ${person}, how well you know each of the others (see YOUR FRIENDS AND FAMILY). Keep it short like a group text (usually 1–2 sentences), react to what others just said, talk to them by name, joke, ask them things. Don't repeat what someone else already said. Private things you know only from your one-on-one chats with ${person} stay private unless ${person} brings them up here.${sc}${love}`;
+}
+
 const CHECKIN = `REACHING OUT FIRST: they haven't written in a while, and you're texting them first — like a friend (or more) would. Write ONE short text (1–2 sentences, under 160 characters). Make it personal and specific when you can: follow up on something from YOUR MEMORY or your recent chat, react to the time of day, a holiday, the weather of the season, or just say hi in your own way and voice. Don't mention apps, notifications or that you were told to write. No questions lists, no emojis overload, no links.`;
 export type Turn = { role: "user" | "assistant"; content: string; fileId?: string };
 export const aiReady = () => !!(process.env.VELO_MODEL && process.env.ANTHROPIC_API_KEY);
@@ -85,7 +95,7 @@ const REACT_TAG = /\[react:\s*([^\]\s]+)\s*\]\s*/gu;
 
 /** Velo, or (with `character`) one of the characters: same chats, calls and memory flow, but in the
  *  character's own voice, with only their own memory of this person and no Velo tools. */
-export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn[]; timeZone?: unknown; name?: string; goal?: string; toName?: string; character?: Character | null; origin?: string; promise?: string }): Promise<AskResult> {
+export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn[]; timeZone?: unknown; name?: string; goal?: string; toName?: string; character?: Character | null; origin?: string; promise?: string; group?: { others: string[]; scene?: { title: string; details: string } | null } }): Promise<AskResult> {
   const { mode } = opts;
   const ch = opts.character || null;
   const cid = ch?.id || null;
@@ -101,7 +111,9 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   const drafts: Draft[] = [];
   const media: Media[] = [];
   // 🎨 Photos/videos in chats and calls (not texts or calls Velo makes for them).
-  const canSend = mediaReady() && (mode === "chat" || mode === "talk");
+  // 👥 In a group chat: no photos, plans or scenes — just talking, with everyone there.
+  const group = ch && opts.group ? opts.group : null;
+  const canSend = mediaReady() && (mode === "chat" || mode === "talk") && !group;
   // Who's in a selfie: a character's portrait, or Velo's preset face (never a photo someone uploaded).
   const look = String(u?.look || "");
   // A character's 2–4 chosen reference images keep it looking the same (else its portrait).
@@ -119,9 +131,9 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   // 👥 Other characters they've mentioned here are noted, and what's known of them comes along.
   const lastSaid = [...opts.messages].reverse().find(m => m.role === "user")?.content || "";
   const lastHers = (() => { const i = opts.messages.map(m => m.role).lastIndexOf("user"); return [...opts.messages.slice(0, Math.max(0, i))].reverse().find(m => m.role === "assistant")?.content || ""; })();
-  if (mode === "chat" || mode === "talk") await noteMentions(caller.userId, cid, hideSecrets(String(lastSaid).slice(0, 2000)).text).catch(e => console.error("velo: mentions", e instanceof Error ? e.message : e));
+  if ((mode === "chat" || mode === "talk") && !group) await noteMentions(caller.userId, cid, hideSecrets(String(lastSaid).slice(0, 2000)).text).catch(e => console.error("velo: mentions", e instanceof Error ? e.message : e));
   // 👭 Her friends and family (firsthand), and nothing about how close they are with them.
-  const friends = ch && !errand ? await friendsOf(ch).catch(() => []) : [];
+  const friends = ch && !errand ? await friendsOf(ch, caller.userId).catch(() => []) : [];
   const friendNote = ch && friends.length ? await friendsNote(ch, name, friends).catch(() => "") : "";
   const known = errand ? "" : await acquaintancesNote(caller.userId, cid, !ch, friends.map(f => f.id)).catch(() => "");
   // 💡 What they like to see (reactions, declined offers).
@@ -134,7 +146,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   // 🤝 How much this character trusts them (null when Trust is 0 / off).
   const trust = ch ? await trustFor(caller.userId, ch).catch(() => null) : null;
   // 🎬 A scene (date/outing) being played out right now with this character.
-  const scene = ch && (mode === "chat" || mode === "talk") ? await activeScene(caller.userId, ch.id).catch(() => null) : null;
+  const scene = ch && (mode === "chat" || mode === "talk") && !group ? await activeScene(caller.userId, ch.id).catch(() => null) : null;
   const modeText = {
     chat: "", checkin: opts.promise ? PROMISED : CHECKIN, sms: SMS_TALK, talk: CALL_TALK, recap: CALL_RECAP, remember: CALL_REMEMBER, memo: CHAT_REMEMBER,
     errand: errandPrompt(name, opts.toName || "", opts.goal || ""), errandsum: ERRAND_SUMMARY,
@@ -163,13 +175,14 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         memory ? `${memory}\n\nYou two have talked before — never introduce yourself; talk like someone who knows them.` : "",
         !ch && (mode === "chat" || mode === "sms" || mode === "talk" || mode === "recap" || mode === "checkin") ? PERSONALITY_PROMPT[personality] : "",
         modeText,
-        replyLengthNote(mode, u?.reply_length),
+        group ? "" : replyLengthNote(mode, u?.reply_length),
         scene ? sceneNote(scene) : "",
-        ch && mode !== "remember" && mode !== "memo" ? await plansNote(caller.userId, ch.id, today.date).catch(() => "") : "",
+        ch && mode !== "remember" && mode !== "memo" && !group ? await plansNote(caller.userId, ch.id, today.date).catch(() => "") : "",
         ch && mode !== "remember" && mode !== "memo" && !opts.promise ? await promisesNote(caller.userId, ch.id, today.tz).catch(() => "") : "",
         opts.promise ? `WHAT YOU PROMISED: ${opts.promise}` : "",
         ch ? "SCENES: lines starting with 🎬 are dates or outings you two did together (played out, or that they told you happened). Treat them as real shared memories — bring them up, tease about them, look back on them." : "",
-        mode === "chat" ? REACT_HINT : "",
+        mode === "chat" && !group ? REACT_HINT : "",
+        group && ch ? groupNote(ch.name, name, group.others, mode === "memo", group.scene || null, !!ch.romantic && !!u?.adult_confirmed_at) : "",
         arc && (mode === "remember" || mode === "memo") ? FEELINGS_REMEMBER : "",
         trust !== null && mode !== "remember" && mode !== "memo" ? trustNote(trust, arc) : "",
         trust !== null && (mode === "remember" || mode === "memo") ? `YOUR TRUST IN THEM: ${trust}/100. ${TRUST_REMEMBER(arc)}` : "",
@@ -222,7 +235,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   // Tools: none on wrap-ups or errands; Pro adds contacts, drafts, Amazon carts and 🔎 web search
   // (Anthropic runs the searches; results come back in the same response).
   const search = !!proTools && (mode === "chat" || mode === "sms" || mode === "talk");
-  const tools: Anthropic.ToolUnion[] | undefined = wrapUp || errand ? undefined : ch ? [...MEMORY_TOOLS, ...(canSend ? [SEND_MEDIA_TOOL(ch.name, romantic)] : []), ...(mode === "chat" || mode === "talk" || mode === "sms" ? [PLAN_TOOL, PROMISE_TOOL] : [])] : [
+  const tools: Anthropic.ToolUnion[] | undefined = wrapUp || errand ? undefined : ch && group ? [...MEMORY_TOOLS] : ch ? [...MEMORY_TOOLS, ...(canSend ? [SEND_MEDIA_TOOL(ch.name, romantic)] : []), ...(mode === "chat" || mode === "talk" || mode === "sms" ? [PLAN_TOOL, PROMISE_TOOL] : [])] : [
     ...(canSend ? [SEND_MEDIA_TOOL("Velo", romantic)] : []),
     ...MEMORY_TOOLS, ...REMINDER_TOOLS, ...(proTools?.tools || []),
     ...(search ? [{ type: "web_search_20260209" as const, name: "web_search" as const, max_uses: 5, user_location: { type: "approximate" as const, timezone: today.tz } }] : []),

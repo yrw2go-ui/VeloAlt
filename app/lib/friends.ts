@@ -29,10 +29,18 @@ export function atMentions(backstory: string, others: { id: string; name: string
 }
 export const plainAt = (s: string) => s.replace(/@(?=\p{L})/gu, "");
 
-type Friend = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; kind: string; story: string };
+type Friend = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; kind: string; story: string; level?: 1 | 2 | 3 };
 
-/** Everyone this character knows firsthand: her own links from the editor, plus @mentions in her own backstory. */
-export async function friendsOf(ch: Pick<Character, "id" | "name" | "backstory">): Promise<Friend[]> {
+/** 🤝 How close two characters who met in group chats are: 1 just met, 2 getting to know each other, 3 friends. */
+export function bondLevel(messages: number, occasions: number): 1 | 2 | 3 {
+  const score = messages + occasions * 8;
+  return score >= 90 ? 3 : score >= 30 ? 2 : 1;
+}
+const BOND_KIND = { 1: "new acquaintance — you met through them in a group chat, and you're only starting to get to know each other", 2: "friend you're getting to know — you've chatted a fair bit in their group chats", 3: "friend — you've gotten close from all the group chats with them" } as const;
+
+/** Everyone this character knows firsthand: her own links from the editor, @mentions in her own backstory,
+ *  and (for this person) the characters she met in their group chats. */
+export async function friendsOf(ch: Pick<Character, "id" | "name" | "backstory">, userId?: string): Promise<Friend[]> {
   const all = (await sql()`select id, name, personality, backstory, relation, appearance, job, casual_wear, hobbies from chat_characters where id <> ${ch.id}`) as Omit<Friend, "kind" | "story">[];
   const links = await sql()`select known_id, kind, story from chat_character_links where knower_id = ${ch.id}`;
   const byId = new Map<string, Friend>();
@@ -45,14 +53,24 @@ export async function friendsOf(ch: Pick<Character, "id" | "name" | "backstory">
     const f = byId.get(o.id);
     byId.set(o.id, f ? { ...f, story: f.story || m.sentence } : { ...o, kind: "", story: `From your own story: ${m.sentence}` });
   }
-  return [...byId.values()].slice(0, 8);
+  if (userId) {
+    const bonds = await sql()`select case when a_id = ${ch.id} then b_id else a_id end as other, story, messages, occasions from chat_bonds
+      where user_id = ${userId} and (a_id = ${ch.id} or b_id = ${ch.id}) order by last_at desc limit 10`;
+    for (const b of bonds) {
+      const o = all.find(x => x.id === String(b.other));
+      if (!o || byId.has(o.id)) continue;
+      const level = bondLevel(Number(b.messages), Number(b.occasions));
+      byId.set(o.id, { ...o, kind: BOND_KIND[level], story: String(b.story || ""), level });
+    }
+  }
+  return [...byId.values()].slice(0, 10);
 }
 
 /** 💬 They mentioned someone to this character who knows HER, but she doesn't know them back:
  *  the chance to link them in this direction too. */
-export async function linkSuggestions(ch: Character, text: string): Promise<{ id: string; name: string; kind: string; story: string }[]> {
+export async function linkSuggestions(ch: Character, text: string, userId?: string): Promise<{ id: string; name: string; kind: string; story: string }[]> {
   if (!text || text.length < 3) return [];
-  const mine = new Set((await friendsOf(ch)).map(f => f.id));
+  const mine = new Set((await friendsOf(ch, userId)).map(f => f.id));
   const others = (await sql()`select id, name, backstory from chat_characters where id <> ${ch.id}`) as { id: string; name: string; backstory: string }[];
   const out: { id: string; name: string; kind: string; story: string }[] = [];
   for (const o of others) {
@@ -67,24 +85,27 @@ export async function linkSuggestions(ch: Character, text: string): Promise<{ id
 }
 
 /** For the character's system prompt: who they know, and what they must not know. */
-export async function friendsNote(ch: Character, ownerName: string, known?: Friend[]): Promise<string> {
-  const friends = known || await friendsOf(ch);
+export async function friendsNote(ch: Character, ownerName: string, known?: Friend[], userId?: string): Promise<string> {
+  const friends = known || await friendsOf(ch, userId);
   if (!friends.length) return "";
   const them = ownerName || "the person you're talking with";
   const lines = friends.map(f => {
     const bits = [`${f.name}${f.kind ? ` — your ${f.kind}` : ""}.`];
     if (f.story) bits.push(f.story.endsWith(".") ? f.story : `${f.story}.`);
+    // Met in group chats: what you know of each other grows as you get closer.
+    const lv = f.level ?? 3;
     if (f.job) bits.push(`Works: ${first(f.job)}`);
-    if (f.hobbies) bits.push(`Into: ${first(f.hobbies)}`);
-    if (f.personality) bits.push(`Like: ${first(f.personality)}`);
+    if (f.hobbies && lv >= 2) bits.push(`Into: ${first(f.hobbies)}`);
+    if (f.personality && lv >= 2) bits.push(`Like: ${first(f.personality)}`);
     if (f.appearance) bits.push(`Looks: ${first(f.appearance)}`);
+    if (lv === 1) bits.push("You don't know much about her yet beyond what's come up in the group chat — be curious, ask her things.");
     // Only a family tie to the person is shared — never a romance or how close they are.
     bits.push(f.relation && FAMILY.test(f.relation) ? `Family to ${them}: ${first(f.relation, 160)}` : `${them} and ${f.name} are friends.`);
     return `- ${plainAt(bits.join(" "))}`;
   });
-  return `YOUR FRIENDS AND FAMILY (you know them yourself, firsthand — you hang out, text, have history and inside jokes):
+  return `YOUR FRIENDS AND FAMILY (you know them yourself, firsthand${friends.some(f => (f.level ?? 3) === 3) ? " — you hang out, text, have history and inside jokes" : ""}; new acquaintances only as well as you've gotten to know them):
 ${lines.join("\n")}
-Talk about them naturally when it fits: their news, plans you made together, stories, opinions, a little teasing. Make up small everyday details that fit who they are, but keep them consistent. You can share a pic of one of them (send_media with of_person) when it fits.
+Talk about them naturally when it fits: their news, plans you made together, stories, opinions, a little teasing. For real friends, make up small everyday details that fit who they are, but keep them consistent; for new acquaintances, only what you've actually learned. You can share a pic of a friend (send_media with of_person) when it fits.
 WHAT YOU DON'T KNOW: beyond friendship (and any family tie above), you do NOT know how close ${them} is with any of them — whether they're dating, flirting, how often they talk, or anything they've told each other. Never guess, hint or assume. Only if ${them} tells you about it themselves do you know it (just what they told you). They never tell you what ${them} says to them, and you never tell them what ${them} says to you.`;
 }
 

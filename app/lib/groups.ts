@@ -1,0 +1,192 @@
+// 👥 Group chats: the person and 2–6 characters in one thread. Each character replies as herself
+// (her own personality, memory and feelings) and saves her own memory of it. Characters who didn't
+// know each other meet here: they're linked automatically for this person (with how they met), start
+// as acquaintances, and become friends the more they all chat together (see chat_bonds, friends.ts).
+import { sql } from "./db";
+import { askVelo, type Turn } from "./brain";
+import { getCharacter, referenceUrls, type Character } from "./characters";
+import { friendsOf, writeStory } from "./friends";
+import { scrub } from "./secrets";
+import type { Caller } from "./caller";
+import Anthropic from "@anthropic-ai/sdk";
+import { startMedia, type Media } from "./media";
+import { allowsSuggestive } from "./traits";
+
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, authToken: null });
+
+export type Group = { id: string; title: string; member_ids: string[]; updated_at: string; scene_title: string | null; scene_details: string | null };
+export type GroupMsg = { id: string; speaker_id: string | null; content: string; created_at: string; peek?: boolean; media?: Media | null };
+const ALL = /\b(everyone|everybody|y'?all|you guys|guys|all of you|girls|ladies|both of you)\b/i;
+const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+export async function listGroups(userId: string): Promise<Group[]> {
+  return (await sql()`select id, title, member_ids, updated_at, scene_title, scene_details from chat_groups where user_id = ${userId} order by updated_at desc limit 30`) as Group[];
+}
+export async function getGroup(userId: string, id: string): Promise<Group | null> {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+  const [g] = await sql()`select id, title, member_ids, updated_at, scene_title, scene_details from chat_groups where id = ${id} and user_id = ${userId}`;
+  return (g as Group) || null;
+}
+async function members(g: Group): Promise<Character[]> {
+  return (await Promise.all(g.member_ids.map(id => getCharacter(id)))).filter((c): c is Character => !!c);
+}
+
+/** A new group. Anyone in it who didn't know each other meets now (for this person). */
+export async function createGroup(userId: string, memberIds: string[], title: string, personName: string): Promise<Group> {
+  const ids = [...new Set(memberIds.filter(x => /^[0-9a-f-]{36}$/i.test(x)))].slice(0, 6);
+  const chars = (await Promise.all(ids.map(id => getCharacter(id)))).filter((c): c is Character => !!c);
+  if (chars.length < 2) throw new GroupError("Pick at least 2 characters.");
+  const name = title.trim().slice(0, 60) || chars.map(c => c.name).join(", ").slice(0, 60);
+  const [g] = await sql()`insert into chat_groups (user_id, title, member_ids) values (${userId}, ${name}, ${chars.map(c => c.id)}::uuid[]) returning id, title, member_ids, updated_at, scene_title, scene_details`;
+  await meet(userId, chars, personName).catch(e => console.error("groups: meet", e instanceof Error ? e.message : e));
+  return g as Group;
+}
+export class GroupError extends Error {}
+
+/** Characters who don't both already know each other get linked for this person, with how they met. */
+async function meet(userId: string, chars: Character[], personName: string) {
+  const knows = new Map<string, Set<string>>();
+  for (const c of chars) knows.set(c.id, new Set((await friendsOf(c)).map(f => f.id)));
+  for (let i = 0; i < chars.length; i++) for (let j = i + 1; j < chars.length; j++) {
+    const [x, y] = chars[i].id < chars[j].id ? [chars[i], chars[j]] : [chars[j], chars[i]];
+    if (knows.get(x.id)!.has(y.id) && knows.get(y.id)!.has(x.id)) continue;
+    const [had] = await sql()`select 1 from chat_bonds where user_id = ${userId} and a_id = ${x.id} and b_id = ${y.id}`;
+    if (had) continue;
+    const who = personName || "a mutual friend";
+    const story = (await writeStory(x, y, `just met — ${who} added them both to a group chat`)) || `They met when ${who} added them both to a group chat.`;
+    await sql()`insert into chat_bonds (user_id, a_id, b_id, story) values (${userId}, ${x.id}, ${y.id}, ${scrub(story).slice(0, 600)}) on conflict do nothing`;
+  }
+}
+
+export async function groupMessages(userId: string, groupId: string, limit = 200): Promise<GroupMsg[]> {
+  const rows = await sql()`select g.id, g.speaker_id, g.content, g.created_at, g.peek, md.id as media_id, md.kind as media_kind, md.status as media_status, md.description as media_description, mf.url as media_url
+    from chat_group_messages g left join velo_media md on md.id = g.media_id left join velo_files mf on mf.id = md.file_id
+    where g.group_id = ${groupId} and g.user_id = ${userId} order by g.created_at desc limit ${limit}`;
+  return rows.reverse().map(r => ({ id: String(r.id), speaker_id: r.speaker_id ? String(r.speaker_id) : null, content: String(r.content), created_at: String(r.created_at), ...(r.peek ? { peek: true } : {}),
+    ...(r.media_id ? { media: { id: String(r.media_id), kind: r.media_kind, status: r.media_status, url: r.media_status === "done" ? r.media_url : null, description: r.media_description || null } as Media } : {}) }));
+}
+/** What the characters read: never the peeks (they don't know). */
+const seen = (rows: GroupMsg[]) => rows.filter(r => !r.peek);
+
+/** The thread as one character sees it: her own lines are hers, everyone else's carry their name. */
+function turnsFor(me: string, rows: GroupMsg[], names: Map<string, string>, personName: string): Turn[] {
+  return seen(rows).map(r => r.speaker_id === me
+    ? { role: "assistant" as const, content: r.content }
+    : { role: "user" as const, content: `[${r.speaker_id ? names.get(r.speaker_id) || "Someone" : personName || "Them"}]: ${r.content}` });
+}
+
+/** Who answers: whoever they named (or everyone, for "you guys"); otherwise one or two of them, whoever's been quietest. */
+function pickSpeakers(text: string, chars: Character[], rows: GroupMsg[]): Character[] {
+  if (ALL.test(text)) return [...chars].sort(() => Math.random() - 0.5).slice(0, 4);
+  const named = chars.map(c => ({ c, at: text.search(new RegExp(`(^|[^\\p{L}])${esc(c.name)}(?=$|[^\\p{L}])`, "iu")) })).filter(x => x.at >= 0).sort((a, b) => a.at - b.at).map(x => x.c);
+  if (named.length) return named.slice(0, 3);
+  const lastSpoke = (id: string) => { for (let i = rows.length - 1; i >= 0; i--) if (rows[i].speaker_id === id) return i; return -1; };
+  const quiet = [...chars].sort((a, b) => lastSpoke(a.id) - lastSpoke(b.id) || Math.random() - 0.5);
+  return quiet.slice(0, Math.random() < 0.5 ? 2 : 1);
+}
+
+/** They said something: it's saved, then each character who answers replies in turn, seeing the others' replies. */
+export async function sendToGroup(caller: Caller, g: Group, text: string, timeZone: unknown, personName: string): Promise<GroupMsg[]> {
+  const clean = scrub(text).trim().slice(0, 4000);
+  if (!clean) throw new GroupError("Say something first.");
+  const chars = await members(g);
+  if (chars.length < 2) throw new GroupError("This group needs at least 2 characters.");
+  await sql()`insert into chat_group_messages (group_id, user_id, content) values (${g.id}, ${caller.userId}, ${clean})`;
+  await sql()`update chat_groups set updated_at = now() where id = ${g.id}`;
+  const names = new Map(chars.map(c => [c.id, c.name]));
+  const out: GroupMsg[] = [];
+  let rows = await groupMessages(caller.userId, g.id, 40);
+  for (const c of pickSpeakers(clean, chars, seen(rows))) {
+    const r = await askVelo(caller, { mode: "chat", messages: turnsFor(c.id, rows, names, personName), timeZone, name: personName, character: c, group: { others: chars.filter(x => x.id !== c.id).map(x => x.name), scene: g.scene_title ? { title: g.scene_title, details: g.scene_details || "" } : null } });
+    const reply = scrub(r.reply.replace(/^\s*\[[^\]]{1,40}\]:\s*/, "")).trim().slice(0, 4000);
+    if (!reply) continue;
+    const [m] = await sql()`insert into chat_group_messages (group_id, user_id, speaker_id, content) values (${g.id}, ${caller.userId}, ${c.id}, ${reply}) returning id, speaker_id, content, created_at`;
+    out.push(m as GroupMsg);
+    rows = [...rows, m as GroupMsg];
+  }
+  await closer(caller.userId, chars);
+  return out;
+}
+
+/** 🤝 Chatting together brings them closer: every message counts a little; a new day (6h+ apart) counts more. */
+async function closer(userId: string, chars: Character[]) {
+  for (let i = 0; i < chars.length; i++) for (let j = i + 1; j < chars.length; j++) {
+    const [a, b] = chars[i].id < chars[j].id ? [chars[i].id, chars[j].id] : [chars[j].id, chars[i].id];
+    await sql()`update chat_bonds set messages = messages + 1, occasions = occasions + case when last_at < now() - interval '6 hours' then 1 else 0 end, last_at = now()
+      where user_id = ${userId} and a_id = ${a} and b_id = ${b}`;
+  }
+}
+
+/** Each character saves her own memory of the group chat (what they shared, what she learned about the others). */
+export async function rememberGroup(caller: Caller, g: Group, timeZone: unknown, personName: string): Promise<number> {
+  const chars = await members(g);
+  const rows = await groupMessages(caller.userId, g.id, 60);
+  if (!seen(rows).some(r => !r.speaker_id)) return 0;
+  const names = new Map(chars.map(c => [c.id, c.name]));
+  const saved = await Promise.all(chars.map(c => askVelo(caller, { mode: "memo", messages: turnsFor(c.id, rows, names, personName), timeZone, name: personName, character: c, group: { others: chars.filter(x => x.id !== c.id).map(x => x.name) } })
+    .then(r => (r.saved ? 1 : 0), e => { console.error("groups: memo", e instanceof Error ? e.message : e); return 0; })));
+  return saved.reduce<number>((a, b) => a + b, 0);
+}
+
+export async function deleteGroup(userId: string, id: string): Promise<boolean> {
+  const r = await sql()`delete from chat_groups where id = ${id} and user_id = ${userId} returning id`;
+  return r.length > 0;
+}
+
+// 🎬 Scenes in a group: everyone's there. A marker line goes in the thread (they all read it).
+export async function startGroupScene(userId: string, g: Group, kind: "live" | "past", title: string, details: string): Promise<GroupMsg> {
+  const t = scrub(title).trim().slice(0, 120), d = scrub(details).trim().slice(0, 1000);
+  if (!t) throw new GroupError("Give the scene a title.");
+  const marker = kind === "live" ? `🎬 Scene: ${t}${d ? ` — ${d}` : ""}` : `🎬 Scene (already happened, all of us together): ${t}${d ? ` — ${d}` : ""}`;
+  if (kind === "live") await sql()`update chat_groups set scene_title = ${t}, scene_details = ${d}, updated_at = now() where id = ${g.id} and user_id = ${userId}`;
+  const [m] = await sql()`insert into chat_group_messages (group_id, user_id, content) values (${g.id}, ${userId}, ${marker}) returning id, speaker_id, content, created_at`;
+  return { ...(m as GroupMsg), speaker_id: null };
+}
+export async function endGroupScene(userId: string, g: Group): Promise<GroupMsg | null> {
+  if (!g.scene_title) return null;
+  await sql()`update chat_groups set scene_title = null, scene_details = null where id = ${g.id} and user_id = ${userId}`;
+  const [m] = await sql()`insert into chat_group_messages (group_id, user_id, content) values (${g.id}, ${userId}, ${`🎬 Scene ended: ${g.scene_title}`}) returning id, speaker_id, content, created_at`;
+  return { ...(m as GroupMsg), speaker_id: null };
+}
+
+// 👀 Peeks in a group scene: a photo of the moment with the characters they pick (one or more). Nobody knows.
+const romanticFor = (c: Character, adult: boolean) => adult && !!c.romantic && allowsSuggestive(c.traits);
+async function pickedMembers(g: Group, ids: string[]): Promise<Character[]> {
+  const want = ids.filter(id => g.member_ids.includes(id));
+  const chars = (await members(g)).filter(c => want.includes(c.id));
+  if (!chars.length) throw new GroupError("Pick who's in the picture.");
+  return chars;
+}
+export async function draftGroupPeek(userId: string, g: Group, ids: string[], adult: boolean, personName: string): Promise<string> {
+  if (!g.scene_title) throw new GroupError("Peeks are for scenes — start one first.");
+  const chars = await pickedMembers(g, ids), all = await members(g);
+  const names = new Map(all.map(c => [c.id, c.name]));
+  const rows = await groupMessages(userId, g.id, 120);
+  const lastPeek = [...rows].reverse().find(r => r.peek && r.media?.status === "done")?.media?.description || "";
+  const lastIdx = rows.map(r => !!(r.peek && r.media)).lastIndexOf(true);
+  const transcript = rows.filter((r, i) => !r.peek || i === lastIdx).map(r => (r.peek ? "— (your last peek was here) —" : `${r.speaker_id ? names.get(r.speaker_id) || "Someone" : personName || "Them"}: ${r.content}`)).join("\n");
+  const who = chars.map(c => c.name).join(" and ");
+  const romantic = chars.every(c => romanticFor(c, adult));
+  const res = await client.messages.create({
+    model: process.env.VELO_MODEL!, max_tokens: 350,
+    system: `You write the description for ONE photo for an image generator. The person is out with a group (the scene below) and is quietly looking at ${who} right now — the photo is exactly what they see: they are behind the camera and NOT in the picture. Show ONLY ${who}${chars.length < all.length ? ` (not ${all.filter(c => !chars.some(x => x.id === c.id)).map(c => c.name).join(" or ")})` : ""}. Describe the place (time of day, lighting), what each of them is wearing, what each is doing, their poses and expressions — candid and unaware, or glancing at the camera.
+OUTFIT CONTINUITY: each of them wears ONE outfit for the whole scene. ${lastPeek ? "Start from what they wore in THE LAST PEEK" : "Start from the outfits in the scene's details or what they said they're wearing (else what fits the outing and their usual style)"}, then apply only the changes that actually happened, in order (a jacket taken off stays off until it's put back on, and so on). Keep every other detail identical. The same goes for the place.
+${romantic ? "PG-13 at most: flattering and flirty is fine, never nudity, underwear or anything sexual." : "Family-friendly, fully clothed."} Two or three sentences, under 380 characters, no names of real people, output only the description.`,
+    messages: [{ role: "user", content: `SCENE: ${g.scene_title}${g.scene_details ? ` — ${g.scene_details}` : ""}\n${chars.map(c => `${c.name.toUpperCase()}'S LOOK: ${c.appearance || "(see reference pictures)"}${c.casual_wear ? `; usual style: ${c.casual_wear}` : ""}`).join("\n")}${lastPeek ? `\nTHE LAST PEEK: ${lastPeek}` : ""}\n\nTHE SCENE SO FAR:\n${(transcript.length > 12000 ? "…" + transcript.slice(-12000) : transcript) || "(it just started)"}` }],
+  });
+  const text = res.content.map(b => (b.type === "text" ? b.text : "")).join(" ").replace(/\s+/g, " ").trim();
+  return text.slice(0, 400) || `${who} during ${g.scene_title}, candid, natural light`;
+}
+export async function groupPeekAt(userId: string, g: Group, ids: string[], adult: boolean, description: string): Promise<GroupMsg[]> {
+  if (!g.scene_title) throw new GroupError("Peeks are for scenes — start one first.");
+  const chars = await pickedMembers(g, ids);
+  const desc = scrub(description.replace(/\s+/g, " ").trim()).slice(0, 400);
+  if (desc.length < 10) throw new GroupError("Describe the picture a little more.");
+  const [first, ...rest] = chars;
+  const media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: desc },
+    { characterId: first.id, who: first.name, appearance: first.appearance, refs: await referenceUrls(first), romantic: chars.every(c => romanticFor(c, adult)), offer: false, other: null, peek: true,
+      people: await Promise.all(rest.map(async c => ({ name: c.name, refs: await referenceUrls(c), appearance: c.appearance }))) });
+  const [mine] = await sql()`insert into chat_group_messages (group_id, user_id, content, peek) values (${g.id}, ${userId}, '*peek*', true) returning id, speaker_id, content, created_at`;
+  const [pic] = await sql()`insert into chat_group_messages (group_id, user_id, content, peek, media_id, created_at) values (${g.id}, ${userId}, ${`(peek: ${chars.map(c => c.name).join(", ")})`}, true, ${media.id}, now() + interval '5 milliseconds') returning id, speaker_id, content, created_at`;
+  return [{ ...(mine as GroupMsg), speaker_id: null, peek: true }, { ...(pic as GroupMsg), speaker_id: null, peek: true, media }];
+}

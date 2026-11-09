@@ -124,7 +124,7 @@ async function atlasStart(kind: "image" | "video", model: string, prompt: string
 }
 
 /** Starts a photo or video (from the send_media tool) — or, with `offer`, only offers it: nothing is made until they accept. */
-export async function startMedia(userId: string, input: unknown, ctx: { characterId: string | null; who: string; appearance: string; refs: string[]; romantic: boolean; mood?: string; offer?: boolean; other?: { name: string; refs: string[]; appearance: string } | null; peek?: boolean }): Promise<Media> {
+export async function startMedia(userId: string, input: unknown, ctx: { characterId: string | null; who: string; appearance: string; refs: string[]; romantic: boolean; mood?: string; offer?: boolean; other?: { name: string; refs: string[]; appearance: string } | null; peek?: boolean; people?: { name: string; refs: string[]; appearance: string }[] }): Promise<Media> {
   const a = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
   const kind = a.kind === "video" ? "video" : "image";
   const desc = scrub(String(a.description || "").replace(/\s+/g, " ").trim().slice(0, 400));
@@ -155,11 +155,20 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
     ? await sql()`select f.url, m.description from velo_media m join velo_files f on f.id = m.file_id where m.user_id = ${userId} and m.character_id is not distinct from ${ctx.characterId}
         and m.kind = 'image' and m.status = 'done' and not m.peek and m.created_at > now() - interval '14 hours' order by m.created_at desc limit 1`
     : [];
-  const oRefs = o ? o.refs.slice(0, withMe ? 2 : 4) : [];
-  const meRefs = withMe ? ctx.refs.slice(0, o ? 2 : prev ? 3 : 4) : [];
-  const refs = [...(prev ? [String(prev.url)] : []), ...oRefs, ...meRefs];
+  // 👥 Several characters in one picture (a group peek): up to 4 reference images, shared between them.
+  const people = ctx.people?.length ? [{ name: ctx.who, refs: ctx.refs, appearance: ctx.appearance }, ...ctx.people] : null;
+  const per = people ? people.map((p, i) => p.refs.slice(0, Math.max(1, Math.floor(4 / people.length) + (i < 4 % people.length ? 1 : 0)))) : [];
+  const groupRefs = people ? per.flat().slice(0, 4) : [];
+  const oRefs = o && !people ? o.refs.slice(0, withMe ? 2 : 4) : [];
+  const meRefs = withMe && !people ? ctx.refs.slice(0, o ? 2 : prev ? 3 : 4) : [];
+  const refs = people ? groupRefs : [...(prev ? [String(prev.url)] : []), ...oRefs, ...meRefs];
   const ref = refs[0] || null;
-  const subject = o
+  let at = 0;
+  const groupSubject = people ? `${people.length} people in this picture: ${people.map(p => p.name).join(", ")}. ` + people.map((p, i) => {
+    const n = Math.min(per[i].length, Math.max(0, 4 - at)); const from = at + 1; at += n;
+    return n ? `Reference image${n > 1 ? `s ${from}–${from + n - 1} show` : ` ${from} shows`} ${p.name}; keep her face and look the same.` : p.appearance ? `${p.name}: ${p.appearance}.` : "";
+  }).filter(Boolean).join(" ") + " Each person appears exactly once. " : "";
+  const subject = people ? groupSubject : o
     ? (oRefs.length ? `The first ${oRefs.length > 1 ? `${oRefs.length} reference images show` : "reference image shows"} ${o.name}; keep her face and look the same. ` : o.appearance ? `${o.name}: ${o.appearance}. ` : `${o.name}. `)
       + (withMe ? (meRefs.length ? `The other reference image${meRefs.length > 1 ? "s show" : " shows"} ${ctx.who}; keep their face and look the same too. ` : ctx.appearance ? `With ${ctx.who}: ${ctx.appearance}. ` : "") : "")
     : prev ? `The FIRST reference image is ${ctx.who}'s previous photo from this same moment${prev.description ? ` ("${String(prev.description).slice(0, 160)}")` : ""}: keep the exact same outfit, accessories, hair and makeup, and the same place, background and lighting — only the pose, angle and expression change, plus anything the description below says changed. ${meRefs.length ? `The other reference image${meRefs.length > 1 ? "s show" : " shows"} ${ctx.who}'s face and look; keep them the same. ` : ""}`
@@ -173,7 +182,7 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
       ? `An arm's-length selfie from the camera's own point of view: the phone is NOT visible, and at most ${shooter}'s own arm reaches toward the camera. `
       : "A photo taken by someone else or on a timer: no phone or camera visible, nobody holding one. ")
     + "Natural anatomy: every person has exactly two arms and two hands — no extra, floating or disembodied hands or arms in the frame. ";
-  const prompt = `${subject}${desc}. ${framing}${withMe && !o && ctx.mood ? `${ctx.mood} ` : ""}${style}, natural and realistic${kind === "image" ? " photo, candid and natural" : " video, smooth natural motion"}.`.slice(0, 1500);
+  const prompt = `${subject}${desc}. ${framing}${withMe && !o && !people && ctx.mood ? `${ctx.mood} ` : ""}${style}, natural and realistic${kind === "image" ? " photo, candid and natural" : " video, smooth natural motion"}.`.slice(0, 1500);
   const [u] = await sql()`select video_model from users where id = ${userId}`;
   const model = kind === "image" ? (ref ? EDIT_MODEL() : IMAGE_MODEL()) : videoModel(String(u?.video_model || DEFAULT_VIDEO_MODEL), !!ref);
   const sendRefs = kind === "image" ? refs : ref ? [ref] : [];

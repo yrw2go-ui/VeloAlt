@@ -494,7 +494,7 @@ function PeekSheet({ who, sheet, onChange, onRewrite, onSend, onClose }: { who: 
 
 const todayYmd = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 
-function SceneSheet({ who, plan, onClose, onStart }: { who: string; plan?: { title: string; details: string } | null; onClose: () => void; onStart: (kind: "live" | "past", title: string, details: string) => Promise<void> }) {
+export function SceneSheet({ who, plan, onClose, onStart }: { who: string; plan?: { title: string; details: string } | null; onClose: () => void; onStart: (kind: "live" | "past", title: string, details: string) => Promise<void> }) {
   const [kind, setKind] = useState<"live" | "past">("live");
   const [title, setTitle] = useState(plan?.title || "");
   const [details, setDetails] = useState(plan?.details || "");

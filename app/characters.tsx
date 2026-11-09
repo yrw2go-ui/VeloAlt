@@ -9,6 +9,7 @@ import { VeloAvatar } from "./avatar";
 import { CHARACTER_VOICES } from "./lib/voices";
 import { TRAITS, PRESETS, DEFAULT_TRAITS, cleanTraits, type TraitKey } from "./lib/traits";
 import { CHARACTER_ZONES } from "./lib/states";
+import { GroupFaces, type Group } from "./groups";
 
 type VoiceOption = { id: string; name: string; kind: "female" | "male"; about: string; preview: string; owner?: string };
 
@@ -30,9 +31,11 @@ const chip = (on: boolean) => ({ display: "flex", alignItems: "center", gap: 6, 
 /** 🔴 A small number on a chip: their unread messages there. */
 const Badge = ({ n }: { n?: number }) => (n ? <span data-testid="unread-badge" aria-label={`${n} unread`} style={{ position: "absolute", top: -6, right: -4, minWidth: 18, height: 18, padding: "0 5px", borderRadius: 999, background: "#ef4444", color: "#fff", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid var(--bg, #0b0d17)" }}>{n > 99 ? "99+" : n}</span> : null);
 
-export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdit, onGallery, unread = {} }: {
+export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdit, onGallery, unread = {}, groups = [], activeGroup = null, onPickGroup, onNewGroup }: {
   characters: Character[]; active: string | null; admin: boolean; onPick: (id: string | null) => void; onNew: () => void; onEdit: (c: Character) => void; onGallery: () => void; unread?: Record<string, number>;
+  groups?: Group[]; activeGroup?: string | null; onPickGroup?: (id: string) => void; onNewGroup?: () => void;
 }) {
+  if (activeGroup) active = "__group";
   return (
     <div data-testid="character-strip" style={{ display: "flex", gap: 8, overflowX: "auto", padding: "12px 12px 8px", borderBottom: "1px solid var(--border)" }}>
       <button style={{ ...chip(active === null), position: "relative" }} onClick={() => onPick(null)} aria-pressed={active === null}><VeloAvatar size={26} /> Velo<Badge n={active === null ? 0 : unread.velo} /></button>
@@ -41,6 +44,12 @@ export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdi
           <CharacterFace c={c} size={26} /> {c.name}{admin && active === c.id ? " ✎" : ""}<Badge n={active === c.id ? 0 : unread[c.id]} />
         </button>
       ))}
+      {groups.map(g => (
+        <button key={g.id} style={chip(activeGroup === g.id)} aria-pressed={activeGroup === g.id} onClick={() => onPickGroup?.(g.id)} data-testid={`group-chip-${g.title}`}>
+          <GroupFaces g={g} chars={characters} size={22} /> {g.title.length > 18 ? g.title.slice(0, 17) + "…" : g.title}
+        </button>
+      ))}
+      {onNewGroup && characters.length >= 2 && <button style={{ ...chip(false), padding: "4px 12px" }} onClick={onNewGroup} data-testid="group-new">👥 Group</button>}
       {admin && <button style={{ ...chip(false), padding: "4px 12px" }} onClick={onNew} data-testid="character-new">＋ New</button>}
       <button style={{ ...chip(false), padding: "4px 12px", marginLeft: "auto" }} onClick={onGallery} data-testid="gallery-open" aria-label="Gallery">🖼️ Gallery</button>
     </div>

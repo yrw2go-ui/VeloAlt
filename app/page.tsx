@@ -10,6 +10,7 @@ import VeloCall, { canCallVelo, primeSpeech } from "./call";
 import Chat, { type ChatAdd } from "./chat";
 import { CallMedia, type Media } from "./media";
 import { CharacterStrip, CharacterEditor, CharacterFace, type Character } from "./characters";
+import { GroupChat, GroupMaker, type Group } from "./groups";
 import Gallery from "./gallery";
 import AboutCard from "./about";
 import CheckinsCard from "./notify";
@@ -109,6 +110,13 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       .then(r => { setChars(r.characters); setPortraits(r.portraits); setAdmin(r.admin); }).catch(() => {});
   }, [userId]);
   const withChar = chars.find(c => c.id === withId) || null;
+  // 👥 Group chats (you and 2–6 characters).
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [groupId, setGroupId] = useState<string | null>(null);
+  const [makingGroup, setMakingGroup] = useState(false);
+  useEffect(() => { if (userId) api<{ groups: Group[] }>("/api/groups", { action: "list" }).then(r => setGroups(r.groups)).catch(() => {}); }, [userId]);
+  const inGroup = tab === "chat" && groups.find(g => g.id === groupId) || null;
+  const pickChat = (id: string | null) => { setGroupId(null); setWithId(id); };
   // 🔴 Unread counts per chat ("velo" or character id). The open chat is marked read as it updates.
   const [unread, setUnread] = useState<Record<string, number>>({});
   useEffect(() => {
@@ -224,12 +232,12 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
           <div style={{ fontWeight: 800, fontSize: 18 }}>Velo</div>
           <div className="muted" style={{ fontSize: 12 }}>{name ? `Here for you, ${name.split(" ")[0]}` : "Your assistant & companion"}</div>
         </div>
-        {canCallVelo() && !calling && tab === "chat" && (
+        {canCallVelo() && !calling && tab === "chat" && !inGroup && (
           <button className="ghost" onClick={continueCall} disabled={continuing || historyCount < CONTINUE_MIN} data-testid="continue-call"
             title={historyCount < CONTINUE_MIN ? `Chat a little more first (${historyCount}/${CONTINUE_MIN} messages)` : "Call and pick up where the chat left off"}
             aria-label={`Continue the chat in a call with ${withChar ? withChar.name : "Velo"}`} style={{ borderRadius: 999, padding: "10px 12px", whiteSpace: "nowrap" }}>{continuing ? "…" : "📞↩ Continue"}</button>
         )}
-        {canCallVelo() && !calling && <button className="btn" onClick={startCall} aria-label={`Call ${tab === "chat" && withChar ? withChar.name : "Velo"}`} data-testid="call-velo" style={{ borderRadius: 999, padding: "10px 16px" }}>📞 Call</button>}
+        {canCallVelo() && !calling && !inGroup && <button className="btn" onClick={startCall} aria-label={`Call ${tab === "chat" && withChar ? withChar.name : "Velo"}`} data-testid="call-velo" style={{ borderRadius: 999, padding: "10px 16px" }}>📞 Call</button>}
       </header>
 
       {due.length > 0 && (
@@ -245,8 +253,10 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       )}
 
       <main style={{ flex: 1, minHeight: 0, overflowY: tab === "chat" ? "hidden" : "auto", display: "flex", flexDirection: "column" }}>
-        {tab === "chat" && <CharacterStrip characters={chars} active={withChar?.id || null} admin={admin} onPick={setWithId} onNew={() => setEditing("new")} onEdit={setEditing} onGallery={() => setGallery(true)} unread={unread} />}
-        {tab === "chat" && <Chat key={`${withChar?.id || "velo"}-${chatTick}`} userId={userId} name={name} onChanged={bump} added={chatAdd} onAdded={() => setChatAdd(null)} character={withChar} adult={!!profile?.adultConfirmed} onAdult={() => setProfileTick(t => t + 1)} onHistory={h => { chatHistory.current = h; setHistoryCount(h.length); }} />}
+        {tab === "chat" && <CharacterStrip characters={chars} active={withChar?.id || null} admin={admin} onPick={pickChat} onNew={() => setEditing("new")} onEdit={setEditing} onGallery={() => setGallery(true)} unread={unread}
+          groups={groups} activeGroup={inGroup?.id || null} onPickGroup={setGroupId} onNewGroup={() => setMakingGroup(true)} />}
+        {inGroup && <GroupChat key={inGroup.id} group={inGroup} chars={chars} name={name} onDeleted={id => { setGroups(gs => gs.filter(g => g.id !== id)); setGroupId(null); }} />}
+        {tab === "chat" && !inGroup && <Chat key={`${withChar?.id || "velo"}-${chatTick}`} userId={userId} name={name} onChanged={bump} added={chatAdd} onAdded={() => setChatAdd(null)} character={withChar} adult={!!profile?.adultConfirmed} onAdult={() => setProfileTick(t => t + 1)} onHistory={h => { chatHistory.current = h; setHistoryCount(h.length); }} />}
         {tab === "today" && <Today refresh={refresh} />}
         {tab === "memory" && <Memory refresh={refresh} />}
         {tab === "settings" && <Settings name={name} setName={setName} onOut={onOut} profile={profile} onProfile={() => setProfileTick(t => t + 1)} />}
@@ -281,6 +291,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
           onClose={() => setEditing(null)} onSaved={savedChar}
           onDeleted={id => { setChars(cs => cs.filter(c => c.id !== id)); setWithId(null); setEditing(null); }} />
       )}
+      {makingGroup && <GroupMaker chars={chars} name={name} onClose={() => setMakingGroup(false)} onMade={g => { setGroups(gs => [g, ...gs]); setGroupId(g.id); setMakingGroup(false); }} />}
       <ConfirmHost />
     </div>
   );
