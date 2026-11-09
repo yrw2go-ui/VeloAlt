@@ -30,6 +30,7 @@ import { oaChat, toOaTools, ProviderError, type OaMessage } from "./openai";
 import { PLAN_TOOL, runPlanTool, plansNote } from "./plans";
 import { PROMISE_TOOL, runPromiseTool, promisesNote } from "./promises";
 import { chatLogNote } from "./chatlog";
+import { tickPics, resetPics, PHOTO_MOMENT } from "./momentPics";
 import { SEND_MEDIA_TOOL, startMedia, mediaReady, MediaError, tasteNote, recentMediaNote, type Media } from "./media";
 import { veloLook } from "./veloAvatars";
 
@@ -147,6 +148,8 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   const trust = ch ? await trustFor(caller.userId, ch).catch(() => null) : null;
   // 🎬 A scene (date/outing) being played out right now with this character.
   const scene = ch && (mode === "chat" || mode === "talk") && !group ? await activeScene(caller.userId, ch.id).catch(() => null) : null;
+  // 📸 Every so often (sooner as they get closer), she offers a photo of the moment.
+  const photoMoment = ch && mode === "chat" && canSend && !scene && !group ? await tickPics(caller.userId, ch).catch(() => false) : false;
   const modeText = {
     chat: "", checkin: opts.promise ? PROMISED : CHECKIN, sms: SMS_TALK, talk: CALL_TALK, recap: CALL_RECAP, remember: CALL_REMEMBER, memo: CHAT_REMEMBER,
     errand: errandPrompt(name, opts.toName || "", opts.goal || ""), errandsum: ERRAND_SUMMARY,
@@ -182,6 +185,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         opts.promise ? `WHAT YOU PROMISED: ${opts.promise}` : "",
         ch ? "SCENES: lines starting with 🎬 are dates or outings you two did together (played out, or that they told you happened). Treat them as real shared memories — bring them up, tease about them, look back on them." : "",
         mode === "chat" && !group ? REACT_HINT : "",
+        photoMoment ? PHOTO_MOMENT : "",
         group && ch ? groupNote(ch.name, name, group.others, mode === "memo", group.scene || null, !!ch.romantic && !!u?.adult_confirmed_at, !!group.banter) : "",
         arc && (mode === "remember" || mode === "memo") ? FEELINGS_REMEMBER : "",
         trust !== null && mode !== "remember" && mode !== "memo" ? trustNote(trust, arc) : "",
@@ -390,6 +394,8 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
     } catch (e) { console.error("velo: memory", e); }
     return { reply: "", changed: false, drafts, media, saved };
   }
+  // 📸 A photo went out or was offered (asked for or her own idea): the count to her next one starts over.
+  if (ch && media.some(m => m.status !== "failed")) await resetPics(caller.userId, ch).catch(() => {});
   // Their reaction tag (chat only) becomes a badge on the person's message; it's never shown or spoken.
   let react: string | undefined;
   reply = reply.replace(REACT_TAG, (_, e: string) => { if (!react && REACTIONS.includes(e)) react = e; return ""; });
