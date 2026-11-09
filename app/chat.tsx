@@ -10,7 +10,7 @@ import { hideSecrets } from "./lib/secrets";
 import { timeZone } from "./lib/tz";
 import { confirmAsk } from "./lib/dialog";
 import { useDictation } from "./dictate";
-import { CharacterFace } from "./characters";
+import { CharacterFace, LinkBackForm } from "./characters";
 import { MediaView, ReactionBar, type Media } from "./media";
 
 /** Who this chat is with: Velo (no character) or one of their characters. */
@@ -145,22 +145,15 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   };
 
   // 👭 They mentioned someone who knows her, but she doesn't know them back: offer to link that way too (admins).
-  const [linkAsk, setLinkAsk] = useState<{ id: string; name: string; kind: string } | null>(null);
+  const [linkAsk, setLinkAsk] = useState<{ id: string; name: string; kind: string; story: string } | null>(null);
   const askedKey = (other: string) => `velo:linkask:${cid}:${other}`;
   const checkLinks = (t: string) => {
-    api<{ suggest: { id: string; name: string; kind: string }[] }>("/api/characters", { action: "link.suggest", id: cid, text: t }).then(r => {
+    api<{ suggest: { id: string; name: string; kind: string; story: string }[] }>("/api/characters", { action: "link.suggest", id: cid, text: t }).then(r => {
       const s = (r.suggest || []).find(x => { try { return !localStorage.getItem(askedKey(x.id)); } catch { return true; } });
       if (s) setLinkAsk(s);
     }).catch(() => {});
   };
-  const answerLink = async (yes: boolean, kind: string) => {
-    const a = linkAsk;
-    if (!a) return;
-    setLinkAsk(null);
-    if (!yes) { try { localStorage.setItem(askedKey(a.id), "1"); } catch { /* fine */ } return; }
-    try { await api("/api/characters", { action: "link.set", id: cid, otherId: a.id, kind: kind.trim() || a.kind }); }
-    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't link them."); }
-  };
+  const notNow = () => { if (linkAsk) { try { localStorage.setItem(askedKey(linkAsk.id), "1"); } catch { /* fine */ } } setLinkAsk(null); };
 
   /** Her reply to the chat so far (after their message, or after a 🎬 scene note). */
   const respond = async (next: ChatMsg[], myId?: string) => {
@@ -346,7 +339,12 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
         )}
         {busy && <div className="row">{face(28)}<div className="muted" style={{ fontSize: 14 }}>{who} is typing…</div></div>}
         {err && <div style={{ color: "var(--bad)", fontSize: 14 }}>⚠️ {err}</div>}
-        {linkAsk && character && <LinkAsk key={linkAsk.id} who={character.name} ask={linkAsk} onAnswer={answerLink} />}
+        {linkAsk && character && (
+          <div className="card" data-testid="link-ask" style={{ display: "grid", gap: 8, border: "1px solid var(--accent)", borderRadius: 12, padding: 12, fontSize: 14 }}>
+            <div>👭 <b>{linkAsk.name}</b> knows {character.name}, but {character.name} doesn&apos;t know {linkAsk.name} yet. Link them so {character.name} knows {linkAsk.name} too? Check how they&apos;re related first.</div>
+            <LinkBackForm key={linkAsk.id} id={character.id} who={character.name} other={linkAsk} onLinked={() => setLinkAsk(null)} onCancel={notNow} cancelLabel="Not now" />
+          </div>
+        )}
         {msgs && msgs.length === 0 && !cid && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
             {SUGGESTIONS.map(s => <button key={s} className="ghost" onClick={() => send(s)} style={{ borderRadius: 999, fontSize: 14, padding: "8px 12px" }}>{s}</button>)}
@@ -551,19 +549,3 @@ export function SceneSheet({ who, plan, onClose, onStart }: { who: string; plan?
   );
 }
 
-/** 👭 "{other} knows {her}, but {her} doesn't know {other} yet — link them that way too?" */
-function LinkAsk({ who, ask, onAnswer }: { who: string; ask: { name: string; kind: string }; onAnswer: (yes: boolean, kind: string) => void }) {
-  const [kind, setKind] = useState(ask.kind);
-  return (
-    <div className="card" data-testid="link-ask" style={{ display: "grid", gap: 8, border: "1px solid var(--accent)", borderRadius: 12, padding: 12, fontSize: 14 }}>
-      <div>👭 <b>{ask.name}</b> knows {who}, but {who} doesn&apos;t know {ask.name} yet. Link them so {who} knows {ask.name} too?</div>
-      <label style={{ fontSize: 13 }}>{ask.name} is {who}&apos;s…
-        <input value={kind} onChange={e => setKind(e.target.value)} maxLength={60} aria-label="How they're related" style={{ marginTop: 4, display: "block", width: "100%" }} />
-      </label>
-      <div style={{ display: "flex", gap: 8 }}>
-        <button onClick={() => onAnswer(true, kind)} data-testid="link-ask-yes">Link them</button>
-        <button className="ghost" onClick={() => onAnswer(false, kind)} data-testid="link-ask-no">Not now</button>
-      </div>
-    </div>
-  );
-}

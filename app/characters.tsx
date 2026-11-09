@@ -460,6 +460,7 @@ type Link = { id: string; name: string; kind: string; story: string };
 function FriendsCard({ id }: { id: string }) {
   const [links, setLinks] = useState<Link[]>([]);
   const [knownBy, setKnownBy] = useState<Link[]>([]);
+  const [backing, setBacking] = useState<string | null>(null);
   const show = (r: { links: Link[]; knownBy: Link[] }) => { setLinks(r.links); setKnownBy(r.knownBy || []); };
   const [others, setOthers] = useState<{ id: string; name: string }[]>([]);
   const [other, setOther] = useState("");
@@ -496,9 +497,12 @@ function FriendsCard({ id }: { id: string }) {
         </div>
       ))}
       {knownBy.map(l => (
-        <div key={l.id} data-testid={`knownby-${l.name}`} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
-          <span className="muted" style={{ flex: 1 }}>{l.name} knows her ({l.kind}), but she doesn&apos;t know {l.name} yet.</span>
-          <button className="ghost" style={{ padding: "2px 10px" }} disabled={busy} onClick={() => add(l.id, l.kind)}>Link back</button>
+        <div key={l.id} data-testid={`knownby-${l.name}`} style={{ display: "grid", gap: 6, fontSize: 13 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <span className="muted" style={{ flex: 1 }}>{l.name} knows her ({l.kind}), but she doesn&apos;t know {l.name} yet.</span>
+            {backing !== l.id && <button className="ghost" style={{ padding: "2px 10px" }} disabled={busy} onClick={() => setBacking(l.id)}>Link back</button>}
+          </div>
+          {backing === l.id && <LinkBackForm id={id} other={l} onLinked={r => { show(r); setBacking(null); }} onCancel={() => setBacking(null)} />}
         </div>
       ))}
       {free.length > 0 && (
@@ -515,6 +519,47 @@ function FriendsCard({ id }: { id: string }) {
         </div>
       )}
       {err && <span style={{ color: "var(--bad)", fontSize: 12 }}>{err}</span>}
+    </div>
+  );
+}
+
+/** ✍️ Linking back (she gets to know someone who already knows her): how they're related and their
+ *  story are filled in (from the other side, or written for you) — edit or rewrite them, then link. */
+export function LinkBackForm({ id, other, who, onLinked, onCancel, cancelLabel = "Cancel" }: {
+  id: string; other: { id: string; name: string; kind: string; story: string }; who?: string;
+  onLinked: (r: { links: Link[]; knownBy: Link[] }) => void; onCancel: () => void; cancelLabel?: string;
+}) {
+  const [kind, setKind] = useState(other.kind || "friends");
+  const [story, setStory] = useState(other.story || "");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const write = async () => {
+    setBusy(true); setErr("");
+    try { setStory((await api<{ story: string }>("/api/characters", { action: "link.draft", id, otherId: other.id, kind })).story); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't write it."); }
+    setBusy(false);
+  };
+  useEffect(() => { if (!other.story) write(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const link = async () => {
+    setBusy(true); setErr("");
+    try { onLinked(await api<{ links: Link[]; knownBy: Link[] }>("/api/characters", { action: "link.set", id, otherId: other.id, kind: kind.trim() || "friends", story: story.trim() })); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't link them."); setBusy(false); }
+  };
+  return (
+    <div data-testid="link-back-form" style={{ display: "grid", gap: 6, padding: 8, borderRadius: 10, border: "1px solid var(--border)" }}>
+      <label style={{ fontSize: 12, fontWeight: 700 }}>{other.name} is {who ? `${who}'s` : "her"}…
+        <input value={kind} onChange={e => setKind(e.target.value)} maxLength={60} aria-label="How they're related" style={{ marginTop: 4, display: "block", width: "100%" }} />
+      </label>
+      <label style={{ fontSize: 12, fontWeight: 700 }}>How they know each other
+        <textarea value={story} onChange={e => setStory(e.target.value)} maxLength={600} rows={3} aria-label="How they know each other" disabled={busy && !story}
+          placeholder={busy ? "Writing it…" : "How they met, what they do together"} style={{ marginTop: 4, resize: "vertical", width: "100%" }} />
+      </label>
+      {err && <span style={{ color: "var(--bad)", fontSize: 12 }}>{err}</span>}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button onClick={link} disabled={busy} data-testid="link-back-save">Link them</button>
+        <button className="ghost" onClick={write} disabled={busy} data-testid="link-back-rewrite">✍️ Rewrite it</button>
+        <button className="ghost" onClick={onCancel} data-testid="link-back-cancel">{cancelLabel}</button>
+      </div>
     </div>
   );
 }

@@ -17,6 +17,7 @@ import { MAX_CHARACTERS, DAILY_PORTRAITS, isAdmin, listCharacters, getCharacter,
 //   portrait.start { id }    (admin) starts an Atlas Cloud portrait from the appearance
 //   portrait.check { id }    (admin) → { status: working | done | failed, character }
 //   links { id } → { links, knownBy }; link.set { id, otherId, kind, story? }; link.remove { id, otherId }   (admin) 👭 friends & family — one way: id knows otherId
+//   link.draft { id, otherId, kind } → { story }   (admin) a written "how they know each other" to edit before linking
 //   link.suggest { id, text } → { suggest }  (admin; others get []) someone they mentioned to her who knows her, but she doesn't know back
 const clean = (v: unknown, n: number) => scrub(String(v ?? "").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim().slice(0, n));
 const bad = (error: string, status = 400) => NextResponse.json({ error }, { status });
@@ -101,6 +102,13 @@ export async function POST(req: NextRequest) {
         if (story && (await screenCharacter({ name: `${a.name} & ${o.name}`, personality: "", backstory: story, relation: "", appearance: "" }))) return bad("That story isn't allowed — try different wording.");
         await setLink(id, other, kind, story);
         return NextResponse.json(await listLinks(id));
+      }
+      // ✍️ A draft of how they know each other, to check and edit before linking.
+      case "link.draft": {
+        const other = String(b.otherId || "");
+        const [a, o] = [await getCharacter(id), other !== id ? await getCharacter(other) : null];
+        if (!a || !o) return bad("Pick another character.");
+        return NextResponse.json({ story: await writeStory(a, o, clean(b.kind, 60).replace(/\n/g, " ") || "friends") });
       }
       case "link.remove": {
         await removeLink(id, String(b.otherId || ""));
