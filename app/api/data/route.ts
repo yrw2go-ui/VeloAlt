@@ -10,6 +10,7 @@ import { VELO_LOOKS } from "../../lib/veloAvatars";
 import { toE164, showPhone, twilioReady, veloNumber } from "../../lib/twilio";
 import { PHONE_MSG } from "../../lib/contact";
 import { scrub } from "../../lib/secrets";
+import { BIO_SECTIONS, BIO_MAX } from "../../lib/bioSections";
 import { availableModels, CHAT_MODELS, MODEL_INFO, type ChatModel } from "../../lib/models";
 import { PERSONALITIES } from "../../lib/persona";
 import { deleteFile, ownFile } from "../../lib/files";
@@ -35,7 +36,7 @@ export async function POST(req: NextRequest) {
 
     switch (String(b.action || "")) {
       case "profile.get": {
-        const [u] = await db`select name, look, time_zone, plan, phone, phone_verified_at, chat_model, personality, adult_confirmed_at, video_model, reply_length, checkins, bio, birthday::text, age, home_state, (select url from velo_files where id = users.bio_photo_file_id) as bio_photo, (select thumb_url from velo_files where id = users.bio_photo_file_id) as bio_thumb, bio_photo_note from users where id = ${me}`;
+        const [u] = await db`select name, look, time_zone, plan, phone, phone_verified_at, chat_model, personality, adult_confirmed_at, video_model, reply_length, checkins, bio, birthday::text, age, home_state, (select url from velo_files where id = users.bio_photo_file_id) as bio_photo, (select thumb_url from velo_files where id = users.bio_photo_file_id) as bio_thumb, bio_photo_note, bio_more from users where id = ${me}`;
         const [{ n }] = await db`select count(*)::int as n from velo_memories where user_id = ${me} and kind = 'call' and character_id is null`;
         const [face] = await db`select url from velo_files where user_id = ${me} and kind = 'face' order by created_at desc limit 1`;
         return NextResponse.json({
@@ -45,7 +46,7 @@ export async function POST(req: NextRequest) {
           phone: u?.phone ? showPhone(String(u.phone)) : "", phoneVerified: !!u?.phone_verified_at, veloNumber: veloNumber(),
           chatModel: availableModels().includes(u?.chat_model) ? u?.chat_model : "claude",
           models: availableModels().map(id => ({ id, ...MODEL_INFO[id] })),
-          bio: { text: u?.bio || "", birthday: u?.birthday || "", age: u?.age || null, state: u?.home_state || "", photo: u?.bio_thumb || u?.bio_photo || "", photoNote: u?.bio_photo_note || "" },
+          bio: { text: u?.bio || "", birthday: u?.birthday || "", age: u?.age || null, state: u?.home_state || "", photo: u?.bio_thumb || u?.bio_photo || "", photoNote: u?.bio_photo_note || "", more: u?.bio_more && typeof u.bio_more === "object" ? u.bio_more : {} },
           checkins: u?.checkins || "sometimes",
           videoModel: VIDEO_MODELS.some(m => m.id === u?.video_model) ? u?.video_model : DEFAULT_VIDEO_MODEL,
           videoModels: VIDEO_MODELS.map(m => ({ id: m.id, label: m.label })),
@@ -76,7 +77,11 @@ export async function POST(req: NextRequest) {
           const bday = typeof x.birthday === "string" && /^\d{4}-\d{2}-\d{2}$/.test(x.birthday) && !Number.isNaN(Date.parse(x.birthday)) && x.birthday > "1900-01-01" && Date.parse(x.birthday) < Date.now() ? x.birthday : null;
           const age = bday ? null : Number.isInteger(Number(x.age)) && Number(x.age) >= 13 && Number(x.age) <= 120 ? Number(x.age) : null;
           const st = US_STATES.includes(x.state as (typeof US_STATES)[number]) ? String(x.state) : null;
-          await db`update users set bio = ${text}, birthday = ${bday}, age = ${age}, home_state = ${st}, updated_at = now() where id = ${me}`;
+          // 👤 The extra sections: only known ones, trimmed, secrets hidden.
+          const raw = x.more && typeof x.more === "object" ? (x.more as Record<string, unknown>) : {};
+          const more: Record<string, string> = {};
+          for (const sct of BIO_SECTIONS) { const v = scrub(String(raw[sct.key] ?? "").replace(/[ \t]+/g, " ").trim().slice(0, BIO_MAX)); if (v) more[sct.key] = v; }
+          await db`update users set bio = ${text}, birthday = ${bday}, age = ${age}, home_state = ${st}, bio_more = ${JSON.stringify(more)}::jsonb, updated_at = now() where id = ${me}`;
         }
         if (["off", "sometimes", "often"].includes(b.checkins)) await db`update users set checkins = ${b.checkins}, updated_at = now() where id = ${me}`;
         if (VIDEO_MODELS.some(m => m.id === b.videoModel)) await db`update users set video_model = ${b.videoModel}, updated_at = now() where id = ${me}`;

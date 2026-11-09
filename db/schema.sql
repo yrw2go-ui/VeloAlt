@@ -472,3 +472,5 @@ alter table chat_characters add column if not exists brain text not null default
 alter table chat_groups add column if not exists since_banter int not null default 0;
 alter table chat_groups add column if not exists banter_at int not null default 7;
 alter table chat_groups add column if not exists banter_left int not null default 0;
+-- 👤 More sections in "About you" (work, hobbies, favorites, family & pets, goals…), all optional.
+alter table users add column if not exists bio_more jsonb not null default '{}';
