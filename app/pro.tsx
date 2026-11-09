@@ -20,7 +20,7 @@ export type Profile = {
   videoModel?: string; videoModels?: { id: string; label: string }[]; checkins?: string;
   bio?: { text: string; birthday: string; age: number | null; state: string; photo: string; photoNote: string };
   notifySpicy?: boolean; notifyProductivity?: boolean;
-  spicyVoice?: string; secretVoice?: string; spicyApiVoice?: string; veloVoice?: string;
+  spicyVoice?: string; secretVoice?: string; spicyApiVoice?: string; veloVoice?: string; replyLength?: string;
 };
 type Contact = { id: string; name: string; phone: string };
 
@@ -455,6 +455,38 @@ export function VeloVoiceCard({ profile, onChange }: { profile: Profile; onChang
             <button key={v.id} disabled={busy} onClick={() => pick(v.id)}
               style={{ background: on ? "rgba(124,140,255,0.12)" : "var(--surface2)", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, borderRadius: 999, padding: "8px 14px", color: "var(--text)", fontWeight: 700, cursor: on ? "default" : "pointer" }}>
               {on ? "✓ " : ""}{v.name}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export function ReplyLengthCard({ profile, onChange }: { profile: Profile; onChange: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const opts = [
+    { id: "short", label: "Short", about: "Quick replies" },
+    { id: "normal", label: "Normal", about: "Balanced" },
+    { id: "long", label: "Long", about: "More detail" },
+  ];
+  const pick = async (id: string) => {
+    if (id === (profile.replyLength || "normal")) return;
+    setBusy(true);
+    await data("profile.update", { replyLength: id }).catch(() => {});
+    setBusy(false); onChange();
+  };
+  return (
+    <div className="card">
+      <div style={{ fontWeight: 700 }}>Reply length</div>
+      <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>How long replies usually are in chats, texts, and calls.</div>
+      <div style={{ display: "flex", gap: 8 }}>
+        {opts.map(o => {
+          const on = (profile.replyLength || "normal") === o.id;
+          return (
+            <button key={o.id} disabled={busy} onClick={() => pick(o.id)}
+              style={{ flex: 1, background: on ? "rgba(124,140,255,0.12)" : "var(--surface2)", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, borderRadius: 12, padding: "10px 8px", color: "var(--text)", fontWeight: 700, cursor: on ? "default" : "pointer" }}>
+              {on ? "✓ " : ""}{o.label}
             </button>
           );
         })}
