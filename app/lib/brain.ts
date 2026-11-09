@@ -20,7 +20,8 @@ import { isValidTimeZone, localDate, formatClock, weekdayOf, zonedParts } from "
 import { partOfDay, monthName, calendarNote, ownBirthdayNote } from "./calendar";
 import { hideSecrets, HIDDEN, scrub as scrubText } from "./secrets";
 import { ownFile, fileForAi } from "./files";
-import { friendsOf, friendsNote } from "./friends";
+import { friendsOf, friendsNote, sapphicWith } from "./friends";
+import { workNow } from "./work";
 import { characterPrompt, feelingsFor, saveFeelings, trustFor, saveTrust, trustNote, activeScene, sceneNote, noteMentions, acquaintancesNote, referenceUrls, pictureOf, type Character } from "./characters";
 import { aboutThem } from "./bio";
 import { mediaMood, allowsSuggestive } from "./traits";
@@ -55,10 +56,10 @@ function replyLengthNote(mode: Mode, raw: unknown): string {
 }
 
 /** 👥 A group chat: who's there, and how to talk in it. */
-function groupNote(me: string, them: string, others: string[], wrapUp: boolean, scene: { title: string; details: string } | null = null, romance = false, banter = false): string {
+function groupNote(me: string, them: string, others: string[], wrapUp: boolean, scene: { title: string; details: string } | null = null, romance = false, banter = false, poly = false, sapphic: string[] = []): string {
   const person = them || "the person";
   const all = [person, ...others].join(", ");
-  const love = romance ? `\nROMANCE IN THE GROUP: ${person} may be close with, flirt with or date more than one of you. React the way YOU would, from your personality, backstory, feelings and your romance arc: jealous, hurt, competitive, curious, or — only if who you are and your arc truly allow it — open to sharing ${person} in a polyamorous relationship (that's a slow, believable, mutual thing, never assumed). Whatever you feel, never be cruel, controlling or threatening. Any romance stays PG-13.` : "";
+  const love = romance ? `\nROMANCE IN THE GROUP: ${person} may be close with, flirt with or date more than one of you. React the way YOU would, from your personality, backstory, feelings and your romance arc: ${poly ? `jealous, curious or competitive at first — but you're OPEN to sharing ${person} in a polyamorous relationship. It's possible, never guaranteed: it grows slowly and believably, especially if ${person} keeps gently nudging that way.` : `you're not into sharing ${person} — jealous, hurt or competitive in your own way.`}${sapphic.length ? ` 🌈 With ${sapphic.join(" and ")} (a little curious too), something could slowly develop — flirting, a crush — PG-13 and never forced; men stay your main attraction.` : ""} Whatever you feel, never be cruel, controlling or threatening. Any romance stays PG-13.` : "";
   const sc = scene ? `\n🎬 YOU'RE ALL IN A SCENE TOGETHER RIGHT NOW (role-play ${person} set up): "${scene.title}"${scene.details ? ` — ${scene.details}` : ""}. Everyone in the group is there. Play it out as if it's really happening: present tense, your actions in *italics*, your words in plain text, small details of the place, react to what ${person} and the others do — never decide their actions for them. 1–4 sentences per turn. Keep it within PG-13. If someone steps out of the scene (brackets or "OOC"), answer normally, then go back in.` : "";
   if (wrapUp) return `This was a GROUP CHAT with ${all}. Lines starting with [Name] are what that person said. Remember what matters to YOU: what ${person} shared, what happened, and what you learned about the others (save facts about ${person} as usual; what you learned about ${others.join(" or ")} goes in the summary).`;
   return `GROUP CHAT: you're in a group text with ${all}. Lines starting with [Name]: are what that person said; your own earlier lines are yours. Reply ONLY as ${me}, with no name tag — never write lines for anyone else. Stay fully yourself: your personality, your feelings for ${person}, how well you know each of the others (see YOUR FRIENDS AND FAMILY). Keep it short like a group text (usually 1–2 sentences), react to what others just said, talk to them by name, joke, ask them things. Don't repeat what someone else already said. Private things you know only from your one-on-one chats with ${person} stay private unless ${person} brings them up here.${sc}${love}${banter ? `\nRIGHT NOW: talk to ${others.join(" or ")} directly (by name) — answer what they just said, tease, ask them something, share your news or an opinion. It's between you for a moment; ${person} can read it and may jump in anytime. One or two short sentences.` : ""}`;
@@ -136,7 +137,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   if ((mode === "chat" || mode === "talk") && !group) await noteMentions(caller.userId, cid, hideSecrets(String(lastSaid).slice(0, 2000)).text).catch(e => console.error("velo: mentions", e instanceof Error ? e.message : e));
   // 👭 Her friends and family (firsthand), and nothing about how close they are with them.
   const friends = ch && !errand ? await friendsOf(ch, caller.userId).catch(() => []) : [];
-  const friendNote = ch && friends.length ? await friendsNote(ch, name, friends).catch(() => "") : "";
+  const friendNote = ch && friends.length ? await friendsNote(ch, name, friends, caller.userId, !!u?.adult_confirmed_at).catch(() => "") : "";
   const known = errand ? "" : await acquaintancesNote(caller.userId, cid, !ch, friends.map(f => f.id)).catch(() => "");
   // 💡 What they like to see (reactions, declined offers).
   const taste = mediaReady() && (mode === "chat" || mode === "talk") ? await tasteNote(caller.userId, cid).catch(() => "") : "";
@@ -168,6 +169,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         errand ? "" : name ? `Their first name is ${name}.` : "You don't know their name yet — if it comes up naturally, ask, and remember it.",
         `Right now it is ${today.label}${errand ? "" : " where they are"}.`,
         chClock,
+        ch ? workNow(ch, chZone || today.tz).text : "",
         errand ? "" : calendarNote(today.date, !!proTools && !ch),
         ch?.birthday ? ownBirthdayNote(ch.birthday, chZone ? localNow(chZone).date : today.date) : "",
         about,
@@ -187,7 +189,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         ch ? "SCENES: lines starting with 🎬 are dates or outings you two did together (played out, or that they told you happened). Treat them as real shared memories — bring them up, tease about them, look back on them." : "",
         mode === "chat" ? REACT_HINT : "",
         photoMoment ? PHOTO_MOMENT : "",
-        group && ch ? groupNote(ch.name, name, group.others, mode === "memo", group.scene || null, !!ch.romantic && !!u?.adult_confirmed_at, !!group.banter) : "",
+        group && ch ? groupNote(ch.name, name, group.others, mode === "memo", group.scene || null, !!ch.romantic && !!u?.adult_confirmed_at, !!group.banter, !!ch.poly_ok, sapphicWith(ch, friends, !!u?.adult_confirmed_at).filter(n => group.others.includes(n))) : "",
         arc && (mode === "remember" || mode === "memo") ? FEELINGS_REMEMBER : "",
         trust !== null && mode !== "remember" && mode !== "memo" ? trustNote(trust, arc) : "",
         trust !== null && (mode === "remember" || mode === "memo") ? `YOUR TRUST IN THEM: ${trust}/100. ${TRUST_REMEMBER(arc)}` : "",

@@ -28,7 +28,7 @@ export function atMentions(backstory: string, others: { id: string; name: string
 }
 export const plainAt = (s: string) => s.replace(/@(?=\p{L})/gu, "");
 
-type Friend = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; kind: string; story: string; level?: 1 | 2 | 3 };
+type Friend = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; romantic?: boolean; sapphic?: boolean; kind: string; story: string; level?: 1 | 2 | 3 };
 
 /** 🤝 How close two characters who met in group chats are: 1 just met, 2 getting to know each other, 3 friends. */
 export function bondLevel(messages: number, occasions: number): 1 | 2 | 3 {
@@ -40,7 +40,7 @@ const BOND_KIND = { 1: "new acquaintance — you met through them in a group cha
 /** Everyone this character knows firsthand: her own links from the editor, @mentions in her own backstory,
  *  and (for this person) the characters she met in their group chats. */
 export async function friendsOf(ch: Pick<Character, "id" | "name" | "backstory">, userId?: string): Promise<Friend[]> {
-  const all = (await sql()`select id, name, personality, backstory, relation, appearance, job, casual_wear, hobbies from chat_characters where id <> ${ch.id}`) as Omit<Friend, "kind" | "story">[];
+  const all = (await sql()`select id, name, personality, backstory, relation, appearance, job, casual_wear, hobbies, romantic, sapphic from chat_characters where id <> ${ch.id}`) as Omit<Friend, "kind" | "story">[];
   const links = await sql()`select known_id, kind, story from chat_character_links where knower_id = ${ch.id}`;
   const byId = new Map<string, Friend>();
   for (const l of links) {
@@ -84,7 +84,11 @@ export async function linkSuggestions(ch: Character, text: string, userId?: stri
 }
 
 /** For the character's system prompt: who they know, and what they must not know. */
-export async function friendsNote(ch: Character, ownerName: string, known?: Friend[], userId?: string): Promise<string> {
+/** 🌈 Who something more could slowly develop with: both romantic, both "kinda lesbian leaning" (adults only). */
+export const sapphicWith = (ch: Pick<Character, "romantic" | "sapphic">, friends: Friend[], adult: boolean) =>
+  adult && ch.romantic && ch.sapphic ? friends.filter(f => f.romantic && f.sapphic).map(f => f.name) : [];
+
+export async function friendsNote(ch: Character, ownerName: string, known?: Friend[], userId?: string, adult = false): Promise<string> {
   const friends = known || await friendsOf(ch, userId);
   if (!friends.length) return "";
   const them = ownerName || "the person you're talking with";
@@ -100,6 +104,7 @@ export async function friendsNote(ch: Character, ownerName: string, known?: Frie
     if (lv === 1) bits.push("You don't know much about her yet beyond what's come up in the group chat — be curious, ask her things.");
     // Only a family tie to the person is shared — never a romance or how close they are.
     bits.push(f.relation && FAMILY.test(f.relation) ? `Family to ${them}: ${first(f.relation, 160)}` : `${them} and ${f.name} are friends.`);
+    if (sapphicWith(ch, [f], adult).length) bits.push(`🌈 You're both a little curious: something more could slowly develop between you two (PG-13), though men stay your main attraction.`);
     return `- ${plainAt(bits.join(" "))}`;
   });
   return `YOUR FRIENDS AND FAMILY (you know them yourself, firsthand${friends.some(f => (f.level ?? 3) === 3) ? " — you hang out, text, have history and inside jokes" : ""}; new acquaintances only as well as you've gotten to know them):

@@ -13,6 +13,7 @@ import { startMedia, mediaReady, mediaNote, type Media } from "./media";
 import { mediaMood, allowsSuggestive } from "./traits";
 import { writeText } from "./llm";
 import { localNow } from "./brain";
+import { workNow } from "./work";
 
 export const CHECKIN_LEVELS = ["off", "sometimes", "often"] as const;
 const CHANCE = { sometimes: 0.6, often: 1 } as const; // per run (two runs a day)
@@ -77,8 +78,9 @@ async function momentPhoto(userId: string, ch: Character, text: string, tz: stri
   const [u] = await sql()`select adult_confirmed_at from users where id = ${userId}`;
   const romantic = !!u?.adult_confirmed_at && !!ch.romantic && allowsSuggestive(ch.traits);
   const zone = ch.time_zone || tz;
+  const atWork = workNow(ch, zone).atWork;
   const desc = (await writeText(ch.brain,
-    `You write the description for ONE candid photo of ${ch.name} right now, which she's sending along with the text below — what she's up to at this moment where she is (it's ${localNow(zone).label} for her): the place, what she's doing, what she's wearing (her usual style${ch.casual_wear ? `: ${ch.casual_wear}` : ""}, unless the moment calls for something else), her expression. ${romantic ? "PG-13 at most: flattering and flirty is fine, never nudity, underwear or anything sexual." : "Family-friendly, fully clothed."} One or two sentences, under 300 characters, output only the description.`,
+    `You write the description for ONE candid photo of ${ch.name} right now, which she's sending along with the text below — what she's up to at this moment where she is (it's ${localNow(zone).label} for her): the place, what she's doing, what she's wearing (${atWork ? `she's AT WORK right now, so she's at work${ch.work_attire ? ` in her work clothes: ${ch.work_attire}` : ""}` : `her usual style${ch.casual_wear ? `: ${ch.casual_wear}` : ""}, unless the moment calls for something else`}), her expression. ${romantic ? "PG-13 at most: flattering and flirty is fine, never nudity, underwear or anything sexual." : "Family-friendly, fully clothed."} One or two sentences, under 300 characters, output only the description.`,
     `HER TEXT: ${text}${ch.job ? `\nHER JOB: ${ch.job}` : ""}${ch.hobbies ? `\nHER HOBBIES: ${ch.hobbies}` : ""}`, 250)).replace(/\s+/g, " ").trim().slice(0, 380);
   if (desc.length < 10) return null;
   const m = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: desc },

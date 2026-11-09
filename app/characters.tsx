@@ -13,7 +13,7 @@ import { GroupFaces, type Group } from "./groups";
 
 type VoiceOption = { id: string; name: string; kind: "female" | "male"; about: string; preview: string; owner?: string };
 
-export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; brain?: string; portrait_url: string | null; portrait_job: string | null };
+export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; brain?: string; work_attire?: string; work_days?: number[]; work_start?: string; work_end?: string; part_time?: boolean; poly_ok?: boolean; sapphic?: boolean; portrait_url: string | null; portrait_job: string | null };
 
 /** A character's picture in a circle (their initial until a portrait exists). */
 export function CharacterFace({ c, size }: { c: Pick<Character, "name" | "portrait_url">; size: number }) {
@@ -67,6 +67,15 @@ export function CharacterEditor({ initial, portraits, brains = [], onClose, onSa
   const [relation, setRelation] = useState(initial?.relation || "");
   const [appearance, setAppearance] = useState(initial?.appearance || "");
   const [job, setJob] = useState(initial?.job || "");
+  // 💼 Her work week.
+  const [attire, setAttire] = useState(initial?.work_attire || "");
+  const [workDays, setWorkDays] = useState<number[]>(initial?.work_days || []);
+  const [workStart, setWorkStart] = useState(initial?.work_start || "");
+  const [workEnd, setWorkEnd] = useState(initial?.work_end || "");
+  const [partTime, setPartTime] = useState(!!initial?.part_time);
+  // 💞🌈 Romance options.
+  const [polyOk, setPolyOk] = useState(!!initial?.poly_ok);
+  const [sapphic, setSapphic] = useState(!!initial?.sapphic);
   const [wear, setWear] = useState(initial?.casual_wear || "");
   const [hobbies, setHobbies] = useState(initial?.hobbies || "");
   const first = CHARACTER_VOICES[0];
@@ -92,7 +101,9 @@ export function CharacterEditor({ initial, portraits, brains = [], onClose, onSa
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const working = !!c?.portrait_job;
-  const dirty = !c || name !== c.name || personality !== c.personality || backstory !== c.backstory || relation !== c.relation || appearance !== c.appearance || job !== (c.job || "") || wear !== (c.casual_wear || "") || hobbies !== (c.hobbies || "") || voice.id !== c.voice || JSON.stringify(traits) !== JSON.stringify(cleanTraits(c.traits && Object.keys(c.traits).length ? c.traits : DEFAULT_TRAITS)) || preset !== (c.preset || "") || zone !== (c.time_zone || "") || bday !== (c.birthday || "") || romantic !== !!c.romantic || (romantic ? arc : "") !== (c.romance_arc || "") || refIds.join() !== (c.reference_ids || []).join() || brain !== (c.brain || "");
+  const dirty = !c || name !== c.name || personality !== c.personality || backstory !== c.backstory || relation !== c.relation || appearance !== c.appearance || job !== (c.job || "") || wear !== (c.casual_wear || "") || hobbies !== (c.hobbies || "") || voice.id !== c.voice || JSON.stringify(traits) !== JSON.stringify(cleanTraits(c.traits && Object.keys(c.traits).length ? c.traits : DEFAULT_TRAITS)) || preset !== (c.preset || "") || zone !== (c.time_zone || "") || bday !== (c.birthday || "") || romantic !== !!c.romantic || (romantic ? arc : "") !== (c.romance_arc || "") || refIds.join() !== (c.reference_ids || []).join() || brain !== (c.brain || "")
+    || attire !== (c.work_attire || "") || [...workDays].sort().join() !== [...(c.work_days || [])].sort().join() || workStart !== (c.work_start || "") || workEnd !== (c.work_end || "") || partTime !== !!c.part_time
+    || (romantic && polyOk) !== !!c.poly_ok || (romantic && sapphic) !== !!c.sapphic;
 
   // A portrait in progress: check back every few seconds until it's ready.
   useEffect(() => {
@@ -109,7 +120,8 @@ export function CharacterEditor({ initial, portraits, brains = [], onClose, onSa
   const save = async () => {
     setBusy(true); setMsg("");
     try {
-      const fields = { name, personality, backstory, relation, appearance, job, casualWear: wear, hobbies, voice: { id: voice.id, name: voice.name, kind: voice.kind, owner: voice.owner }, romantic, romanceArc: romantic ? arc : "", traits, preset, timeZone: zone, birthday: bday, brain };
+      const fields = { name, personality, backstory, relation, appearance, job, casualWear: wear, hobbies, voice: { id: voice.id, name: voice.name, kind: voice.kind, owner: voice.owner }, romantic, romanceArc: romantic ? arc : "", traits, preset, timeZone: zone, birthday: bday, brain,
+        workAttire: attire, workDays, workStart: workStart && workEnd ? workStart : "", workEnd: workStart && workEnd ? workEnd : "", partTime, polyOk: romantic && polyOk, sapphic: romantic && sapphic };
       const r = await api<{ character: Character }>("/api/characters", { action: c ? "update" : "create", id: c?.id, ...fields, referenceIds: refIds });
       // 🖼️ Pictures picked while making a new character: upload them now (first one as headshot), as references.
       if (!c && pending.files.length && pending.fictional) {
@@ -185,6 +197,7 @@ export function CharacterEditor({ initial, portraits, brains = [], onClose, onSa
           <label style={{ fontSize: 13, fontWeight: 700 }}>Job
             <input value={job} onChange={e => setJob(e.target.value)} maxLength={300} placeholder="e.g. Yoga instructor at a small studio downtown, teaches mornings" aria-label="Job" style={{ marginTop: 4 }} />
           </label>
+          <WorkWeek attire={attire} setAttire={setAttire} days={workDays} setDays={setWorkDays} start={workStart} setStart={setWorkStart} end={workEnd} setEnd={setWorkEnd} part={partTime} setPart={setPartTime} />
           <label style={{ fontSize: 13, fontWeight: 700 }}>Preferred casual wear
             <textarea value={wear} onChange={e => setWear(e.target.value)} maxLength={400} rows={2} placeholder="e.g. Oversized hoodies, high-waisted jeans, white sneakers, gold hoops" aria-label="Preferred casual wear" style={{ marginTop: 4, resize: "vertical" }} />
           </label>
@@ -225,6 +238,18 @@ export function CharacterEditor({ initial, portraits, brains = [], onClose, onSa
               style={{ marginTop: 4, resize: "vertical" }} />
             <span className="muted" style={{ fontWeight: 500, display: "block", marginTop: 4 }}>Each person&apos;s relationship develops on its own from here, a little after every chat and call. Edit this any time to add new turns.</span>
           </label>
+        )}
+        {romantic && (
+          <div style={{ display: "grid", gap: 8 }}>
+            <label className="row" style={{ gap: 10, fontSize: 13, fontWeight: 700, alignItems: "flex-start" }}>
+              <input type="checkbox" checked={polyOk} onChange={e => setPolyOk(e.target.checked)} data-testid="poly-ok" style={{ width: 20, height: 20, marginTop: 1, flexShrink: 0 }} />
+              <span>💞 Polyamory possible <span className="muted" style={{ fontWeight: 500, display: "block" }}>Open to sharing you with others over time — possible, never guaranteed. More likely if you keep gently nudging that way. Unchecked: she isn&apos;t into sharing you.</span></span>
+            </label>
+            <label className="row" style={{ gap: 10, fontSize: 13, fontWeight: 700, alignItems: "flex-start" }}>
+              <input type="checkbox" checked={sapphic} onChange={e => setSapphic(e.target.checked)} data-testid="sapphic" style={{ width: 20, height: 20, marginTop: 1, flexShrink: 0 }} />
+              <span>🌈 Kinda lesbian leaning <span className="muted" style={{ fontWeight: 500, display: "block" }}>Men always stay her main attraction and she never goes fully lesbian — but with another romantic character who has this checked too, something could slowly develop (PG-13).</span></span>
+            </label>
+          </div>
         )}
         {c && <ReferencePicker characterId={c.id} value={refIds} onChange={setRefIds} refresh={shots}
           onPortrait={ch => { setC(ch); onSaved(ch); }} />}
@@ -585,6 +610,42 @@ function BrainPick({ value, onChange, available }: { value: string; onChange: (v
         })}
       </div>
       {opts.some(o => !available.includes(o.id)) && <span className="muted" style={{ fontSize: 11 }}>Greyed out = not set up yet: add {opts.filter(o => !available.includes(o.id)).map(o => `ATLASCLOUD_${o.id.toUpperCase()}_MODEL`).join(" / ")} (the Atlas model id) in Vercel.</span>}
+    </div>
+  );
+}
+
+/** 💼 Work clothes, which days, what hours (8 hours, or 5 for part-time — editable). */
+function WorkWeek({ attire, setAttire, days, setDays, start, setStart, end, setEnd, part, setPart }: {
+  attire: string; setAttire: (v: string) => void; days: number[]; setDays: (v: number[]) => void; start: string; setStart: (v: string) => void; end: string; setEnd: (v: string) => void; part: boolean; setPart: (v: boolean) => void;
+}) {
+  const plus = (hhmm: string, h: number) => { if (!hhmm) return ""; const [a, b] = hhmm.split(":").map(Number); const t = (a * 60 + b + h * 60) % 1440; return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`; };
+  const DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  return (
+    <div data-testid="work-week" style={{ display: "grid", gap: 8 }}>
+      <label style={{ fontSize: 13, fontWeight: 700 }}>Work attire
+        <textarea value={attire} onChange={e => setAttire(e.target.value)} maxLength={400} rows={2} aria-label="Work attire" placeholder="e.g. Black scrubs and white sneakers, hair in a bun" style={{ marginTop: 4, resize: "vertical" }} />
+      </label>
+      <div style={{ fontSize: 13, fontWeight: 700 }}>Work days
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
+          {DAY.map((d, i) => (
+            <label key={d} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13, padding: "4px 8px", borderRadius: 999, border: `1px solid ${days.includes(i) ? "var(--accent)" : "var(--border)"}`, background: days.includes(i) ? "rgba(124,140,255,0.15)" : "transparent" }}>
+              <input type="checkbox" checked={days.includes(i)} onChange={e => setDays(e.target.checked ? [...days, i].sort() : days.filter(x => x !== i))} data-testid={`work-day-${d}`} aria-label={`Works ${d}`} />{d}
+            </label>
+          ))}
+        </div>
+      </div>
+      <div className="row" style={{ gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <label style={{ fontSize: 13, fontWeight: 700, flex: "1 1 110px" }}>Starts
+          <input type="time" value={start} onChange={e => { setStart(e.target.value); setEnd(plus(e.target.value, part ? 5 : 8)); }} aria-label="Work starts" data-testid="work-start" style={{ marginTop: 4 }} />
+        </label>
+        <label style={{ fontSize: 13, fontWeight: 700, flex: "1 1 110px" }}>Ends
+          <input type="time" value={end} onChange={e => setEnd(e.target.value)} aria-label="Work ends" data-testid="work-end" style={{ marginTop: 4 }} />
+        </label>
+        <label className="row" style={{ gap: 6, fontSize: 13, fontWeight: 700, paddingBottom: 10 }}>
+          <input type="checkbox" checked={part} onChange={e => { setPart(e.target.checked); if (start) setEnd(plus(start, e.target.checked ? 5 : 8)); }} data-testid="part-time" style={{ width: 18, height: 18 }} /> Part-time
+        </label>
+      </div>
+      <span className="muted" style={{ fontSize: 12 }}>She knows when she&apos;s at work (&quot;at work till 6&quot;) or off (&quot;I&apos;m off Tuesdays&quot;), texts like it, and wears her work clothes in photos taken at work. Times are in her time zone.</span>
     </div>
   );
 }
