@@ -14,6 +14,7 @@ import { MAX_CHARACTERS, DAILY_PORTRAITS, isAdmin, listCharacters, getCharacter,
 // 🎭 Characters. Everyone can list them and chat; only admins create and edit. POST { action, ... }:
 //   list                     → { characters, portraits, admin }
 //   create / update { id?, name, personality, backstory, relation, appearance, job, casualWear, hobbies, voice, romantic, romanceArc, traits, preset, timeZone, referenceIds, brain, workAttire, workDays, workStart, workEnd, partTime, polyOk, sapphic } → { character }   (admin)
+//   brain.set { id, brain: '' | qwen | deepseek } → { character }   (admin) 🧠 from Settings → Brains
 //   generate { name?, vibe?, job?, romantic?, male? } → { draft }   (admin) ✨ a new character to look over in the editor
 //   gallery { id } → { items }   the admin's pictures of this character, to pick references from
 //   delete { id }            (admin; everyone's chats and memories with it go too)
@@ -81,6 +82,14 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ character: await getCharacter(String(row.id)) });
       }
 
+      // 🧠 Just her brain (from Settings → Brains): '' = same as Velo's, or qwen / deepseek through Atlas.
+      case "brain.set": {
+        if (!(await getCharacter(id))) return bad("That character wasn't found.");
+        const brain = b.brain === "" ? "" : availableBrains().includes(b.brain) ? String(b.brain) : null;
+        if (brain === null) return bad("That brain isn't set up yet.");
+        await sql()`update chat_characters set brain = ${brain}, updated_at = now() where id = ${id}`;
+        return NextResponse.json({ character: await getCharacter(id) });
+      }
       // ✨ A whole new character from a few hints — only a draft for the editor (nothing is saved).
       case "generate": {
         if (!allow(`chargen:${me}`, [{ ms: 60_000, max: 6 }, { ms: 86_400_000, max: 100 }])) return bad("That's a lot of new characters — give it a minute.", 429);

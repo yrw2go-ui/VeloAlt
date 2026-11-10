@@ -184,31 +184,73 @@ function FacebookCard() {
 }
 
 /** Settings → Velo's brain: which AI she chats with (only shown when there's a choice). */
-export function BrainCard({ profile, onChange }: { profile: Profile; onChange: () => void }) {
+/** 🧠 Brains: which AI Velo chats with, and a tab for each character (their own brain through Atlas Cloud). */
+type BrainChar = { id: string; name: string; brain?: string; portrait_url: string | null };
+export function BrainCard({ profile, onChange, chars = [], admin = false, brains = [], onCharChange }: {
+  profile: Profile; onChange: () => void; chars?: BrainChar[]; admin?: boolean; brains?: string[]; onCharChange?: (c: BrainChar) => void;
+}) {
   const [busy, setBusy] = useState(false);
-  if (profile.models.length < 2) return null;
+  const [tab, setTab] = useState<string>("velo");
+  const [err, setErr] = useState("");
+  const showChars = chars.length > 0 && (brains.length > 0 || chars.some(c => c.brain));
+  if (profile.models.length < 2 && !showChars) return null;
   const pick = async (id: string) => {
     if (id === profile.chatModel) return;
     setBusy(true);
     await data("profile.update", { chatModel: id }).catch(() => {});
     setBusy(false); onChange();
   };
+  const setBrain = async (c: BrainChar, brain: string) => {
+    if ((c.brain || "") === brain) return;
+    setBusy(true); setErr("");
+    try { const r = await api<{ character: BrainChar }>("/api/characters", { action: "brain.set", id: c.id, brain }); onCharChange?.(r.character); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't change it."); }
+    setBusy(false);
+  };
+  const veloLabel = profile.models.find(m => m.id === profile.chatModel)?.label || "Claude";
+  const ch = chars.find(c => c.id === tab) || null;
+  const opt = (on: boolean) => ({ textAlign: "left" as const, background: on ? "rgba(124,140,255,0.12)" : "var(--surface2)", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, borderRadius: 12, padding: "10px 12px", color: "var(--text)", cursor: on ? "default" : "pointer" });
+  const tabStyle = (on: boolean) => ({ flexShrink: 0, padding: "6px 12px", borderRadius: 999, fontSize: 13, fontWeight: 700, cursor: "pointer", color: "var(--text)", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, background: on ? "rgba(124,140,255,0.15)" : "var(--surface2)" });
   return (
     <div className="card" data-testid="brain">
-      <div style={{ fontWeight: 700 }}>🧠 Velo&apos;s brain</div>
-      <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>The AI Velo chats with. Her memory, reminders and everything else stay the same. Passwords and codes are hidden from every one of them.</div>
-      <div role="radiogroup" aria-label="Velo's brain" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {profile.models.map(m => {
-          const on = m.id === profile.chatModel;
-          return (
-            <button key={m.id} role="radio" aria-checked={on} disabled={busy} onClick={() => pick(m.id)}
-              style={{ textAlign: "left", background: on ? "rgba(124,140,255,0.12)" : "var(--surface2)", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, borderRadius: 12, padding: "10px 12px", color: "var(--text)", cursor: on ? "default" : "pointer" }}>
-              <div style={{ fontWeight: 700 }}>{on ? "✓ " : ""}{m.label} <span className="muted" style={{ fontWeight: 400, fontSize: 13 }}>by {m.by}{m.id === "claude" ? " · default" : ""}</span></div>
-              <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{m.where}</div>
-            </button>
-          );
-        })}
-      </div>
+      <div style={{ fontWeight: 700 }}>🧠 Brains</div>
+      <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>The AI behind Velo and each character. Their memory and everything else stay the same. Passwords and codes are hidden from every one of them.</div>
+      {showChars && (
+        <div role="tablist" aria-label="Whose brain" style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 8 }}>
+          <button role="tab" aria-selected={tab === "velo"} onClick={() => setTab("velo")} style={tabStyle(tab === "velo")} data-testid="brain-tab-velo">Velo</button>
+          {chars.map(c => <button key={c.id} role="tab" aria-selected={tab === c.id} onClick={() => setTab(c.id)} style={tabStyle(tab === c.id)} data-testid={`brain-tab-${c.name}`}>{c.name}{c.brain ? " 🧠" : ""}</button>)}
+        </div>
+      )}
+      {!ch && (
+        <div role="radiogroup" aria-label="Velo's brain" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {profile.models.map(m => {
+            const on = m.id === profile.chatModel;
+            return (
+              <button key={m.id} role="radio" aria-checked={on} disabled={busy} onClick={() => pick(m.id)} style={opt(on)}>
+                <div style={{ fontWeight: 700 }}>{on ? "✓ " : ""}{m.label} <span className="muted" style={{ fontWeight: 400, fontSize: 13 }}>by {m.by}{m.id === "claude" ? " · default" : ""}</span></div>
+                <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{m.where}</div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {ch && (
+        <div role="radiogroup" aria-label={`${ch.name}'s brain`} style={{ display: "flex", flexDirection: "column", gap: 8 }} data-testid="brain-char">
+          {[{ id: "", label: `Same as Velo (${veloLabel})`, where: "Follows whatever Velo uses." },
+            { id: "qwen", label: "Qwen", where: "Through Atlas Cloud — everything she does: chats, texts, calls, check-ins, memories, peeks." },
+            { id: "deepseek", label: "DeepSeek", where: "Through Atlas Cloud — everything she does: chats, texts, calls, check-ins, memories, peeks." }].map(o => {
+            const on = (ch.brain || "") === o.id, ready = o.id === "" || brains.includes(o.id);
+            return (
+              <button key={o.id || "same"} role="radio" aria-checked={on} disabled={busy || !admin || (!ready && !on)} onClick={() => setBrain(ch, o.id)} style={{ ...opt(on), opacity: ready || on ? 1 : 0.5 }} data-testid={`brain-opt-${o.id || "same"}`}>
+                <div style={{ fontWeight: 700 }}>{on ? "✓ " : ""}{o.label}{!ready ? <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}> · not set up yet</span> : null}</div>
+                <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{o.where}</div>
+              </button>
+            );
+          })}
+          {!admin && <span className="muted" style={{ fontSize: 12 }}>Only an admin can change a character&apos;s brain.</span>}
+        </div>
+      )}
+      {err && <div style={{ color: "var(--bad)", fontSize: 13, marginTop: 6 }}>⚠️ {err}</div>}
     </div>
   );
 }

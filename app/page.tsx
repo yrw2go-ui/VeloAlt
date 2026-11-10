@@ -303,7 +303,8 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
         {tab === "chat" && !inGroup && !(groupId && !groupsLoaded) && <Chat key={`${withChar?.id || "velo"}-${chatTick}`} userId={userId} name={name} onChanged={bump} added={chatAdd} onAdded={() => setChatAdd(null)} character={withChar} adult={!!profile?.adultConfirmed} onAdult={() => setProfileTick(t => t + 1)} onHistory={h => { chatHistory.current = h; setHistoryCount(h.length); }} />}
         {tab === "today" && <Today refresh={refresh} />}
         {tab === "memory" && <Memory refresh={refresh} />}
-        {tab === "settings" && <Settings name={name} setName={setName} onOut={onOut} profile={profile} onProfile={() => setProfileTick(t => t + 1)} />}
+        {tab === "settings" && <Settings name={name} setName={setName} onOut={onOut} profile={profile} onProfile={() => setProfileTick(t => t + 1)}
+          chars={chars} admin={admin} brains={brains} onCharChange={c => setChars(cs => cs.map(x => (x.id === c.id ? { ...x, brain: c.brain } : x)))} />}
       </main>
 
       <nav style={{ display: "flex", borderTop: "1px solid var(--border)", paddingBottom: "env(safe-area-inset-bottom)", background: "var(--surface)" }}>
@@ -342,7 +343,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   );
 }
 
-function Settings({ name, setName, onOut, profile, onProfile }: { name: string; setName: (n: string) => void; onOut: () => void; profile: Profile | null; onProfile: () => void }) {
+function Settings({ name, setName, onOut, profile, onProfile, chars = [], admin = false, brains = [], onCharChange }: { name: string; setName: (n: string) => void; onOut: () => void; profile: Profile | null; onProfile: () => void; chars?: Character[]; admin?: boolean; brains?: string[]; onCharChange?: (c: { id: string; brain?: string }) => void }) {
   const [draft, setDraft] = useState(name);
   const [saved, setSaved] = useState(false);
   useEffect(() => setDraft(name), [name]);
@@ -369,7 +370,7 @@ function Settings({ name, setName, onOut, profile, onProfile }: { name: string; 
       {profile && <AboutCard profile={profile} onChange={onProfile} />}
       {profile && <CheckinsCard profile={profile} onChange={onProfile} />}
       {profile && <PersonalityCard profile={profile} onChange={onProfile} />}
-      {profile && <BrainCard profile={profile} onChange={onProfile} />}
+      {profile && <BrainCard profile={profile} onChange={onProfile} chars={chars} admin={admin} brains={brains} onCharChange={onCharChange} />}
       {profile && <ReplyLengthCard profile={profile} onChange={onProfile} />}
       {profile && <VideoCard profile={profile} onChange={onProfile} />}
       {profile && <ProCard profile={profile} onChange={onProfile} />}
