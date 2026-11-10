@@ -112,6 +112,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   const [chars, setChars] = useState<Character[]>([]);
   const [portraits, setPortraits] = useState(false);
   const [brains, setBrains] = useState<string[]>([]);
+  const [brainModels, setBrainModels] = useState<{ id: string; model: string }[]>([]);
   const [admin, setAdmin] = useState(false);
   // A tapped notification opens that chat (?chat=<character id>, or "velo").
   const [withId, setWithId] = useState<string | null>(() => { const c = urlParam("chat"); return c ? (c !== "velo" ? c : null) : place.withId || null; });
@@ -122,8 +123,8 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   const [gallery, setGallery] = useState(false);
   const [chatTick, setChatTick] = useState(0);
   useEffect(() => {
-    api<{ characters: Character[]; portraits: boolean; admin: boolean; brains?: string[] }>("/api/characters", { action: "list" })
-      .then(r => { setChars(r.characters); setPortraits(r.portraits); setAdmin(r.admin); setBrains(r.brains || []); }).catch(() => {});
+    api<{ characters: Character[]; portraits: boolean; admin: boolean; brains?: string[]; brainModels?: { id: string; model: string }[] }>("/api/characters", { action: "list" })
+      .then(r => { setChars(r.characters); setPortraits(r.portraits); setAdmin(r.admin); setBrains(r.brains || []); setBrainModels(r.brainModels || []); }).catch(() => {});
   }, [userId]);
   const withChar = chars.find(c => c.id === withId) || null;
   // 👥 Group chats (you and 2–6 characters).
@@ -252,7 +253,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
     // (The server gives every call her text chat with them, so the call only sends its own turns.)
     const r = await api<{ reply: string; changed?: boolean; media?: Media[]; by?: "claude" | "alt" }>("/api/velo", { mode, messages: turns, timeZone: timeZone(), name, ...thread });
     // 👍 her own brain (Qwen / DeepSeek) answered, ⏰ Claude stepped in.
-    if (mode === "talk" && callWith?.brain && r.by) setCallBrain(r.by === "alt" ? "👍" : "⏰");
+    if (mode === "talk" && callWith?.brain && callWith.brain !== "claude" && r.by) setCallBrain(r.by === "alt" ? "👍" : "⏰");
     if (r.changed) bump();
     const sent = (r.media || []).filter(m => m.status !== "failed");
     if (sent.length) setCallMedia(list => [...list, ...sent]);
@@ -304,7 +305,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
         {tab === "today" && <Today refresh={refresh} />}
         {tab === "memory" && <Memory refresh={refresh} />}
         {tab === "settings" && <Settings name={name} setName={setName} onOut={onOut} profile={profile} onProfile={() => setProfileTick(t => t + 1)}
-          chars={chars} admin={admin} brains={brains} onCharChange={c => setChars(cs => cs.map(x => (x.id === c.id ? { ...x, brain: c.brain } : x)))} />}
+          chars={chars} admin={admin} brains={brains} brainModels={brainModels} onCharChange={c => setChars(cs => cs.map(x => (x.id === c.id ? { ...x, brain: c.brain } : x)))} />}
       </main>
 
       <nav style={{ display: "flex", borderTop: "1px solid var(--border)", paddingBottom: "env(safe-area-inset-bottom)", background: "var(--surface)" }}>
@@ -332,7 +333,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       {calling && <CallMedia items={callMedia} name={callWith?.name || "Velo"} />}
       {gallery && <Gallery key={withChar?.id || "velo"} characterId={withChar?.id || null} name={withChar?.name || "Velo"} onClose={() => setGallery(false)} />}
       {editing && (
-        <CharacterEditor key={editing === "new" ? `new-${draft?.name || ""}` : editing.id} initial={editing === "new" ? null : editing} draft={editing === "new" ? draft : null} portraits={portraits} brains={brains}
+        <CharacterEditor key={editing === "new" ? `new-${draft?.name || ""}` : editing.id} initial={editing === "new" ? null : editing} draft={editing === "new" ? draft : null} portraits={portraits} brains={brains} brainModels={brainModels}
           onClose={() => setEditing(null)} onSaved={savedChar}
           onDeleted={id => { setChars(cs => cs.filter(c => c.id !== id)); setWithId(null); setEditing(null); }} />
       )}
@@ -343,7 +344,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   );
 }
 
-function Settings({ name, setName, onOut, profile, onProfile, chars = [], admin = false, brains = [], onCharChange }: { name: string; setName: (n: string) => void; onOut: () => void; profile: Profile | null; onProfile: () => void; chars?: Character[]; admin?: boolean; brains?: string[]; onCharChange?: (c: { id: string; brain?: string }) => void }) {
+function Settings({ name, setName, onOut, profile, onProfile, chars = [], admin = false, brains = [], brainModels = [], onCharChange }: { name: string; setName: (n: string) => void; onOut: () => void; profile: Profile | null; onProfile: () => void; chars?: Character[]; admin?: boolean; brains?: string[]; brainModels?: { id: string; model: string }[]; onCharChange?: (c: { id: string; brain?: string }) => void }) {
   const [draft, setDraft] = useState(name);
   const [saved, setSaved] = useState(false);
   useEffect(() => setDraft(name), [name]);
@@ -370,7 +371,7 @@ function Settings({ name, setName, onOut, profile, onProfile, chars = [], admin 
       {profile && <AboutCard profile={profile} onChange={onProfile} />}
       {profile && <CheckinsCard profile={profile} onChange={onProfile} />}
       {profile && <PersonalityCard profile={profile} onChange={onProfile} />}
-      {profile && <BrainCard profile={profile} onChange={onProfile} chars={chars} admin={admin} brains={brains} onCharChange={onCharChange} />}
+      {profile && <BrainCard profile={profile} onChange={onProfile} chars={chars} admin={admin} brains={brains} brainModels={brainModels} onCharChange={onCharChange} />}
       {profile && <ReplyLengthCard profile={profile} onChange={onProfile} />}
       {profile && <VideoCard profile={profile} onChange={onProfile} />}
       {profile && <ProCard profile={profile} onChange={onProfile} />}

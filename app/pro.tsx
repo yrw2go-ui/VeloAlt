@@ -4,6 +4,7 @@
 // Facebook Page Velo can post to.
 import { useEffect, useState } from "react";
 import { api, data } from "./lib/api";
+import { BRAIN_OPTIONS } from "./lib/brainOptions";
 import { confirmAsk } from "./lib/dialog";
 import { formatPhone, contactProblem } from "./lib/contact";
 
@@ -186,8 +187,8 @@ function FacebookCard() {
 /** Settings → Velo's brain: which AI she chats with (only shown when there's a choice). */
 /** 🧠 Brains: which AI Velo chats with, and a tab for each character (their own brain through Atlas Cloud). */
 type BrainChar = { id: string; name: string; brain?: string; portrait_url: string | null };
-export function BrainCard({ profile, onChange, chars = [], admin = false, brains = [], onCharChange }: {
-  profile: Profile; onChange: () => void; chars?: BrainChar[]; admin?: boolean; brains?: string[]; onCharChange?: (c: BrainChar) => void;
+export function BrainCard({ profile, onChange, chars = [], admin = false, brains = [], brainModels = [], onCharChange }: {
+  profile: Profile; onChange: () => void; chars?: BrainChar[]; admin?: boolean; brains?: string[]; brainModels?: { id: string; model: string }[]; onCharChange?: (c: BrainChar) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<string>("velo");
@@ -236,10 +237,9 @@ export function BrainCard({ profile, onChange, chars = [], admin = false, brains
       )}
       {ch && (
         <div role="radiogroup" aria-label={`${ch.name}'s brain`} style={{ display: "flex", flexDirection: "column", gap: 8 }} data-testid="brain-char">
-          {[{ id: "", label: `Same as Velo (${veloLabel})`, where: "Follows whatever Velo uses." },
-            { id: "qwen", label: "Qwen", where: "Through Atlas Cloud — everything she does: chats, texts, calls, check-ins, memories, peeks." },
-            { id: "deepseek", label: "DeepSeek", where: "Through Atlas Cloud — everything she does: chats, texts, calls, check-ins, memories, peeks." }].map(o => {
-            const on = (ch.brain || "") === o.id, ready = o.id === "" || brains.includes(o.id);
+          {[{ id: "", label: `Same as Velo (${veloLabel})`, where: "Follows whatever Velo uses.", atlas: false },
+            ...BRAIN_OPTIONS.map(o => ({ id: o.id as string, label: o.label as string, atlas: o.atlas as boolean, where: `${o.about}${brainModels.find(m => m.id === o.id) ? ` (${brainModels.find(m => m.id === o.id)!.model})` : ""}` }))].map(o => {
+            const on = (ch.brain || "") === o.id, ready = !o.atlas || brains.includes(o.id);
             return (
               <button key={o.id || "same"} role="radio" aria-checked={on} disabled={busy || !admin || (!ready && !on)} onClick={() => setBrain(ch, o.id)} style={{ ...opt(on), opacity: ready || on ? 1 : 0.5 }} data-testid={`brain-opt-${o.id || "same"}`}>
                 <div style={{ fontWeight: 700 }}>{on ? "✓ " : ""}{o.label}{!ready ? <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}> · not set up yet</span> : null}</div>

@@ -299,7 +299,8 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   const chosen = (u?.chat_model || "claude") as ChatModel;
   const herBrain = ch?.brain ? atlasBrain(ch.brain) : null;
   // Messages with an attachment go to Claude (Qwen and DeepSeek are set up for text only here).
-  const alt = herBrain || (chosen !== "claude" && !attached && (mode === "chat" || mode === "sms" || mode === "talk") ? provider(chosen) : null);
+  // A character pinned to Claude always uses Claude, whatever Velo uses.
+  const alt = herBrain || (ch?.brain !== "claude" && chosen !== "claude" && !attached && (mode === "chat" || mode === "sms" || mode === "talk") ? provider(chosen) : null);
   const asText = (c: Anthropic.MessageParam["content"]) => typeof c === "string" ? c
     : c.map(b => (b.type === "text" ? b.text : b.type === "image" || b.type === "document" ? `(They attached ${attachedName || "a file"} — you can't open it here, so ask them about it.)` : "")).filter(Boolean).join("\n");
   const oaBase = (): OaMessage[] => [

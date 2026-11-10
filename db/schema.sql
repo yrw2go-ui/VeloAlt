@@ -507,3 +507,6 @@ alter table chat_groups add column if not exists scene_clock text not null defau
 alter table chat_groups add column if not exists scene_set_time text not null default '';
 alter table chat_groups add column if not exists scene_started_at timestamptz;
 alter table chat_scenes add column if not exists pushed boolean not null default false;
+-- 🧠 More brains per character: Claude (always Claude), Qwen (fast), Qwen (big), DeepSeek ('' = same as Velo).
+alter table chat_characters drop constraint if exists chat_characters_brain_check;
+alter table chat_characters add constraint chat_characters_brain_check check (brain in ('', 'claude', 'qwen', 'qwen2', 'deepseek'));

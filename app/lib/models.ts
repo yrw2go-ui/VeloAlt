@@ -33,14 +33,22 @@ export const availableModels = (): ChatModel[] => CHAT_MODELS.filter(m => m === 
 // 🧠 A character's own brain: Qwen or DeepSeek through Atlas Cloud (OpenAI-compatible), for everything
 // she does. Uses the Atlas key the photos already use; model ids come from ATLASCLOUD_QWEN_MODEL /
 // ATLASCLOUD_DEEPSEEK_MODEL (base URL ATLASCLOUD_LLM_URL, default Atlas's /v1).
-export type Brain = "qwen" | "deepseek";
-export const BRAINS: Brain[] = ["qwen", "deepseek"];
+// Two Qwens can be set up side by side: "qwen" (ATLASCLOUD_QWEN_MODEL, the fast one) and "qwen2" (ATLASCLOUD_QWEN2_MODEL, the big one).
+// A character can also be pinned to "claude" (always Claude, whatever Velo uses).
+export type Brain = "qwen" | "qwen2" | "deepseek";
+export const BRAINS: Brain[] = ["qwen", "qwen2", "deepseek"];
+const BRAIN_ENV: Record<Brain, string> = { qwen: "ATLASCLOUD_QWEN_MODEL", qwen2: "ATLASCLOUD_QWEN2_MODEL", deepseek: "ATLASCLOUD_DEEPSEEK_MODEL" };
+export const brainModel = (b: Brain) => process.env[BRAIN_ENV[b]] || "";
 export function atlasBrain(b: unknown): OpenAiProvider | null {
   const key = process.env.ATLASCLOUD_API_KEY;
-  const model = b === "qwen" ? process.env.ATLASCLOUD_QWEN_MODEL : b === "deepseek" ? process.env.ATLASCLOUD_DEEPSEEK_MODEL : "";
+  const model = BRAINS.includes(b as Brain) ? brainModel(b as Brain) : "";
   if (!key || !model) return null;
   // Some Atlas models reason before answering: leave them room so short replies don't come back empty.
   return { baseUrl: process.env.ATLASCLOUD_LLM_URL || "https://api.atlascloud.ai/v1", key, model, minTokens: 4000 };
 }
 /** Which brains this server can give a character (set up in the environment). */
 export const availableBrains = (): Brain[] => BRAINS.filter(b => !!atlasBrain(b));
+/** For the pickers: which brains are ready, and the Atlas model each one runs. */
+export const brainList = () => availableBrains().map(id => ({ id, model: brainModel(id) }));
+/** A character's own Atlas brain (not '' = same as Velo, and not 'claude'). */
+export const ownsAtlasBrain = (b: unknown) => BRAINS.includes(b as Brain);

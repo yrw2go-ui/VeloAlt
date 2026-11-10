@@ -6,7 +6,7 @@ import { scrub } from "../../lib/secrets";
 import { listGallery } from "../../lib/media";
 import { cleanTraits, PRESETS } from "../../lib/traits";
 import { isValidTimeZone } from "../../lib/localTime";
-import { availableBrains } from "../../lib/models";
+import { availableBrains, brainList } from "../../lib/models";
 import { makeCharacter } from "../../lib/makeCharacter";
 import { listLinks, setLink, removeLink, writeStory, linkSuggestions } from "../../lib/friends";
 import { MAX_CHARACTERS, DAILY_PORTRAITS, isAdmin, listCharacters, getCharacter, screenCharacter, startPortrait, checkPortrait, deleteCharacter, portraitsReady, chooseVoice, VoiceError } from "../../lib/characters";
@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
     const action = String(b.action || "");
     const admin = await isAdmin(me);
 
-    if (action === "list") return NextResponse.json({ characters: await listCharacters(), portraits: portraitsReady(), admin, brains: admin ? availableBrains() : [] });
+    if (action === "list") return NextResponse.json({ characters: await listCharacters(), portraits: portraitsReady(), admin, brains: admin ? availableBrains() : [], brainModels: admin ? brainList() : [] });
     if (action === "link.suggest") {
       const ch = admin ? await getCharacter(id) : null;
       return NextResponse.json({ suggest: ch ? await linkSuggestions(ch, clean(b.text, 2000), me).catch(() => []) : [] });
@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
         const presetId = PRESETS.some(p => p.id === b.preset) ? String(b.preset) : "";
         const bday = typeof b.birthday === "string" && /^(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/.test(b.birthday) ? b.birthday : "";
         // 🧠 Her own brain (Qwen / DeepSeek through Atlas Cloud), only if it's set up here.
-        const brain = availableBrains().includes(b.brain) ? String(b.brain) : "";
+        const brain = b.brain === "claude" || availableBrains().includes(b.brain) ? String(b.brain) : "";
         // 💼 Her work week, and 💞🌈 romance options (only with romance on).
         const hhmm = (v: unknown) => (typeof v === "string" && /^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(v) ? v : "");
         const work = { attire: clean(b.workAttire, 400), days: [...new Set((Array.isArray(b.workDays) ? b.workDays : []).map(Number).filter((d: number) => Number.isInteger(d) && d >= 0 && d <= 6))] as number[], start: hhmm(b.workStart), end: hhmm(b.workEnd), part: b.partTime === true };
@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
       // 🧠 Just her brain (from Settings → Brains): '' = same as Velo's, or qwen / deepseek through Atlas.
       case "brain.set": {
         if (!(await getCharacter(id))) return bad("That character wasn't found.");
-        const brain = b.brain === "" ? "" : availableBrains().includes(b.brain) ? String(b.brain) : null;
+        const brain = b.brain === "" || b.brain === "claude" ? String(b.brain) : availableBrains().includes(b.brain) ? String(b.brain) : null;
         if (brain === null) return bad("That brain isn't set up yet.");
         await sql()`update chat_characters set brain = ${brain}, updated_at = now() where id = ${id}`;
         return NextResponse.json({ character: await getCharacter(id) });
