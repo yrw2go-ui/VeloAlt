@@ -13,6 +13,7 @@ import sharp from "sharp";
 import { randomUUID } from "node:crypto";
 import { sql } from "./db";
 import { scrub } from "./secrets";
+import { sendPush } from "./push";
 
 export type Media = { id: string; kind: "image" | "video"; status: "offered" | "declined" | "working" | "done" | "failed"; url: string | null; thumb?: string | null; caption?: string | null; description?: string | null };
 
@@ -21,6 +22,7 @@ export const mediaNote = (kind: "image" | "video", status: Media["status"], desc
   const what = kind === "image" ? "photo" : "video";
   if (status === "offered") return `(offered to send a ${what}${description ? `: "${description}"` : ""} — waiting for their OK)`;
   if (status === "declined") return `(offered a ${what}${description ? ` ("${description}")` : ""} — they said no thanks)`;
+  if (status === "failed") return `(tried to send a ${what}${description ? ` ("${description}")` : ""} — it wouldn't go through)`;
   return `(sent a ${what}${description ? `: "${description}"` : ""}${reaction ? ` — they reacted ${reaction}` : ""})`;
 };
 
@@ -236,12 +238,12 @@ export async function tasteNote(userId: string, characterId: string | null): Pro
   return `THEIR TASTE IN YOUR PHOTOS/VIDEOS (lean toward what they love — settings, outfits, vibes — and be creative with new ideas in that spirit):${liked.length ? `\n- Loved: ${liked.join("; ")}` : ""}${passed.length ? `\n- Turned down: ${passed.join("; ")}` : ""}`;
 }
 
-type Row = { id: string; user_id: string; character_id: string | null; kind: "image" | "video"; prompt: string; model: string; job_id: string | null; status: Media["status"]; attempts: number; created_at: string; url: string | null; thumb: string | null; poster_url: string | null; caption: string | null; description: string | null; refs: string[] | null; retried?: boolean; retries?: number };
+type Row = { id: string; user_id: string; character_id: string | null; kind: "image" | "video"; prompt: string; model: string; job_id: string | null; status: Media["status"]; attempts: number; created_at: string; url: string | null; thumb: string | null; poster_url: string | null; caption: string | null; description: string | null; refs: string[] | null; retried?: boolean; retries?: number; resent?: boolean; peek?: boolean };
 const view = (r: Row): Media => ({ id: r.id, kind: r.kind, status: r.status, url: r.status === "done" ? r.url : null, thumb: r.thumb || r.poster_url || null, caption: r.caption, description: r.description });
 
 export async function getMedia(userId: string, id: string): Promise<Row | null> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
-  const [r] = await sql()`select m.id, m.user_id, m.character_id, m.kind, m.prompt, m.model, m.job_id, m.status, m.attempts, m.created_at::text, m.poster_url, m.caption, m.description, m.refs, m.retried, m.retries, f.url, t.url as thumb
+  const [r] = await sql()`select m.id, m.user_id, m.character_id, m.kind, m.prompt, m.model, m.job_id, m.status, m.attempts, m.created_at::text, m.poster_url, m.caption, m.description, m.refs, m.retried, m.retries, m.resent, m.peek, f.url, t.url as thumb
     from velo_media m left join velo_files f on f.id = m.file_id left join velo_files t on t.id = m.thumb_file_id where m.id = ${id} and m.user_id = ${userId}`;
   return (r as Row) || null;
 }
@@ -255,7 +257,11 @@ export async function checkMedia(userId: string, id: string): Promise<Media | nu
   const [claimed] = await sql()`update velo_media set claimed_at = now(), attempts = attempts + 1
     where id = ${id} and status = 'working' and (claimed_at is null or claimed_at < now() - interval '45 seconds') returning id`;
   if (!claimed) return view(r);
-  const fail = async (why: string) => { await sql()`update velo_media set status = 'failed', error = ${why.slice(0, 300)}, claimed_at = null where id = ${id}`; return { ...view(r), status: "failed" as const }; };
+  const fail = async (why: string, resendable = true) => {
+    await sql()`update velo_media set status = 'failed', error = ${why.slice(0, 300)}, claimed_at = null where id = ${id}`;
+    if (resendable) await phoneActingUp(r).catch(e => console.error("media: resend note", e instanceof Error ? e.message : e));
+    return { ...view(r), status: "failed" as const };
+  };
   // 🔁 Failed or stuck at the picture service: start it again (same prompt and references), up to 3 times, before giving up.
   const MAX_RETRIES = 3;
   const retryOnce = async (why: string) => {
@@ -267,7 +273,8 @@ export async function checkMedia(userId: string, id: string): Promise<Media | nu
       return view(r);
     } catch (e) {
       // Couldn't even reach the picture service: try starting it again on the next check (still counts as a retry).
-      if (e instanceof MediaError || Number(r.retries || 0) + 1 >= MAX_RETRIES) return await fail(why);
+      if (e instanceof MediaError) return await fail("refused by the picture service", false);
+      if (Number(r.retries || 0) + 1 >= MAX_RETRIES) return await fail(why);
       await sql()`update velo_media set job_id = null, retried = true, retries = retries + 1, claimed_at = null, created_at = now() where id = ${id}`;
       return view(r);
     }
@@ -279,7 +286,7 @@ export async function checkMedia(userId: string, id: string): Promise<Media | nu
       try {
         const job = await atlasStart(r.kind, r.model, r.prompt, r.refs || []);
         await sql()`update velo_media set job_id = ${job}, claimed_at = null where id = ${id}`;
-      } catch (e) { if (e instanceof MediaError) return await fail("refused by the picture service"); throw e; }
+      } catch (e) { if (e instanceof MediaError) return await fail("refused by the picture service", false); throw e; }
       return view(r);
     }
     const res = await fetch(`${ATLAS()}/api/v1/model/prediction/${encodeURIComponent(r.job_id)}`, { headers: { Authorization: `Bearer ${process.env.ATLASCLOUD_API_KEY}` } });
@@ -315,8 +322,46 @@ export async function checkMedia(userId: string, id: string): Promise<Media | nu
   }
 }
 
+// 📵 A character's photo that still wouldn't go through after every retry: she blames her phone and sends it again later, once.
+const ACTING_UP = [
+  "Ugh, my phone's being stupid 🙄 it won't send. I'll send it later when it stops acting up!",
+  "Hold on, my phone is acting up and won't send it 😩 I'll try again in a bit.",
+  "Omg my phone is being so dumb right now, it keeps failing 🙄 I'll send it later, promise!",
+  "Ugh it won't go through 😤 my phone's acting up. I'll resend it in a little while!",
+];
+const BACK = ["Ok my phone finally stopped acting up 😅 here it is!", "Phone's working again! Here you go 😊", "Finally! Here's the one that wouldn't send earlier 📸", "Ok it went through this time 😌"];
+const GAVE_UP = "Ugh, it still won't send 😩 my phone hates me today. I'll show you another time!";
+const sayNext = (userId: string, characterId: string, content: string) => sql()`insert into velo_messages (user_id, role, content, character_id, created_at)
+  select ${userId}, 'assistant', ${content}, ${characterId}, greatest(now(), coalesce(max(created_at), now()) + interval '1 millisecond') from velo_messages where user_id = ${userId} and character_id = ${characterId}`;
+async function phoneActingUp(r: Row) {
+  if (!r.character_id || r.peek) return;
+  const [msg] = await sql()`select 1 from velo_messages where media_id = ${r.id} and user_id = ${r.user_id} limit 1`;
+  if (!msg) return; // not in their 1:1 chat (e.g. a group chat)
+  if (r.resent) { await sayNext(r.user_id, r.character_id, GAVE_UP); return; }
+  await sql()`update velo_media set resend_at = now() + make_interval(mins => ${15 + Math.floor(Math.random() * 31)}) where id = ${r.id}`;
+  await sayNext(r.user_id, r.character_id, pick(ACTING_UP));
+}
+
+/** 📵 Photos whose resend time has come (for one person, or everyone from the cron): start them again, once. */
+export async function resendDue(userId: string | null = null, max = 5): Promise<number> {
+  const rows = await sql()`update velo_media set resend_at = null, resent = true, status = 'working', retries = 0, retried = false, attempts = 0, job_id = null, claimed_at = null, created_at = now(), error = null, caption = ${pick(BACK)}
+    where id in (select id from velo_media where resend_at <= now() and status = 'failed' and not resent and (${userId}::uuid is null or user_id = ${userId}::uuid) order by resend_at limit ${max} for update skip locked)
+    returning id, user_id, character_id, kind, model, prompt, refs, description`;
+  for (const r of rows) {
+    // She sends it fresh: the photo moves to the bottom of the chat, with a "phone's working again" note when it lands.
+    await sql()`update velo_messages set created_at = now(), content = ${mediaNote(r.kind, "working", r.description)} where media_id = ${r.id} and user_id = ${r.user_id}`;
+    await launch(String(r.id), r.kind, r.model, r.prompt, r.refs || [], r.description);
+    if (r.character_id) {
+      const [ch] = await sql()`select c.name, f.url as portrait from chat_characters c left join velo_files f on f.id = c.portrait_file_id where c.id = ${r.character_id}`;
+      if (ch) await sendPush(String(r.user_id), { title: ch.name, body: `📸 ${ch.name} is sending you the photo again`, url: `/?chat=${r.character_id}`, icon: ch.portrait || "/icon-192.png", tag: `chat-${r.character_id}` }).catch(() => 0);
+    }
+  }
+  return rows.length;
+}
+
 /** Background sweep: checks their oldest unfinished photos/videos. */
 export async function sweepMedia(userId: string, max = 4): Promise<Media[]> {
+  await resendDue(userId).catch(e => console.error("media: resend", e instanceof Error ? e.message : e));
   const rows = await sql()`select id from velo_media where user_id = ${userId} and status = 'working' order by coalesce(claimed_at, created_at) limit ${max}`;
   return (await Promise.all(rows.map(x => checkMedia(userId, String(x.id))))).filter((m): m is Media => !!m);
 }

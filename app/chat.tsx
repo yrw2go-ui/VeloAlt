@@ -385,7 +385,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       {peekSheet && character && <PeekSheet who={character.name} sheet={peekSheet} onChange={d => setPeekSheet(p => (p ? { ...p, description: d } : p))} onRewrite={rewritePeek} onSend={sendPeek} onClose={() => setPeekSheet(null)} />}
       {sceneSheet && character && <SceneSheet key={fromPlan?.id || "new"} who={character.name} plan={fromPlan} onClose={() => { setSceneSheet(false); setFromPlan(null); }} onStart={startScene} />}
       <div data-testid="chat-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-        {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={m.media?.id || m.id || i} m={m} onReactMsg={reactMsg} face={face(28)} onMedia={mediaArrived} onReact={react} who={who} onAnswer={x => setMsgs(list => (list || []).map(y => (y.media?.id === x.id ? { ...y, content: mediaNote({ ...y.media!, ...x }), media: { ...y.media!, ...x } } : y)))} />)}
+        {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={m.media?.id || m.id || i} m={m} onReactMsg={reactMsg} face={face(28)} onMedia={mediaArrived} onFailed={reload} onReact={react} who={who} onAnswer={x => setMsgs(list => (list || []).map(y => (y.media?.id === x.id ? { ...y, content: mediaNote({ ...y.media!, ...x }), media: { ...y.media!, ...x } } : y)))} />)}
         {character && msgs && !msgs.length && (
           <div className="muted" style={{ textAlign: "center", fontSize: 14, marginTop: 24, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
             {face(72)}<div>Say hi to {character.name} 👋</div>
@@ -462,7 +462,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   );
 }
 
-function Bubble({ m, face, who, onMedia, onReact, onAnswer, onReactMsg }: { m: ChatMsg; face: React.ReactNode; who: string; onMedia: (x: Media) => void; onReact: (id: string, r: string) => void; onAnswer: (x: Media) => void; onReactMsg: (id: string, r: string) => void }) {
+function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg }: { m: ChatMsg; face: React.ReactNode; who: string; onMedia: (x: Media) => void; onFailed?: () => void; onReact: (id: string, r: string) => void; onAnswer: (x: Media) => void; onReactMsg: (id: string, r: string) => void }) {
   const mine = m.role === "user";
   const [picking, setPicking] = useState(false);
   // A small badge on the bubble's corner, like a text-message reaction.
@@ -481,7 +481,7 @@ function Bubble({ m, face, who, onMedia, onReact, onAnswer, onReactMsg }: { m: C
     <div data-testid="peek-media" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
       <div className="muted" style={{ fontSize: 11 }}>👀 Peek · {who} doesn&apos;t know</div>
       <div style={{ maxWidth: "min(86%, 400px)" }}>
-        <MediaView media={m.media} onReady={onMedia} who={who} onAnswer={x => onAnswer(x)} />
+        <MediaView media={m.media} onReady={onMedia} onFailed={onFailed} who={who} onAnswer={x => onAnswer(x)} />
         {m.media.status === "done" && <ReactionBar value={m.media.reaction} onPick={r => onReact(m.media!.id, r)} />}
       </div>
     </div>
@@ -493,7 +493,7 @@ function Bubble({ m, face, who, onMedia, onReact, onAnswer, onReactMsg }: { m: C
     <div data-testid="chat-media" style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
       {face}
       <div style={{ maxWidth: "min(80%, 380px)" }}>
-        <MediaView media={m.media} onReady={onMedia} who={who} onAnswer={x => onAnswer(x)} />
+        <MediaView media={m.media} onReady={onMedia} onFailed={onFailed} who={who} onAnswer={x => onAnswer(x)} />
         {m.media.status === "done" && <ReactionBar value={m.media.reaction} onPick={r => onReact(m.media!.id, r)} />}
       </div>
     </div>
