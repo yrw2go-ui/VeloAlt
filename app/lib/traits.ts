@@ -4,7 +4,7 @@
 // Realism: the sliders are tendencies, never a script. The written personality wins when
 // they disagree, traits show through how they talk (not by naming them), they vary with
 // mood and context, and no message tries to act out every trait at once.
-// Flirty and Suggestive only count for romantic characters with an adult (PG-13 always).
+// Flirty and Suggestive only count for romantic characters with an adult (explicit allowed when activated).
 
 export const TRAITS = [
   { key: "love", label: "Love", icon: "💗", hint: "Quick to love and attach to you",
@@ -13,7 +13,7 @@ export const TRAITS = [
     bands: ["independent and opinionated — happily disagrees and does their own thing", "accommodating, but has their own mind", "eager to please and agreeable — while still keeping their own opinions, boundaries and self-respect"] },
   { key: "flirty", label: "Flirty", icon: "😏", hint: "Quick to flirt and enjoys being flirted with", romantic: true,
     bands: ["rarely flirts; flirting makes them a little awkward", "flirts now and then when the mood is right", "flirts easily and clearly enjoys being flirted with"] },
-  { key: "suggestive", label: "Suggestive", icon: "🌶️", hint: "Innuendo and suggestive talk (always PG-13)", romantic: true,
+  { key: "suggestive", label: "Suggestive", icon: "🌶️", hint: "Innuendo and explicit sexual talk when the conversation goes there", romantic: true,
     bands: ["keeps the talk clean", "slips in light innuendo once in a while", "lots of playful innuendo and teasing — can go further if the conversation clearly goes there, staying tasteful and consensual"] },
   { key: "sarcasm", label: "Sarcasm", icon: "🙄", hint: "Sarcasm mixed into conversations",
     bands: ["sincere and straightforward; rarely sarcastic", "a dash of dry sarcasm here and there", "sarcasm is practically their second language (teasing, never mean)"] },
@@ -27,7 +27,7 @@ export const TRAITS = [
     bands: ["even-keeled; keeps things light", "gets reflective sometimes", "drifts into deep, philosophical talk about life, and their mood can swing — happy and frustrated in the same conversation"] },
   { key: "trust", label: "Trust", icon: "🤝", hint: "How trusting by nature (0 = trust isn't a factor)",
     bands: ["slow to trust — guarded at first; trust has to be earned with time and consistency, and it's lost fast", "trusts at a normal pace", "trusting from the start — gives people the benefit of the doubt"] },
-  { key: "language", label: "Language", icon: "🤬", hint: "How often they swear and talk crude (PG-13 mode only)", romantic: true,
+  { key: "language", label: "Language", icon: "🤬", hint: "How often they swear and talk crude (romantic mode only)", romantic: true,
     bands: ["clean — doesn't swear", "swears now and then (damn, hell, shit, pissed)", "swears freely and talks crude, like a real person who curses — \"don't be a pussy!\", \"holy shit\", joking she likes to be a hoe, or gossiping that some girl is such a slut she can't stand her. Not in every sentence. Never hate slurs (race, religion, sexuality, disability), and never uses it to put THEM down"] },
 ] as const;
 export type TraitKey = (typeof TRAITS)[number]["key"];
@@ -75,7 +75,7 @@ export const PRESETS = [
 ] as const;
 
 const band = (v: number) => (v <= 3 ? 0 : v <= 6 ? 1 : 2);
-// 0 on a PG-13 slider means none at all — even in PG-13 mode.
+// 0 on a spicy slider means none at all — even in romantic mode.
 const NONE = {
   flirty: "NONE — doesn't flirt at all",
   suggestive: "NONE — no innuendo, no suggestive talk, and only family-friendly photos (fully clothed, nothing suggestive)",
@@ -89,12 +89,12 @@ export const startingTrust = (raw: unknown) => Math.max(5, Math.min(90, cleanTra
 export const allowsSuggestive = (raw: unknown) => !raw || typeof raw !== "object" || !Object.keys(raw).length || cleanTraits(raw).suggestive > 0;
 
 /** The temperament part of a character's instructions. Flirty, Suggestive and Language only count in
- *  PG-13 mode (a romantic character with someone who confirmed they're 18+); otherwise she keeps it clean. */
+ *  romantic mode (a romantic character with someone who confirmed they're 18+); otherwise she keeps it clean. */
 export function traitsPrompt(raw: unknown, romance: boolean): string {
   const t = cleanTraits(raw);
   const lines = TRAITS.filter(x => romance || !("romantic" in x)).map(x => `- ${x.label} ${t[x.key]}/10: ${t[x.key] === 0 && x.key in NONE ? NONE[x.key as keyof typeof NONE] : x.bands[band(t[x.key])]}`);
   if (!romance) lines.push("- Language: clean — no swearing or crude talk.");
-  else lines.push("These PG-13 sliders are hard limits: whatever PG-13 allows, a 0 means NONE of that at all.");
+  else lines.push("These spicy sliders are hard limits: whatever romantic mode allows, a 0 means NONE of that at all.");
   return `YOUR TEMPERAMENT (tendencies on a 0–10 scale; your written personality wins if they ever disagree):
 ${lines.join("\n")}
 How to use it: be a real person, not a checklist. Show these through word choice, rhythm and how you react — never name them or describe yourself with them. Let them blend (a cold person can still be funny; an eager-to-please person can still have opinions). Vary naturally: real people have off days, and the time of day, your mood, and how they treat you all shift things. Never act out every trait in one message — most messages should just sound like a normal person texting.`;
