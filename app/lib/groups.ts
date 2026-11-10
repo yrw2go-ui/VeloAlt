@@ -236,11 +236,11 @@ ${romantic ? "Tasteful and PG-13: flattering and flirty is fine; they're dressed
 export async function groupPeekAt(userId: string, g: Group, ids: string[], adult: boolean, description: string): Promise<GroupMsg[]> {
   if (!g.scene_title) throw new GroupError("Peeks are for scenes — start one first.");
   const chars = await pickedMembers(g, ids);
-  const desc = scrub(description.replace(/\s+/g, " ").trim()).slice(0, 400);
+  const desc = scrub(description.replace(/\s+/g, " ").trim()).slice(0, 1500);
   if (desc.length < 10) throw new GroupError("Describe the picture a little more.");
   const [first, ...rest] = chars;
   const media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: desc },
-    { characterId: first.id, who: first.name, appearance: first.appearance, refs: await referenceUrls(first), romantic: chars.every(c => romanticFor(c, adult)), offer: false, other: null, peek: true,
+    { characterId: first.id, who: first.name, appearance: first.appearance, refs: await referenceUrls(first), romantic: chars.every(c => romanticFor(c, adult)), offer: false, other: null, peek: true, raw: true,
       people: await Promise.all(rest.map(async c => ({ name: c.name, refs: await referenceUrls(c), appearance: c.appearance }))) });
   const [mine] = await sql()`insert into chat_group_messages (group_id, user_id, content, peek) values (${g.id}, ${userId}, '*peek*', true) returning id, speaker_id, content, created_at`;
   const [pic] = await sql()`insert into chat_group_messages (group_id, user_id, content, peek, media_id, created_at) values (${g.id}, ${userId}, ${`(peek: ${chars.map(c => c.name).join(", ")})`}, true, ${media.id}, now() + interval '5 milliseconds') returning id, speaker_id, content, created_at`;

@@ -257,7 +257,7 @@ function GroupPeekSheet({ group, members, name, onClose, onMade }: { group: Grou
             </button>
           ))}
         </div>
-        <textarea value={desc} onChange={e => setDesc(e.target.value)} maxLength={400} rows={5} aria-label="Peek description" disabled={loading && !desc}
+        <textarea value={desc} onChange={e => setDesc(e.target.value)} maxLength={1500} rows={5} aria-label="Peek description" disabled={loading && !desc}
           placeholder={loading ? "Writing what you'd see…" : "What you see right now"} style={{ resize: "vertical" }} />
         {stale && <button className="ghost" onClick={() => draft(ids)} disabled={loading || !ids.length} data-testid="peek-rewrite">✍️ Rewrite for {members.filter(c => ids.includes(c.id)).map(c => c.name).join(" & ") || "…"}</button>}
         {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}

@@ -45,9 +45,9 @@ const romanticFor = (ch: Character, adult: boolean) => adult && !!ch.romantic &&
 /** Step 2: make the picture from their (possibly edited) description, with her chosen reference pictures. */
 export async function peekAt(userId: string, ch: Character, scene: Scene, adult: boolean, description: string): Promise<{ media: Media; userMsgId: string; mediaMsgId: string }> {
   const romantic = romanticFor(ch, adult);
-  const desc = scrub(description.replace(/\s+/g, " ").trim()).slice(0, 400);
+  const desc = scrub(description.replace(/\s+/g, " ").trim()).slice(0, 1500);
   const media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: desc },
-    { characterId: ch.id, who: ch.name, appearance: ch.appearance, refs: await referenceUrls(ch), romantic, mood: mediaMood(ch.traits), offer: false, other: null, peek: true });
+    { characterId: ch.id, who: ch.name, appearance: ch.appearance, refs: await referenceUrls(ch), romantic, mood: mediaMood(ch.traits), offer: false, other: null, peek: true, raw: true });
   const [mine] = await sql()`insert into velo_messages (user_id, role, content, character_id, scene_id, peek) values (${userId}, 'user', '*peek*', ${ch.id}, ${scene.id}, true) returning id`;
   const [pic] = await sql()`insert into velo_messages (user_id, role, content, media_id, character_id, scene_id, peek, created_at)
     values (${userId}, 'assistant', '(peek)', ${media.id}, ${ch.id}, ${scene.id}, true, now() + interval '5 milliseconds') returning id`;

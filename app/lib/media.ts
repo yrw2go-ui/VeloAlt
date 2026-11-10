@@ -129,12 +129,13 @@ async function atlasStart(kind: "image" | "video", model: string, prompt: string
 }
 
 /** Starts a photo or video (from the send_media tool) — or, with `offer`, only offers it: nothing is made until they accept. */
-export async function startMedia(userId: string, input: unknown, ctx: { characterId: string | null; who: string; appearance: string; refs: string[]; romantic: boolean; mood?: string; offer?: boolean; other?: { name: string; refs: string[]; appearance: string } | null; peek?: boolean; people?: { name: string; refs: string[]; appearance: string }[] }): Promise<Media> {
+export async function startMedia(userId: string, input: unknown, ctx: { characterId: string | null; who: string; appearance: string; refs: string[]; romantic: boolean; mood?: string; offer?: boolean; other?: { name: string; refs: string[]; appearance: string } | null; peek?: boolean; people?: { name: string; refs: string[]; appearance: string }[]; raw?: boolean }): Promise<Media> {
   const a = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
   const kind = a.kind === "video" ? "video" : "image";
-  const desc = scrub(String(a.description || "").replace(/\s+/g, " ").trim().slice(0, 400));
+  // ✏️ raw (their own peek edits): their words go to Atlas exactly as written — no rewording, no extra instructions, no word filter here (Atlas still checks it).
+  const desc = scrub(String(a.description || "").replace(/\s+/g, " ").trim().slice(0, ctx.raw ? 1500 : 400));
   if (desc.length < 3) throw new MediaError("Describe what to show in a few words.");
-  if (NEVER.test(desc) || (!ctx.romantic && SUGGESTIVE.test(desc))) throw new MediaError(ctx.romantic
+  if (!ctx.raw && (NEVER.test(desc) || (!ctx.romantic && SUGGESTIVE.test(desc)))) throw new MediaError(ctx.romantic
     ? "That can't be sent — it can be flirty and PG-13, but never nudity, lingerie or anything explicit. Tell them so playfully and offer something else."
     : "That can't be sent — keep it family-friendly (fully clothed, nothing suggestive). Tell them you can't send that, kindly, and offer something else.");
   if (!mediaReady()) throw new MediaError("Photos and videos aren't set up yet. Tell them it's coming soon.");
@@ -187,7 +188,7 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
       ? `An arm's-length selfie from the camera's own point of view: the phone is NOT visible, and at most ${shooter}'s own arm reaches toward the camera. `
       : "A photo taken by someone else or on a timer: no phone or camera visible, nobody holding one. ")
     + "Natural anatomy: every person has exactly two arms and two hands — no extra, floating or disembodied hands or arms in the frame. ";
-  const prompt = `${subject}${desc}. ${framing}${withMe && !o && !people && ctx.mood ? `${ctx.mood} ` : ""}${style}, natural and realistic${kind === "image" ? " photo, candid and natural" : " video, smooth natural motion"}.`.slice(0, 1500);
+  const prompt = ctx.raw ? desc : `${subject}${desc}. ${framing}${withMe && !o && !people && ctx.mood ? `${ctx.mood} ` : ""}${style}, natural and realistic${kind === "image" ? " photo, candid and natural" : " video, smooth natural motion"}.`.slice(0, 1500);
   const [u] = await sql()`select video_model from users where id = ${userId}`;
   const model = kind === "image" ? (ref ? EDIT_MODEL() : IMAGE_MODEL()) : videoModel(String(u?.video_model || DEFAULT_VIDEO_MODEL), !!ref);
   const sendRefs = kind === "image" ? refs : ref ? [ref] : [];
@@ -195,7 +196,7 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
   // 💬 Her line when it arrives: none for a picture of someone else ("miss me yet?" would make no sense), nothing flirty for a view or a thing.
   const caption = ctx.peek || (o && !withMe) ? null : captionFor(kind, ctx.romantic && withMe);
   const [row] = await sql()`insert into velo_media (user_id, character_id, kind, prompt, model, caption, description, refs, poster_url, status, peek, subject)
-    values (${userId}, ${ctx.characterId}, ${kind}, ${prompt}, ${model}, ${caption}, ${desc.slice(0, 400)}, ${sendRefs}, ${kind === "video" ? ref : null}, ${ctx.offer ? "offered" : "working"}, ${!!ctx.peek}, ${who}) returning id`;
+    values (${userId}, ${ctx.characterId}, ${kind}, ${prompt}, ${model}, ${caption}, ${desc.slice(0, ctx.raw ? 1500 : 400)}, ${sendRefs}, ${kind === "video" ? ref : null}, ${ctx.offer ? "offered" : "working"}, ${!!ctx.peek}, ${who}) returning id`;
   if (ctx.offer) return { id: row.id, kind, status: "offered", url: null, description: desc, subject: who };
   return { ...(await launch(row.id, kind, model, prompt, sendRefs, desc)), subject: who };
 }

@@ -553,7 +553,7 @@ function PeekSheet({ who, sheet, onChange, onRewrite, onSend, onClose }: { who: 
           <button className="ghost" onClick={onClose} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
         </div>
         <div className="muted" style={{ fontSize: 12 }}>This is the picture that will be made, using her reference pictures. Fix anything that&apos;s off — where you are, what she&apos;s wearing, her pose or look. She won&apos;t know.</div>
-        <textarea value={sheet.description} onChange={e => onChange(e.target.value)} maxLength={400} rows={5} aria-label="Peek description" disabled={sheet.loading && !sheet.description}
+        <textarea value={sheet.description} onChange={e => onChange(e.target.value)} maxLength={1500} rows={5} aria-label="Peek description" disabled={sheet.loading && !sheet.description}
           placeholder={sheet.loading ? "Writing what you'd see…" : "e.g. Her at a candlelit corner table in an emerald dress, laughing and glancing up at me"} style={{ resize: "vertical" }} />
         <div className="muted" style={{ fontSize: 11, textAlign: "right" }}>{sheet.description.length}/400</div>
         {sheet.error && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {sheet.error}</div>}
