@@ -188,7 +188,8 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
       ? `An arm's-length selfie from the camera's own point of view: the phone is NOT visible, and at most ${shooter}'s own arm reaches toward the camera. `
       : "A photo taken by someone else or on a timer: no phone or camera visible, nobody holding one. ")
     + "Natural anatomy: every person has exactly two arms and two hands — no extra, floating or disembodied hands or arms in the frame. ";
-  const prompt = ctx.raw ? desc : `${subject}${desc}. ${framing}${withMe && !o && !people && ctx.mood ? `${ctx.mood} ` : ""}${style}, natural and realistic${kind === "image" ? " photo, candid and natural" : " video, smooth natural motion"}.`.slice(0, 1500);
+  // A group peek keeps the one line saying which reference picture is who, so faces don't get mixed up.
+  const prompt = ctx.raw ? (people ? `${groupSubject}${desc}` : desc) : `${subject}${desc}. ${framing}${withMe && !o && !people && ctx.mood ? `${ctx.mood} ` : ""}${style}, natural and realistic${kind === "image" ? " photo, candid and natural" : " video, smooth natural motion"}.`.slice(0, 1500);
   const [u] = await sql()`select video_model from users where id = ${userId}`;
   const model = kind === "image" ? (ref ? EDIT_MODEL() : IMAGE_MODEL()) : videoModel(String(u?.video_model || DEFAULT_VIDEO_MODEL), !!ref);
   const sendRefs = kind === "image" ? refs : ref ? [ref] : [];
