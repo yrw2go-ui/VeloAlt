@@ -220,7 +220,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     } catch (e) { setPeekSheet(p => (p ? { ...p, loading: false, error: e instanceof Error ? e.message : "Couldn't peek right now." } : p)); }
   };
   // 📅 A hangout/date you two planned for today: set the scene for it.
-  type Plan = { id: string; title: string; details: string; day: string };
+  type Plan = { id: string; title: string; details: string; day: string; time?: string };
   const [plans, setPlans] = useState<Plan[]>([]);
   const [fromPlan, setFromPlan] = useState<Plan | null>(null);
   useEffect(() => {
@@ -232,8 +232,8 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     setPlans(ps => ps.filter(x => x.id !== p.id));
     await data("plans.skip", { planId: p.id }).catch(() => {});
   };
-  const startScene = async (kind: "live" | "past", title: string, details: string) => {
-    const r = await data<{ scene?: { id: string; title: string; details: string }; marker: ChatMsg }>(kind === "live" ? "scene.start" : "scene.past", { characterId: cid, title, details, ...(fromPlan ? { planId: fromPlan.id } : {}) });
+  const startScene = async (kind: "live" | "past", title: string, details: string, clock?: SceneClockChoice) => {
+    const r = await data<{ scene?: { id: string; title: string; details: string }; marker: ChatMsg }>(kind === "live" ? "scene.start" : "scene.past", { characterId: cid, title, details, ...(fromPlan ? { planId: fromPlan.id } : {}), ...(clock ? clock : {}) });
     if (fromPlan) setPlans(ps => ps.filter(x => x.id !== fromPlan.id));
     setFromPlan(null);
     setSceneSheet(false);
@@ -521,8 +521,12 @@ function PeekSheet({ who, sheet, onChange, onRewrite, onSend, onClose }: { who: 
 
 const todayYmd = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 
-export function SceneSheet({ who, plan, onClose, onStart }: { who: string; plan?: { title: string; details: string } | null; onClose: () => void; onStart: (kind: "live" | "past", title: string, details: string) => Promise<void> }) {
+export type SceneClockChoice = { clock: "now" | "set"; time: string };
+export function SceneSheet({ who, plan, onClose, onStart }: { who: string; plan?: { title: string; details: string; time?: string } | null; onClose: () => void; onStart: (kind: "live" | "past", title: string, details: string, clock: SceneClockChoice) => Promise<void> }) {
   const [kind, setKind] = useState<"live" | "past">("live");
+  // 🕒 Real time now, or the scene's own scheduled time (the plan's time, if it has one).
+  const [clock, setClock] = useState<"now" | "set">("now");
+  const [time, setTime] = useState(plan?.time || "");
   const [title, setTitle] = useState(plan?.title || "");
   const [details, setDetails] = useState(plan?.details || "");
   const [busy, setBusy] = useState(false);
@@ -541,7 +545,7 @@ export function SceneSheet({ who, plan, onClose, onStart }: { who: string; plan?
   const go = async () => {
     stopMics();
     setBusy(true); setErr("");
-    try { await onStart(kind, title.trim(), details.trim()); } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't start it."); setBusy(false); }
+    try { await onStart(kind, title.trim(), details.trim(), { clock: clock === "set" && time ? "set" : "now", time }); } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't start it."); setBusy(false); }
   };
   const tab = (on: boolean) => ({ flex: 1, padding: "8px 10px", borderRadius: 999, fontWeight: 700, fontSize: 13, cursor: "pointer", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, background: on ? "rgba(124,140,255,0.15)" : "transparent", color: "var(--text)" } as const);
   return (
@@ -569,6 +573,19 @@ export function SceneSheet({ who, plan, onClose, onStart }: { who: string; plan?
             {micBtn({ m: detailsMic, other: titleMic, value: details, label: "Describe it out loud", id: "scene-details-mic" })}
           </span>
         </label>
+        {kind === "live" && (
+          <div data-testid="scene-clock" style={{ display: "grid", gap: 6 }}>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>🕒 When is it happening?</div>
+            <div className="row" style={{ gap: 8 }}>
+              <button type="button" style={tab(clock === "now")} onClick={() => setClock("now")} data-testid="scene-clock-now">Now (real time)</button>
+              <button type="button" style={tab(clock === "set")} onClick={() => setClock("set")} data-testid="scene-clock-set">Scheduled time</button>
+            </div>
+            {clock === "set" && <input type="time" value={time} onChange={e => setTime(e.target.value)} aria-label="Scene time" data-testid="scene-time" />}
+            <span className="muted" style={{ fontSize: 12 }}>{clock === "now"
+              ? `It happens right now — the light and time of day are real.${plan?.time ? ` ${who} will know it got moved from the planned time (no big deal, unless it keeps happening).` : ""}`
+              : `The scene keeps its own clock, starting at ${time || "the time you pick"} and moving on as you play. ${who} won't know it's out of sync with real time.`}</span>
+          </div>
+        )}
         {(titleMic.listening || detailsMic.listening) && <div className="muted" style={{ fontSize: 12 }} data-testid="scene-listening">🎙️ Listening… tap ⏹️ when you&apos;re done.</div>}
         {(titleMic.error || detailsMic.error) && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {titleMic.error || detailsMic.error}</div>}
         {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}

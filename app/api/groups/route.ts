@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: await reactInGroup(c.userId, g, String(b.msgId || ""), reaction) });
       }
       case "scene.start": {
-        const marker = await startGroupScene(c.userId, g, b.kind === "past" ? "past" : "live", String(b.title || ""), String(b.details || ""));
+        const marker = await startGroupScene(c.userId, g, b.kind === "past" ? "past" : "live", String(b.title || ""), String(b.details || ""), b.clock === "set" ? String(b.time || "") : "");
         return NextResponse.json({ marker, group: await getGroup(c.userId, g.id) });
       }
       case "scene.end": return NextResponse.json({ marker: await endGroupScene(c.userId, g) });

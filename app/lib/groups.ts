@@ -11,19 +11,21 @@ import type { Caller } from "./caller";
 import { startMedia, type Media } from "./media";
 import { allowsSuggestive } from "./traits";
 import { writeText } from "./llm";
+import { sceneClockNote, sceneTime, HHMM } from "./sceneClock";
+import { isValidTimeZone } from "./localTime";
 
 
-export type Group = { id: string; title: string; member_ids: string[]; updated_at: string; scene_title: string | null; scene_details: string | null };
+export type Group = { id: string; title: string; member_ids: string[]; updated_at: string; scene_title: string | null; scene_details: string | null; scene_clock?: string; scene_set_time?: string; scene_started_at?: string | null };
 export type GroupMsg = { id: string; speaker_id: string | null; content: string; created_at: string; peek?: boolean; media?: Media | null; reaction?: string | null; their_reactions?: Record<string, string> };
 const ALL = /\b(everyone|everybody|y'?all|you guys|guys|all of you|girls|ladies|both of you)\b/i;
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 export async function listGroups(userId: string): Promise<Group[]> {
-  return (await sql()`select id, title, member_ids, updated_at, scene_title, scene_details from chat_groups where user_id = ${userId} order by updated_at desc limit 30`) as Group[];
+  return (await sql()`select id, title, member_ids, updated_at, scene_title, scene_details, scene_clock, scene_set_time, scene_started_at::text from chat_groups where user_id = ${userId} order by updated_at desc limit 30`) as Group[];
 }
 export async function getGroup(userId: string, id: string): Promise<Group | null> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
-  const [g] = await sql()`select id, title, member_ids, updated_at, scene_title, scene_details from chat_groups where id = ${id} and user_id = ${userId}`;
+  const [g] = await sql()`select id, title, member_ids, updated_at, scene_title, scene_details, scene_clock, scene_set_time, scene_started_at::text from chat_groups where id = ${id} and user_id = ${userId}`;
   return (g as Group) || null;
 }
 async function members(g: Group): Promise<Character[]> {
@@ -36,7 +38,7 @@ export async function createGroup(userId: string, memberIds: string[], title: st
   const chars = (await Promise.all(ids.map(id => getCharacter(id)))).filter((c): c is Character => !!c);
   if (chars.length < 2) throw new GroupError("Pick at least 2 characters.");
   const name = title.trim().slice(0, 60) || chars.map(c => c.name).join(", ").slice(0, 60);
-  const [g] = await sql()`insert into chat_groups (user_id, title, member_ids) values (${userId}, ${name}, ${chars.map(c => c.id)}::uuid[]) returning id, title, member_ids, updated_at, scene_title, scene_details`;
+  const [g] = await sql()`insert into chat_groups (user_id, title, member_ids) values (${userId}, ${name}, ${chars.map(c => c.id)}::uuid[]) returning id, title, member_ids, updated_at, scene_title, scene_details, scene_clock, scene_set_time, scene_started_at::text`;
   await meet(userId, chars, personName).catch(e => console.error("groups: meet", e instanceof Error ? e.message : e));
   return g as Group;
 }
@@ -64,6 +66,11 @@ export async function groupMessages(userId: string, groupId: string, limit = 200
   return rows.reverse().map(r => ({ id: String(r.id), speaker_id: r.speaker_id ? String(r.speaker_id) : null, content: String(r.content), created_at: String(r.created_at), ...(r.peek ? { peek: true } : {}),
     reaction: r.reaction || null, their_reactions: r.their_reactions && typeof r.their_reactions === "object" ? r.their_reactions : {},
     ...(r.media_id ? { media: { id: String(r.media_id), kind: r.media_kind, status: r.media_status, url: r.media_status === "done" ? r.media_url : null, description: r.media_description || null } as Media } : {}) }));
+}
+const groupClock = (g: Group) => ({ clock: g.scene_clock, set_time: g.scene_set_time, started_at: g.scene_started_at || undefined });
+async function userTz(userId: string): Promise<string> {
+  const [u] = await sql()`select time_zone from users where id = ${userId}`;
+  return isValidTimeZone(u?.time_zone) ? String(u.time_zone) : "America/Chicago";
 }
 /** What the characters read: never the peeks (they don't know). */
 const seen = (rows: GroupMsg[]) => rows.filter(r => !r.peek);
@@ -114,7 +121,7 @@ export async function sendToGroup(caller: Caller, g: Group, text: string, timeZo
   const out: GroupMsg[] = [];
   let rows = await groupMessages(caller.userId, g.id, 40);
   for (const c of pickSpeakers(clean, chars, seen(rows))) {
-    const r = await askVelo(caller, { mode: "chat", messages: turnsFor(c.id, rows, names, personName), timeZone, name: personName, character: c, group: { others: chars.filter(x => x.id !== c.id).map(x => x.name), scene: g.scene_title ? { title: g.scene_title, details: g.scene_details || "" } : null } });
+    const r = await askVelo(caller, { mode: "chat", messages: turnsFor(c.id, rows, names, personName), timeZone, name: personName, character: c, group: { others: chars.filter(x => x.id !== c.id).map(x => x.name), scene: g.scene_title ? { title: g.scene_title, details: g.scene_details || "", time: sceneClockNote(groupClock(g), await userTz(caller.userId)) } : null } });
     const reply = scrub(r.reply.replace(/^\s*\[[^\]]{1,40}\]:\s*/, "")).trim().slice(0, 4000);
     // 😮 Her reaction to their message: a little badge on it.
     if (r.react) await sql()`update chat_group_messages set their_reactions = their_reactions || ${JSON.stringify({ [c.id]: r.react })}::jsonb where id = ${mineRow.id}`;
@@ -148,7 +155,7 @@ export async function banterNext(caller: Caller, g: Group, timeZone: unknown, pe
   const c = named || others[Math.floor(Math.random() * others.length)];
   const turns = turnsFor(c.id, rows, names, personName);
   turns.push({ role: "user", content: `(The group chat goes on: ${personName || "they"} went quiet for a moment, so talk with ${chars.filter(x => x.id !== c.id).map(x => x.name).join(" and ")} — not to ${personName || "them"}.)` });
-  const r = await askVelo(caller, { mode: "chat", messages: turns, timeZone, name: personName, character: c, group: { others: chars.filter(x => x.id !== c.id).map(x => x.name), scene: g.scene_title ? { title: g.scene_title, details: g.scene_details || "" } : null, banter: true } });
+  const r = await askVelo(caller, { mode: "chat", messages: turns, timeZone, name: personName, character: c, group: { others: chars.filter(x => x.id !== c.id).map(x => x.name), scene: g.scene_title ? { title: g.scene_title, details: g.scene_details || "", time: sceneClockNote(groupClock(g), await userTz(caller.userId)) } : null, banter: true } });
   const reply = scrub(r.reply.replace(/^\s*\[[^\]]{1,40}\]:\s*/, "")).trim().slice(0, 4000);
   // They may have spoken up meanwhile: then this line is dropped.
   const [spoke] = await sql()`select 1 from chat_group_messages where group_id = ${g.id} and speaker_id is null and not peek and created_at > ${started}::timestamptz limit 1`;
@@ -185,11 +192,12 @@ export async function deleteGroup(userId: string, id: string): Promise<boolean> 
 }
 
 // 🎬 Scenes in a group: everyone's there. A marker line goes in the thread (they all read it).
-export async function startGroupScene(userId: string, g: Group, kind: "live" | "past", title: string, details: string): Promise<GroupMsg> {
+export async function startGroupScene(userId: string, g: Group, kind: "live" | "past", title: string, details: string, setTime = ""): Promise<GroupMsg> {
   const t = scrub(title).trim().slice(0, 120), d = scrub(details).trim().slice(0, 1000);
   if (!t) throw new GroupError("Give the scene a title.");
   const marker = kind === "live" ? `🎬 Scene: ${t}${d ? ` — ${d}` : ""}` : `🎬 Scene (already happened, all of us together): ${t}${d ? ` — ${d}` : ""}`;
-  if (kind === "live") await sql()`update chat_groups set scene_title = ${t}, scene_details = ${d}, updated_at = now() where id = ${g.id} and user_id = ${userId}`;
+  const at = HHMM.test(setTime) ? setTime : "";
+  if (kind === "live") await sql()`update chat_groups set scene_title = ${t}, scene_details = ${d}, scene_clock = ${at ? "set" : "now"}, scene_set_time = ${at}, scene_started_at = now(), updated_at = now() where id = ${g.id} and user_id = ${userId}`;
   const [m] = await sql()`insert into chat_group_messages (group_id, user_id, content) values (${g.id}, ${userId}, ${marker}) returning id, speaker_id, content, created_at`;
   return { ...(m as GroupMsg), speaker_id: null };
 }
@@ -220,7 +228,7 @@ export async function draftGroupPeek(userId: string, g: Group, ids: string[], ad
   const romantic = chars.every(c => romanticFor(c, adult));
   const raw = await writeText(chars[0].brain, `You write the description for ONE photo for an image generator. The person is out with a group (the scene below) and is quietly looking at ${who} right now — the photo is exactly what they see: they are behind the camera and NOT in the picture. Show ONLY ${who}${chars.length < all.length ? ` (not ${all.filter(c => !chars.some(x => x.id === c.id)).map(c => c.name).join(" or ")})` : ""}. Describe the place (time of day, lighting), what each of them is wearing, what each is doing, their poses and expressions — candid and unaware, or glancing at the camera.
 OUTFIT CONTINUITY: each of them wears ONE outfit for the whole scene. ${lastPeek ? "Start from what they wore in THE LAST PEEK" : "Start from the outfits in the scene's details or what they said they're wearing (else what fits the outing and their usual style)"}, then apply only the changes that actually happened, in order (a jacket taken off stays off until it's put back on, and so on). Keep every other detail identical. The same goes for the place.
-${romantic ? "PG-13 at most: flattering and flirty is fine, never nudity, underwear or anything sexual." : "Family-friendly, fully clothed."} Two or three sentences, under 380 characters, no names of real people, output only the description.`, `SCENE: ${g.scene_title}${g.scene_details ? ` — ${g.scene_details}` : ""}\n${chars.map(c => `${c.name.toUpperCase()}'S LOOK: ${c.appearance || "(see reference pictures)"}${c.casual_wear ? `; usual style: ${c.casual_wear}` : ""}`).join("\n")}${lastPeek ? `\nTHE LAST PEEK: ${lastPeek}` : ""}\n\nTHE SCENE SO FAR:\n${(transcript.length > 12000 ? "…" + transcript.slice(-12000) : transcript) || "(it just started)"}`, 350);
+${romantic ? "PG-13 at most: flattering and flirty is fine, never nudity, underwear or anything sexual." : "Family-friendly, fully clothed."} Two or three sentences, under 380 characters, no names of real people, output only the description.`, `SCENE: ${g.scene_title}${g.scene_details ? ` — ${g.scene_details}` : ""}\nTIME IN THE SCENE: ${sceneTime(groupClock(g), await userTz(userId)).label} (match the light and sky to it)\n${chars.map(c => `${c.name.toUpperCase()}'S LOOK: ${c.appearance || "(see reference pictures)"}${c.casual_wear ? `; usual style: ${c.casual_wear}` : ""}`).join("\n")}${lastPeek ? `\nTHE LAST PEEK: ${lastPeek}` : ""}\n\nTHE SCENE SO FAR:\n${(transcript.length > 12000 ? "…" + transcript.slice(-12000) : transcript) || "(it just started)"}`, 350);
   const text = raw.replace(/\s+/g, " ").trim();
   return text.slice(0, 400) || `${who} during ${g.scene_title}, candid, natural light`;
 }

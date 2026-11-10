@@ -7,7 +7,7 @@ import { hideSecrets } from "./lib/secrets";
 import { timeZone } from "./lib/tz";
 import { confirmAsk } from "./lib/dialog";
 import { CharacterFace, type Character } from "./characters";
-import { SceneSheet } from "./chat";
+import { SceneSheet, type SceneClockChoice } from "./chat";
 import { MediaView, ReactionBar, type Media } from "./media";
 
 export type Group = { id: string; title: string; member_ids: string[]; updated_at: string; scene_title?: string | null; scene_details?: string | null };
@@ -86,8 +86,8 @@ export function GroupChat({ group: initial, chars, name, onDeleted }: { group: G
     } catch (e) { setErr(e instanceof Error ? e.message : "No one answered."); }
     setBusy(false);
   };
-  const startScene = async (kind: "live" | "past", title: string, details: string) => {
-    const r = await api<{ marker: Msg; group: Group }>("/api/groups", { action: "scene.start", id: group.id, kind, title, details });
+  const startScene = async (kind: "live" | "past", title: string, details: string, clock?: SceneClockChoice) => {
+    const r = await api<{ marker: Msg; group: Group }>("/api/groups", { action: "scene.start", id: group.id, kind, title, details, ...(clock || {}) });
     setGroup(r.group); setMsgs(m => [...(m || []), r.marker]); setSceneSheet(false); unsaved.current++;
   };
   const endScene = async () => {

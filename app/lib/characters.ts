@@ -269,9 +269,9 @@ export async function pictureOf(userId: string, knowerId: string | null, name: s
 }
 
 // 🎬 Scenes: a date or outing with this character — played out live, or remembered as something that happened.
-export type Scene = { id: string; kind: "live" | "past"; title: string; details: string; status: "active" | "ended"; started_at: string };
+export type Scene = { id: string; kind: "live" | "past"; title: string; details: string; status: "active" | "ended"; started_at: string; clock?: string; set_time?: string; planned_time?: string };
 export async function activeScene(userId: string, characterId: string): Promise<Scene | null> {
-  const [s] = await sql()`select id, kind, title, details, status, started_at::text from chat_scenes
+  const [s] = await sql()`select id, kind, title, details, status, started_at::text, clock, set_time, planned_time from chat_scenes
     where user_id = ${userId} and character_id = ${characterId} and status = 'active' order by started_at desc limit 1`;
   return (s as Scene) || null;
 }

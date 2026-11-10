@@ -21,6 +21,7 @@ import { acceptMedia, declineMedia, mediaNote, checkMedia, sweepMedia, getMedia,
 // 📦 Everything the app reads and changes, for the signed-in person only.
 // POST { action, ...args } → { ... }. Every query is scoped to their user_id.
 import { REACTIONS as REACTION_LIST } from "../../lib/reactions";
+import { sceneTime, HHMM } from "../../lib/sceneClock";
 const REACTIONS: string[] = [...REACTION_LIST];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const clean = (v: unknown, n: number) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, n);
@@ -193,10 +194,18 @@ export async function POST(req: NextRequest) {
         const title = scrub(clean(b.title, 120)), details = scrub(String(b.details ?? "").replace(/\s+/g, " ").trim().slice(0, 1000));
         if (!title) return bad("Say what the scene is (e.g. a dinner date at Luigi's).");
         if (cur) await db`update chat_scenes set status = 'ended', ended_at = now() where id = ${cur.id}`;
+        // 🕒 Its clock: real time ("now"), or its own scheduled time ("set"). A plan's time is kept, so she knows if it got pushed back.
+        const [plan] = b.planId ? await db`select at_time from chat_plans where id = ${String(b.planId)} and user_id = ${me}` : [];
+        const plannedTime = HHMM.test(String(plan?.at_time || "")) ? String(plan.at_time) : "";
+        const setTime = b.clock === "set" && HHMM.test(String(b.time || "")) ? String(b.time) : "";
+        const clock = setTime ? "set" : "now";
+        const [tzRow] = await db`select time_zone from users where id = ${me}`;
+        const nowAt = sceneTime({ clock: "now" }, isValidTimeZone(tzRow?.time_zone) ? tzRow.time_zone : "America/Chicago").hhmm;
+        const pushed = clock === "now" && !!plannedTime && Math.abs(Number(nowAt.slice(0, 2)) * 60 + Number(nowAt.slice(3)) - (Number(plannedTime.slice(0, 2)) * 60 + Number(plannedTime.slice(3)))) >= 60;
         // Started from a plan's "today" card: that plan is done.
         if (b.planId) await setPlanStatus(me, String(b.planId), "done");
         if (action === "scene.start") {
-          const [s] = await db`insert into chat_scenes (user_id, character_id, kind, title, details) values (${me}, ${ch.id}, 'live', ${title}, ${details}) returning id, kind, title, details, status, started_at::text`;
+          const [s] = await db`insert into chat_scenes (user_id, character_id, kind, title, details, clock, set_time, planned_time, pushed) values (${me}, ${ch.id}, 'live', ${title}, ${details}, ${clock}, ${setTime}, ${plannedTime}, ${pushed}) returning id, kind, title, details, status, started_at::text, clock, set_time, planned_time`;
           return NextResponse.json({ scene: s, marker: await marker(`🎬 Scene: ${title}${details ? ` — ${details}` : ""}`, String(s.id)) });
         }
         const [s] = await db`insert into chat_scenes (user_id, character_id, kind, title, details, status, ended_at) values (${me}, ${ch.id}, 'past', ${title}, ${details}, 'ended', now()) returning id`;
