@@ -98,7 +98,7 @@ const REACT_TAG = /\[react:\s*([^\]\s]+)\s*\]\s*/gu;
 
 /** Velo, or (with `character`) one of the characters: same chats, calls and memory flow, but in the
  *  character's own voice, with only their own memory of this person and no Velo tools. */
-export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn[]; timeZone?: unknown; name?: string; goal?: string; toName?: string; character?: Character | null; origin?: string; promise?: string; group?: { others: string[]; scene?: { title: string; details: string } | null; banter?: boolean } }): Promise<AskResult> {
+export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn[]; timeZone?: unknown; name?: string; goal?: string; toName?: string; character?: Character | null; origin?: string; promise?: string; noFallback?: boolean; group?: { others: string[]; scene?: { title: string; details: string } | null; banter?: boolean } }): Promise<AskResult> {
   const { mode } = opts;
   const ch = opts.character || null;
   const cid = ch?.id || null;
@@ -326,6 +326,8 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
     }
   }
 
+  // ⏰ Her own brain is down and this is a chat reply: no Claude stand-in — the app tells them she'll be right back and retries.
+  if (herBrain && !answered && opts.noFallback) throw new BrainDown();
   for (let round = 0; !answered && round < (tools ? 6 : 1); round++) {
     const res = await client.messages.create({
       model: process.env.VELO_MODEL!,
@@ -442,6 +444,8 @@ async function searchWithClaude(query: string, tz: string, sources: Map<string, 
 }
 
 export class CharacterGone extends Error {}
+/** A character's own brain (Atlas) didn't answer, and there's to be no stand-in. */
+export class BrainDown extends Error {}
 class HandledRetry extends Error {}
 
 /** Logs an Anthropic failure and turns it into a friendly message. */

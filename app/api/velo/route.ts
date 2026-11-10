@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
-import { askVelo, CharacterGone, aiReady, aiError, type Mode, type Turn } from "../../lib/brain";
+import { askVelo, CharacterGone, BrainDown, aiReady, aiError, type Mode, type Turn } from "../../lib/brain";
 import { getCharacter } from "../../lib/characters";
 import { sql } from "../../lib/db";
 import { mediaNote } from "../../lib/media";
@@ -25,7 +25,15 @@ export async function POST(req: NextRequest) {
     // 🎭 A character's chat or call, with that character's own memory of them.
     const character = body.characterId ? await getCharacter(String(body.characterId)) : null;
     if (body.characterId && !character) throw new CharacterGone();
-    const r = await askVelo(caller, { mode, messages, timeZone: body.timeZone, name: body.name, character, origin: req.nextUrl.origin });
+    // ⏰ A chat with a character on her own brain: if it's down, no stand-in (see BrainDown below).
+    const noFallback = mode === "chat" && !!character?.brain;
+    let r;
+    try { r = await askVelo(caller, { mode, messages, timeZone: body.timeZone, name: body.name, character, origin: req.nextUrl.origin, noFallback }); }
+    catch (e) {
+      if (!(e instanceof BrainDown)) throw e;
+      // First time: she says she'll be right back. On retries: nothing to show yet.
+      return NextResponse.json({ brainDown: true, reply: body.retry ? "" : "hold on, I'll be right back" });
+    }
     if (mode === "remember" || mode === "memo") return NextResponse.json({ ok: !!r.saved, reply: "" });
     // 😮 Their reaction to the person's latest message, saved as a badge on it.
     if (r.react && typeof body.replyTo === "string" && /^[0-9a-f-]{36}$/i.test(body.replyTo)) {

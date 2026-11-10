@@ -109,7 +109,10 @@ export async function POST(req: NextRequest) {
         const ch = b.characterId ? await getCharacter(String(b.characterId)) : null;
         if (b.characterId && !ch) return bad("That character wasn't found.");
         const list = (Array.isArray(b.messages) ? b.messages : []).slice(0, 4)
-          .map((m: { role?: string; content?: unknown; fileId?: unknown; mediaId?: unknown }) => ({ role: m.role === "assistant" ? "assistant" : "user", content: scrub(String(m.content || "").slice(0, 8000)), fileId: String(m.fileId || ""), mediaId: String(m.mediaId || "") }))
+          // ⏰ / 👍 markers (her brain down / back): shown to them, never to her (stored like a peek).
+          .map((m: { role?: string; content?: unknown; fileId?: unknown; mediaId?: unknown; marker?: unknown }) => m.marker === "wait" || m.marker === "back"
+            ? { role: "assistant", content: m.marker === "wait" ? "⏰" : "👍", fileId: "", mediaId: "", marker: true }
+            : { role: m.role === "assistant" ? "assistant" : "user", content: scrub(String(m.content || "").slice(0, 8000)), fileId: String(m.fileId || ""), mediaId: String(m.mediaId || ""), marker: false })
           .filter((m: { content: string; fileId: string; mediaId: string }) => m.content || m.fileId || m.mediaId);
         // A millisecond apart so they always sort in the order sent.
         const at = Date.now() - list.length;
@@ -122,7 +125,7 @@ export async function POST(req: NextRequest) {
           // A photo/video sent in this same chat (theirs, and from this Velo/character).
           const md = m.mediaId && m.role === "assistant" ? await getMedia(me, m.mediaId) : null;
           const mediaId = md && md.character_id === (ch?.id || null) ? md.id : null;
-          const [row] = await db`insert into velo_messages (user_id, role, content, file_id, media_id, character_id, scene_id, created_at) values (${me}, ${m.role}, ${m.content || (mediaId ? "(sent a photo)" : "📎")}, ${f?.id || null}, ${mediaId}, ${ch?.id || null}, ${sceneId}, ${new Date(at + i).toISOString()}) returning id`;
+          const [row] = await db`insert into velo_messages (user_id, role, content, file_id, media_id, character_id, scene_id, created_at, peek) values (${me}, ${m.role}, ${m.content || (mediaId ? "(sent a photo)" : "📎")}, ${f?.id || null}, ${mediaId}, ${ch?.id || null}, ${sceneId}, ${new Date(at + i).toISOString()}, ${!!m.marker}) returning id`;
           ids.push(String(row.id));
         }
         return NextResponse.json({ ok: true, ids });

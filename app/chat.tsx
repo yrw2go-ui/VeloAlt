@@ -155,11 +155,36 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   };
   const notNow = () => { if (linkAsk) { try { localStorage.setItem(askedKey(linkAsk.id), "1"); } catch { /* fine */ } } setLinkAsk(null); };
 
+  // ⏰ Her own brain (Atlas) is down: she says she'll be right back, it retries; still down → ⏰ (she never sees it)
+  // and it keeps trying quietly; when it's back → 👍 and her reply. Anything new they send takes over.
+  const turn = useRef(0);
+  const marker = async (kind: "wait" | "back") => {
+    const m: ChatMsg = { role: "assistant", content: kind === "wait" ? "⏰" : "👍", peek: true };
+    setMsgs(list => [...(list || []), m]);
+    const s = await data<{ ids?: string[] }>("messages.add", { ...thread, messages: [{ marker: kind }] }).catch(() => ({ ids: [] as string[] }));
+    if (s.ids?.[0]) setMsgs(list => (list || []).map(x => (x === m ? { ...x, id: s.ids![0] } : x)));
+  };
+  useEffect(() => () => { turn.current++; }, []);
+
   /** Her reply to the chat so far (after their message, or after a 🎬 scene note). */
-  const respond = async (next: ChatMsg[], myId?: string) => {
-    setBusy(true); setErr("");
+  const respond = async (next: ChatMsg[], myId?: string, retry = 0) => {
+    const me = retry ? turn.current : ++turn.current;
+    if (!retry || retry === 1) { setBusy(true); setErr(""); }
     try {
-      const r = await api<{ reply: string; changed?: boolean; drafts?: Draft[]; media?: Media[]; react?: string }>("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name, ...thread, ...(myId ? { replyTo: myId } : {}) });
+      const r = await api<{ reply: string; changed?: boolean; drafts?: Draft[]; media?: Media[]; react?: string; brainDown?: boolean }>("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name, ...thread, ...(myId ? { replyTo: myId } : {}), ...(retry ? { retry: true } : {}) });
+      if (turn.current !== me) return;
+      if (r.brainDown) {
+        setBusy(false);
+        if (!retry && r.reply) {
+          const hold: ChatMsg = { role: "assistant", content: r.reply };
+          setMsgs(m => [...(m || []), hold]);
+          data("messages.add", { ...thread, messages: [{ role: "assistant", content: r.reply }] }).catch(() => {});
+        }
+        if (retry === 1) await marker("wait");
+        setTimeout(() => { if (turn.current === me) respond(next, myId, retry ? 2 : 1); }, retry ? 30_000 : 5_000);
+        return;
+      }
+      if (retry >= 2) await marker("back");
       if (r.react) setMsgs(list => (list || []).map(x => (x.id && x.id === myId ? { ...x, theirReaction: r.react } : x)));
       // 🎨 Photos/videos being made show up right under the reply and fill in when ready.
       const sent: ChatMsg[] = (r.media || []).filter(x => x.status !== "failed").map(media => ({ role: "assistant", content: mediaNote(media), media }));
@@ -398,6 +423,10 @@ function Bubble({ m, face, who, onMedia, onReact, onAnswer, onReactMsg }: { m: C
   const badge = (r: string, who: string) => (
     <span data-testid={mine ? "their-reaction" : "my-reaction"} aria-label={`${who} reacted ${r}`}
       style={{ position: "absolute", bottom: -12, [mine ? "left" : "right"]: -6, fontSize: 15, lineHeight: 1, padding: "3px 5px", borderRadius: 999, background: "var(--surface)", border: "1px solid var(--border)", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }}>{r}</span>
+  );
+  // ⏰ / 👍: her brain was down / is back — just for them; she never sees these.
+  if (m.peek && !m.media && (m.content === "⏰" || m.content === "👍")) return (
+    <div data-testid="brain-marker" title={m.content === "⏰" ? `${who} is having trouble — still trying` : `${who} is back`} style={{ alignSelf: "center", fontSize: 18, lineHeight: 1, padding: "4px 10px", borderRadius: 999, border: "1px dashed var(--border)" }}>{m.content}</div>
   );
   if (m.peek && mine) return (
     <div data-testid="peek-note" style={{ alignSelf: "flex-end", fontSize: 12, padding: "4px 10px", borderRadius: 999, border: "1px dashed var(--border)" }} className="muted">👀 you peeked</div>
