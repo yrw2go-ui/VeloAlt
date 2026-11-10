@@ -4,6 +4,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { sql } from "./db";
 import { scrub } from "./secrets";
+import { BIO_SECTIONS } from "./bioSections";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, authToken: null });
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -23,7 +24,7 @@ function daysUntilBirthday(birthday: string, today: string): number {
 
 /** The "about them" part of the instructions (empty if they haven't filled anything in). */
 export async function aboutThem(userId: string, today: string): Promise<string> {
-  const [u] = await sql()`select bio, bio_photo_note, birthday::text, age, home_state from users where id = ${userId}`;
+  const [u] = await sql()`select bio, bio_photo_note, birthday::text, age, home_state, bio_more from users where id = ${userId}`;
   if (!u) return "";
   const lines: string[] = [];
   if (u.home_state && u.home_state !== "Outside the US") lines.push(`They live in ${u.home_state}.`);
@@ -34,8 +35,12 @@ export async function aboutThem(userId: string, today: string): Promise<string> 
   } else if (u.age) lines.push(`They're ${u.age}.`);
   if (u.bio_photo_note) lines.push(`What they look like (from the photo they shared): ${u.bio_photo_note}`);
   if (u.bio) lines.push(`How they describe themselves: ${u.bio}`);
-  if (!lines.length) return "";
-  return `ABOUT THEM (from their own profile — use it naturally, the way someone who knows them would: a compliment about something real like their glasses, freckles or smile, a nod to their age or where they live. Bring a detail up only now and then, when it fits — never in every message, never all at once, and never in a creepy way):\n${lines.map(l => `- ${l}`).join("\n")}`;
+  const more = (u.bio_more && typeof u.bio_more === "object" ? u.bio_more : {}) as Record<string, unknown>;
+  for (const sct of BIO_SECTIONS) if (sct.key !== "avoid" && typeof more[sct.key] === "string" && more[sct.key]) lines.push(`${sct.note}: ${more[sct.key]}`);
+  const avoid = typeof more.avoid === "string" ? more.avoid : "";
+  if (!lines.length && !avoid) return "";
+  if (!lines.length) return `TOPICS THEY'VE ASKED YOU TO AVOID (never bring these up; if they raise one themselves, follow their lead gently): ${avoid}`;
+  return `ABOUT THEM (from their own profile — use it naturally, the way someone who knows them would: a compliment about something real like their glasses, freckles or smile, a nod to their age or where they live. Bring a detail up only now and then, when it fits — never in every message, never all at once, and never in a creepy way. Ask about their goals, family, pets and hobbies now and then like a friend would, and talk to them the way they like):\n${lines.map(l => `- ${l}`).join("\n")}${avoid ? `\nTOPICS THEY'VE ASKED YOU TO AVOID (never bring these up; if they raise one themselves, follow their lead gently): ${avoid}` : ""}`;
 }
 
 /** Describes their photo once, in words: visible features only, nothing sensitive. Returns null if there's no person. */

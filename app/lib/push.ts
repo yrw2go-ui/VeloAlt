@@ -8,12 +8,22 @@ let cached: { publicKey: string; privateKey: string } | null = null;
 export async function vapid(): Promise<{ publicKey: string; privateKey: string }> {
   if (cached) return cached;
   const [row] = await sql()`select value from app_config where key = 'vapid'`;
-  const keysOf = (v: unknown) => (typeof v === "string" ? JSON.parse(v) : v) as { publicKey: string; privateKey: string };
-  if (row) return (cached = keysOf(row.value));
+  if (row) return (cached = row.value as { publicKey: string; privateKey: string });
   const keys = webpush.generateVAPIDKeys();
   await sql()`insert into app_config (key, value) values ('vapid', ${JSON.stringify(keys)}::jsonb) on conflict (key) do nothing`;
   const [again] = await sql()`select value from app_config where key = 'vapid'`;
-  return (cached = keysOf(again.value));
+  return (cached = again.value as { publicKey: string; privateKey: string });
+}
+
+// The server POSTs to this address, so only public https push services (no plain http,
+// IP addresses or local names).
+export function pushEndpointOk(endpoint: string): boolean {
+  try {
+    const u = new URL(endpoint);
+    const host = u.hostname.toLowerCase();
+    return u.protocol === "https:" && !u.username && !u.password && host.includes(".") && !/^[\d.]+$/.test(host) && !host.startsWith("[")
+      && !/(^|\.)(localhost|local|internal|localdomain)$/.test(host);
+  } catch { return false; }
 }
 
 export type PushPayload = { title: string; body: string; url: string; icon?: string; tag?: string };
@@ -26,6 +36,7 @@ export async function sendPush(userId: string, payload: PushPayload): Promise<nu
   const subject = process.env.VAPID_SUBJECT || "https://velo.app";
   let sent = 0;
   for (const s of subs) {
+    if (!pushEndpointOk(String(s.endpoint))) continue;
     try {
       await webpush.sendNotification({ endpoint: String(s.endpoint), keys: { p256dh: String(s.p256dh), auth: String(s.auth) } }, JSON.stringify(payload),
         { vapidDetails: { subject, publicKey: k.publicKey, privateKey: k.privateKey }, TTL: 6 * 3600, urgency: "normal" });

@@ -1,8 +1,6 @@
 // The OpenAI-compatible chat API (Qwen, DeepSeek): one request at a time, with
 // tool calls. Velo's tools are written for Claude (name, description,
 // input_schema) and are converted here.
-// Some models (especially DeepSeek) sometimes emit tool calls as XML text
-// (<invoke name="...">) instead of the proper tool_calls field. We parse those.
 import type Anthropic from "@anthropic-ai/sdk";
 import type { OpenAiProvider } from "./models";
 
@@ -17,43 +15,21 @@ export const toOaTools = (tools: Anthropic.Tool[]) =>
 
 export class ProviderError extends Error {}
 
-/** Pull <invoke name="tool">...</invoke> blocks out of a reply and turn them into tool calls. */
-function parseXmlToolCalls(text: string): { clean: string; calls: OaToolCall[] } {
-  const calls: OaToolCall[] = [];
-  const clean = text.replace(/<invoke\s+name="([^"]+)"\s*>([\s\S]*?)<\/invoke>/gi, (full, name, body) => {
-    const args: Record<string, string> = {};
-    const param = /<parameter\s+name="([^"]+)"\s*>([\s\S]*?)<\/parameter>/gi;
-    let m: RegExpExecArray | null;
-    while ((m = param.exec(body))) args[m[1]] = m[2].trim();
-    calls.push({
-      id: `xml_${calls.length}_${Date.now().toString(36)}`,
-      type: "function",
-      function: { name, arguments: JSON.stringify(args) },
-    });
-    return "";
-  }).trim();
-  return { clean, calls };
-}
-
-export async function oaChat(p: OpenAiProvider, messages: OaMessage[], tools: ReturnType<typeof toOaTools>, maxTokens: number): Promise<{ content: string; toolCalls: OaToolCall[] }> {
+export async function oaChat(p: OpenAiProvider, messages: OaMessage[], tools: ReturnType<typeof toOaTools>, maxTokens: number, mustUse?: string): Promise<{ content: string; toolCalls: OaToolCall[] }> {
   const res = await fetch(`${p.baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${p.key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: p.model, messages, max_tokens: maxTokens, ...(tools.length ? { tools, tool_choice: "auto" } : {}), ...(p.extra || {}) }),
+    body: JSON.stringify({ model: p.model, messages, max_tokens: p.minTokens ? Math.max(maxTokens, p.minTokens) : maxTokens, ...(tools.length ? { tools, tool_choice: mustUse ? { type: "function", function: { name: mustUse } } : "auto" } : {}), ...(p.extra || {}) }),
     signal: AbortSignal.timeout(60_000),
   });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ProviderError(`${res.status} ${String(data?.error?.message || data?.message || "").slice(0, 160)}`);
+  const body = await res.text();
+  let data: Record<string, any> = {}; // eslint-disable-line @typescript-eslint/no-explicit-any
+  try { data = JSON.parse(body); } catch { /* not JSON */ }
+  // The whole reason (the model, and what the service said), so a failure can be traced.
+  if (!res.ok) throw new ProviderError(`${res.status} [${p.model}] ${String(data?.error?.message || data?.message || data?.msg || data?.detail || body).replace(/\s+/g, " ").slice(0, 300)}`);
   const msg = data?.choices?.[0]?.message || {};
-  let toolCalls: OaToolCall[] = Array.isArray(msg.tool_calls) ? msg.tool_calls.filter((c: OaToolCall) => c?.id && c.function?.name) : [];
-  let content = String(msg.content || "").trim();
-  // Fallback: model wrote the tool call as XML in the text.
-  if (!toolCalls.length && /<invoke\s+name=/i.test(content)) {
-    const parsed = parseXmlToolCalls(content);
-    if (parsed.calls.length) {
-      toolCalls = parsed.calls;
-      content = parsed.clean;
-    }
-  }
+  const toolCalls: OaToolCall[] = Array.isArray(msg.tool_calls) ? msg.tool_calls.filter((c: OaToolCall) => c?.id && c.function?.name) : [];
+  // Reasoning models may put their thinking in <think>…</think>: only the answer is kept.
+  const content = String(msg.content || "").replace(/<think>[\s\S]*?(<\/think>|$)/gi, "").trim();
   return { content, toolCalls };
 }

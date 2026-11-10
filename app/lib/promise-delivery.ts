@@ -17,7 +17,7 @@ export async function deliverPromises(): Promise<number> {
       const character = await getCharacter(String(p.character_id));
       if (!u || !character) { await sql()`update chat_promises set status = 'cancelled' where id = ${p.id}`; continue; }
       const tz = isValidTimeZone(u.time_zone) ? u.time_zone : "America/Chicago";
-      const history = (await sql()`select role, content from velo_messages where user_id = ${p.user_id} and character_id = ${p.character_id}
+      const history = (await sql()`select role, content from velo_messages where user_id = ${p.user_id} and character_id = ${p.character_id} and not peek
         order by created_at desc limit 20`).reverse().map(r => ({ role: r.role === "assistant" ? "assistant" as const : "user" as const, content: String(r.content) }));
       const r = await askVelo({ userId: String(p.user_id), email: String(u.email) }, { mode: "checkin", messages: history, timeZone: tz, name: u.name || "", character, promise: String(p.about) });
       const text = r.reply.replace(/\s+/g, " ").trim().slice(0, 500);
