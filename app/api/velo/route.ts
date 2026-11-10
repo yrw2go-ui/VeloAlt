@@ -4,7 +4,7 @@ import { allow } from "../../lib/rateLimit";
 import { askVelo, CharacterGone, BrainDown, aiReady, aiError, type Mode, type Turn } from "../../lib/brain";
 import { getCharacter } from "../../lib/characters";
 import { sql } from "../../lib/db";
-import { ownsAtlasBrain } from "../../lib/models";
+import { holdsOnWhenDown } from "../../lib/models";
 import { mediaNote } from "../../lib/media";
 
 // 💬 Velo in the app: chat, in-app calls, recaps and memory (see lib/brain.ts).
@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     const character = body.characterId ? await getCharacter(String(body.characterId)) : null;
     if (body.characterId && !character) throw new CharacterGone();
     // ⏰ A chat with a character on her own brain: if it's down, no stand-in (see BrainDown below).
-    const noFallback = mode === "chat" && ownsAtlasBrain(character?.brain);
+    const noFallback = mode === "chat" && holdsOnWhenDown(character?.brain);
     let r;
     try { r = await askVelo(caller, { mode, messages, timeZone: body.timeZone, name: body.name, character, origin: req.nextUrl.origin, noFallback }); }
     catch (e) {

@@ -47,8 +47,18 @@ export function atlasBrain(b: unknown): OpenAiProvider | null {
   return { baseUrl: process.env.ATLASCLOUD_LLM_URL || "https://api.atlascloud.ai/v1", key, model, minTokens: 4000 };
 }
 /** Which brains this server can give a character (set up in the environment). */
-export const availableBrains = (): Brain[] => BRAINS.filter(b => !!atlasBrain(b));
+// 🔗 "qwen-chain": Qwen (fast) first, Qwen (big) if that fails, then Claude if both do.
+export const CHAIN = "qwen-chain";
+/** The Atlas brains to try, in order, for a character's brain setting (none for '' or 'claude'). */
+export function atlasChain(b: unknown): OpenAiProvider[] {
+  if (b === CHAIN) return [atlasBrain("qwen"), atlasBrain("qwen2")].filter((p): p is OpenAiProvider => !!p);
+  const p = atlasBrain(b);
+  return p ? [p] : [];
+}
+export const availableBrains = (): string[] => [...BRAINS.filter(b => !!atlasBrain(b)), ...(atlasBrain("qwen") && atlasBrain("qwen2") ? [CHAIN] : [])];
 /** For the pickers: which brains are ready, and the Atlas model each one runs. */
-export const brainList = () => availableBrains().map(id => ({ id, model: brainModel(id) }));
-/** A character's own Atlas brain (not '' = same as Velo, and not 'claude'). */
-export const ownsAtlasBrain = (b: unknown) => BRAINS.includes(b as Brain);
+export const brainList = () => availableBrains().map(id => ({ id, model: id === CHAIN ? `${brainModel("qwen")} → ${brainModel("qwen2")} → Claude` : brainModel(id as Brain) }));
+/** A character's own Atlas brain or chain (not '' = same as Velo, and not 'claude'). */
+export const ownsAtlasBrain = (b: unknown) => BRAINS.includes(b as Brain) || b === CHAIN;
+/** Her own single Atlas brain: if it's down in a chat, she says she'll be right back (no Claude). The chain ends with Claude instead. */
+export const holdsOnWhenDown = (b: unknown) => BRAINS.includes(b as Brain);

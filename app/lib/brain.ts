@@ -33,7 +33,7 @@ import { characterPrompt, feelingsFor, saveFeelings, trustFor, saveTrust, trustN
 import { aboutThem } from "./bio";
 import { mediaMood, allowsSuggestive } from "./traits";
 import { CHARACTER_ZONES } from "./states";
-import { provider, atlasBrain, type ChatModel } from "./models";
+import { provider, atlasChain, type ChatModel } from "./models";
 import { oaChat, toOaTools, ProviderError, type OaMessage } from "./openai";
 import { PLAN_TOOL, runPlanTool, plansNote } from "./plans";
 import { PROMISE_TOOL, runPromiseTool, promisesNote } from "./promises";
@@ -297,7 +297,9 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   // A character with her OWN brain (Qwen / DeepSeek through Atlas Cloud) uses it for everything:
   // chats, texts, calls, check-ins and her memory notes (attachments become a short note).
   const chosen = (u?.chat_model || "claude") as ChatModel;
-  const herBrain = ch?.brain ? atlasBrain(ch.brain) : null;
+  // Her own brain(s), in order: one Atlas model, or the chain (Qwen fast → Qwen big; then Claude).
+  const herChain = ch?.brain ? atlasChain(ch.brain) : [];
+  const herBrain = herChain[0] || null;
   // Messages with an attachment go to Claude (Qwen and DeepSeek are set up for text only here).
   // A character pinned to Claude always uses Claude, whatever Velo uses.
   const alt = herBrain || (ch?.brain !== "claude" && chosen !== "claude" && !attached && (mode === "chat" || mode === "sms" || mode === "talk") ? provider(chosen) : null);
@@ -308,13 +310,15 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
     ...messages.map(m => ({ role: m.role, content: asText(m.content) }) as OaMessage),
   ];
   let answered = false;
-  if (alt && (tools || herBrain)) {
+  const tryOrder = herChain.length ? herChain : alt ? [alt] : [];
+  for (const brainNow of tryOrder) {
+    if (answered || !(tools || herBrain)) break;
     try {
       const own = (tools || []).filter((t): t is Anthropic.Tool => "input_schema" in t);
       const oaTools = toOaTools([...own, ...(search ? [WEB_SEARCH_TOOL] : [])]);
       const oa: OaMessage[] = oaBase();
       for (let round = 0; round < 6; round++) {
-        const r = await oaChat(alt, oa, oaTools, maxTokens);
+        const r = await oaChat(brainNow, oa, oaTools, maxTokens);
         reply = r.content;
         if (!r.toolCalls.length) { answered = true; break; }
         oa.push({ role: "assistant", content: r.content || null, tool_calls: r.toolCalls });
@@ -330,7 +334,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
       }
       if (!reply) answered = false;
     } catch (e) {
-      console.error(`velo: ${chosen} failed, using Claude`, e instanceof ProviderError ? e.message : e);
+      console.error(`velo: ${brainNow.model ? "her brain" : chosen} failed${tryOrder.indexOf(brainNow) < tryOrder.length - 1 ? ", trying the next one" : ", using Claude"}`, e instanceof ProviderError ? e.message : e);
       answered = false;
     }
   }
