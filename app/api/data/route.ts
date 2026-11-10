@@ -149,9 +149,9 @@ export async function POST(req: NextRequest) {
       case "media.react": {
         const reaction = REACTIONS.includes(b.reaction) ? String(b.reaction) : null;
         if (!needId()) return bad("Unknown media.");
-        const [m] = await db`update velo_media set reaction = ${reaction} where id = ${id} and user_id = ${me} and status = 'done' returning kind, description`;
+        const [m] = await db`update velo_media set reaction = ${reaction} where id = ${id} and user_id = ${me} and status = 'done' returning kind, description, subject`;
         if (!m) return bad("Unknown media.");
-        const note = mediaNote(m.kind, "done", m.description, reaction);
+        const note = mediaNote(m.kind, "done", m.description, reaction, m.subject);
         await db`update velo_messages set content = ${note} where media_id = ${id} and user_id = ${me}`;
         return NextResponse.json({ ok: true, note });
       }

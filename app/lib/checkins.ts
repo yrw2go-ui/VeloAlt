@@ -86,7 +86,7 @@ async function momentPhoto(userId: string, ch: Character, text: string, tz: stri
   const m = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: desc },
     { characterId: ch.id, who: ch.name, appearance: ch.appearance, refs: await referenceUrls(ch), romantic, mood: mediaMood(ch.traits), offer: false, other: null });
   if (m.status === "failed") return null;
-  await sql()`insert into velo_messages (user_id, role, content, media_id, character_id, created_at) values (${userId}, 'assistant', ${mediaNote(m.kind, m.status, m.description)}, ${m.id}, ${ch.id}, now() + interval '1 second')`;
+  await sql()`insert into velo_messages (user_id, role, content, media_id, character_id, created_at) values (${userId}, 'assistant', ${mediaNote(m.kind, m.status, m.description, null, m.subject)}, ${m.id}, ${ch.id}, now() + interval '1 second')`;
   await resetPics(userId, ch);
   return m;
 }

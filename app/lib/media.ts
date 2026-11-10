@@ -15,15 +15,18 @@ import { sql } from "./db";
 import { scrub } from "./secrets";
 import { sendPush } from "./push";
 
-export type Media = { id: string; kind: "image" | "video"; status: "offered" | "declined" | "working" | "done" | "failed"; url: string | null; thumb?: string | null; caption?: string | null; description?: string | null };
+export type Media = { id: string; kind: "image" | "video"; status: "offered" | "declined" | "working" | "done" | "failed"; url: string | null; thumb?: string | null; caption?: string | null; description?: string | null; subject?: string | null };
 
 /** How a photo/video reads in the chat history the AI sees. */
-export const mediaNote = (kind: "image" | "video", status: Media["status"], description?: string | null, reaction?: string | null) => {
-  const what = kind === "image" ? "photo" : "video";
+export const mediaNote = (kind: "image" | "video", status: Media["status"], description?: string | null, reaction?: string | null, subject?: string | null) => {
+  // 👥 Who's in it: a reaction to a picture of someone else (or of a place/thing) is about THEM or it — not about you.
+  const other = subject && subject !== "me" && subject !== "none" ? subject.replace(/^me\+/, "") : "";
+  const what = (kind === "image" ? "photo" : "video") + (subject?.startsWith("me+") ? ` of you with ${other}` : other ? ` of ${other} (you're not in it)` : subject === "none" ? " (you're not in it)" : "");
+  const about = !reaction ? "" : subject?.startsWith("me+") ? "" : other ? ` — that's about ${other} in the picture, not about you` : subject === "none" ? " — to what's in the picture" : "";
   if (status === "offered") return `(offered to send a ${what}${description ? `: "${description}"` : ""} — waiting for their OK)`;
   if (status === "declined") return `(offered a ${what}${description ? ` ("${description}")` : ""} — they said no thanks)`;
   if (status === "failed") return `(tried to send a ${what}${description ? ` ("${description}")` : ""} — it wouldn't go through)`;
-  return `(sent a ${what}${description ? `: "${description}"` : ""}${reaction ? ` — they reacted ${reaction}` : ""})`;
+  return `(sent a ${what}${description ? `: "${description}"` : ""}${reaction ? ` — they reacted ${reaction}${about}` : ""})`;
 };
 
 // 💬 What they say when it arrives.
@@ -88,7 +91,7 @@ const SUGGESTIVE = /\b(sexy|seductive|sultry|bikini|swimsuit|cleavage|lingerie|b
 
 export const SEND_MEDIA_TOOL = (who: string, romantic = false): Anthropic.Tool => ({
   name: "send_media",
-  description: `Send them a photo or a short video, like a friend would from their phone, to make the chat feel personal: a picture of you (${who}) somewhere, what you're "up to" right now (fit it to your time of day, season and plans), something you're describing, or when they ask for one. If it's another photo from the same day and place as your last one (same class, same outing), set same_moment: true — same outfit and setting, only the pose and expression change. Mix it up: not every picture of you is a selfie — often it's just a photo of you, as if a friend snapped it or it's on a timer (candid, full-body, mid-activity); only say \"mirror selfie\" when you're holding your phone up to a mirror. Be creative, and lean toward the settings, outfits and vibes they've loved. If they ASKED for it, set they_asked: true and it's made right away. If it's your own idea, it's only OFFERED: they get an Accept button, and nothing is made unless they accept — so ask casually ("want a pic of my view right now?") and never say it's sent. Once made it takes about a minute (a photo) or a few minutes (a video) and pops into the chat or onto their call screen — keep talking meanwhile. Use it now and then, not every message. ${romantic ? "This is a romantic setting with an adult, so it can be PG-13 — flirty, cute, date-night outfits, swimwear at the beach — but never nudity, underwear/lingerie or anything sexual or explicit." : "Always family-friendly: everyone fully clothed, nothing sexual or suggestive."} No real people, and never a picture of the person you're talking with. Vary it like real photos do: different expressions (a big smile, laughing, a soft look, mid-sentence, looking away, focused on something) and poses from one photo to the next — don't repeat the same expression or pose, and save a wink for the rare moment it really fits. Videos are a few seconds, no sound.`,
+  description: `Send them a photo or a short video, like a friend would from their phone, to make the chat feel personal: a picture of you (${who}) somewhere, what you're "up to" right now (fit it to your time of day, season and plans), something you're describing, or when they ask for one. If it's another photo from the same day and place as your last one (same class, same outing), set same_moment: true — same outfit and setting, only the pose and expression change. Mix it up: not every picture of you is a selfie — often it's just a photo of you, as if a friend snapped it or it's on a timer (candid, full-body, mid-activity); only say \"mirror selfie\" when you're holding your phone up to a mirror. Be creative, and lean toward the settings, outfits and vibes they've loved. If they ASKED for it, set they_asked: true and it's made right away. If it's your own idea, it's only OFFERED: they get an Accept button, and nothing is made unless they accept — so ask casually ("want a pic of my view right now?") and never say it's sent. Once made it takes about a minute (a photo) or a few minutes (a video) and pops into the chat or onto their call screen — keep talking meanwhile. Use it now and then, not every message. ${romantic ? "This is a romantic setting with an adult, so it can be PG-13 — flirty, cute, date-night outfits, swimwear at the beach — but never nudity, underwear/lingerie or anything sexual or explicit." : "Always family-friendly: everyone fully clothed, nothing sexual or suggestive."} No real people, and never a picture of the person you're talking with. Vary it like real photos do: different expressions (a big smile, laughing, a soft look, mid-sentence, looking away, focused on something) and poses from one photo to the next — don't repeat the same expression or pose, and save a wink for the rare moment it really fits. Videos are a few seconds, no sound. A picture of someone else (of_person) or of a place or thing isn't a picture of you: don't talk about it as if it were ("miss me yet?"), and if they react to it (❤️, 🔥…) they're reacting to that person or thing, not to you — take it that way.`,
   input_schema: {
     type: "object",
     properties: {
@@ -171,7 +174,7 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
     return n ? `Reference image${n > 1 ? `s ${from}–${from + n - 1} show` : ` ${from} shows`} ${p.name}; keep her face and look the same.` : p.appearance ? `${p.name}: ${p.appearance}.` : "";
   }).filter(Boolean).join(" ") + " Each person appears exactly once. " : "";
   const subject = people ? groupSubject : o
-    ? (oRefs.length ? `The first ${oRefs.length > 1 ? `${oRefs.length} reference images show` : "reference image shows"} ${o.name}; keep her face and look the same. ` : o.appearance ? `${o.name}: ${o.appearance}. ` : `${o.name}. `)
+    ? (oRefs.length ? `The first ${oRefs.length > 1 ? `${oRefs.length} reference images show` : "reference image shows"} ${o.name}; keep their face and look the same. ` : o.appearance ? `${o.name}: ${o.appearance}. ` : `${o.name}. `)
       + (withMe ? (meRefs.length ? `The other reference image${meRefs.length > 1 ? "s show" : " shows"} ${ctx.who}; keep their face and look the same too. ` : ctx.appearance ? `With ${ctx.who}: ${ctx.appearance}. ` : "") : "")
     : prev ? `The FIRST reference image is ${ctx.who}'s previous photo from this same moment${prev.description ? ` ("${String(prev.description).slice(0, 160)}")` : ""}: keep the exact same outfit, accessories, hair and makeup, and the same place, background and lighting — only the pose, angle and expression change, plus anything the description below says changed. ${meRefs.length ? `The other reference image${meRefs.length > 1 ? "s show" : " shows"} ${ctx.who}'s face and look; keep them the same. ` : ""}`
     : withMe ? (ref ? `The person in the reference image${refs.length > 1 ? "s" : ""} is ${ctx.who}; keep their face, hair, body and look exactly the same. ` : ctx.appearance ? `${ctx.who}: ${ctx.appearance}. ` : "") : "";
@@ -188,10 +191,13 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
   const [u] = await sql()`select video_model from users where id = ${userId}`;
   const model = kind === "image" ? (ref ? EDIT_MODEL() : IMAGE_MODEL()) : videoModel(String(u?.video_model || DEFAULT_VIDEO_MODEL), !!ref);
   const sendRefs = kind === "image" ? refs : ref ? [ref] : [];
-  const [row] = await sql()`insert into velo_media (user_id, character_id, kind, prompt, model, caption, description, refs, poster_url, status, peek)
-    values (${userId}, ${ctx.characterId}, ${kind}, ${prompt}, ${model}, ${ctx.peek ? null : captionFor(kind, ctx.romantic)}, ${desc.slice(0, 400)}, ${sendRefs}, ${kind === "video" ? ref : null}, ${ctx.offer ? "offered" : "working"}, ${!!ctx.peek}) returning id`;
-  if (ctx.offer) return { id: row.id, kind, status: "offered", url: null, description: desc };
-  return await launch(row.id, kind, model, prompt, sendRefs, desc);
+  const who = people ? null : o ? (withMe ? `me+${o.name}` : o.name) : withMe ? "me" : "none";
+  // 💬 Her line when it arrives: none for a picture of someone else ("miss me yet?" would make no sense), nothing flirty for a view or a thing.
+  const caption = ctx.peek || (o && !withMe) ? null : captionFor(kind, ctx.romantic && withMe);
+  const [row] = await sql()`insert into velo_media (user_id, character_id, kind, prompt, model, caption, description, refs, poster_url, status, peek, subject)
+    values (${userId}, ${ctx.characterId}, ${kind}, ${prompt}, ${model}, ${caption}, ${desc.slice(0, 400)}, ${sendRefs}, ${kind === "video" ? ref : null}, ${ctx.offer ? "offered" : "working"}, ${!!ctx.peek}, ${who}) returning id`;
+  if (ctx.offer) return { id: row.id, kind, status: "offered", url: null, description: desc, subject: who };
+  return { ...(await launch(row.id, kind, model, prompt, sendRefs, desc)), subject: who };
 }
 
 /** Sends the job to Atlas (now, or when an offer is accepted). */
@@ -217,7 +223,7 @@ export async function acceptMedia(userId: string, id: string): Promise<Media | n
   const [r] = await sql()`update velo_media set status = 'working', created_at = now() where id = ${id} and user_id = ${userId} and status = 'offered'
     returning id, kind, model, prompt, refs, description`;
   if (!r) return null;
-  await sql()`update velo_messages set content = ${mediaNote(r.kind, "working", r.description)} where media_id = ${id} and user_id = ${userId}`;
+  await sql()`update velo_messages set content = ${mediaNote(r.kind, "working", r.description, null, r.subject)} where media_id = ${id} and user_id = ${userId}`;
   return await launch(String(r.id), r.kind, String(r.model), String(r.prompt), (r.refs || []) as string[], r.description);
 }
 /** They said no thanks: nothing is made, and they know. */
@@ -225,7 +231,7 @@ export async function declineMedia(userId: string, id: string): Promise<Media | 
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
   const [r] = await sql()`update velo_media set status = 'declined' where id = ${id} and user_id = ${userId} and status = 'offered' returning id, kind, description`;
   if (!r) return null;
-  await sql()`update velo_messages set content = ${mediaNote(r.kind, "declined", r.description)} where media_id = ${id} and user_id = ${userId}`;
+  await sql()`update velo_messages set content = ${mediaNote(r.kind, "declined", r.description, null, r.subject)} where media_id = ${id} and user_id = ${userId}`;
   return { id: String(r.id), kind: r.kind, status: "declined", url: null, description: r.description };
 }
 
@@ -238,12 +244,12 @@ export async function tasteNote(userId: string, characterId: string | null): Pro
   return `THEIR TASTE IN YOUR PHOTOS/VIDEOS (lean toward what they love — settings, outfits, vibes — and be creative with new ideas in that spirit):${liked.length ? `\n- Loved: ${liked.join("; ")}` : ""}${passed.length ? `\n- Turned down: ${passed.join("; ")}` : ""}`;
 }
 
-type Row = { id: string; user_id: string; character_id: string | null; kind: "image" | "video"; prompt: string; model: string; job_id: string | null; status: Media["status"]; attempts: number; created_at: string; url: string | null; thumb: string | null; poster_url: string | null; caption: string | null; description: string | null; refs: string[] | null; retried?: boolean; retries?: number; resent?: boolean; peek?: boolean };
-const view = (r: Row): Media => ({ id: r.id, kind: r.kind, status: r.status, url: r.status === "done" ? r.url : null, thumb: r.thumb || r.poster_url || null, caption: r.caption, description: r.description });
+type Row = { id: string; user_id: string; character_id: string | null; kind: "image" | "video"; prompt: string; model: string; job_id: string | null; status: Media["status"]; attempts: number; created_at: string; url: string | null; thumb: string | null; poster_url: string | null; caption: string | null; description: string | null; refs: string[] | null; retried?: boolean; retries?: number; resent?: boolean; peek?: boolean; subject?: string | null };
+const view = (r: Row): Media => ({ id: r.id, kind: r.kind, status: r.status, url: r.status === "done" ? r.url : null, thumb: r.thumb || r.poster_url || null, caption: r.caption, description: r.description, subject: r.subject || null });
 
 export async function getMedia(userId: string, id: string): Promise<Row | null> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
-  const [r] = await sql()`select m.id, m.user_id, m.character_id, m.kind, m.prompt, m.model, m.job_id, m.status, m.attempts, m.created_at::text, m.poster_url, m.caption, m.description, m.refs, m.retried, m.retries, m.resent, m.peek, f.url, t.url as thumb
+  const [r] = await sql()`select m.id, m.user_id, m.character_id, m.kind, m.prompt, m.model, m.job_id, m.status, m.attempts, m.created_at::text, m.poster_url, m.caption, m.description, m.refs, m.retried, m.retries, m.resent, m.peek, m.subject, f.url, t.url as thumb
     from velo_media m left join velo_files f on f.id = m.file_id left join velo_files t on t.id = m.thumb_file_id where m.id = ${id} and m.user_id = ${userId}`;
   return (r as Row) || null;
 }
@@ -346,10 +352,10 @@ async function phoneActingUp(r: Row) {
 export async function resendDue(userId: string | null = null, max = 5): Promise<number> {
   const rows = await sql()`update velo_media set resend_at = null, resent = true, status = 'working', retries = 0, retried = false, attempts = 0, job_id = null, claimed_at = null, created_at = now(), error = null, caption = ${pick(BACK)}
     where id in (select id from velo_media where resend_at <= now() and status = 'failed' and not resent and (${userId}::uuid is null or user_id = ${userId}::uuid) order by resend_at limit ${max} for update skip locked)
-    returning id, user_id, character_id, kind, model, prompt, refs, description`;
+    returning id, user_id, character_id, kind, model, prompt, refs, description, subject`;
   for (const r of rows) {
     // She sends it fresh: the photo moves to the bottom of the chat, with a "phone's working again" note when it lands.
-    await sql()`update velo_messages set created_at = now(), content = ${mediaNote(r.kind, "working", r.description)} where media_id = ${r.id} and user_id = ${r.user_id}`;
+    await sql()`update velo_messages set created_at = now(), content = ${mediaNote(r.kind, "working", r.description, null, r.subject)} where media_id = ${r.id} and user_id = ${r.user_id}`;
     await launch(String(r.id), r.kind, r.model, r.prompt, r.refs || [], r.description);
     if (r.character_id) {
       const [ch] = await sql()`select c.name, f.url as portrait from chat_characters c left join velo_files f on f.id = c.portrait_file_id where c.id = ${r.character_id}`;

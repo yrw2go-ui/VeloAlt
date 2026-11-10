@@ -20,7 +20,8 @@ export type ChatFile = { id: string; url: string; thumb?: string | null; name: s
 export type ChatMsg = { id?: string; role: "user" | "assistant"; content: string; peek?: boolean; draft?: Draft; file?: ChatFile; media?: Media; reaction?: string | null; theirReaction?: string | null };
 /** How a sent photo/video reads in the history the AI sees. */
 export const mediaNote = (m: Media) => {
-  const what = m.kind === "image" ? "photo" : "video", d = m.description ? `"${m.description}"` : "";
+  const other = m.subject && m.subject !== "me" && m.subject !== "none" ? m.subject.replace(/^me\+/, "") : "";
+  const what = (m.kind === "image" ? "photo" : "video") + (m.subject?.startsWith("me+") ? ` of you with ${other}` : other ? ` of ${other} (you're not in it)` : m.subject === "none" ? " (you're not in it)" : ""), d = m.description ? `"${m.description}"` : "";
   return m.status === "offered" ? `(offered to send a ${what}${d ? `: ${d}` : ""} — waiting for their OK)` : m.status === "declined" ? `(offered a ${what}${d ? ` (${d})` : ""} — they said no thanks)` : `(sent a ${what}${d ? `: ${d}` : ""})`;
 };
 const ACCEPT = "image/jpeg,image/png,image/webp,image/gif,application/pdf,text/plain";
