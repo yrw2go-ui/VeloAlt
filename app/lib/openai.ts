@@ -22,8 +22,11 @@ export async function oaChat(p: OpenAiProvider, messages: OaMessage[], tools: Re
     body: JSON.stringify({ model: p.model, messages, max_tokens: p.minTokens ? Math.max(maxTokens, p.minTokens) : maxTokens, ...(tools.length ? { tools, tool_choice: mustUse ? { type: "function", function: { name: mustUse } } : "auto" } : {}), ...(p.extra || {}) }),
     signal: AbortSignal.timeout(60_000),
   });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ProviderError(`${res.status} ${String(data?.error?.message || data?.message || "").slice(0, 160)}`);
+  const body = await res.text();
+  let data: Record<string, any> = {}; // eslint-disable-line @typescript-eslint/no-explicit-any
+  try { data = JSON.parse(body); } catch { /* not JSON */ }
+  // The whole reason (the model, and what the service said), so a failure can be traced.
+  if (!res.ok) throw new ProviderError(`${res.status} [${p.model}] ${String(data?.error?.message || data?.message || data?.msg || data?.detail || body).replace(/\s+/g, " ").slice(0, 300)}`);
   const msg = data?.choices?.[0]?.message || {};
   const toolCalls: OaToolCall[] = Array.isArray(msg.tool_calls) ? msg.tool_calls.filter((c: OaToolCall) => c?.id && c.function?.name) : [];
   // Reasoning models may put their thinking in <think>…</think>: only the answer is kept.

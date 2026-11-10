@@ -13,8 +13,11 @@ export async function writeText(brain: unknown, system: string, user: string, ma
     try {
       const r = await oaChat(p, [{ role: "system", content: system }, { role: "user", content: user }], [], maxTokens);
       if (r.content) return r.content;
-    } catch (e) { console.error("llm: character brain failed, trying the next", e instanceof Error ? e.message : e); }
+      console.error(`llm: [${p.model}] answered with nothing, trying the next`);
+    } catch (e) { console.error("llm: character brain failed, trying the next:", e instanceof Error ? e.message : e); }
   }
   const res = await client.messages.create({ model: process.env.VELO_MODEL!, max_tokens: maxTokens, system, messages: [{ role: "user", content: user }] });
-  return res.content.map(b => (b.type === "text" ? b.text : "")).join(" ");
+  const text = res.content.map(b => (b.type === "text" ? b.text : "")).join(" ");
+  if (!text.trim()) console.error(`llm: Claude answered with nothing (${res.stop_reason})`);
+  return text;
 }

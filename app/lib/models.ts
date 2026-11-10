@@ -44,7 +44,7 @@ export function atlasBrain(b: unknown): OpenAiProvider | null {
   const model = BRAINS.includes(b as Brain) ? brainModel(b as Brain) : "";
   if (!key || !model) return null;
   // Some Atlas models reason before answering: leave them room so short replies don't come back empty.
-  return { baseUrl: process.env.ATLASCLOUD_LLM_URL || "https://api.atlascloud.ai/v1", key, model, minTokens: 4000 };
+  return { baseUrl: process.env.ATLASCLOUD_LLM_URL || "https://api.atlascloud.ai/v1", key, model, minTokens: 8000 };
 }
 /** Which brains this server can give a character (set up in the environment). */
 // 🔗 "qwen-chain": Qwen (fast) first, Qwen (big) if that fails, then Claude if both do.
