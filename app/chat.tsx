@@ -10,17 +10,18 @@ import { hideSecrets } from "./lib/secrets";
 import { timeZone } from "./lib/tz";
 import { confirmAsk } from "./lib/dialog";
 import { useDictation } from "./dictate";
-import { CharacterFace } from "./characters";
+import { CharacterFace, LinkBackForm } from "./characters";
 import { MediaView, ReactionBar, type Media } from "./media";
 
 /** Who this chat is with: Velo (no character) or one of their characters. */
-export type ChatWith = { id: string; name: string; portrait_url: string | null; romantic?: boolean };
+export type ChatWith = { id: string; name: string; portrait_url: string | null; romantic?: boolean; brain?: string };
 
 export type ChatFile = { id: string; url: string; thumb?: string | null; name: string; type: string };
 export type ChatMsg = { id?: string; role: "user" | "assistant"; content: string; peek?: boolean; draft?: Draft; file?: ChatFile; media?: Media; reaction?: string | null; theirReaction?: string | null };
 /** How a sent photo/video reads in the history the AI sees. */
 export const mediaNote = (m: Media) => {
-  const what = m.kind === "image" ? "photo" : "video", d = m.description ? `"${m.description}"` : "";
+  const other = m.subject && m.subject !== "me" && m.subject !== "none" ? m.subject.replace(/^me\+/, "") : "";
+  const what = (m.kind === "image" ? "photo" : "video") + (m.subject?.startsWith("me+") ? ` of you with ${other}` : other ? ` of ${other} (you're not in it)` : m.subject === "none" ? " (you're not in it)" : ""), d = m.description ? `"${m.description}"` : "";
   return m.status === "offered" ? `(offered to send a ${what}${d ? `: ${d}` : ""} — waiting for their OK)` : m.status === "declined" ? `(offered a ${what}${d ? ` (${d})` : ""} — they said no thanks)` : `(sent a ${what}${d ? `: ${d}` : ""})`;
 };
 const ACCEPT = "image/jpeg,image/png,image/webp,image/gif,application/pdf,text/plain";
@@ -30,6 +31,7 @@ const ACCEPT = "image/jpeg,image/png,image/webp,image/gif,application/pdf,text/p
 const unsavedBy = new Map<string, number>();
 // Reactions travel with the history, so she knows what they reacted to (and what she did).
 const withReactions = (x: ChatMsg) => x.role === "assistant" && x.reaction ? `${x.content}\n(they reacted ${x.reaction} to this)` : x.role === "user" && x.theirReaction ? `${x.content}\n(you reacted ${x.theirReaction})` : x.content;
+// 👀 Peeks are only theirs: she never sees them.
 const realMsgs = (m: ChatMsg[]) => m.filter(x => !x.draft && !x.peek).map(x => ({ role: x.role, content: withReactions(x), ...(x.file ? { fileId: x.file.id } : {}) }));
 const INTRO = "Hi, I'm Velo! 👋 I'm here for whatever you need — planning your day, reminders, to-dos, talking things through, or just keeping you company. What should I call you?";
 const HELLO = (n: string) => [`Hey${n ? ` ${n}` : ""}! What's on your mind?`, `Hi${n ? ` ${n}` : ""} — how's your day going?`, `Hey${n ? ` ${n}` : ""}, good to see you. What can I do for you?`];
@@ -38,16 +40,14 @@ const SUGGESTIONS = ["Plan my day", "Remind me to call Mom tomorrow at 6pm", "I 
 /** A message to drop into one chat (a call recap): cid null = Velo's chat. */
 export type ChatAdd = { msg: ChatMsg; cid: string | null };
 
-export default function Chat({ userId, name, onChanged, added, onAdded, character, adult = false, onAdult, onContinue, onHistory }: { userId: string; name: string; onChanged: () => void; added: ChatAdd | null; onAdded?: () => void; character?: ChatWith | null; adult?: boolean; onAdult?: () => void; onContinue?: (turns: { role: "user" | "assistant"; content: string }[]) => void; onHistory?: (h: { role: "user" | "assistant"; content: string }[]) => void }) {
-  const unsaved = { get current() { return unsavedBy.get(key) || 0; }, set current(v: number) { unsavedBy.set(key, v); } };
-  const face = (size: number) => (character ? <CharacterFace c={character} size={size} /> : <VeloAvatar size={size} />);
-  const [msgs, setMsgs] = useState<ChatMsg[] | null>(null);
-  const [peekDraft, setPeekDraft] = useState<string | null>(null);
-  const [linkAsk, setLinkAsk] = useState<{ id: string; name: string; kind: string } | null>(null);
+export default function Chat({ userId, name, onChanged, added, onAdded, character, adult = false, onAdult, onHistory, onNewCharacter }: { userId: string; name: string; onChanged: () => void; added: ChatAdd | null; onAdded?: () => void; character?: ChatWith | null; adult?: boolean; onAdult?: () => void; onHistory?: (m: { role: "user" | "assistant"; content: string }[]) => void; onNewCharacter?: (c: { id: string; name: string; portrait_url: string | null }) => void }) {
   const cid = character?.id || null;
   const thread = cid ? { characterId: cid } : {};
   const who = character?.name || "Velo";
   const key = cid || "velo";
+  const unsaved = { get current() { return unsavedBy.get(key) || 0; }, set current(v: number) { unsavedBy.set(key, v); } };
+  const face = (size: number) => (character ? <CharacterFace c={character} size={size} /> : <VeloAvatar size={size} />);
+  const [msgs, setMsgs] = useState<ChatMsg[] | null>(null);
   const [text, setText] = useState("");
   const mic = useDictation(setText);
   // The box grows with the message (typed or spoken), up to about 5 lines.
@@ -83,9 +83,10 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   }, [cid]); // eslint-disable-line react-hooks/exhaustive-deps
   const end = useRef<HTMLDivElement>(null);
   const msgsRef = useRef<ChatMsg[]>([]);
+  // 📞 The chat so far (what she sees), for "Continue in call".
+  useEffect(() => { onHistory?.(realMsgs(msgs || []).map(m => ({ role: m.role, content: m.content }))); }, [msgs]); // eslint-disable-line react-hooks/exhaustive-deps
   const [hello] = useState(() => Math.floor(Math.random() * 3));
   msgsRef.current = msgs || [];
-  useEffect(() => { if (onHistory && msgs) onHistory(realMsgs(msgs)); }, [msgs, onHistory]);
 
   useEffect(() => {
     // History, then drafts still waiting for a Send and calls still going.
@@ -124,15 +125,11 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     const t = hideSecrets(raw.trim()).text;
     const file = attach;
     if ((!t && !file) || busy || uploading || !msgs) return;
-    // 👀 Scene peek: "let me see her", "I wanna see her", or "*peek*" — silent image of the moment. She never knows.
-    if (cid && scene && !file && /^\s*(\*peek\*|let me see (her|you|him)|i wanna see (her|you|him)|show me (her|you|him))\s*[.!?]*$/i.test(t)) {
-      setText(""); setBusy(true); setErr("");
-      try {
-        const r = await data<{ description: string }>("scene.peekDescribe", { characterId: cid });
-        setPeekDraft(r.description || "");
-      } catch (e) {
-        setErr(e instanceof Error ? e.message : "Couldn't describe the scene.");
-      } finally { setBusy(false); }
+    // 👀 "*peek*" during a scene: first the picture's description pops up to check or tweak, then exactly that is made.
+    if (cid && scene && !file && /^\s*\*?\s*pe(e|a)k\s*\*?\s*[.!]?\s*$/i.test(t)) {
+      setText(""); setErr(""); setPeekSheet({ description: "", loading: true });
+      try { setPeekSheet({ description: (await data<{ description: string }>("scene.peek.draft", { characterId: cid })).description, loading: false }); }
+      catch (e) { setPeekSheet(null); setErr(e instanceof Error ? e.message : "Couldn't peek right now."); }
       return;
     }
     const opener: ChatMsg[] = msgs.length || cid ? [] : [{ role: "assistant", content: openingLine }];
@@ -148,19 +145,75 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     await respond(next, myId);
   };
 
-  /** Her reply to the chat so far (after their message, or after a 🎬 scene note). */
-  const respond = async (next: ChatMsg[], myId?: string) => {
-    setBusy(true); setErr("");
+  // 👋 Someone she wants them to meet: the card shows once her headshot is ready (checked every 15s).
+  type Intro = { id: string; name: string; age: number | null; kind: string; introducer: string; about: string; portrait_url: string | null };
+  const [intro, setIntro] = useState<Intro | null>(null);
+  const [introBusy, setIntroBusy] = useState(false);
+  useEffect(() => {
+    if (!cid) return;
+    let stop = false;
+    const look = () => data<{ intros: Intro[] }>("intros.ready", { characterId: cid }).then(r => { if (!stop) setIntro(r.intros[0] || null); }).catch(() => {});
+    look();
+    const t = setInterval(look, 15_000);
+    return () => { stop = true; clearInterval(t); };
+  }, [cid]);
+  const answerIntro = async (yes: boolean) => {
+    if (!intro) return;
+    setIntroBusy(true);
     try {
-      let r: { reply: string; changed?: boolean; drafts?: Draft[]; media?: Media[]; react?: string };
-      try {
-        r = await api("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name, ...thread, ...(myId ? { replyTo: myId } : {}) });
-      } catch (e) {
-        // App was backgrounded or the connection dropped — retry once.
-        if (e instanceof TypeError && /fetch|network|abort/i.test(e.message)) {
-          await new Promise(res => setTimeout(res, 800));
-          r = await api("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name, ...thread, ...(myId ? { replyTo: myId } : {}) });
-        } else throw e;
+      if (yes) { const r = await data<{ character: { id: string; name: string; portrait_url: string | null } }>("intros.accept", { id: intro.id }); onNewCharacter?.(r.character); }
+      else await data("intros.decline", { id: intro.id });
+      setIntro(null);
+    } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't do that."); }
+    setIntroBusy(false);
+  };
+
+  // 👭 They mentioned someone who knows her, but she doesn't know them back: offer to link that way too (admins).
+  const [linkAsk, setLinkAsk] = useState<{ id: string; name: string; kind: string; story: string } | null>(null);
+  const askedKey = (other: string) => `velo:linkask:${cid}:${other}`;
+  const checkLinks = (t: string) => {
+    api<{ suggest: { id: string; name: string; kind: string; story: string }[] }>("/api/characters", { action: "link.suggest", id: cid, text: t }).then(r => {
+      const s = (r.suggest || []).find(x => { try { return !localStorage.getItem(askedKey(x.id)); } catch { return true; } });
+      if (s) setLinkAsk(s);
+    }).catch(() => {});
+  };
+  const notNow = () => { if (linkAsk) { try { localStorage.setItem(askedKey(linkAsk.id), "1"); } catch { /* fine */ } } setLinkAsk(null); };
+
+  // ⏰ Her own brain (Atlas) is down: she says she'll be right back, it retries; still down → ⏰ (she never sees it)
+  // and it keeps trying quietly; when it's back → 👍 and her reply. Anything new they send takes over.
+  const turn = useRef(0);
+  const marker = async (kind: "wait" | "back") => {
+    const m: ChatMsg = { role: "assistant", content: kind === "wait" ? "⏰" : "👍", peek: true };
+    setMsgs(list => [...(list || []), m]);
+    const s = await data<{ ids?: string[] }>("messages.add", { ...thread, messages: [{ marker: kind }] }).catch(() => ({ ids: [] as string[] }));
+    if (s.ids?.[0]) setMsgs(list => (list || []).map(x => (x === m ? { ...x, id: s.ids![0] } : x)));
+  };
+  useEffect(() => () => { turn.current++; }, []);
+
+  /** Her reply to the chat so far (after their message, or after a 🎬 scene note). */
+  const respond = async (next: ChatMsg[], myId?: string, retry = 0) => {
+    const me = retry ? turn.current : ++turn.current;
+    if (!retry || retry === 1) { setBusy(true); setErr(""); }
+    try {
+      const r = await api<{ reply: string; changed?: boolean; drafts?: Draft[]; media?: Media[]; react?: string; brainDown?: boolean; by?: "claude" | "alt" }>("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name, ...thread, ...(myId ? { replyTo: myId } : {}), ...(retry ? { retry: true } : {}) });
+      if (turn.current !== me) return;
+      if (r.brainDown) {
+        setBusy(false);
+        if (!retry && r.reply) {
+          const hold: ChatMsg = { role: "assistant", content: r.reply };
+          setMsgs(m => [...(m || []), hold]);
+          data("messages.add", { ...thread, messages: [{ role: "assistant", content: r.reply }] }).catch(() => {});
+        }
+        if (retry === 1) await marker("wait");
+        setTimeout(() => { if (turn.current === me) respond(next, myId, retry ? 2 : 1); }, retry ? 30_000 : 5_000);
+        return;
+      }
+      if (retry >= 2) await marker("back");
+      // 🔗 The Qwen chain: ⏰ when Claude had to take over, 👍 when Qwen's back (once per switch; she never sees them).
+      if (character?.brain === "qwen-chain" && r.by) {
+        const lastMark = [...msgsRef.current].reverse().find(x => x.peek && !x.media && (x.content === "⏰" || x.content === "👍"))?.content;
+        if (r.by === "claude" && lastMark !== "⏰") await marker("wait");
+        if (r.by === "alt" && lastMark === "⏰") await marker("back");
       }
       if (r.react) setMsgs(list => (list || []).map(x => (x.id && x.id === myId ? { ...x, theirReaction: r.react } : x)));
       // 🎨 Photos/videos being made show up right under the reply and fill in when ready.
@@ -181,8 +234,23 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   // 🎬 Scenes: a date or outing, played out here, or something that already happened.
   const [scene, setScene] = useState<{ id: string; title: string; details: string } | null>(null);
   const [sceneSheet, setSceneSheet] = useState(false);
+  // 👀 The peek being set up: its description (editable) before the picture is made.
+  const [peekSheet, setPeekSheet] = useState<{ description: string; loading: boolean; error?: string } | null>(null);
+  const rewritePeek = async () => {
+    setPeekSheet(p => (p ? { ...p, loading: true, error: undefined } : p));
+    try { const r = await data<{ description: string }>("scene.peek.draft", { characterId: cid }); setPeekSheet({ description: r.description, loading: false }); }
+    catch (e) { setPeekSheet(p => (p ? { ...p, loading: false, error: e instanceof Error ? e.message : "Couldn't rewrite it." } : p)); }
+  };
+  const sendPeek = async (description: string) => {
+    setPeekSheet(p => (p ? { ...p, loading: true, error: undefined } : p));
+    try {
+      const r = await data<{ media: Media; userMsgId: string; mediaMsgId: string }>("scene.peek", { characterId: cid, description });
+      setPeekSheet(null);
+      setMsgs(list => [...(list || []), { id: r.userMsgId, role: "user", content: "*peek*", peek: true }, { id: r.mediaMsgId, role: "assistant", content: "(peek)", media: r.media, peek: true }]);
+    } catch (e) { setPeekSheet(p => (p ? { ...p, loading: false, error: e instanceof Error ? e.message : "Couldn't peek right now." } : p)); }
+  };
   // 📅 A hangout/date you two planned for today: set the scene for it.
-  type Plan = { id: string; title: string; details: string; day: string };
+  type Plan = { id: string; title: string; details: string; day: string; time?: string };
   const [plans, setPlans] = useState<Plan[]>([]);
   const [fromPlan, setFromPlan] = useState<Plan | null>(null);
   useEffect(() => {
@@ -194,8 +262,8 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     setPlans(ps => ps.filter(x => x.id !== p.id));
     await data("plans.skip", { planId: p.id }).catch(() => {});
   };
-  const startScene = async (kind: "live" | "past", title: string, details: string) => {
-    const r = await data<{ scene?: { id: string; title: string; details: string }; marker: ChatMsg }>(kind === "live" ? "scene.start" : "scene.past", { characterId: cid, title, details, ...(fromPlan ? { planId: fromPlan.id } : {}) });
+  const startScene = async (kind: "live" | "past", title: string, details: string, clock?: SceneClockChoice) => {
+    const r = await data<{ scene?: { id: string; title: string; details: string }; marker: ChatMsg }>(kind === "live" ? "scene.start" : "scene.past", { characterId: cid, title, details, ...(fromPlan ? { planId: fromPlan.id } : {}), ...(clock ? clock : {}) });
     if (fromPlan) setPlans(ps => ps.filter(x => x.id !== fromPlan.id));
     setFromPlan(null);
     setSceneSheet(false);
@@ -249,23 +317,17 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   };
   // ❤️ They reacted to a photo/video: it's saved where Velo/the character sees it, and sometimes they answer.
   const react = async (id: string, emoji: string) => {
-    const msg = msgsRef.current.find(x => x.media?.id === id);
-    const cur = msg?.media;
+    const holder = msgsRef.current.find(x => x.media?.id === id);
+    const cur = holder?.media;
     if (!cur) return;
-    // Peeks are silent — she never sees them or reacts to them.
-    if (msg?.peek) {
-      const next = cur.reaction === emoji ? null : emoji;
-      setMsgs(list => (list || []).map(x => (x.media?.id === id ? { ...x, media: { ...x.media!, reaction: next } } : x)));
-      await data("media.react", { id, reaction: next }).catch(() => {});
-      return;
-    }
     const next = cur.reaction === emoji ? null : emoji;
     const set = (reaction: string | null, content?: string) => setMsgs(list => (list || []).map(x => (x.media?.id === id ? { ...x, ...(content ? { content } : {}), media: { ...x.media!, reaction } } : x)));
     set(next);
     let note = "";
     try { note = (await data<{ note: string }>("media.react", { id, reaction: next })).note; set(next, note); }
     catch { set(cur.reaction || null); return; }
-    if (!next || busy || Math.random() > 0.55) return;
+    // A peek is theirs alone: she never sees it, or their reaction to it.
+    if (!next || busy || holder?.peek || Math.random() > 0.55) return;
     setBusy(true);
     try {
       const history = realMsgs(msgsRef.current.map(x => (x.media?.id === id ? { ...x, content: note } : x)));
@@ -287,62 +349,8 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   const openingLine = msgs && !msgs.length && !name ? INTRO : HELLO(name.split(" ")[0])[hello];
   const shown: ChatMsg[] = msgs && !msgs.length && !cid ? [{ role: "assistant", content: openingLine }] : msgs || [];
 
-  const askedKey = (other: string) => `velo:linkask:${cid}:${other}`;
-  const checkLinks = (t: string) => {
-    api<{ suggest: { id: string; name: string; kind: string }[] }>("/api/characters", { action: "link.suggest", id: cid, text: t }).then(r => {
-      const s = (r.suggest || []).find(x => { try { return !localStorage.getItem(askedKey(x.id)); } catch { return true; } });
-      if (s) setLinkAsk(s);
-    }).catch(() => {});
-  };
-  const answerLink = async (yes: boolean, kind: string) => {
-    const a = linkAsk;
-    if (!a) return;
-    setLinkAsk(null);
-    if (!yes) { try { localStorage.setItem(askedKey(a.id), "1"); } catch { /* fine */ } return; }
-    try { await api("/api/characters", { action: "link.set", id: cid, otherId: a.id, kind: kind.trim() || a.kind }); }
-    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't link them."); }
-  };
-
-  const doPeek = async () => {
-    if (!peekDraft?.trim() || !cid) return;
-    setBusy(true); setErr("");
-    try {
-      const r = await data<{ media: Media; userMsgId: string; mediaMsgId: string }>("scene.peekGenerate", { characterId: cid, description: peekDraft });
-      setMsgs(list => [...(list || []), { id: r.userMsgId, role: "user", content: "*peek*", peek: true }, { id: r.mediaMsgId, role: "assistant", content: "(peek)", media: r.media, peek: true }]);
-      setPeekDraft(null);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Couldn't peek right now.");
-    } finally { setBusy(false); }
-  };
-
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      {linkAsk && (
-        <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 3000 }}>
-          <div className="card" style={{ maxWidth: 360, width: "100%" }}>
-            <div style={{ fontWeight: 700, marginBottom: 8 }}>{linkAsk.name} knows {who}</div>
-            <div className="muted" style={{ fontSize: 13, marginBottom: 10 }}>Should {who} know {linkAsk.name} too?</div>
-            <div className="row" style={{ justifyContent: "flex-end", gap: 8 }}>
-              <button className="ghost" onClick={() => answerLink(false, "")}>Not now</button>
-              <button className="btn" onClick={() => answerLink(true, linkAsk.kind)}>Yes, link them</button>
-            </div>
-          </div>
-        </div>
-      )}
-      {peekDraft !== null && (
-        <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 3000 }}>
-          <div className="card" style={{ maxWidth: 400, width: "100%" }}>
-            <div style={{ fontWeight: 700, marginBottom: 8 }}>👀 Peek description</div>
-            <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>Edit the location, attire, and scene before generating.</div>
-            <textarea value={peekDraft} onChange={e => setPeekDraft(e.target.value)} rows={4} style={{ width: "100%", marginBottom: 10 }} />
-            <div className="row" style={{ justifyContent: "flex-end", gap: 8 }}>
-              <button className="ghost" onClick={() => setPeekDraft(null)}>Cancel</button>
-              <button className="btn" disabled={busy || !peekDraft.trim()} onClick={doPeek}>{busy ? "…" : "Generate"}</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {character?.romantic && !adult && !skipRomance && (
         <div data-testid="romance-confirm" className="row" style={{ gap: 10, padding: "10px 14px", borderBottom: "1px solid var(--border)", background: "rgba(236,72,153,0.10)", fontSize: 13, flexWrap: "wrap" }}>
           <div style={{ flex: "1 1 200px" }}>💕 {character.name} is a romantic character. Confirm you&apos;re 18+ to unlock romance (PG-13) — until then {character.name} keeps it friendly.</div>
@@ -357,11 +365,6 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
             <div style={{ width: `${trust}%`, height: "100%", borderRadius: 999, background: trust >= 70 ? "#10b981" : trust >= 40 ? "#f59e0b" : "#ef4444", transition: "width .4s" }} />
           </div>
           <span className="muted" style={{ minWidth: 30, textAlign: "right" }}>{trust}%</span>
-        </div>
-      )}
-      {onContinue && msgs && msgs.length > 1 && (
-        <div style={{ padding: "6px 14px", borderBottom: "1px solid var(--border)" }}>
-          <button className="ghost" onClick={() => onContinue(realMsgs(msgs).slice(-12))} style={{ fontSize: 13, padding: "6px 12px" }}>📞 Continue conversation</button>
         </div>
       )}
       {character && scene && (
@@ -380,9 +383,10 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
           </div>
         </div>
       )}
+      {peekSheet && character && <PeekSheet who={character.name} sheet={peekSheet} onChange={d => setPeekSheet(p => (p ? { ...p, description: d } : p))} onRewrite={rewritePeek} onSend={sendPeek} onClose={() => setPeekSheet(null)} />}
       {sceneSheet && character && <SceneSheet key={fromPlan?.id || "new"} who={character.name} plan={fromPlan} onClose={() => { setSceneSheet(false); setFromPlan(null); }} onStart={startScene} />}
       <div data-testid="chat-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-        {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={m.media?.id || m.id || i} m={m} onReactMsg={reactMsg} face={face(28)} onMedia={mediaArrived} onReact={react} who={who} onAnswer={x => setMsgs(list => (list || []).map(y => (y.media?.id === x.id ? { ...y, content: mediaNote({ ...y.media!, ...x }), media: { ...y.media!, ...x } } : y)))} />)}
+        {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={m.media?.id || m.id || i} m={m} onReactMsg={reactMsg} face={face(28)} onMedia={mediaArrived} onFailed={reload} onReact={react} who={who} onAnswer={x => setMsgs(list => (list || []).map(y => (y.media?.id === x.id ? { ...y, content: mediaNote({ ...y.media!, ...x }), media: { ...y.media!, ...x } } : y)))} />)}
         {character && msgs && !msgs.length && (
           <div className="muted" style={{ textAlign: "center", fontSize: 14, marginTop: 24, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
             {face(72)}<div>Say hi to {character.name} 👋</div>
@@ -390,6 +394,29 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
         )}
         {busy && <div className="row">{face(28)}<div className="muted" style={{ fontSize: 14 }}>{who} is typing…</div></div>}
         {err && <div style={{ color: "var(--bad)", fontSize: 14 }}>⚠️ {err}</div>}
+        {intro && character && (
+          <div className="card" data-testid="intro-card" style={{ display: "flex", gap: 12, alignItems: "center", border: "1px solid var(--accent)", borderRadius: 14, padding: 12 }}>
+            {intro.portrait_url
+              // eslint-disable-next-line @next/next/no-img-element
+              ? <img src={intro.portrait_url} alt={intro.name} style={{ width: 84, height: 84, borderRadius: 12, objectFit: "cover", objectPosition: "top", flexShrink: 0 }} />
+              : null}
+            <div style={{ flex: 1, minWidth: 0, display: "grid", gap: 4 }}>
+              <div style={{ fontSize: 13 }} className="muted">👋 {intro.introducer} wants you to meet her {intro.kind}</div>
+              <div style={{ fontWeight: 800, fontSize: 16 }}>{intro.name}{intro.age ? `, ${intro.age}` : ""}</div>
+              {intro.about && <div className="muted" style={{ fontSize: 12 }}>{intro.about}</div>}
+              <div className="row" style={{ gap: 8, marginTop: 4 }}>
+                <button onClick={() => answerIntro(true)} disabled={introBusy} data-testid="intro-yes">Meet her</button>
+                <button className="ghost" onClick={() => answerIntro(false)} disabled={introBusy} data-testid="intro-no">Not now</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {linkAsk && character && (
+          <div className="card" data-testid="link-ask" style={{ display: "grid", gap: 8, border: "1px solid var(--accent)", borderRadius: 12, padding: 12, fontSize: 14 }}>
+            <div>👭 <b>{linkAsk.name}</b> knows {character.name}, but {character.name} doesn&apos;t know {linkAsk.name} yet. Link them so {character.name} knows {linkAsk.name} too? Check how they&apos;re related first.</div>
+            <LinkBackForm key={linkAsk.id} id={character.id} who={character.name} other={linkAsk} onLinked={() => setLinkAsk(null)} onCancel={notNow} cancelLabel="Not now" />
+          </div>
+        )}
         {msgs && msgs.length === 0 && !cid && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
             {SUGGESTIONS.map(s => <button key={s} className="ghost" onClick={() => send(s)} style={{ borderRadius: 999, fontSize: 14, padding: "8px 12px" }}>{s}</button>)}
@@ -436,13 +463,29 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   );
 }
 
-function Bubble({ m, face, who, onMedia, onReact, onAnswer, onReactMsg }: { m: ChatMsg; face: React.ReactNode; who: string; onMedia: (x: Media) => void; onReact: (id: string, r: string) => void; onAnswer: (x: Media) => void; onReactMsg: (id: string, r: string) => void }) {
+function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg }: { m: ChatMsg; face: React.ReactNode; who: string; onMedia: (x: Media) => void; onFailed?: () => void; onReact: (id: string, r: string) => void; onAnswer: (x: Media) => void; onReactMsg: (id: string, r: string) => void }) {
   const mine = m.role === "user";
   const [picking, setPicking] = useState(false);
   // A small badge on the bubble's corner, like a text-message reaction.
   const badge = (r: string, who: string) => (
     <span data-testid={mine ? "their-reaction" : "my-reaction"} aria-label={`${who} reacted ${r}`}
       style={{ position: "absolute", bottom: -12, [mine ? "left" : "right"]: -6, fontSize: 15, lineHeight: 1, padding: "3px 5px", borderRadius: 999, background: "var(--surface)", border: "1px solid var(--border)", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }}>{r}</span>
+  );
+  // ⏰ / 👍: her brain was down / is back — just for them; she never sees these.
+  if (m.peek && !m.media && (m.content === "⏰" || m.content === "👍")) return (
+    <div data-testid="brain-marker" title={m.content === "⏰" ? `${who} is having trouble — still trying` : `${who} is back`} style={{ alignSelf: "center", fontSize: 18, lineHeight: 1, padding: "4px 10px", borderRadius: 999, border: "1px dashed var(--border)" }}>{m.content}</div>
+  );
+  if (m.peek && mine) return (
+    <div data-testid="peek-note" style={{ alignSelf: "flex-end", fontSize: 12, padding: "4px 10px", borderRadius: 999, border: "1px dashed var(--border)" }} className="muted">👀 you peeked</div>
+  );
+  if (m.peek && m.media) return (
+    <div data-testid="peek-media" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+      <div className="muted" style={{ fontSize: 11 }}>👀 Peek · {who} doesn&apos;t know</div>
+      <div style={{ maxWidth: "min(86%, 400px)" }}>
+        <MediaView media={m.media} onReady={onMedia} onFailed={onFailed} who={who} onAnswer={x => onAnswer(x)} />
+        {m.media.status === "done" && <ReactionBar value={m.media.reaction} onPick={r => onReact(m.media!.id, r)} />}
+      </div>
+    </div>
   );
   if (m.content.startsWith("🎬 ")) return (
     <div data-testid="scene-note" style={{ alignSelf: "center", maxWidth: "90%", textAlign: "center", fontSize: 12, padding: "6px 12px", borderRadius: 999, background: "var(--surface2)", border: "1px solid var(--border)" }} className="muted">{m.content}</div>
@@ -451,7 +494,7 @@ function Bubble({ m, face, who, onMedia, onReact, onAnswer, onReactMsg }: { m: C
     <div data-testid="chat-media" style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
       {face}
       <div style={{ maxWidth: "min(80%, 380px)" }}>
-        <MediaView media={m.media} onReady={onMedia} who={who} onAnswer={x => onAnswer(x)} />
+        <MediaView media={m.media} onReady={onMedia} onFailed={onFailed} who={who} onAnswer={x => onAnswer(x)} />
         {m.media.status === "done" && <ReactionBar value={m.media.reaction} onPick={r => onReact(m.media!.id, r)} />}
       </div>
     </div>
@@ -500,10 +543,37 @@ export function FileThumb({ f, size }: { f: { url: string; thumb?: string | null
 }
 
 /** 🎬 Set up a scene: play it out now, or say it already happened. */
+/** 👀 The peek, before it's made: the picture's description to check, tweak or rewrite. */
+function PeekSheet({ who, sheet, onChange, onRewrite, onSend, onClose }: { who: string; sheet: { description: string; loading: boolean; error?: string }; onChange: (d: string) => void; onRewrite: () => void; onSend: (d: string) => void; onClose: () => void }) {
+  return (
+    <div role="dialog" aria-modal="true" data-testid="peek-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }} onClick={onClose}>
+      <div className="card" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          <div style={{ fontWeight: 800, fontSize: 17 }}>👀 Peek at {who}</div>
+          <button className="ghost" onClick={onClose} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
+        </div>
+        <div className="muted" style={{ fontSize: 12 }}>This is the picture that will be made, using her reference pictures. Fix anything that&apos;s off — where you are, what she&apos;s wearing, her pose or look. She won&apos;t know.</div>
+        <textarea value={sheet.description} onChange={e => onChange(e.target.value)} maxLength={400} rows={5} aria-label="Peek description" disabled={sheet.loading && !sheet.description}
+          placeholder={sheet.loading ? "Writing what you'd see…" : "e.g. Her at a candlelit corner table in an emerald dress, laughing and glancing up at me"} style={{ resize: "vertical" }} />
+        <div className="muted" style={{ fontSize: 11, textAlign: "right" }}>{sheet.description.length}/400</div>
+        {sheet.error && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {sheet.error}</div>}
+        <div className="row" style={{ gap: 8 }}>
+          <button className="ghost" onClick={onRewrite} disabled={sheet.loading} data-testid="peek-rewrite" style={{ flexShrink: 0 }}>↻ Rewrite</button>
+          <button className="btn" onClick={() => onSend(sheet.description)} disabled={sheet.loading || sheet.description.trim().length < 10} data-testid="peek-go" style={{ flex: 1 }}>{sheet.loading ? "…" : "👀 Peek"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const todayYmd = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 
-function SceneSheet({ who, plan, onClose, onStart }: { who: string; plan?: { title: string; details: string } | null; onClose: () => void; onStart: (kind: "live" | "past", title: string, details: string) => Promise<void> }) {
+export type SceneClockChoice = { clock: "now" | "set"; time: string };
+export function SceneSheet({ who, plan, onClose, onStart }: { who: string; plan?: { title: string; details: string; time?: string } | null; onClose: () => void; onStart: (kind: "live" | "past", title: string, details: string, clock: SceneClockChoice) => Promise<void> }) {
   const [kind, setKind] = useState<"live" | "past">("live");
+  // 🕒 Real time now, or the scene's own scheduled time (the plan's time, if it has one).
+  const [clock, setClock] = useState<"now" | "set">("now");
+  const [time, setTime] = useState(plan?.time || "");
   const [title, setTitle] = useState(plan?.title || "");
   const [details, setDetails] = useState(plan?.details || "");
   const [busy, setBusy] = useState(false);
@@ -522,7 +592,7 @@ function SceneSheet({ who, plan, onClose, onStart }: { who: string; plan?: { tit
   const go = async () => {
     stopMics();
     setBusy(true); setErr("");
-    try { await onStart(kind, title.trim(), details.trim()); } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't start it."); setBusy(false); }
+    try { await onStart(kind, title.trim(), details.trim(), { clock: clock === "set" && time ? "set" : "now", time }); } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't start it."); setBusy(false); }
   };
   const tab = (on: boolean) => ({ flex: 1, padding: "8px 10px", borderRadius: 999, fontWeight: 700, fontSize: 13, cursor: "pointer", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, background: on ? "rgba(124,140,255,0.15)" : "transparent", color: "var(--text)" } as const);
   return (
@@ -550,6 +620,19 @@ function SceneSheet({ who, plan, onClose, onStart }: { who: string; plan?: { tit
             {micBtn({ m: detailsMic, other: titleMic, value: details, label: "Describe it out loud", id: "scene-details-mic" })}
           </span>
         </label>
+        {kind === "live" && (
+          <div data-testid="scene-clock" style={{ display: "grid", gap: 6 }}>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>🕒 When is it happening?</div>
+            <div className="row" style={{ gap: 8 }}>
+              <button type="button" style={tab(clock === "now")} onClick={() => setClock("now")} data-testid="scene-clock-now">Now (real time)</button>
+              <button type="button" style={tab(clock === "set")} onClick={() => setClock("set")} data-testid="scene-clock-set">Scheduled time</button>
+            </div>
+            {clock === "set" && <input type="time" value={time} onChange={e => setTime(e.target.value)} aria-label="Scene time" data-testid="scene-time" />}
+            <span className="muted" style={{ fontSize: 12 }}>{clock === "now"
+              ? `It happens right now — the light and time of day are real.${plan?.time ? ` ${who} will know it got moved from the planned time (no big deal, unless it keeps happening).` : ""}`
+              : `The scene keeps its own clock, starting at ${time || "the time you pick"} and moving on as you play. ${who} won't know it's out of sync with real time.`}</span>
+          </div>
+        )}
         {(titleMic.listening || detailsMic.listening) && <div className="muted" style={{ fontSize: 12 }} data-testid="scene-listening">🎙️ Listening… tap ⏹️ when you&apos;re done.</div>}
         {(titleMic.error || detailsMic.error) && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {titleMic.error || detailsMic.error}</div>}
         {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
@@ -558,3 +641,4 @@ function SceneSheet({ who, plan, onClose, onStart }: { who: string; plan?: { tit
     </div>
   );
 }
+
