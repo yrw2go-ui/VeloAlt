@@ -9,7 +9,7 @@ import { VeloLogo, VeloLookPicker, applyVeloLook, useVeloLook } from "./avatar";
 import VeloCall, { canCallVelo, primeSpeech } from "./call";
 import Chat, { type ChatAdd } from "./chat";
 import { CallMedia, type Media } from "./media";
-import { CharacterStrip, CharacterEditor, CharacterFace, type Character } from "./characters";
+import { CharacterStrip, CharacterEditor, CharacterFace, NewCharacterSheet, type Character } from "./characters";
 import { GroupChat, GroupMaker, type Group } from "./groups";
 import Gallery from "./gallery";
 import AboutCard from "./about";
@@ -116,6 +116,9 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   // A tapped notification opens that chat (?chat=<character id>, or "velo").
   const [withId, setWithId] = useState<string | null>(() => { const c = urlParam("chat"); return c ? (c !== "velo" ? c : null) : place.withId || null; });
   const [editing, setEditing] = useState<Character | "new" | null>(null);
+  // ✨ ＋ New first asks: make one for me (a filled-in draft), or start from scratch.
+  const [newChar, setNewChar] = useState(false);
+  const [draft, setDraft] = useState<Partial<Character> | null>(null);
   const [gallery, setGallery] = useState(false);
   const [chatTick, setChatTick] = useState(0);
   useEffect(() => {
@@ -290,7 +293,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       )}
 
       <main ref={mainRef} onScroll={onMainScroll} style={{ flex: 1, minHeight: 0, overflowY: tab === "chat" ? "hidden" : "auto", display: "flex", flexDirection: "column" }}>
-        {tab === "chat" && <CharacterStrip characters={chars} active={withChar?.id || null} admin={admin} onPick={pickChat} onNew={() => setEditing("new")} onEdit={setEditing} onGallery={() => setGallery(true)} unread={unread}
+        {tab === "chat" && <CharacterStrip characters={chars} active={withChar?.id || null} admin={admin} onPick={pickChat} onNew={() => setNewChar(true)} onEdit={setEditing} onGallery={() => setGallery(true)} unread={unread}
           groups={groups} activeGroup={inGroup?.id || null} onPickGroup={setGroupId} onNewGroup={() => setMakingGroup(true)} />}
         {inGroup && <GroupChat key={inGroup.id} group={inGroup} chars={chars} name={name} onDeleted={id => { setGroups(gs => gs.filter(g => g.id !== id)); setGroupId(null); }} />}
         {tab === "chat" && !inGroup && !(groupId && !groupsLoaded) && <Chat key={`${withChar?.id || "velo"}-${chatTick}`} userId={userId} name={name} onChanged={bump} added={chatAdd} onAdded={() => setChatAdd(null)} character={withChar} adult={!!profile?.adultConfirmed} onAdult={() => setProfileTick(t => t + 1)} onHistory={h => { chatHistory.current = h; setHistoryCount(h.length); }} />}
@@ -324,11 +327,12 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       {calling && <CallMedia items={callMedia} name={callWith?.name || "Velo"} />}
       {gallery && <Gallery key={withChar?.id || "velo"} characterId={withChar?.id || null} name={withChar?.name || "Velo"} onClose={() => setGallery(false)} />}
       {editing && (
-        <CharacterEditor key={editing === "new" ? "new" : editing.id} initial={editing === "new" ? null : editing} portraits={portraits} brains={brains}
+        <CharacterEditor key={editing === "new" ? `new-${draft?.name || ""}` : editing.id} initial={editing === "new" ? null : editing} draft={editing === "new" ? draft : null} portraits={portraits} brains={brains}
           onClose={() => setEditing(null)} onSaved={savedChar}
           onDeleted={id => { setChars(cs => cs.filter(c => c.id !== id)); setWithId(null); setEditing(null); }} />
       )}
       {makingGroup && <GroupMaker chars={chars} name={name} onClose={() => setMakingGroup(false)} onMade={g => { setGroups(gs => [g, ...gs]); setGroupId(g.id); setMakingGroup(false); }} />}
+      {newChar && <NewCharacterSheet onClose={() => setNewChar(false)} onBlank={() => { setDraft(null); setNewChar(false); setEditing("new"); }} onDraft={d => { setDraft(d); setNewChar(false); setEditing("new"); }} />}
       <ConfirmHost />
     </div>
   );

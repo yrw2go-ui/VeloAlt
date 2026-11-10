@@ -7,12 +7,14 @@ import { listGallery } from "../../lib/media";
 import { cleanTraits, PRESETS } from "../../lib/traits";
 import { isValidTimeZone } from "../../lib/localTime";
 import { availableBrains } from "../../lib/models";
+import { makeCharacter } from "../../lib/makeCharacter";
 import { listLinks, setLink, removeLink, writeStory, linkSuggestions } from "../../lib/friends";
 import { MAX_CHARACTERS, DAILY_PORTRAITS, isAdmin, listCharacters, getCharacter, screenCharacter, startPortrait, checkPortrait, deleteCharacter, portraitsReady, chooseVoice, VoiceError } from "../../lib/characters";
 
 // 🎭 Characters. Everyone can list them and chat; only admins create and edit. POST { action, ... }:
 //   list                     → { characters, portraits, admin }
 //   create / update { id?, name, personality, backstory, relation, appearance, job, casualWear, hobbies, voice, romantic, romanceArc, traits, preset, timeZone, referenceIds, brain, workAttire, workDays, workStart, workEnd, partTime, polyOk, sapphic } → { character }   (admin)
+//   generate { name?, vibe?, job?, romantic?, male? } → { draft }   (admin) ✨ a new character to look over in the editor
 //   gallery { id } → { items }   the admin's pictures of this character, to pick references from
 //   delete { id }            (admin; everyone's chats and memories with it go too)
 //   portrait.start { id }    (admin) starts an Atlas Cloud portrait from the appearance
@@ -79,6 +81,12 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ character: await getCharacter(String(row.id)) });
       }
 
+      // ✨ A whole new character from a few hints — only a draft for the editor (nothing is saved).
+      case "generate": {
+        if (!allow(`chargen:${me}`, [{ ms: 60_000, max: 6 }, { ms: 86_400_000, max: 100 }])) return bad("That's a lot of new characters — give it a minute.", 429);
+        try { return NextResponse.json({ draft: await makeCharacter({ name: String(b.name || ""), vibe: String(b.vibe || ""), job: String(b.job || ""), romantic: b.romantic === true, male: b.male === true }) }); }
+        catch (e) { return bad(e instanceof Error ? e.message : "Couldn't come up with one — try again.", 502); }
+      }
       // Make one of her gallery pictures the main headshot.
       case "portrait.set": {
         const mid = String(b.mediaId || "");

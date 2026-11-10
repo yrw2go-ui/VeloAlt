@@ -57,35 +57,37 @@ export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdi
 }
 
 /** Create or edit a character, and generate their portrait. */
-export function CharacterEditor({ initial, portraits, brains = [], onClose, onSaved, onDeleted }: {
-  initial: Character | null; portraits: boolean; brains?: string[]; onClose: () => void; onSaved: (c: Character) => void; onDeleted: (id: string) => void;
+export function CharacterEditor({ initial, draft, portraits, brains = [], onClose, onSaved, onDeleted }: {
+  initial: Character | null; draft?: Partial<Character> | null; portraits: boolean; brains?: string[]; onClose: () => void; onSaved: (c: Character) => void; onDeleted: (id: string) => void;
 }) {
   const [c, setC] = useState<Character | null>(initial);
-  const [name, setName] = useState(initial?.name || "");
-  const [personality, setPersonality] = useState(initial?.personality || "");
-  const [backstory, setBackstory] = useState(initial?.backstory || "");
-  const [relation, setRelation] = useState(initial?.relation || "");
-  const [appearance, setAppearance] = useState(initial?.appearance || "");
-  const [job, setJob] = useState(initial?.job || "");
+  // ✨ A "make one for me" draft fills everything in; nothing is saved until Save.
+  const seed: Partial<Character> | null = initial || draft || null;
+  const [name, setName] = useState(seed?.name || "");
+  const [personality, setPersonality] = useState(seed?.personality || "");
+  const [backstory, setBackstory] = useState(seed?.backstory || "");
+  const [relation, setRelation] = useState(seed?.relation || "");
+  const [appearance, setAppearance] = useState(seed?.appearance || "");
+  const [job, setJob] = useState(seed?.job || "");
   // 💼 Her work week.
-  const [attire, setAttire] = useState(initial?.work_attire || "");
-  const [workDays, setWorkDays] = useState<number[]>(initial?.work_days || []);
-  const [workStart, setWorkStart] = useState(initial?.work_start || "");
-  const [workEnd, setWorkEnd] = useState(initial?.work_end || "");
-  const [partTime, setPartTime] = useState(!!initial?.part_time);
+  const [attire, setAttire] = useState(seed?.work_attire || "");
+  const [workDays, setWorkDays] = useState<number[]>(seed?.work_days || []);
+  const [workStart, setWorkStart] = useState(seed?.work_start || "");
+  const [workEnd, setWorkEnd] = useState(seed?.work_end || "");
+  const [partTime, setPartTime] = useState(!!seed?.part_time);
   // 💞🌈 Romance options.
-  const [polyOk, setPolyOk] = useState(!!initial?.poly_ok);
-  const [sapphic, setSapphic] = useState(!!initial?.sapphic);
-  const [wear, setWear] = useState(initial?.casual_wear || "");
-  const [hobbies, setHobbies] = useState(initial?.hobbies || "");
+  const [polyOk, setPolyOk] = useState(!!seed?.poly_ok);
+  const [sapphic, setSapphic] = useState(!!seed?.sapphic);
+  const [wear, setWear] = useState(seed?.casual_wear || "");
+  const [hobbies, setHobbies] = useState(seed?.hobbies || "");
   const first = CHARACTER_VOICES[0];
-  const [romantic, setRomantic] = useState(!!initial?.romantic);
-  const [arc, setArc] = useState(initial?.romance_arc || "");
-  const [traits, setTraits] = useState<Record<TraitKey, number>>(cleanTraits(initial?.traits && Object.keys(initial.traits).length ? initial.traits : DEFAULT_TRAITS));
-  const [preset, setPreset] = useState(initial?.preset || "");
-  const [zone, setZone] = useState(initial?.time_zone || "");
-  const [bday, setBday] = useState(initial?.birthday || "");
-  const [brain, setBrain] = useState(initial?.brain || "");
+  const [romantic, setRomantic] = useState(!!seed?.romantic);
+  const [arc, setArc] = useState(seed?.romance_arc || "");
+  const [traits, setTraits] = useState<Record<TraitKey, number>>(cleanTraits(seed?.traits && Object.keys(seed.traits).length ? seed.traits : DEFAULT_TRAITS));
+  const [preset, setPreset] = useState(seed?.preset || "");
+  const [zone, setZone] = useState(seed?.time_zone || "");
+  const [bday, setBday] = useState(seed?.birthday || "");
+  const [brain, setBrain] = useState(seed?.brain || "");
   // 🎚️ A preset sets the sliders (and the personality, if it's empty or still another preset's text).
   const applyPreset = (id: string) => {
     setPreset(id);
@@ -97,7 +99,7 @@ export function CharacterEditor({ initial, portraits, brains = [], onClose, onSa
   const [shots, setShots] = useState(0);
   const [pending, setPending] = useState<{ files: File[]; headshot: boolean; fictional: boolean }>({ files: [], headshot: true, fictional: false }); // finished portraits (refreshes the reference picker)
   const [refIds, setRefIds] = useState<string[]>(initial?.reference_ids || []);
-  const [voice, setVoice] = useState<VoiceOption>(initial ? { id: initial.voice, name: initial.voice_name || "Voice", kind: initial.voice_kind, about: "", preview: "" } : { id: first.voiceId, name: first.name, kind: first.kind, about: first.about, preview: "" });
+  const [voice, setVoice] = useState<VoiceOption>(seed?.voice ? { id: seed.voice, name: seed.voice_name || "Voice", kind: seed.voice_kind || "female", about: "", preview: "" } : { id: first.voiceId, name: first.name, kind: first.kind, about: first.about, preview: "" });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const working = !!c?.portrait_job;
@@ -646,6 +648,43 @@ function WorkWeek({ attire, setAttire, days, setDays, start, setStart, end, setE
         </label>
       </div>
       <span className="muted" style={{ fontSize: 12 }}>She knows when she&apos;s at work (&quot;at work till 6&quot;) or off (&quot;I&apos;m off Tuesdays&quot;), texts like it, and wears her work clothes in photos taken at work. Times are in her time zone.</span>
+    </div>
+  );
+}
+
+/** ✨ ＋ New: make one for me (from a few optional hints), or start from scratch. */
+export function NewCharacterSheet({ onDraft, onBlank, onClose }: { onDraft: (d: Partial<Character>) => void; onBlank: () => void; onClose: () => void }) {
+  const [name, setName] = useState("");
+  const [vibe, setVibe] = useState("");
+  const [job, setJob] = useState("");
+  const [romantic, setRomantic] = useState(false);
+  const [male, setMale] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const make = async () => {
+    setBusy(true); setErr("");
+    try { onDraft((await api<{ draft: Partial<Character> }>("/api/characters", { action: "generate", name, vibe, job, romantic, male })).draft); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't come up with one — try again."); setBusy(false); }
+  };
+  return (
+    <div role="dialog" aria-modal="true" data-testid="new-character" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }} onClick={onClose}>
+      <div className="card" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, maxHeight: "85vh", overflowY: "auto", borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          <div style={{ fontWeight: 800, fontSize: 17 }}>✨ New character</div>
+          <button className="ghost" onClick={onClose} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
+        </div>
+        <div className="muted" style={{ fontSize: 13 }}>Give a few details (all optional) and Velo makes up the rest — personality, backstory, look, job and work week, hobbies, voice, sliders. You&apos;ll see it all in the editor to change anything before you save.</div>
+        <input value={name} onChange={e => setName(e.target.value)} maxLength={40} placeholder="Name (optional)" aria-label="Name" data-testid="gen-name" />
+        <textarea value={vibe} onChange={e => setVibe(e.target.value)} maxLength={300} rows={2} placeholder="Vibe (optional) — e.g. shy bookworm with a wild side, Texas girl, loves horror movies" aria-label="Vibe" data-testid="gen-vibe" style={{ resize: "vertical" }} />
+        <input value={job} onChange={e => setJob(e.target.value)} maxLength={120} placeholder="Job (optional) — e.g. nurse, barista, real estate agent" aria-label="Job" data-testid="gen-job" />
+        <div className="row" style={{ gap: 16, flexWrap: "wrap", fontSize: 14, fontWeight: 600 }}>
+          <label className="row" style={{ gap: 6 }}><input type="checkbox" checked={romantic} onChange={e => setRomantic(e.target.checked)} data-testid="gen-romantic" style={{ width: 18, height: 18 }} /> 💕 Romantic (PG-13)</label>
+          <label className="row" style={{ gap: 6 }}><input type="checkbox" checked={male} onChange={e => setMale(e.target.checked)} data-testid="gen-male" style={{ width: 18, height: 18 }} /> Male</label>
+        </div>
+        {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
+        <button className="btn" onClick={make} disabled={busy} data-testid="gen-make">{busy ? "Dreaming one up…" : "✨ Make one for me"}</button>
+        <button className="ghost" onClick={onBlank} disabled={busy} data-testid="gen-blank">Start from scratch instead</button>
+      </div>
     </div>
   );
 }
