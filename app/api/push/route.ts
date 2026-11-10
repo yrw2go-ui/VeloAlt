@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import { sql } from "../../lib/db";
-import { vapid, sendPush } from "../../lib/push";
+import { vapid, sendPush, pushEndpointOk } from "../../lib/push";
 
 // 🔔 Push notifications for this person.
 //   GET                                   → { publicKey }  (for the browser to subscribe)
@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
   if (b.action === "subscribe") {
     const s = b.subscription || {};
     const endpoint = String(s.endpoint || ""), p256dh = String(s.keys?.p256dh || ""), auth = String(s.keys?.auth || "");
-    if (!/^https?:\/\//.test(endpoint) || endpoint.length > 1000 || !/^[\w-]{20,200}$/.test(p256dh) || !/^[\w-]{8,100}$/.test(auth)) return NextResponse.json({ error: "That device couldn't be added." }, { status: 400 });
+    if (!pushEndpointOk(endpoint) || endpoint.length > 1000 || !/^[\w-]{20,200}$/.test(p256dh) || !/^[\w-]{8,100}$/.test(auth)) return NextResponse.json({ error: "That device couldn't be added." }, { status: 400 });
     await sql()`insert into push_subscriptions (user_id, endpoint, p256dh, auth) values (${c.userId}, ${endpoint}, ${p256dh}, ${auth})
       on conflict (endpoint) do update set user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth`;
     return NextResponse.json({ ok: true });
