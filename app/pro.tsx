@@ -4,23 +4,16 @@
 // Facebook Page Velo can post to.
 import { useEffect, useState } from "react";
 import { api, data } from "./lib/api";
+import { BRAIN_OPTIONS } from "./lib/brainOptions";
 import { confirmAsk } from "./lib/dialog";
 import { formatPhone, contactProblem } from "./lib/contact";
-
-function picSrc(url: string) {
-  if (!url) return "";
-  if (url.startsWith("data:") || url.startsWith("/")) return url;
-  return "/api/pic?u=" + encodeURIComponent(url);
-}
 
 export type Profile = {
   name: string; look: string; plan: "free" | "pro"; proForSale: boolean; phone: string; phoneVerified: boolean; veloNumber: string;
   chatModel: string; models: { id: string; label: string; by: string; where: string }[];
-  personality: string; adultConfirmed: boolean; isAdmin?: boolean; mode?: string; customFace?: string;
-  videoModel?: string; videoModels?: { id: string; label: string }[]; checkins?: string;
+  personality: string; adultConfirmed: boolean; customFace?: string;
+  videoModel?: string; videoModels?: { id: string; label: string }[]; checkins?: string; replyLength?: string;
   bio?: { text: string; birthday: string; age: number | null; state: string; photo: string; photoNote: string };
-  notifySpicy?: boolean; notifyProductivity?: boolean;
-  spicyVoice?: string; secretVoice?: string; spicyApiVoice?: string; veloVoice?: string; replyLength?: string;
 };
 type Contact = { id: string; name: string; phone: string };
 
@@ -187,34 +180,133 @@ function FacebookCard() {
           </div>
         ) : <button className="btn" disabled={busy} onClick={() => run({ action: "connect" })}>Connect Facebook</button>}
       {msg && <div style={{ color: "var(--bad)", fontSize: 13, marginTop: 8 }}>⚠️ {msg}</div>}
-
     </div>
   );
 }
 
 /** Settings → Velo's brain: which AI she chats with (only shown when there's a choice). */
-export function BrainCard({ profile, onChange }: { profile: Profile; onChange: () => void }) {
+/** 🧠 Brains: which AI Velo chats with, and a tab for each character (their own brain through Atlas Cloud). */
+type BrainChar = { id: string; name: string; brain?: string; portrait_url: string | null };
+export function BrainCard({ profile, onChange, chars = [], admin = false, brains = [], brainModels = [], onCharChange }: {
+  profile: Profile; onChange: () => void; chars?: BrainChar[]; admin?: boolean; brains?: string[]; brainModels?: { id: string; model: string }[]; onCharChange?: (c: BrainChar) => void;
+}) {
   const [busy, setBusy] = useState(false);
-  const models = profile.models || [];
-  if (models.length < 2) return null;
+  const [tab, setTab] = useState<string>("velo");
+  const [err, setErr] = useState("");
+  const showChars = chars.length > 0 && (brains.length > 0 || chars.some(c => c.brain));
+  if (profile.models.length < 2 && !showChars) return null;
   const pick = async (id: string) => {
     if (id === profile.chatModel) return;
     setBusy(true);
     await data("profile.update", { chatModel: id }).catch(() => {});
     setBusy(false); onChange();
   };
+  const setBrain = async (c: BrainChar, brain: string) => {
+    if ((c.brain || "") === brain) return;
+    setBusy(true); setErr("");
+    try { const r = await api<{ character: BrainChar }>("/api/characters", { action: "brain.set", id: c.id, brain }); onCharChange?.(r.character); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't change it."); }
+    setBusy(false);
+  };
+  const veloLabel = profile.models.find(m => m.id === profile.chatModel)?.label || "Claude";
+  const ch = chars.find(c => c.id === tab) || null;
+  const opt = (on: boolean) => ({ textAlign: "left" as const, background: on ? "rgba(124,140,255,0.12)" : "var(--surface2)", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, borderRadius: 12, padding: "10px 12px", color: "var(--text)", cursor: on ? "default" : "pointer" });
+  const tabStyle = (on: boolean) => ({ flexShrink: 0, padding: "6px 12px", borderRadius: 999, fontSize: 13, fontWeight: 700, cursor: "pointer", color: "var(--text)", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, background: on ? "rgba(124,140,255,0.15)" : "var(--surface2)" });
   return (
     <div className="card" data-testid="brain">
-      <div style={{ fontWeight: 700 }}>🧠 Velo&apos;s brain</div>
-      <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>The AI Velo chats with. Her memory, reminders and everything else stay the same. Passwords and codes are hidden from every one of them.</div>
-      <div role="radiogroup" aria-label="Velo's brain" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {models.map(m => {
-          const on = m.id === profile.chatModel;
+      <div style={{ fontWeight: 700 }}>🧠 Brains</div>
+      <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>The AI behind Velo and each character. Their memory and everything else stay the same. Passwords and codes are hidden from every one of them.</div>
+      {showChars && (
+        <div role="tablist" aria-label="Whose brain" style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 8 }}>
+          <button role="tab" aria-selected={tab === "velo"} onClick={() => setTab("velo")} style={tabStyle(tab === "velo")} data-testid="brain-tab-velo">Velo</button>
+          {chars.map(c => <button key={c.id} role="tab" aria-selected={tab === c.id} onClick={() => setTab(c.id)} style={tabStyle(tab === c.id)} data-testid={`brain-tab-${c.name}`}>{c.name}{c.brain ? " 🧠" : ""}</button>)}
+        </div>
+      )}
+      {!ch && (
+        <div role="radiogroup" aria-label="Velo's brain" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {profile.models.map(m => {
+            const on = m.id === profile.chatModel;
+            return (
+              <button key={m.id} role="radio" aria-checked={on} disabled={busy} onClick={() => pick(m.id)} style={opt(on)}>
+                <div style={{ fontWeight: 700 }}>{on ? "✓ " : ""}{m.label} <span className="muted" style={{ fontWeight: 400, fontSize: 13 }}>by {m.by}{m.id === "claude" ? " · default" : ""}</span></div>
+                <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{m.where}</div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {ch && (
+        <div role="radiogroup" aria-label={`${ch.name}'s brain`} style={{ display: "flex", flexDirection: "column", gap: 8 }} data-testid="brain-char">
+          {[{ id: "", label: `Same as Velo (${veloLabel})`, where: "Follows whatever Velo uses.", atlas: false },
+            ...BRAIN_OPTIONS.map(o => ({ id: o.id as string, label: o.label as string, atlas: o.atlas as boolean, where: `${o.about}${brainModels.find(m => m.id === o.id) ? ` (${brainModels.find(m => m.id === o.id)!.model})` : ""}` }))].map(o => {
+            const on = (ch.brain || "") === o.id, ready = !o.atlas || brains.includes(o.id);
+            return (
+              <button key={o.id || "same"} role="radio" aria-checked={on} disabled={busy || !admin || (!ready && !on)} onClick={() => setBrain(ch, o.id)} style={{ ...opt(on), opacity: ready || on ? 1 : 0.5 }} data-testid={`brain-opt-${o.id || "same"}`}>
+                <div style={{ fontWeight: 700 }}>{on ? "✓ " : ""}{o.label}{!ready ? <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}> · not set up yet</span> : null}</div>
+                <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{o.where}</div>
+              </button>
+            );
+          })}
+          {!admin && <span className="muted" style={{ fontSize: 12 }}>Only an admin can change a character&apos;s brain.</span>}
+        </div>
+      )}
+      {err && <div style={{ color: "var(--bad)", fontSize: 13, marginTop: 6 }}>⚠️ {err}</div>}
+    </div>
+  );
+}
+
+/** 🎬 Which model makes the short videos Velo and characters send. */
+/** 💬 How long replies usually are — for Velo and every character, in chats and on calls. */
+export function ReplyLengthCard({ profile, onChange }: { profile: Profile; onChange: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [cur, setCur] = useState(profile.replyLength || "normal");
+  const pick = async (id: string) => {
+    if (id === cur) return;
+    setBusy(true); setCur(id);
+    await data("profile.update", { replyLength: id }).catch(() => setCur(profile.replyLength || "normal"));
+    setBusy(false); onChange();
+  };
+  const opts = [{ id: "short", label: "Short", hint: "1–2 sentences" }, { id: "normal", label: "Normal", hint: "2–4 sentences" }, { id: "long", label: "Long", hint: "a paragraph or more" }];
+  return (
+    <div className="card" data-testid="reply-length">
+      <div style={{ fontWeight: 700 }}>💬 Reply length</div>
+      <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>How long Velo&apos;s and your characters&apos; replies usually are, in chats and on calls (calls stay a bit shorter). They&apos;ll still go longer if you ask for a list or a story.</div>
+      <div role="radiogroup" aria-label="Reply length" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        {opts.map(o => {
+          const on = o.id === cur;
+          return (
+            <button key={o.id} role="radio" aria-checked={on} disabled={busy} onClick={() => pick(o.id)} data-testid={`reply-length-${o.id}`}
+              style={{ background: on ? "rgba(124,140,255,0.12)" : "var(--surface2)", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, borderRadius: 999, padding: "8px 14px", color: "var(--text)", fontWeight: 700, cursor: on ? "default" : "pointer" }}>
+              {on ? "✓ " : ""}{o.label} <span className="muted" style={{ fontWeight: 500, fontSize: 12 }}>· {o.hint}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export function VideoCard({ profile, onChange }: { profile: Profile; onChange: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const list = profile.videoModels || [];
+  if (!list.length) return null;
+  const pick = async (id: string) => {
+    if (id === profile.videoModel) return;
+    setBusy(true);
+    await data("profile.update", { videoModel: id }).catch(() => {});
+    setBusy(false); onChange();
+  };
+  return (
+    <div className="card" data-testid="video-model">
+      <div style={{ fontWeight: 700 }}>🎬 Videos</div>
+      <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>The model that makes the short videos Velo and your characters send you. Photos are made with Seedream.</div>
+      <div role="radiogroup" aria-label="Video model" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        {list.map(m => {
+          const on = m.id === profile.videoModel;
           return (
             <button key={m.id} role="radio" aria-checked={on} disabled={busy} onClick={() => pick(m.id)}
-              style={{ textAlign: "left", background: on ? "rgba(124,140,255,0.12)" : "var(--surface2)", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, borderRadius: 12, padding: "10px 12px", color: "var(--text)", cursor: on ? "default" : "pointer" }}>
-              <div style={{ fontWeight: 700 }}>{on ? "✓ " : ""}{m.label} <span className="muted" style={{ fontWeight: 400, fontSize: 13 }}>by {m.by}{m.id === "claude" ? " · default" : ""}</span></div>
-              <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{m.where}</div>
+              style={{ background: on ? "rgba(124,140,255,0.12)" : "var(--surface2)", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, borderRadius: 999, padding: "8px 14px", color: "var(--text)", fontWeight: 700, cursor: on ? "default" : "pointer" }}>
+              {on ? "✓ " : ""}{m.label}{m.id === "wan-2.6" ? " · default" : ""}
             </button>
           );
         })}
@@ -227,477 +319,10 @@ const STYLES = [
   { id: "friend", icon: "😊", label: "Friend", about: "Warm, upbeat and casual — like a close friend." },
   { id: "professional", icon: "💼", label: "Professional assistant", about: "Polished, efficient and to the point." },
   { id: "sarcastic", icon: "😏", label: "Sarcastic assistant", about: "Dry wit and playful teasing — still helpful." },
-  { id: "romantic", icon: "💕", label: "Romantic companion", about: "Confident, charming and flirty, with pet names. Light and non-sexual." },
+  { id: "romantic", icon: "💕", label: "Romantic companion", about: "Confident, charming and flirty, with pet names. Adults only, never sexual." },
 ];
 
-
-/** Admin-only: generate and save looks for Velo. */
-function VeloLookGenerator({ profile, onChange }: { profile: Profile; onChange: () => void }) {
-  const [genPrompt, setGenPrompt] = useState("");
-  const [lookName, setLookName] = useState("Velo");
-  const [provider, setProvider] = useState("atlas");
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState("");
-  const [url, setUrl] = useState("");
-  const [looks, setLooks] = useState<{id:string; name:string; image_url:string; is_active:boolean}[]>([]);
-  const loadLooks = async () => {
-    try { const r = await data<{looks: typeof looks}>("profile.listLooks"); setLooks(r.looks || []); } catch {}
-  };
-  useEffect(() => { loadLooks(); }, []);
-  if (!profile.isAdmin) return null;
-  const upload = async (file: File) => {
-    setBusy(true); setMsg("");
-    try {
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const dataUrl = reader.result as string;
-        await data("profile.uploadLook", { imageData: dataUrl, name: lookName });
-        setMsg("Uploaded and saved.");
-        loadLooks();
-        onChange();
-        setBusy(false);
-      };
-      reader.readAsDataURL(file);
-    } catch (e) { setMsg(e instanceof Error ? e.message : "Upload failed."); setBusy(false); }
-  };
-  const gen = async () => {
-    if (!genPrompt.trim()) return;
-    setBusy(true); setMsg(""); setUrl("");
-    try {
-      const r = await data<{ url?: string }>("profile.generateLook", { prompt: genPrompt.trim(), provider, character: lookName.trim() || "Velo" });
-      if (r.url) setUrl(r.url);
-      else setMsg("No image returned.");
-      loadLooks();
-    } catch (e) { setMsg(e instanceof Error ? e.message : "Failed."); }
-    setBusy(false);
-  };
-  const save = async () => {
-    if (!url) return;
-    setBusy(true); setMsg("");
-    try {
-      await data("profile.saveLook", { imageUrl: url, name: "Velo" });
-      setMsg("Saved as Velo look.");
-      loadLooks();
-      onChange();
-    } catch (e) { setMsg(e instanceof Error ? e.message : "Could not save."); }
-    setBusy(false);
-  };
-  return (
-    <div className="card" data-testid="look-generator">
-      <div style={{ fontWeight: 700 }}>🖼️ Saved pictures (admin)</div>
-      <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>This does not replace Rachel, Tiffany, or the other built-in faces. Pictures here are extras saved under the name you type. Set as face puts that picture on that character in Your characters. Delete removes it from the app and from storage.</div>
-      <div className="row" style={{ gap: 8, marginBottom: 8 }}>
-        <input value={lookName} onChange={e => setLookName(e.target.value)} placeholder="Character name" style={{ width: 140 }} />
-        <label style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 13 }}>
-          Upload photo
-          <input type="file" accept="image/*" style={{ display: "none" }} onChange={e => e.target.files?.[0] && upload(e.target.files[0])} />
-        </label>
-      </div>
-      <div className="row" style={{ gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-        <button disabled={busy} onClick={() => setProvider("atlas")} style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${provider === "atlas" ? "var(--accent)" : "var(--border)"}`, background: provider === "atlas" ? "rgba(124,140,255,0.12)" : "var(--surface2)", color: "var(--text)", cursor: "pointer", fontSize: 13 }}>Atlas</button>
-        <input value={genPrompt} onChange={e => setGenPrompt(e.target.value)} placeholder="Describe her look…" style={{ flex: 1, minWidth: 200 }} />
-        <button className="btn" disabled={busy || !genPrompt.trim()} onClick={gen}>{busy ? "…" : "Generate"}</button>
-      </div>
-      {url && (
-        <div style={{ marginTop: 8 }}>
-          <img src={picSrc(url)} alt="Generated" style={{ maxWidth: "100%", borderRadius: 8, marginBottom: 8 }} />
-          <button className="btn" disabled={busy} onClick={save}>Save as Velo look</button>
-        </div>
-      )}
-      {msg && <div style={{ color: "var(--bad)", fontSize: 13, marginTop: 8 }}>⚠️ {msg}</div>}
-      {looks.length > 0 && (
-        <div style={{ marginTop: 16 }}>
-          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>Saved pictures</div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {looks.map(l => (
-              <div key={l.id} style={{ width: 110, textAlign: "center" }}>
-                <img src={picSrc(l.image_url)} alt={l.name} style={{ width: 100, height: 100, objectFit: "contain", background: "#111", borderRadius: 8, border: "1px solid var(--border)" }} />
-                <div style={{ fontSize: 11, marginTop: 2 }}>{l.name}</div>
-                <div style={{ display: "flex", gap: 4, justifyContent: "center", marginTop: 4 }}>
-                  <button disabled={busy} onClick={async () => {
-                    setBusy(true); setMsg("");
-                    try {
-                      await data("profile.setLookFace", { id: l.id });
-                      setMsg(l.name + " face updated. Reload to see it under Your characters.");
-                      onChange();
-                    } catch (e) { setMsg(e instanceof Error ? e.message : "Could not set face."); }
-                    setBusy(false);
-                  }} style={{ fontSize: 11 }}>Face</button>
-                  <button disabled={busy} onClick={async () => {
-                    if (!confirm("Delete this picture from the app and storage?")) return;
-                    setBusy(true); setMsg("");
-                    try {
-                      await data("profile.deleteLook", { id: l.id });
-                      setMsg("Deleted.");
-                      loadLooks();
-                    } catch (e) { setMsg(e instanceof Error ? e.message : "Delete failed."); }
-                    setBusy(false);
-                  }} style={{ fontSize: 11 }}>Delete</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-
-
-export function CustomLookRow() {
-  const [looks, setLooks] = useState<{ name: string; image: string }[]>([]);
-  const [active, setActive] = useState("");
-  useEffect(() => {
-    data<{ looks: { name: string; image: string }[] }>("profile.listCharacterLooks")
-      .then(r => setLooks(r.looks || []))
-      .catch(() => {});
-  }, []);
-  if (!looks.length) return null;
-  const pick = async (name: string) => {
-    setActive(name);
-    await data("profile.setCharacterLook", { name }).catch(() => {});
-  };
-  return (
-    <div style={{ marginTop: 14 }}>
-      <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>Your characters</div>
-      <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 4 }}>
-        {looks.map(l => (
-          <button key={l.name} onClick={() => pick(l.name)} style={{ background: "none", border: "none", color: "var(--text)", textAlign: "center", flexShrink: 0, padding: 0 }}>
-            {l.image
-              ? <img src={"/api/pic?u=" + encodeURIComponent(l.image)} alt="" style={{ width: 64, height: 64, borderRadius: "50%", objectFit: "cover", border: active === l.name ? "3px solid var(--accent)" : "2px solid transparent" }} />
-              : <div style={{ width: 64, height: 64, borderRadius: "50%", background: "var(--surface2)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700 }}>{l.name.slice(0, 1)}</div>}
-            <div style={{ fontSize: 12, marginTop: 4 }}>{l.name}</div>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-
-export function StorageCard({ profile }: { profile: Profile }) {
-  const [rows, setRows] = useState<{ url: string; pathname: string; size: number }[] | null>(null);
-  const [used, setUsed] = useState(0);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState("");
-  if (!profile.isAdmin) return null;
-  const check = async () => {
-    setBusy(true); setMsg("");
-    try {
-      const r = await data<{ orphans: { url: string; pathname: string; size: number }[]; used: number }>("profile.listOrphans");
-      setRows(r.orphans); setUsed(r.used);
-      setMsg(r.orphans.length ? r.orphans.length + " orphaned files. " + r.used + " still in use." : "No orphaned files. " + r.used + " in use.");
-    } catch (e) { setMsg(e instanceof Error ? e.message : "Couldn't check storage."); }
-    setBusy(false);
-  };
-  const wipe = async () => {
-    if (!rows?.length) return;
-    if (!(await confirmAsk("Delete " + rows.length + " orphaned files from storage? This cannot be undone.", { yes: "Delete" }))) return;
-    setBusy(true); setMsg("");
-    try {
-      const r = await data<{ deleted: number }>("profile.deleteOrphans", { urls: rows.map(x => x.url) });
-      setMsg("Deleted " + r.deleted + ".");
-      setRows([]);
-    } catch (e) { setMsg(e instanceof Error ? e.message : "Delete failed."); }
-    setBusy(false);
-  };
-  return (
-    <div className="card">
-      <div style={{ fontWeight: 700 }}>Storage cleanup</div>
-      <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>Files in Blob that are not attached to a character or look.</div>
-      <div className="row" style={{ gap: 8 }}>
-        <button className="btn" disabled={busy} onClick={check}>{busy ? "…" : "Check for orphans"}</button>
-        {!!rows?.length && <button className="ghost" disabled={busy} onClick={wipe} style={{ color: "var(--bad)" }}>Delete {rows.length}</button>}
-      </div>
-      {msg && <div className="muted" style={{ fontSize: 13, marginTop: 8 }}>{msg}</div>}
-      {!!rows?.length && (
-        <div style={{ marginTop: 10, maxHeight: 220, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
-          {rows.slice(0, 40).map(r => (
-            <div key={r.url} className="row" style={{ gap: 8, fontSize: 12 }}>
-              <img src={picSrc(r.url)} alt="" style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 6 }} />
-              <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.pathname}</div>
-              <span className="muted">{Math.max(1, Math.round(r.size / 1024))} KB</span>
-            </div>
-          ))}
-          {rows.length > 40 && <div className="muted" style={{ fontSize: 12 }}>+{rows.length - 40} more</div>}
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function VeloVoiceCard({ profile, onChange }: { profile: Profile; onChange: () => void }) {
-  const [busy, setBusy] = useState(false);
-  const voices = [
-    { id: "", name: "From look", about: "Uses the voice for her current face" },
-    { id: "rachel", name: "Rachel", about: "calm, American" },
-    { id: "sarah", name: "Sarah", about: "warm, young adult" },
-    { id: "aria", name: "Aria", about: "expressive, American" },
-    { id: "charlotte", name: "Charlotte", about: "smooth, Swedish-English" },
-    { id: "jessica", name: "Jessica", about: "bright, playful" },
-    { id: "lily", name: "Lily", about: "velvety, British" },
-  ];
-  const pick = async (id: string) => {
-    if (id === (profile.veloVoice || "")) return;
-    setBusy(true);
-    await data("profile.update", { veloVoice: id }).catch(() => {});
-    setBusy(false); onChange();
-  };
-  return (
-    <div className="card">
-      <div style={{ fontWeight: 700 }}>🔊 Velo voice</div>
-      <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>Her voice on calls. From look uses the voice for her current face.</div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-        {voices.map(v => {
-          const on = (profile.veloVoice || "") === v.id;
-          return (
-            <button key={v.id} disabled={busy} onClick={() => pick(v.id)}
-              style={{ background: on ? "rgba(124,140,255,0.12)" : "var(--surface2)", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, borderRadius: 999, padding: "8px 14px", color: "var(--text)", fontWeight: 700, cursor: on ? "default" : "pointer" }}>
-              {on ? "✓ " : ""}{v.name}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-export function ReplyLengthCard({ profile, onChange }: { profile: Profile; onChange: () => void }) {
-  const [busy, setBusy] = useState(false);
-  const opts = [
-    { id: "short", label: "Short", about: "Quick replies" },
-    { id: "normal", label: "Normal", about: "Balanced" },
-    { id: "long", label: "Long", about: "More detail" },
-  ];
-  const pick = async (id: string) => {
-    if (id === (profile.replyLength || "normal")) return;
-    setBusy(true);
-    await data("profile.update", { replyLength: id }).catch(() => {});
-    setBusy(false); onChange();
-  };
-  return (
-    <div className="card">
-      <div style={{ fontWeight: 700 }}>Reply length</div>
-      <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>How long replies usually are in chats, texts, and calls.</div>
-      <div style={{ display: "flex", gap: 8 }}>
-        {opts.map(o => {
-          const on = (profile.replyLength || "normal") === o.id;
-          return (
-            <button key={o.id} disabled={busy} onClick={() => pick(o.id)}
-              style={{ flex: 1, background: on ? "rgba(124,140,255,0.12)" : "var(--surface2)", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, borderRadius: 12, padding: "10px 8px", color: "var(--text)", fontWeight: 700, cursor: on ? "default" : "pointer" }}>
-              {on ? "✓ " : ""}{o.label}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-export function UpdateCard() {
-  const update = () => {
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.update()));
-    }
-    window.location.reload();
-  };
-  return (
-    <div className="card">
-      <div style={{ fontWeight: 700 }}>App</div>
-      <div className="muted" style={{ fontSize: 12, margin: "2px 0 8px" }}>Reload to get the latest</div>
-      <button className="btn" onClick={update} style={{ marginTop: 8 }}>Update app</button>
-    </div>
-  );
-}
-
-export function ModeCard({ profile, onChange }: { profile: Profile; onChange: () => void }) {
-  const mode = profile.mode || "productivity";
-  const notifySpicy = profile.notifySpicy || false;
-  const notifyProd = profile.notifyProductivity !== false;
-  const set = async (m: string) => {
-    await data("profile.setMode", { mode: m });
-    onChange();
-  };
-  const setNotify = async (side: string, on: boolean) => {
-    await data("profile.setNotify", { side, on });
-    onChange();
-  };
-  return (
-    <div className="card">
-      <div style={{ fontWeight: 700 }}>App mode</div>
-      <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>Switch between spicy and productivity.</div>
-      <div className="row" style={{ gap: 8, marginBottom: 16 }}>
-        <button onClick={() => set("productivity")} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid var(--border)", background: mode === "productivity" ? "var(--accent)" : "transparent", color: mode === "productivity" ? "white" : "var(--text)", fontWeight: 600 }}>Productivity</button>
-        <button onClick={() => set("spicy")} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid var(--border)", background: mode === "spicy" ? "var(--accent)" : "transparent", color: mode === "spicy" ? "white" : "var(--text)", fontWeight: 600 }}>Spicy</button>
-      </div>
-      <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8 }}>Notifications</div>
-      <label style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, cursor: "pointer" }}>
-        <input type="checkbox" checked={notifyProd} onChange={e => setNotify("productivity", e.target.checked)} style={{ width: 18, height: 18 }} />
-        Productivity alerts
-      </label>
-      <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
-        <input type="checkbox" checked={notifySpicy} onChange={e => setNotify("spicy", e.target.checked)} style={{ width: 18, height: 18 }} />
-        Spicy alerts
-      </label>
-    </div>
-  );
-}
-
-
-export function CharacterGallery({ profile, onChange }: { profile: Profile; onChange: () => void }) {
-  const [chars, setChars] = useState<string[]>([]);
-  const [active, setActive] = useState<string | null>(null);
-  const [media, setMedia] = useState<{id:string; media_url:string; media_type?:string; is_reference:boolean}[]>([]);
-  const [page, setPage] = useState(0);
-  const [busy, setBusy] = useState(false);
-  const [genPrompt, setGenPrompt] = useState("");
-  const [note, setNote] = useState("");
-  const [newName, setNewName] = useState("");
-  const [createName, setCreateName] = useState("");
-  const [refs, setRefs] = useState<string[]>([]);
-  const loadChars = async () => {
-    try { const r = await data<{characters: string[]}>("profile.listCharacters"); setChars(r.characters || ["Velo"]); } catch { setChars(["Velo"]); }
-  };
-  const loadMedia = async (name: string) => {
-    try { const r = await data<{media: typeof media}>("profile.listMedia", { character: name }); setMedia(r.media || []); } catch { setMedia([]); }
-  };
-  useEffect(() => { loadChars(); }, []);
-  useEffect(() => { if (active) { setPage(0); loadMedia(active); setNewName(active); } }, [active]);
-  useEffect(() => { setRefs(media.filter(m => m.is_reference).map(m => m.media_url)); }, [media]);
-  const rename = async () => {
-    const to = newName.trim();
-    if (!active || !to || to === active) return;
-    setBusy(true);
-    await data("profile.renameCharacter", { from: active, to });
-    setActive(to);
-    loadChars();
-    setBusy(false);
-  };
-  const create = async () => {
-    const name = createName.trim();
-    if (!name) return;
-    setBusy(true);
-    await data("profile.createCharacter", { name });
-    setCreateName("");
-    await loadChars();
-    setActive(name);
-    setBusy(false);
-  };
-  const removeChar = async () => {
-    if (!active || !confirm("Delete " + active + " and all their media?")) return;
-    setBusy(true);
-    await data("profile.deleteCharacter", { name: active });
-    setActive(null);
-    loadChars();
-    setBusy(false);
-  };
-  const toggleRef = async (m: { id: string; media_url: string; is_reference: boolean }) => {
-    const on = !m.is_reference;
-    const marked = media.filter(x => x.is_reference).length;
-    if (on && marked >= 2) { setNote("Max 2 references. Unmark one first."); return; }
-    setNote("");
-    try {
-      await data("profile.setReference", { id: m.id, on });
-      setMedia(list => list.map(x => x.id === m.id ? { ...x, is_reference: on } : x));
-    } catch (e) { setNote(e instanceof Error ? e.message : "Couldn't save reference."); }
-  };
-  const gen = async () => {
-    if (!active || !genPrompt.trim()) return;
-    setBusy(true); setNote("");
-    try {
-      const r = await data<{url?: string}>("profile.generateLook", { prompt: genPrompt.trim(), provider: "atlas", character: active, images: refs });
-      if (r.url) { setNote("Saved."); loadMedia(active); }
-      else setNote("No image returned.");
-    } catch (e) { setNote(e instanceof Error ? e.message : "Generate failed."); }
-    setBusy(false);
-  };
-  const upload = async (file: File) => {
-    if (!active) return;
-    setBusy(true); setNote("");
-    const reader = new FileReader();
-    const dataUrl = await new Promise<string>((res, rej) => { reader.onload = () => res(String(reader.result)); reader.onerror = () => rej(new Error("Read failed")); reader.readAsDataURL(file); });
-    try {
-      await data("profile.uploadLook", { imageData: dataUrl, name: active });
-      setNote("Uploaded.");
-      loadMedia(active);
-    } catch (e) { setNote(e instanceof Error ? e.message : "Upload failed."); }
-    setBusy(false);
-  };
-  const removeOne = async (id: string) => {
-    setNote("");
-    try {
-      await data("profile.deleteMedia", { id });
-      if (active) loadMedia(active);
-    } catch (e) { setNote(e instanceof Error ? e.message : "Delete failed."); }
-  };
-  const pageSize = 40;
-  const shown = media.slice(page * pageSize, (page + 1) * pageSize);
-  if (!active) {
-    return (
-      <div className="card">
-        <div style={{ fontWeight: 700, marginBottom: 8 }}>Characters</div>
-        <div className="row" style={{ gap: 8, marginBottom: 12 }}>
-          <input value={createName} onChange={e => setCreateName(e.target.value)} placeholder="New character name" style={{ flex: 1 }} />
-          <button className="btn" disabled={busy || !createName.trim()} onClick={create}>Create</button>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 8 }}>
-          {chars.map(c => (
-            <button key={c} onClick={() => setActive(c)} style={{ padding: 12, borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)", textAlign: "left", fontWeight: 600 }}>{c}</button>
-          ))}
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div className="card">
-      <div className="row" style={{ justifyContent: "space-between", marginBottom: 10 }}>
-        <button className="ghost" onClick={() => setActive(null)}>Back</button>
-        <button className="ghost" onClick={removeChar} disabled={busy} style={{ color: "var(--bad)" }}>Delete character</button>
-      </div>
-      <div style={{ fontWeight: 700, marginBottom: 8 }}>{active}</div>
-      <div className="row" style={{ gap: 8, marginBottom: 12 }}>
-        <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Rename" style={{ flex: 1 }} />
-        <button onClick={rename} disabled={busy || !newName.trim() || newName.trim() === active}>Save name</button>
-      </div>
-      <div className="row" style={{ gap: 8, marginBottom: 8 }}>
-        <label className="btn" style={{ cursor: "pointer" }}>
-          Upload
-          <input type="file" accept="image/*,video/*" style={{ display: "none" }} onChange={e => e.target.files?.[0] && upload(e.target.files[0])} />
-        </label>
-        <span className="muted" style={{ fontSize: 12 }}>{refs.length ? refs.length + " reference selected (max 2)" : "Pick up to 2 photos as references"}</span>
-      </div>
-      <div className="row" style={{ gap: 8, marginBottom: 10 }}>
-        <input value={genPrompt} onChange={e => setGenPrompt(e.target.value)} placeholder={refs.length ? "Create more of her from the references…" : "Generate more of her…"} style={{ flex: 1 }} />
-        <button className="btn" disabled={busy || !genPrompt.trim()} onClick={gen}>Create</button>
-      </div>
-      {note && <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>{note}</div>}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 8 }}>
-        {shown.map(m => (
-          <div key={m.id} style={{ position: "relative", border: m.is_reference ? "2px solid var(--accent)" : "1px solid transparent", borderRadius: 8 }}>
-            {String(m.media_type || "").startsWith("video") || /\.(mp4|webm|mov)(\?|$)/i.test(m.media_url)
-              ? <video src={picSrc(m.media_url)} controls style={{ width: "100%", aspectRatio: "1", objectFit: "contain", background: "#111", borderRadius: 6 }} />
-              : <img src={picSrc(m.media_url)} alt="" style={{ width: "100%", aspectRatio: "1", objectFit: "contain", background: "#111", borderRadius: 6 }} />}
-            <div style={{ display: "flex", gap: 4, marginTop: 4, fontSize: 11 }}>
-              <button onClick={() => toggleRef(m)}>{m.is_reference ? "Ref" : "Use"}</button>
-              <a href={picSrc(m.media_url)} download target="_blank" rel="noopener noreferrer">Save</a>
-              <button onClick={() => removeOne(m.id)}>Delete</button>
-            </div>
-          </div>
-        ))}
-      </div>
-      {media.length > pageSize && (
-        <div className="row" style={{ justifyContent: "center", gap: 8, marginTop: 10 }}>
-          <button disabled={page === 0} onClick={() => setPage(p => p - 1)}>Prev</button>
-          <span style={{ fontSize: 13 }}>{page + 1} / {Math.ceil(media.length / pageSize)}</span>
-          <button disabled={(page + 1) * pageSize >= media.length} onClick={() => setPage(p => p + 1)}>Next</button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function LookGenerator(props: { profile: Profile; onChange: () => void }) { return <VeloLookGenerator {...props} />; }
+/** Settings → Velo's personality: how she talks with you. Romantic asks for 18+ first. */
 export function PersonalityCard({ profile, onChange }: { profile: Profile; onChange: () => void }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -729,58 +354,7 @@ export function PersonalityCard({ profile, onChange }: { profile: Profile; onCha
           );
         })}
       </div>
-            {msg && <div style={{ color: "var(--bad)", fontSize: 13, marginTop: 8 }}>⚠️ {msg}</div>}
-      {profile.personality === "alternate" && profile.isAdmin && (
-        <div style={{ marginTop: 12 }}>
-          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Voice for spicy mode</div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {["secretvoice","fish","resemble","spicy"].map(v => (
-              <button key={v} disabled={busy} onClick={async () => {
-                setBusy(true); setMsg("");
-                try { await data("profile.update", { spicyVoice: v }); onChange(); }
-                catch (e) { setMsg(e instanceof Error ? e.message : "Couldn't save."); }
-                setBusy(false);
-              }} style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${profile.spicyVoice === v ? "var(--accent)" : "var(--border)"}`, background: profile.spicyVoice === v ? "rgba(124,140,255,0.12)" : "var(--surface2)", color: "var(--text)", cursor: "pointer", fontSize: 13 }}>
-                {v}
-              </button>
-            ))}
-          </div>
-          {profile.spicyVoice === "secretvoice" && (
-            <div style={{ marginTop: 10 }}>
-              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>SecretVoice voice</div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {["velvet","whisper","angel","jade","honey","crystal","diamond","sunny","star","candy","bubbles"].map(v => (
-                  <button key={v} disabled={busy} onClick={async () => {
-                    setBusy(true); setMsg("");
-                    try { await data("profile.update", { secretVoice: v }); onChange(); }
-                    catch (e) { setMsg(e instanceof Error ? e.message : "Couldn't save."); }
-                    setBusy(false);
-                  }} style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${profile.secretVoice === v ? "var(--accent)" : "var(--border)"}`, background: profile.secretVoice === v ? "rgba(124,140,255,0.12)" : "var(--surface2)", color: "var(--text)", cursor: "pointer", fontSize: 13 }}>
-                    {v}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          {profile.spicyVoice === "spicy" && (
-            <div style={{ marginTop: 10 }}>
-              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Spicy API voice</div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {["Bella Bright","Sarah","Laura","Alice","Matilda","Jessica","Lily"].map(v => (
-                  <button key={v} disabled={busy} onClick={async () => {
-                    setBusy(true); setMsg("");
-                    try { await data("profile.update", { spicyApiVoice: v }); onChange(); }
-                    catch (e) { setMsg(e instanceof Error ? e.message : "Couldn't save."); }
-                    setBusy(false);
-                  }} style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${profile.spicyApiVoice === v ? "var(--accent)" : "var(--border)"}`, background: profile.spicyApiVoice === v ? "rgba(124,140,255,0.12)" : "var(--surface2)", color: "var(--text)", cursor: "pointer", fontSize: 13 }}>
-                    {v}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+      {msg && <div style={{ color: "var(--bad)", fontSize: 13, marginTop: 8 }}>⚠️ {msg}</div>}
     </div>
   );
 }

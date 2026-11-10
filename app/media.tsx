@@ -6,10 +6,11 @@
 import { useEffect, useState } from "react";
 import { data } from "./lib/api";
 
-export type Media = { id: string; kind: "image" | "video"; status: "offered" | "declined" | "working" | "done" | "failed"; url: string | null; thumb?: string | null; caption?: string | null; reaction?: string | null; description?: string | null; kept?: boolean };
+export type Media = { id: string; kind: "image" | "video"; status: "offered" | "declined" | "working" | "done" | "failed"; url: string | null; thumb?: string | null; caption?: string | null; reaction?: string | null; description?: string | null; kept?: boolean; subject?: string | null };
 
 // ❤️ Reactions they can leave on a photo/video.
-export const REACTIONS = ["❤️", "🔥", "🙌", "😍", "👍", "😮", "😂"] as const;
+import { REACTIONS } from "./lib/reactions";
+export { REACTIONS };
 
 /** The reaction row right under a photo/video. Tap one to react; tap it again to take it back. */
 export function ReactionBar({ value, onPick }: { value: string | null | undefined; onPick: (r: string) => void }) {
@@ -28,7 +29,7 @@ export function ReactionBar({ value, onPick }: { value: string | null | undefine
 }
 
 /** Keeps checking a photo/video until it's done (backs off from 4s to 15s; retries through errors). */
-export function useMedia(initial: Media, onReady?: (m: Media) => void): Media {
+export function useMedia(initial: Media, onReady?: (m: Media) => void, onFailed?: () => void): Media {
   const [m, setM] = useState(initial);
   useEffect(() => {
     if (m.status !== "working") return;
@@ -37,7 +38,7 @@ export function useMedia(initial: Media, onReady?: (m: Media) => void): Media {
       try {
         const r = await data<{ media: Media }>("media.check", { id: m.id });
         if (stop) return;
-        if (r.media.status !== "working") { setM(r.media); if (r.media.status === "done") onReady?.(r.media); return; }
+        if (r.media.status !== "working") { setM(r.media); if (r.media.status === "done") onReady?.(r.media); if (r.media.status === "failed") onFailed?.(); return; }
       } catch { /* offline or a hiccup: try again */ }
       if (!stop) { wait = Math.min(15000, wait * 1.4); t = setTimeout(tick, wait); }
     };
@@ -50,11 +51,11 @@ export function useMedia(initial: Media, onReady?: (m: Media) => void): Media {
 const fit = { display: "block", width: "100%", maxHeight: "min(62dvh, 560px)", height: "auto", objectFit: "contain", borderRadius: 14, margin: "0 auto", background: "#000" } as const;
 
 /** The photo/video itself (or its placeholder). */
-export function MediaView({ media, onReady, onAnswer, big = false, who = "Velo" }: { media: Media; onReady?: (m: Media) => void; onAnswer?: (m: Media) => void; big?: boolean; who?: string }) {
+export function MediaView({ media, onReady, onFailed, onAnswer, big = false, who = "Velo" }: { media: Media; onReady?: (m: Media) => void; onFailed?: () => void; onAnswer?: (m: Media) => void; big?: boolean; who?: string }) {
   const [cur, setCur] = useState(media);
   // 📸 Offered on their own: nothing is made until they accept.
   if (cur.status === "offered" || cur.status === "declined") return <OfferCard m={cur} who={who} big={big} onAnswer={x => { setCur(x); onAnswer?.(x); }} />;
-  return <MediaShown key={cur.id + cur.status} media={cur} onReady={onReady} big={big} />;
+  return <MediaShown key={cur.id + cur.status} media={cur} onReady={onReady} onFailed={onFailed} big={big} />;
 }
 
 /** "Mira wants to send you a photo: 'my view from the balcony'" — Accept / No thanks. */
@@ -84,10 +85,10 @@ function OfferCard({ m, who, big, onAnswer }: { m: Media; who: string; big: bool
   );
 }
 
-function MediaShown({ media, onReady, big = false }: { media: Media; onReady?: (m: Media) => void; big?: boolean }) {
-  const m = useMedia(media, onReady);
+function MediaShown({ media, onReady, onFailed, big = false }: { media: Media; onReady?: (m: Media) => void; onFailed?: () => void; big?: boolean }) {
+  const m = useMedia(media, onReady, onFailed);
   const [full, setFull] = useState(false);
-  if (m.status === "failed") return <div className="muted" data-testid="media-failed" style={{ fontSize: 13 }}>⚠️ That {m.kind === "image" ? "photo" : "video"} didn&apos;t come through.</div>;
+  if (m.status === "failed") return <div className="muted" data-testid="media-failed" style={{ fontSize: 13 }}>📵 That {m.kind === "image" ? "photo" : "video"} didn&apos;t send.</div>;
   if (m.status !== "done" || !m.url) return (
     <div data-testid="media-working" style={{ width: big ? "min(80vw, 320px)" : 220, aspectRatio: "2 / 3", maxHeight: "min(50dvh, 420px)", borderRadius: 14, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, textAlign: "center", fontSize: 13, background: "linear-gradient(135deg, rgba(124,140,255,.18), rgba(236,72,153,.14))", animation: "mediaPulse 1.8s ease-in-out infinite" }}>
       <span style={{ fontSize: 28 }}>{m.kind === "image" ? "📸" : "🎬"}</span>

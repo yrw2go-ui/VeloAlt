@@ -8,8 +8,9 @@ import { data, uploadFile } from "./lib/api";
 import { confirmAsk } from "./lib/dialog";
 import { US_STATES } from "./lib/states";
 import type { Profile } from "./pro";
+import { BIO_SECTIONS, BIO_MAX, type BioMore } from "./lib/bioSections";
 
-export type Bio = { text: string; birthday: string; age: number | null; state: string; photo: string; photoNote: string };
+export type Bio = { text: string; birthday: string; age: number | null; state: string; photo: string; photoNote: string; more?: BioMore };
 
 export default function AboutCard({ profile, onChange }: { profile: Profile; onChange: () => void }) {
   const bio: Bio = profile.bio || { text: "", birthday: "", age: null, state: "", photo: "", photoNote: "" };
@@ -17,19 +18,23 @@ export default function AboutCard({ profile, onChange }: { profile: Profile; onC
   const [birthday, setBirthday] = useState(bio.birthday);
   const [age, setAge] = useState(bio.age ? String(bio.age) : "");
   const [state, setState] = useState(bio.state);
+  const moreJson = JSON.stringify(bio.more || {});
+  const [more, setMore] = useState<BioMore>(bio.more || {});
+  const [open, setOpen] = useState(() => Object.values(bio.more || {}).some(Boolean));
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState("");
   const input = useRef<HTMLInputElement>(null);
-  useEffect(() => { setText(bio.text); setBirthday(bio.birthday); setAge(bio.age ? String(bio.age) : ""); setState(bio.state); }, [bio.text, bio.birthday, bio.age, bio.state]);
-  const dirty = text !== bio.text || birthday !== bio.birthday || (birthday ? false : age !== (bio.age ? String(bio.age) : "")) || state !== bio.state;
+  useEffect(() => { setText(bio.text); setBirthday(bio.birthday); setAge(bio.age ? String(bio.age) : ""); setState(bio.state); setMore(JSON.parse(moreJson)); }, [bio.text, bio.birthday, bio.age, bio.state, moreJson]);
+  const clean = (m: BioMore) => JSON.stringify(Object.fromEntries(BIO_SECTIONS.map(s => [s.key, (m[s.key] || "").trim()]).filter(([, v]) => v)));
+  const dirty = text !== bio.text || birthday !== bio.birthday || (birthday ? false : age !== (bio.age ? String(bio.age) : "")) || state !== bio.state || clean(more) !== clean(bio.more || {});
   const ageNum = Number(age);
   const ageBad = !birthday && age !== "" && !(Number.isInteger(ageNum) && ageNum >= 13 && ageNum <= 120);
 
   const save = async () => {
     if (ageBad) { setErr("Age should be a number between 13 and 120."); return; }
     setBusy(true); setErr("");
-    try { await data("profile.update", { bio: { text, birthday, age: birthday ? null : age ? ageNum : null, state } }); setSaved(true); setTimeout(() => setSaved(false), 1500); onChange(); }
+    try { await data("profile.update", { bio: { text, birthday, age: birthday ? null : age ? ageNum : null, state, more } }); setSaved(true); setTimeout(() => setSaved(false), 1500); onChange(); }
     catch (e) { setErr(e instanceof Error ? e.message : "Couldn't save."); }
     finally { setBusy(false); }
   };
@@ -87,6 +92,15 @@ export default function AboutCard({ profile, onChange }: { profile: Profile; onC
           {US_STATES.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
       </label>
+      <button type="button" className="ghost" onClick={() => setOpen(o => !o)} aria-expanded={open} data-testid="about-more-toggle" style={{ textAlign: "left", fontWeight: 700 }}>
+        {open ? "▾" : "▸"} More about you <span className="muted" style={{ fontWeight: 500, fontSize: 12 }}>· work, hobbies, favorites, family, goals…</span>
+      </button>
+      {open && BIO_SECTIONS.map(sct => (
+        <label key={sct.key} style={lab}>{sct.label}
+          <textarea value={more[sct.key] || ""} onChange={e => setMore(m => ({ ...m, [sct.key]: e.target.value }))} maxLength={BIO_MAX} rows={2} aria-label={sct.label.replace(/^\S+\s/, "")}
+            data-testid={`about-${sct.key}`} placeholder={sct.placeholder} style={{ marginTop: 4, resize: "vertical" }} />
+        </label>
+      ))}
       {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
       <button className="btn" disabled={!dirty || busy} onClick={save} data-testid="about-save">{saved ? "Saved ✓" : busy ? "…" : "Save"}</button>
     </div>

@@ -118,15 +118,14 @@ function pickVoice(kind: VeloVoice): { voice: SpeechSynthesisVoice | null; sure:
   return guess ? { voice: guess, sure: true } : { voice: us.find(v => v.localService) || us[0] || all[0] || null, sure: false };
 }
 // What's shown and read: no markdown or symbols.
-const speakable = (t: string) => t.replace(/\[\[[^\]]*\]\]/g, "").replace(/https?:\/\/\S+/g, "").replace(/[*_#`>|]/g, "").replace(/\s+/g, " ").trim();
+const speakable = (t: string) => t.replace(/\[\[[^\]]*\]\]/g, "").replace(/[*_#`>|]/g, "").replace(/\s+/g, " ").trim();
 // Said out loud: "Velo" is pronounced Vĕllō ("VEL-oh"), so the voice reads it as "Vello".
 const sayable = (t: string) => speakable(t).replace(/\bVelo\b/g, "Vello").replace(/\bVELO\b/g, "Vello");
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 /** Velo answers by first name, a little differently each time. On the very
  *  first call she introduces herself and what she's there for. */
-const greetingFor = (name?: string, first = false, who = "Velo") => {
+const greetingFor = (name?: string, first = false) => {
   const n = (name || "").trim().split(/\s+/)[0];
-  if (who && who.toLowerCase() !== "velo") return `Hey${n ? ` ${n}` : ""}, it's ${who}.`;
   if (first) return `Hi${n ? ` ${n}` : ""}, I'm Velo! I'm here to help with any questions, your schedule, and whatever else you need. What can I do for you?`;
   const h = new Date().getHours();
   const tod = h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
@@ -142,7 +141,15 @@ const greetingFor = (name?: string, first = false, who = "Velo") => {
   return options[Math.floor(Math.random() * options.length)];
 };
 
-export default function VeloCall({ request, onEnd, voice = "female", name, who = "Velo", faceUrl = "", firstCall = false, fetchVoice, opener, startPrivate = false, continueFrom, mini = false, onMinimize, onExpand }: {
+export default function VeloCall({ request, onEnd, voice = "female", name, firstCall = false, fetchVoice, opener, startPrivate = false, who, mini = false, onMinimize, onExpand, brainBadge = null }: {
+  /** 👍 her own brain (Qwen / DeepSeek) is answering; ⏰ Claude stepped in. A tiny badge in the corner. */
+  brainBadge?: "👍" | "⏰" | null;
+  /** ⤡ Shrunk to a bar so they can use the app while they talk; the call carries on. */
+  mini?: boolean;
+  onMinimize?: () => void;
+  onExpand?: () => void;
+  /** 🎭 A call with a character instead of Velo: their name and face. */
+  who?: { name: string; face: (size: number) => React.ReactNode };
   /** 📞 Check-in call: what Velo says first (instead of her usual hello). */
   opener?: string;
   /** Start like a normal phone call: on the earpiece (📱 Private), with a 🔊 Speaker button. */
@@ -150,18 +157,8 @@ export default function VeloCall({ request, onEnd, voice = "female", name, who =
   voice?: VeloVoice;
   /** The account owner's name, for the greeting. */
   name?: string;
-  /** Who is on the call. A created character, or Velo. */
-  who?: string;
-  /** Her photo, if one is saved. */
-  faceUrl?: string;
   /** Their first call ever: Velo introduces herself. */
   firstCall?: boolean;
-  /** Recent chat messages to continue from (instead of a fresh greeting). */
-  continueFrom?: Turn[];
-  /** Shrunk to a bar so they can use the app while they talk. */
-  mini?: boolean;
-  onMinimize?: () => void;
-  onExpand?: () => void;
   /** Sends the conversation to Velo; returns its reply. */
   request: (turns: Turn[], mode: "talk" | "recap" | "remember") => Promise<string>;
   /** The call closed — with the recap to add to the chat, or null. */
@@ -170,12 +167,11 @@ export default function VeloCall({ request, onEnd, voice = "female", name, who =
   fetchVoice?: (text: string, voice: VeloVoice, look: string) => Promise<Blob | null>;
 }) {
   const [phase, setPhase] = useState<Phase>("speaking");
-  const [greeting] = useState(() => opener?.trim() || greetingFor(name, firstCall, who));
-  const [turns, setTurns] = useState<Turn[]>(continueFrom && continueFrom.length ? continueFrom : [{ role: "assistant", content: greeting }]);
+  const [greeting] = useState(() => opener?.trim() || greetingFor(name, firstCall));
+  const [turns, setTurns] = useState<Turn[]>([{ role: "assistant", content: greeting }]);
   const [heard, setHeard] = useState("");
   const [secs, setSecs] = useState(0);
   const [err, setErr] = useState("");
-  const [typed, setTyped] = useState("");
   const [saving, setSaving] = useState(false);
   const live = useRef(true);
   const muted = useRef(false);
@@ -184,12 +180,6 @@ export default function VeloCall({ request, onEnd, voice = "female", name, who =
   turnsRef.current = turns;
   // Her chosen face also picks her voice (the server maps the look to a voice).
   const look = useVeloLook();
-  const [face, setFace] = useState(faceUrl);
-  useEffect(() => {
-    const on = (e: Event) => setFace(String((e as CustomEvent).detail?.image || ""));
-    window.addEventListener("velo:character", on);
-    return () => window.removeEventListener("velo:character", on);
-  }, []);
   const lookRef = useRef(look);
   lookRef.current = look;
   // 📝 Text: show the conversation on screen. Off at the start of every call.
@@ -392,12 +382,6 @@ export default function VeloCall({ request, onEnd, voice = "female", name, who =
     try { r.start(); } catch { /* already started */ }
   };
 
-  const sendTyped = () => {
-    const t = typed.trim();
-    if (!t || phase === "thinking" || phase === "speaking") return;
-    setTyped("");
-    think(t);
-  };
   const think = async (text: string) => {
     const next = [...turnsRef.current, { role: "user" as const, content: text }];
     setTurns(next); setPhase("thinking"); setErr("");
@@ -409,13 +393,25 @@ export default function VeloCall({ request, onEnd, voice = "female", name, who =
       speak(reply);
     } catch (e) {
       if (!live.current) return;
-      const msg = e instanceof Error ? e.message : "Velo didn't answer.";
+      const msg = e instanceof Error ? e.message : `${who?.name || "Velo"} didn't answer.`;
       setErr(msg);
       if ((e as { final?: boolean })?.final) speak(msg, true);
       else speak("Sorry, I lost you for a second. Could you say that again?");
     }
   };
 
+  // ⌨️ Type instead of talking: the reply is still spoken. (Passwords and codes are hidden on the server.)
+  const [typing, setTyping] = useState(false);
+  const [typed, setTyped] = useState("");
+  const sendTyped = () => {
+    const t = typed.trim();
+    if (!t || !live.current || phase === "thinking") return;
+    setTyped("");
+    if (phase === "speaking") stopTalking();
+    const r = rec.current; rec.current = null;
+    try { r?.abort(); } catch { /* fine */ }
+    think(t);
+  };
   // Tap while Velo is talking: cut in and talk.
   const interrupt = () => { if (phase === "speaking") { stopTalking(); listen(); } };
   const toggleMute = () => {
@@ -450,42 +446,49 @@ export default function VeloCall({ request, onEnd, voice = "female", name, who =
   };
 
   const ring = phase === "listening" ? "#10b981" : phase === "speaking" ? "#3b82f6" : phase === "thinking" ? "#f97316" : "#6b7280";
-  const label = { listening: "Listening…", thinking: "Thinking…", speaking: `${who} is talking — tap to cut in`, muted: "Muted — tap 🎙️ to talk", ended: "Call ended" }[phase];
+  const label = { listening: "Listening…", thinking: "Thinking…", speaking: `${who?.name || "Velo"} is talking — tap to cut in`, muted: "Muted — tap 🎙️ to talk", ended: "Call ended" }[phase];
   const lastVelo = said;
   const small = showText;
   const pill = (on: boolean) => ({ flexShrink: 0, background: on ? "#3b82f6" : "#1f2937", color: "#fff", border: `1px solid ${on ? "#60a5fa" : "#374151"}`, borderRadius: 999, padding: "8px 12px", fontSize: 14, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" } as const);
   const btn = (bg: string) => ({ width: 64, height: 64, borderRadius: "50%", border: "none", background: bg, color: "#fff", fontSize: 26, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" } as const);
 
+  // 📞 Minimized: a bar at the top; listening and talking carry on underneath.
   if (mini && phase !== "ended") return (
-    <div data-testid="velo-call-mini" style={{ position: "fixed", left: 0, right: 0, top: 0, zIndex: 2000, padding: "max(8px, env(safe-area-inset-top)) 12px 8px", background: "linear-gradient(90deg, #1e3a8a, #1e2a4a)", borderBottom: "1px solid #3b82f6", color: "#f1f1f3", display: "flex", alignItems: "center", gap: 10, boxShadow: "0 6px 20px rgba(0,0,0,0.45)" }}>
-      <button onClick={onExpand} aria-label="Back to the call" style={{ all: "unset", flex: 1, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
-        {faceUrl ? <img src={faceUrl} alt="" style={{ width: 34, height: 34, borderRadius: "50%", objectFit: "cover" }} /> : <VeloAvatar size={34} />}
-        <div style={{ minWidth: 0 }}><div style={{ fontWeight: 800 }}>{who}</div><div style={{ fontSize: 12, opacity: 0.8 }}>{label}</div></div>
+    <div data-testid="velo-call-mini" style={{ position: "fixed", left: 0, right: 0, top: 0, zIndex: 2000, padding: "max(8px, env(safe-area-inset-top)) 12px 8px", background: "linear-gradient(90deg, #1e3a8a, #1e2a4a)", borderBottom: "1px solid #3b82f6", color: "#f1f1f3", display: "flex", alignItems: "center", gap: 10, boxShadow: "0 6px 20px rgba(0,0,0,0.45)", fontFamily: "'Inter', -apple-system, sans-serif" }}>
+      <style>{`@keyframes vcRing { 0% { box-shadow: 0 0 0 0 ${ring}88 } 70% { box-shadow: 0 0 0 10px ${ring}00 } 100% { box-shadow: 0 0 0 0 ${ring}00 } }`}</style>
+      <button onClick={onExpand} aria-label="Back to the call screen" data-testid="velo-call-expand" style={{ all: "unset", flex: 1, minWidth: 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ width: 34, height: 34, borderRadius: "50%", border: `2px solid ${ring}`, overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", animation: phase === "muted" ? undefined : "vcRing 1.6s infinite" }}>{who ? who.face(30) : <VeloAvatar size={30} />}</span>
+        <span style={{ minWidth: 0, flex: 1 }}>
+          <span style={{ display: "block", fontSize: 13, fontWeight: 800 }}>📞 {who?.name || "Velo"} · {clock(secs)} <span style={{ color: ring, fontWeight: 700 }}>· {phase === "speaking" ? "Talking" : label}</span></span>
+          {said && <span style={{ display: "block", fontSize: 12, color: "#cbd5e1", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{speakable(said)}</span>}
+        </span>
       </button>
+      <button onClick={toggleMute} aria-label={muted.current ? "Unmute" : "Mute"} style={{ ...btn(muted.current ? "#4b5563" : "#1f2937"), width: 36, height: 36, fontSize: 16, flexShrink: 0 }}>{muted.current ? "🔇" : "🎙️"}</button>
+      <button onClick={hangUp} aria-label="End call" style={{ ...btn("#ef4444"), width: 36, height: 36, fontSize: 16, flexShrink: 0 }}><span style={{ transform: "rotate(135deg)", display: "inline-block" }}>📞</span></button>
     </div>
   );
 
   return (
-    <div role="dialog" aria-label="Call with Velo" data-testid="velo-call" onClick={interrupt} onPointerDownCapture={touched}
+    <div role="dialog" aria-label={`Call with ${who?.name || "Velo"}`} data-testid="velo-call" onClick={interrupt} onPointerDownCapture={touched}
       style={{ position: "fixed", inset: 0, zIndex: 2000, background: "radial-gradient(circle at 50% 30%, #1e2a4a 0%, #0a0a0f 70%)", color: "#f1f1f3", display: "flex", flexDirection: "column", alignItems: "center", padding: "max(40px, env(safe-area-inset-top)) 20px max(28px, env(safe-area-inset-bottom))", fontFamily: "'Inter', -apple-system, sans-serif" }}>
+      {brainBadge && <span data-testid="call-brain" aria-label={brainBadge === "👍" ? "Her own brain is answering" : "Claude is answering"} title={brainBadge === "👍" ? "Her own brain is answering" : "Claude is answering"}
+        style={{ position: "absolute", top: "max(10px, env(safe-area-inset-top))", right: 12, fontSize: 13, opacity: 0.4, pointerEvents: "none" }}>{brainBadge}</span>}
       <style>{`@keyframes vcRing { 0% { box-shadow: 0 0 0 0 ${ring}88 } 70% { box-shadow: 0 0 0 26px ${ring}00 } 100% { box-shadow: 0 0 0 0 ${ring}00 } }
         @keyframes vcDot { 0%,80%,100% { opacity: .25 } 40% { opacity: 1 } }`}</style>
       <div style={{ fontSize: 13, color: "#9ca3af", letterSpacing: 1 }}>{phase === "ended" ? "CALL ENDED" : "ON A CALL"} · {clock(secs)}</div>
       {onMinimize && phase !== "ended" && (
-        <button onClick={e => { e.stopPropagation(); onMinimize(); }} style={{ position: "absolute", top: "max(32px, env(safe-area-inset-top))", right: 16, background: "#1f2937", color: "#f1f1f3", border: "1px solid #374151", borderRadius: 999, padding: "8px 14px", fontSize: 14, fontWeight: 800, cursor: "pointer" }}>⤡ Minimize</button>
+        <button onClick={e => { e.stopPropagation(); onMinimize(); }} data-testid="velo-call-minimize" title="Shrink the call and use the app while you talk"
+          style={{ position: "absolute", top: "max(32px, env(safe-area-inset-top))", right: 16, background: "#1f2937", color: "#f1f1f3", border: "1px solid #374151", borderRadius: 999, padding: "8px 14px", fontSize: 14, fontWeight: 800, cursor: "pointer" }}>⤡ Minimize</button>
       )}
       <div style={{ marginTop: small ? 12 : 34, width: small ? 84 : 150, height: small ? 84 : 150, flexShrink: 0, borderRadius: "50%", background: "#111827", border: `3px solid ${ring}`, display: "flex", alignItems: "center", justifyContent: "center", animation: phase === "ended" || phase === "muted" ? undefined : "vcRing 1.6s infinite" }}>
-        {faceUrl ? <img src={faceUrl} alt="" style={{ width: small ? 78 : 144, height: small ? 78 : 144, borderRadius: "50%", objectFit: "cover" }} /> : <VeloAvatar size={small ? 78 : 144} />}
+        {who ? who.face(small ? 78 : 144) : <VeloAvatar size={small ? 78 : 144} />}
       </div>
-      <div style={{ marginTop: small ? 10 : 18, fontSize: small ? 22 : 26, fontWeight: 800 }}>{who}</div>
+      <div style={{ marginTop: small ? 10 : 18, fontSize: small ? 22 : 26, fontWeight: 800 }}>{who?.name || "Velo"}</div>
       <div style={{ marginTop: 6, fontSize: 14, color: ring, fontWeight: 700, minHeight: 20 }}>
         {phase === "thinking" ? <span>Thinking<span style={{ animation: "vcDot 1.2s infinite" }}>.</span><span style={{ animation: "vcDot 1.2s .2s infinite" }}>.</span><span style={{ animation: "vcDot 1.2s .4s infinite" }}>.</span></span> : label}
       </div>
 
       <div style={{ marginTop: small ? 14 : 22, width: "100%", maxWidth: 440, flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10 }}>
-        {phase !== "ended" && lastVelo && /https:\/\/\S+/.test(lastVelo) && (
-          <img src={"/api/pic?u=" + encodeURIComponent((lastVelo.match(/https:\/\/\S+/) || [""])[0])} alt="" style={{ width: "100%", maxHeight: 320, objectFit: "contain", borderRadius: 12, background: "#111" }} />
-        )}
         {phase !== "ended" && showText && lastVelo && (
           <div data-testid="velo-call-reply" aria-live="polite" style={{ background: "rgba(59,130,246,0.12)", border: "1px solid rgba(59,130,246,0.3)", borderRadius: 14, padding: "16px 18px", fontSize: 22, fontWeight: 600, lineHeight: 1.4, overflowWrap: "anywhere" }}>{speakable(lastVelo)}</div>
         )}
@@ -501,13 +504,11 @@ export default function VeloCall({ request, onEnd, voice = "female", name, who =
       </div>
 
       {phase !== "ended" && (
-        <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 440, marginTop: 8, display: "flex", gap: 8 }}>
-          <input value={typed} onChange={e => setTyped(e.target.value)} onKeyDown={e => e.key === "Enter" && sendTyped()} placeholder="Type to her…" style={{ flex: 1, padding: "10px 12px", borderRadius: 12, border: "1px solid #374151", background: "#111827", color: "#f1f1f3", fontSize: 15 }} />
-          <button onClick={sendTyped} disabled={!typed.trim() || phase === "thinking" || phase === "speaking"} style={{ padding: "10px 14px", borderRadius: 12, background: "#3b82f6", color: "white", border: "none", fontWeight: 600, cursor: "pointer" }}>Send</button>
-        </div>
-      )}
-      {phase !== "ended" && (
         <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 440, marginTop: 14, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", justifyContent: "center" }}>
+          <button role="switch" aria-checked={typing} onClick={() => setTyping(t => !t)} data-testid="velo-call-type"
+            title="Type: type a message and hear the answer" style={pill(typing)}>
+            ⌨️ Type
+          </button>
           <button role="switch" aria-checked={showText} onClick={() => setShowText(t => !t)} data-testid="velo-call-text"
             title="Text: show the conversation on screen" style={pill(showText)}>
             📝 Text{showText ? " · on" : ""}
@@ -535,6 +536,13 @@ export default function VeloCall({ request, onEnd, voice = "female", name, who =
               <span style={{ fontSize: 12, color: "#9ca3af", width: 34, textAlign: "right" }}>{Math.round(vol * 100)}%</span>
             </label>
           )}
+          {typing && (
+            <form onSubmit={e => { e.preventDefault(); sendTyped(); }} style={{ width: "100%", display: "flex", gap: 8 }}>
+              <input value={typed} onChange={e => setTyped(e.target.value)} placeholder={`Type to ${who?.name || "Velo"}…`} aria-label="Type a message" data-testid="velo-call-input" autoFocus
+                style={{ flex: 1, minWidth: 0, background: "#111827", color: "#f1f1f3", border: "1px solid #374151", borderRadius: 999, padding: "10px 14px", fontSize: 16 }} />
+              <button type="submit" disabled={!typed.trim() || phase === "thinking"} aria-label="Send" style={{ ...pill(true), padding: "8px 16px" }}>➤</button>
+            </form>
+          )}
           {priv && (
             <div data-testid="velo-call-private-note" style={{ width: "100%", textAlign: "center", fontSize: 12, color: "#9ca3af" }}>
               {earpiece ? "Hold the phone to your ear — she's on the earpiece" : "Hold the phone to your ear — her voice is turned down"}
@@ -557,7 +565,7 @@ export default function VeloCall({ request, onEnd, voice = "female", name, who =
         <div data-testid="velo-call-dark" aria-label="Screen dark — tap to wake" role="button"
           onClick={darkTap} onPointerDown={swallow} onPointerUp={swallow} onTouchStart={swallow} onTouchEnd={swallow} onContextMenu={swallow}
           style={{ position: "fixed", inset: 0, zIndex: 2001, background: "#000", touchAction: "none", userSelect: "none", WebkitUserSelect: "none", cursor: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ fontSize: 14, color: wakeHint ? "#9ca3af" : "#4b5563", pointerEvents: "none", textAlign: "center", lineHeight: 1.6 }}>📞 On a call with Velo<br />Tap to wake</div>
+          <div style={{ fontSize: 14, color: wakeHint ? "#9ca3af" : "#4b5563", pointerEvents: "none", textAlign: "center", lineHeight: 1.6 }}>📞 On a call with {who?.name || "Velo"}<br />Tap to wake</div>
         </div>
       )}
     </div>
