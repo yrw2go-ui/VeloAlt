@@ -12,7 +12,7 @@ export const MODEL_INFO: Record<ChatModel, { label: string; by: string; where: s
   deepseek: { label: "DeepSeek", by: "DeepSeek", where: "Processed by DeepSeek (servers in China)." },
 };
 
-export interface OpenAiProvider { baseUrl: string; key: string; model: string; extra?: Record<string, unknown> }
+export interface OpenAiProvider { baseUrl: string; key: string; model: string; extra?: Record<string, unknown>; minTokens?: number }
 
 /** Server only: the provider's connection, or null when it isn't set up. */
 export function provider(m: ChatModel): OpenAiProvider | null {
@@ -38,7 +38,8 @@ export function atlasBrain(b: unknown): OpenAiProvider | null {
   const key = process.env.ATLASCLOUD_API_KEY;
   const model = b === "qwen" ? process.env.ATLASCLOUD_QWEN_MODEL : b === "deepseek" ? process.env.ATLASCLOUD_DEEPSEEK_MODEL : "";
   if (!key || !model) return null;
-  return { baseUrl: process.env.ATLASCLOUD_LLM_URL || "https://api.atlascloud.ai/v1", key, model };
+  // Some Atlas models reason before answering: leave them room so short replies don't come back empty.
+  return { baseUrl: process.env.ATLASCLOUD_LLM_URL || "https://api.atlascloud.ai/v1", key, model, minTokens: 4000 };
 }
 /** Which brains this server can give a character (set up in the environment). */
 export const availableBrains = (): Brain[] => BRAINS.filter(b => !!atlasBrain(b));
