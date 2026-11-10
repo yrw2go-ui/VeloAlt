@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { put } from "../../lib/storage";
+import { put } from "@vercel/blob";
 import { randomUUID } from "node:crypto";
 import { sql } from "../../lib/db";
 import { resolveCaller } from "../../lib/caller";
