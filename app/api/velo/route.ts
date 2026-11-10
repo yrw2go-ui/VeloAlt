@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
-import { askVelo, CharacterGone, aiReady, aiError, type Mode, type Turn } from "../../lib/brain";
-import { getCharacter } from "../../lib/characters";
+import { askVelo, CharacterGone, BrainDown, aiReady, aiError, type Mode, type Turn } from "../../lib/brain";
+import { getCharacterFor } from "../../lib/characters";
 import { sql } from "../../lib/db";
+import { holdsOnWhenDown } from "../../lib/models";
 import { mediaNote } from "../../lib/media";
 
 // 💬 Velo in the app: chat, in-app calls, recaps and memory (see lib/brain.ts).
@@ -23,9 +24,17 @@ export async function POST(req: NextRequest) {
     if (!messages.length) return NextResponse.json({ error: "No messages provided" }, { status: 400 });
 
     // 🎭 A character's chat or call, with that character's own memory of them.
-    const character = body.characterId ? await getCharacter(String(body.characterId)) : null;
+    const character = body.characterId ? await getCharacterFor(caller.userId, String(body.characterId)) : null;
     if (body.characterId && !character) throw new CharacterGone();
-    const r = await askVelo(caller, { mode, messages, timeZone: body.timeZone, name: body.name, character, origin: req.nextUrl.origin });
+    // ⏰ A chat with a character on her own brain: if it's down, no stand-in (see BrainDown below).
+    const noFallback = mode === "chat" && holdsOnWhenDown(character?.brain);
+    let r;
+    try { r = await askVelo(caller, { mode, messages, timeZone: body.timeZone, name: body.name, character, origin: req.nextUrl.origin, noFallback }); }
+    catch (e) {
+      if (!(e instanceof BrainDown)) throw e;
+      // First time: she says she'll be right back. On retries: nothing to show yet.
+      return NextResponse.json({ brainDown: true, reply: body.retry ? "" : "hold on, I'll be right back" });
+    }
     if (mode === "remember" || mode === "memo") return NextResponse.json({ ok: !!r.saved, reply: "" });
     // 😮 Their reaction to the person's latest message, saved as a badge on it.
     if (r.react && typeof body.replyTo === "string" && /^[0-9a-f-]{36}$/i.test(body.replyTo)) {
@@ -34,9 +43,9 @@ export async function POST(req: NextRequest) {
     // 🎨 Photos/videos on their way are saved into this chat here (so they're never lost), just after the reply.
     for (const [i, m] of r.media.filter(x => x.status !== "failed").entries()) {
       await sql()`insert into velo_messages (user_id, role, content, media_id, character_id, created_at)
-        values (${caller.userId}, 'assistant', ${mediaNote(m.kind, m.status, m.description)}, ${m.id}, ${character?.id || null}, now() + ${`${2000 + i} milliseconds`}::interval)`;
+        values (${caller.userId}, 'assistant', ${mediaNote(m.kind, m.status, m.description, null, m.subject)}, ${m.id}, ${character?.id || null}, now() + ${`${2000 + i} milliseconds`}::interval)`;
     }
-    return NextResponse.json({ reply: r.reply, ...(r.changed ? { changed: true } : {}), ...(r.drafts.length ? { drafts: r.drafts } : {}), ...(r.media.length ? { media: r.media } : {}), ...(r.react ? { react: r.react } : {}) });
+    return NextResponse.json({ reply: r.reply, ...(r.changed ? { changed: true } : {}), ...(r.drafts.length ? { drafts: r.drafts } : {}), ...(r.media.length ? { media: r.media } : {}), ...(r.react ? { react: r.react } : {}), ...(r.by ? { by: r.by } : {}) });
   } catch (e) {
     if (e instanceof CharacterGone) return NextResponse.json({ error: "That character was deleted." }, { status: 404 });
     const { error, status } = aiError(e);
