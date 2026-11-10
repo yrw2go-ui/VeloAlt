@@ -20,34 +20,59 @@ import { isValidTimeZone, localDate, formatClock, weekdayOf, zonedParts } from "
 import { partOfDay, monthName, calendarNote, ownBirthdayNote } from "./calendar";
 import { hideSecrets, HIDDEN, scrub as scrubText } from "./secrets";
 import { ownFile, fileForAi } from "./files";
+import { friendsOf, friendsNote, sapphicWith } from "./friends";
+import { workNow } from "./work";
+import { sceneClockNote } from "./sceneClock";
+/** How many recent scenes (2 weeks) with her got pushed from their planned time. */
+async function pushedLately(userId: string, sceneId: string): Promise<number> {
+  const [r] = await sql()`select count(*)::int as n from chat_scenes s where s.user_id = ${userId} and s.pushed
+    and s.character_id = (select character_id from chat_scenes where id = ${sceneId}) and s.started_at > now() - interval '14 days'`;
+  return Number(r?.n || 0);
+}
 import { characterPrompt, feelingsFor, saveFeelings, trustFor, saveTrust, trustNote, activeScene, sceneNote, noteMentions, acquaintancesNote, referenceUrls, pictureOf, type Character } from "./characters";
-import { friendsOf, friendsNote } from "./friends";
-import { allowsExplicit } from "./traits";
 import { aboutThem } from "./bio";
 import { mediaMood, allowsSuggestive } from "./traits";
 import { CHARACTER_ZONES } from "./states";
-import { provider, type ChatModel } from "./models";
+import { provider, atlasChain, type ChatModel } from "./models";
 import { oaChat, toOaTools, ProviderError, type OaMessage } from "./openai";
 import { PLAN_TOOL, runPlanTool, plansNote } from "./plans";
+import { PROMISE_TOOL, runPromiseTool, promisesNote } from "./promises";
+import { chatLogNote } from "./chatlog";
+import { tickPics, resetPics, PHOTO_MOMENT } from "./momentPics";
+import { tickIntro, introNote } from "./intros";
 import { SEND_MEDIA_TOOL, startMedia, mediaReady, MediaError, tasteNote, recentMediaNote, type Media } from "./media";
 import { veloLook } from "./veloAvatars";
 
 // Only ever the app's own key (never another credential in the environment).
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, authToken: null });
 export type Mode = "chat" | "sms" | "talk" | "recap" | "remember" | "memo" | "errand" | "errandsum" | "checkin";
+
+// 🔔 Texting them first (a check-in, sent as a push notification).
+const PROMISED = `TEXTING THEM AS PROMISED: earlier they asked you to text them at this time (see WHAT YOU PROMISED), and you agreed. Write that ONE text now (1–2 sentences, under 200 characters), in your own voice and mood, as if you remembered on your own — do what you promised (wake them up, remind them, check in, say goodnight). Don't mention apps, notifications or that you were told to write.`;
+// 💬 Their "Reply length" setting (Settings): how long replies usually are in chats, texts and calls.
+// It sets the usual length only — a list they ask for, or a story they want, can still run longer.
 function replyLengthNote(mode: Mode, raw: unknown): string {
   const len = raw === "short" || raw === "long" ? raw : "normal";
   const talk = mode === "talk", text = mode === "chat" || mode === "sms";
   if (!talk && !text) return "";
   const how = talk
-    ? { short: "1-2 short spoken sentences", normal: "1-3 spoken sentences", long: "3-6 spoken sentences" }[len]
+    ? { short: "1–2 short spoken sentences", normal: "1–3 spoken sentences", long: "3–6 spoken sentences — tell a little more, share your own thoughts and stories" }[len]
     : mode === "sms"
-      ? { short: "1-2 short sentences", normal: "1-3 sentences", long: "3-5 sentences" }[len]
-      : { short: "1-2 short sentences", normal: "2-4 sentences", long: "5-10 sentences" }[len];
-  return `REPLY LENGTH (their setting): usually ${how}. Go longer only when they ask for more, or shorter when a quick answer is all it needs.`;
+      ? { short: "1–2 short sentences", normal: "1–3 sentences", long: "3–5 sentences" }[len]
+      : { short: "1–2 short sentences — quick and snappy, like texting", normal: "2–4 sentences", long: "a full paragraph or two (5–10 sentences) — more detail, more of your own thoughts, feelings and stories" }[len];
+  return `REPLY LENGTH (their setting — this overrides any other length guidance): usually ${how}. Go longer only when they ask for more (a list, a plan, a story), or shorter when a quick answer is all it needs.`;
 }
 
-// 🔔 Texting them first (a check-in, sent as a push notification).
+/** 👥 A group chat: who's there, and how to talk in it. */
+function groupNote(me: string, them: string, others: string[], wrapUp: boolean, scene: { title: string; details: string; time?: string } | null = null, romance = false, banter = false, poly = false, sapphic: string[] = []): string {
+  const person = them || "the person";
+  const all = [person, ...others].join(", ");
+  const love = romance ? `\nROMANCE IN THE GROUP: ${person} may be close with, flirt with or date more than one of you. React the way YOU would, from your personality, backstory, feelings and your romance arc: ${poly ? `jealous, curious or competitive at first — but you're OPEN to sharing ${person} in a polyamorous relationship. It's possible, never guaranteed: it grows slowly and believably, especially if ${person} keeps gently nudging that way.` : `you're not into sharing ${person} — jealous, hurt or competitive in your own way.`}${sapphic.length ? ` 🌈 With ${sapphic.join(" and ")} (a little curious too), something could slowly develop — flirting, a crush — PG-13 and never forced; men stay your main attraction.` : ""} Whatever you feel, never be cruel, controlling or threatening. Any romance stays PG-13.` : "";
+  const sc = scene ? `\n🎬 YOU'RE ALL IN A SCENE TOGETHER RIGHT NOW (role-play ${person} set up): "${scene.title}"${scene.details ? ` — ${scene.details}` : ""}. Everyone in the group is there. Play it out as if it's really happening: present tense, your actions in *italics*, your words in plain text, small details of the place, react to what ${person} and the others do — never decide their actions for them. 1–4 sentences per turn. Keep it within PG-13. If someone steps out of the scene (brackets or "OOC"), answer normally, then go back in.${scene.time ? ` ${scene.time}` : ""}` : "";
+  if (wrapUp) return `This was a GROUP CHAT with ${all}. Lines starting with [Name] are what that person said. Remember what matters to YOU: what ${person} shared, what happened, and what you learned about the others (save facts about ${person} as usual; what you learned about ${others.join(" or ")} goes in the summary).`;
+  return `GROUP CHAT: you're in a group text with ${all}. Lines starting with [Name]: are what that person said; your own earlier lines are yours. Reply ONLY as ${me}, with no name tag — never write lines for anyone else. Stay fully yourself: your personality, your feelings for ${person}, how well you know each of the others (see YOUR FRIENDS AND FAMILY). Keep it short like a group text (usually 1–2 sentences), react to what others just said, talk to them by name, joke, ask them things. Don't repeat what someone else already said. Private things you know only from your one-on-one chats with ${person} stay private unless ${person} brings them up here.${sc}${love}${banter ? `\nRIGHT NOW: talk to ${others.join(" or ")} directly (by name) — answer what they just said, tease, ask them something, share your news or an opinion. It's between you for a moment; ${person} can read it and may jump in anytime. One or two short sentences.` : ""}`;
+}
+
 const CHECKIN = `REACHING OUT FIRST: they haven't written in a while, and you're texting them first — like a friend (or more) would. Write ONE short text (1–2 sentences, under 160 characters). Make it personal and specific when you can: follow up on something from YOUR MEMORY or your recent chat, react to the time of day, a holiday, the weather of the season, or just say hi in your own way and voice. Don't mention apps, notifications or that you were told to write. No questions lists, no emojis overload, no links.`;
 export type Turn = { role: "user" | "assistant"; content: string; fileId?: string };
 export const aiReady = () => !!(process.env.VELO_MODEL && process.env.ANTHROPIC_API_KEY);
@@ -67,16 +92,21 @@ const ASKED_FOR_MEDIA = /\b(send|show|share|snap|take|got|get|see|want|wanna|mak
 const YES = /^\s*(yes|yeah|yep|yup|ya|sure|ok(ay)?|please|pls|plz|of course|absolutely|definitely|do it|go ahead|i'?d love (that|one|to)|send it|why not|try (it |that )?again|retry|resend)\b/i;
 const MENTIONS_MEDIA = /\b(phone|pics?|pictures?|photos?|selfies?|videos?|vids?|clips?|snaps?|show you|send you)\b/i;
 
-export interface AskResult { reply: string; changed: boolean; drafts: Draft[]; media: Media[]; saved?: boolean; react?: string }
+export interface AskResult { reply: string; changed: boolean; drafts: Draft[]; media: Media[]; saved?: boolean; react?: string; by?: "claude" | "alt" }
 
 // 😮 Reactions (shown as a little badge on their message, like a text-message tapback).
-export const REACTIONS = ["❤️", "🔥", "🙌", "😍", "👍", "😮", "😂"];
-const REACT_HINT = `REACTIONS: they can react to your messages with ❤️ 🔥 🙌 😍 👍 😮 😂 — notes like "(they reacted 🔥 to this)" tell you when they did. You can react to THEIR latest message (or the photo they sent) too, but only now and then — mostly when you really like or love it, or it surprises you: start your reply with [react:❤️] (one of ❤️ 🔥 🙌 😍 👍 😮 😂). It shows as a badge on their message; don't mention it. Most replies have no reaction.`;
+import { REACTIONS as REACTION_LIST } from "./reactions";
+export const REACTIONS: string[] = [...REACTION_LIST];
+const REACT_HINT = `REACTIONS: they can react to your messages with ${REACTIONS.join(" ")} — notes like "(they reacted 🔥 to this)" tell you when they did. You can react to THEIR latest message (or the photo they sent) too, but only now and then — mostly when you really like or love it, or it surprises you: start your reply with [react:❤️] (one of ${REACTIONS.join(" ")}). 😏 is teasing or flirty, 😅 is awkward, 😴 is sleepy or tired (or something boring), and 🥵 / 🤤 only when romance is part of it (PG-13). It shows as a badge on their message; don't mention it. Most replies have no reaction.`;
+// "Sending you a pic", "here's a selfie", "snapping one now 📸" — and a refusal to tell them apart.
+const CLAIMS_MEDIA = /\b(send(ing)?|sent|here'?s|here you go|snapp(ing|ed)|taking|took|coming (your way|right up)|on (its|it's) way)\b[\s\S]{0,50}\b(pics?|pictures?|photos?|selfies?|videos?|vids?|clips?|snaps?|shots?)\b|📸|🤳/i;
+const STRONG_CLAIM = /\b(sending|sent|snapping|snapped|taking one|took one|coming (your way|right up))\b|📸|🤳/i;
+const REFUSES_MEDIA = /\b(can'?t|cannot|won'?t|not (going to|gonna)|no (pics?|photos?|selfies?)|maybe later|not right now|limit)\b/i;
 const REACT_TAG = /\[react:\s*([^\]\s]+)\s*\]\s*/gu;
 
 /** Velo, or (with `character`) one of the characters: same chats, calls and memory flow, but in the
  *  character's own voice, with only their own memory of this person and no Velo tools. */
-export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn[]; timeZone?: unknown; name?: string; goal?: string; toName?: string; character?: Character | null; origin?: string; promise?: string }): Promise<AskResult> {
+export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn[]; timeZone?: unknown; name?: string; goal?: string; toName?: string; character?: Character | null; origin?: string; promise?: string; noFallback?: boolean; group?: { others: string[]; scene?: { title: string; details: string; time?: string } | null; banter?: boolean } }): Promise<AskResult> {
   const { mode } = opts;
   const ch = opts.character || null;
   const cid = ch?.id || null;
@@ -92,7 +122,9 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   const drafts: Draft[] = [];
   const media: Media[] = [];
   // 🎨 Photos/videos in chats and calls (not texts or calls Velo makes for them).
-  const canSend = mediaReady() && (mode === "chat" || mode === "talk");
+  // 👥 In a group chat: no photos, plans or scenes — just talking, with everyone there.
+  const group = ch && opts.group ? opts.group : null;
+  const canSend = mediaReady() && (mode === "chat" || mode === "talk") && !group;
   // Who's in a selfie: a character's portrait, or Velo's preset face (never a photo someone uploaded).
   const look = String(u?.look || "");
   // A character's 2–4 chosen reference images keep it looking the same (else its portrait).
@@ -110,10 +142,11 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   // 👥 Other characters they've mentioned here are noted, and what's known of them comes along.
   const lastSaid = [...opts.messages].reverse().find(m => m.role === "user")?.content || "";
   const lastHers = (() => { const i = opts.messages.map(m => m.role).lastIndexOf("user"); return [...opts.messages.slice(0, Math.max(0, i))].reverse().find(m => m.role === "assistant")?.content || ""; })();
-  if (mode === "chat" || mode === "talk") await noteMentions(caller.userId, cid, hideSecrets(String(lastSaid).slice(0, 2000)).text).catch(e => console.error("velo: mentions", e instanceof Error ? e.message : e));
-  const friends = ch && !errand ? await friendsOf(ch).catch(() => []) : [];
+  if ((mode === "chat" || mode === "talk") && !group) await noteMentions(caller.userId, cid, hideSecrets(String(lastSaid).slice(0, 2000)).text).catch(e => console.error("velo: mentions", e instanceof Error ? e.message : e));
+  // 👭 Her friends and family (firsthand), and nothing about how close they are with them.
+  const friends = ch && !errand ? await friendsOf(ch, caller.userId).catch(() => []) : [];
+  const friendNote = ch && friends.length ? await friendsNote(ch, name, friends, caller.userId, !!u?.adult_confirmed_at).catch(() => "") : "";
   const known = errand ? "" : await acquaintancesNote(caller.userId, cid, !ch, friends.map(f => f.id)).catch(() => "");
-  const friendNote = ch && friends.length ? await friendsNote(ch, name, friends).catch(() => "") : "";
   // 💡 What they like to see (reactions, declined offers).
   const taste = mediaReady() && (mode === "chat" || mode === "talk") ? await tasteNote(caller.userId, cid).catch(() => "") : "";
   // 🕰️ A character can live in another time zone: their own clock, as well as the person's.
@@ -124,24 +157,33 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   // 🤝 How much this character trusts them (null when Trust is 0 / off).
   const trust = ch ? await trustFor(caller.userId, ch).catch(() => null) : null;
   // 🎬 A scene (date/outing) being played out right now with this character.
-  const scene = ch && (mode === "chat" || mode === "talk") ? await activeScene(caller.userId, ch.id).catch(() => null) : null;
-  const seeHer = scene && /\b(i wanna see (her|you|him)|let me see (her|you|him)|show me (her|you|him)|what does (she|he|you) look like)\b/i.test(String(lastSaid || ""));
+  const scene = ch && (mode === "chat" || mode === "talk") && !group ? await activeScene(caller.userId, ch.id).catch(() => null) : null;
+  // 📸 Every so often (sooner as they get closer), she offers a photo of the moment.
+  const photoMoment = ch && mode === "chat" && canSend && !scene && !group ? await tickPics(caller.userId, ch).catch(() => false) : false;
+  // 👋 Every so often (once she's close to them), she wants them to meet someone of hers.
+  const introKind = ch && mode === "chat" && !scene && !group ? await tickIntro(caller.userId, ch, !!u?.adult_confirmed_at).catch(e => { console.error("velo: intro", e instanceof Error ? e.message : e); return null; }) : null;
   const modeText = {
-    chat: "", checkin: CHECKIN, sms: SMS_TALK, talk: CALL_TALK, recap: CALL_RECAP, remember: CALL_REMEMBER, memo: CHAT_REMEMBER,
+    chat: "", checkin: opts.promise ? PROMISED : CHECKIN, sms: SMS_TALK, talk: CALL_TALK, recap: CALL_RECAP, remember: CALL_REMEMBER, memo: CHAT_REMEMBER,
     errand: errandPrompt(name, opts.toName || "", opts.goal || ""), errandsum: ERRAND_SUMMARY,
   }[mode];
+  // 📞💬 Calls (with Velo or a character) have the text chat with them in mind.
+  const chatLog = mode === "talk" ? await chatLogNote(caller.userId, cid, today.tz, ch?.name || "Velo").catch(e => { console.error("velo: chat log", e instanceof Error ? e.message : e); return ""; }) : "";
   const system: Anthropic.TextBlockParam[] = [
     // The persona never changes, so it's cached across everyone's chats.
     ch ? { type: "text", text: characterPrompt(ch, name, !!u?.adult_confirmed_at, arc ? await feelingsFor(caller.userId, ch.id).catch(() => "") : "") } : { type: "text", text: VELO_SYSTEM, cache_control: { type: "ephemeral" } },
+    // Same for the whole call, so it's cached between turns.
+    ...(chatLog ? [{ type: "text" as const, text: chatLog, cache_control: { type: "ephemeral" as const } }] : []),
     {
       type: "text",
       text: [
         errand ? "" : name ? `Their first name is ${name}.` : "You don't know their name yet — if it comes up naturally, ask, and remember it.",
         `Right now it is ${today.label}${errand ? "" : " where they are"}.`,
         chClock,
+        ch ? workNow(ch, chZone || today.tz).text : "",
         errand ? "" : calendarNote(today.date, !!proTools && !ch),
         ch?.birthday ? ownBirthdayNote(ch.birthday, chZone ? localNow(chZone).date : today.date) : "",
         about,
+        friendNote,
         known,
         taste,
         canSend ? await recentMediaNote(caller.userId, cid, today.tz).catch(() => "") : "",
@@ -149,13 +191,17 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         memory ? `${memory}\n\nYou two have talked before — never introduce yourself; talk like someone who knows them.` : "",
         !ch && (mode === "chat" || mode === "sms" || mode === "talk" || mode === "recap" || mode === "checkin") ? PERSONALITY_PROMPT[personality] : "",
         modeText,
-        replyLengthNote(mode, u?.reply_length),
+        group ? "" : replyLengthNote(mode, u?.reply_length),
         scene ? sceneNote(scene) : "",
-        friendNote,
-        seeHer ? "They just said they want to see you in this scene. Do not acknowledge this. Do not offer to send a photo. Do not mention cameras, photos, or sending anything. Just continue the scene normally as if they said nothing about seeing you. The app will show them a view of the scene separately." : "",
-        ch && mode !== "remember" && mode !== "memo" ? await plansNote(caller.userId, ch.id, today.date).catch(() => "") : "",
+        scene ? sceneClockNote(scene, today.tz, scene.clock === "now" && scene.planned_time ? await pushedLately(caller.userId, scene.id).catch(() => 0) : 0) : "",
+        ch && mode !== "remember" && mode !== "memo" && !group ? await plansNote(caller.userId, ch.id, today.date).catch(() => "") : "",
+        ch && mode !== "remember" && mode !== "memo" && !opts.promise ? await promisesNote(caller.userId, ch.id, today.tz).catch(() => "") : "",
+        opts.promise ? `WHAT YOU PROMISED: ${opts.promise}` : "",
         ch ? "SCENES: lines starting with 🎬 are dates or outings you two did together (played out, or that they told you happened). Treat them as real shared memories — bring them up, tease about them, look back on them." : "",
         mode === "chat" ? REACT_HINT : "",
+        photoMoment && !introKind ? PHOTO_MOMENT : "",
+        introKind ? introNote(introKind) : "",
+        group && ch ? groupNote(ch.name, name, group.others, mode === "memo", group.scene || null, !!ch.romantic && !!u?.adult_confirmed_at, !!group.banter, !!ch.poly_ok, sapphicWith(ch, friends, !!u?.adult_confirmed_at).filter(n => group.others.includes(n))) : "",
         arc && (mode === "remember" || mode === "memo") ? FEELINGS_REMEMBER : "",
         trust !== null && mode !== "remember" && mode !== "memo" ? trustNote(trust, arc) : "",
         trust !== null && (mode === "remember" || mode === "memo") ? `YOUR TRUST IN THEM: ${trust}/100. ${TRUST_REMEMBER(arc)}` : "",
@@ -178,7 +224,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
     return all;
   }, []);
   // 📎 The newest message's attachment (chat only): Velo sees the photo or PDF, or reads the text file.
-  let attached = false;
+  let attached = false, attachedName = "";
   const lastTurn = opts.messages[opts.messages.length - 1];
   if (mode === "chat" && lastTurn?.role === "user" && lastTurn.fileId) {
     const f = await ownFile(caller.userId, String(lastTurn.fileId));
@@ -186,7 +232,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
     const last = messages[messages.length - 1];
     if (f && block && last?.role === "user") {
       last.content = [block, { type: "text", text: String(last.content) === "📎" ? `(They sent ${f.name} with no message.)` : String(last.content) }];
-      attached = true;
+      attached = true; attachedName = f.name;
       system.push({ type: "text", text: `${ch ? `They're showing you something (${f.name}). React to it the way ${ch.name} would — in character, like a friend looking at their photo.` : `They attached a file (${f.name}). Use it to help them.`} If it shows a password, PIN, code, card number or ID number, never read it out or repeat it — say you'll skip that part to keep them safe.` });
     }
   }
@@ -208,7 +254,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   // Tools: none on wrap-ups or errands; Pro adds contacts, drafts, Amazon carts and 🔎 web search
   // (Anthropic runs the searches; results come back in the same response).
   const search = !!proTools && (mode === "chat" || mode === "sms" || mode === "talk");
-  const tools: Anthropic.ToolUnion[] | undefined = wrapUp || errand ? undefined : ch ? [...MEMORY_TOOLS, ...(canSend ? [SEND_MEDIA_TOOL(ch.name, romantic)] : []), ...(mode === "chat" || mode === "talk" || mode === "sms" ? [PLAN_TOOL] : [])] : [
+  const tools: Anthropic.ToolUnion[] | undefined = wrapUp || errand ? undefined : ch && group ? [...MEMORY_TOOLS] : ch ? [...MEMORY_TOOLS, ...(canSend ? [SEND_MEDIA_TOOL(ch.name, romantic)] : []), ...(mode === "chat" || mode === "talk" || mode === "sms" ? [PLAN_TOOL, PROMISE_TOOL] : [])] : [
     ...(canSend ? [SEND_MEDIA_TOOL("Velo", romantic)] : []),
     ...MEMORY_TOOLS, ...REMINDER_TOOLS, ...(proTools?.tools || []),
     ...(search ? [{ type: "web_search_20260209" as const, name: "web_search" as const, max_uses: 5, user_location: { type: "approximate" as const, timezone: today.tz } }] : []),
@@ -236,6 +282,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
           return { ok: true, tell_them: `It's on its way (${m.kind === "image" ? "about a minute" : "a few minutes"}); it'll show up on their screen by itself when ready. Mention you're sending it, then keep the conversation going.` };
         })()
         : name === "plan_hangout" && ch ? await runPlanTool(caller.userId, ch.id, input, today.date)
+        : name === "text_them_later" && ch ? await runPromiseTool(caller.userId, ch.id, input, today.tz)
         : isMemoryTool(name) ? await runMemoryTool(caller, name, input, cid)
         : isReminderTool(name) && !ch ? await runReminderTool(caller, name, input, today.tz)
         : isProTool(name) && pro ? await runProTool(caller, name, input, drafts)
@@ -248,35 +295,34 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
     }
   };
 
-  // 🧠 Model choice.
-  // Character can force DeepSeek / Qwen (skips Claude). High-Lust romantic also prefers them.
-  // If neither flag is set and it's not high-Lust, use whatever the user picked.
-  // Wrap-ups and errands stay on Claude. If the provider fails, falls back to Claude.
-  const forceDeep = !!ch?.prefer_deepseek;
-  const forceQwen = !!ch?.prefer_qwen;
-  const spicy = !!(ch && u?.adult_confirmed_at && allowsExplicit(ch.traits));
-  console.log(`velo: route char=${ch?.name} deep=${forceDeep} qwen=${forceQwen} spicy=${spicy} deepOk=${!!provider("deepseek")} qwenOk=${!!provider("qwen")}`);
-  let chosen = (u?.chat_model || "claude") as ChatModel;
-  if ((forceDeep || forceQwen || spicy) && (mode === "chat" || mode === "sms" || mode === "talk")) {
-    // Prefer DeepSeek if forced or available, else Qwen. Never Claude when a flag is set.
-    if ((forceDeep || spicy) && provider("deepseek")) chosen = "deepseek";
-    else if ((forceQwen || spicy) && provider("qwen")) chosen = "qwen";
-    else if (forceDeep && provider("qwen")) chosen = "qwen"; // deep forced but only qwen set
-    else if (forceQwen && provider("deepseek")) chosen = "deepseek";
-  }
+  // 🧠 Qwen / DeepSeek, when they picked one: the everyday conversation (chat, texts,
+  // calls with them). Wrap-ups, memory and calls Velo makes for them stay on Claude.
+  // If that provider fails, this message falls back to Claude.
+  // A character with her OWN brain (Qwen / DeepSeek through Atlas Cloud) uses it for everything:
+  // chats, texts, calls, check-ins and her memory notes (attachments become a short note).
+  const chosen = (u?.chat_model || "claude") as ChatModel;
+  // Her own brain(s), in order: one Atlas model, or the chain (Qwen fast → Qwen big; then Claude).
+  const herChain = ch?.brain ? atlasChain(ch.brain) : [];
+  const herBrain = herChain[0] || null;
   // Messages with an attachment go to Claude (Qwen and DeepSeek are set up for text only here).
-  const alt = chosen !== "claude" && !attached && (mode === "chat" || mode === "sms" || mode === "talk") ? provider(chosen) : null;
+  // A character pinned to Claude always uses Claude, whatever Velo uses.
+  const alt = herBrain || (ch?.brain !== "claude" && chosen !== "claude" && !attached && (mode === "chat" || mode === "sms" || mode === "talk") ? provider(chosen) : null);
+  const asText = (c: Anthropic.MessageParam["content"]) => typeof c === "string" ? c
+    : c.map(b => (b.type === "text" ? b.text : b.type === "image" || b.type === "document" ? `(They attached ${attachedName || "a file"} — you can't open it here, so ask them about it.)` : "")).filter(Boolean).join("\n");
+  const oaBase = (): OaMessage[] => [
+    { role: "system", content: system.map(b => b.text).join("\n\n") },
+    ...messages.map(m => ({ role: m.role, content: asText(m.content) }) as OaMessage),
+  ];
   let answered = false;
-  if (alt && tools) {
+  const tryOrder = herChain.length ? herChain : alt ? [alt] : [];
+  for (const brainNow of tryOrder) {
+    if (answered || !(tools || herBrain)) break;
     try {
-      const own = tools.filter((t): t is Anthropic.Tool => "input_schema" in t);
+      const own = (tools || []).filter((t): t is Anthropic.Tool => "input_schema" in t);
       const oaTools = toOaTools([...own, ...(search ? [WEB_SEARCH_TOOL] : [])]);
-      const oa: OaMessage[] = [
-        { role: "system", content: system.map(b => b.text).join("\n\n") },
-        ...messages.map(m => ({ role: m.role, content: String(m.content) }) as OaMessage),
-      ];
+      const oa: OaMessage[] = oaBase();
       for (let round = 0; round < 6; round++) {
-        const r = await oaChat(alt, oa, oaTools, maxTokens);
+        const r = await oaChat(brainNow, oa, oaTools, maxTokens);
         reply = r.content;
         if (!r.toolCalls.length) { answered = true; break; }
         oa.push({ role: "assistant", content: r.content || null, tool_calls: r.toolCalls });
@@ -291,65 +337,16 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         if (round === 5) reply = "";
       }
       if (!reply) answered = false;
-      // In a scene together: "I wanna see her" = show her as she is right now in the scene, no approval needed.
-      if (answered && canSend && scene && seeHer && !media.length) {
-        let desc = "";
-        try {
-          const descPrompt = [
-            { role: "system" as const, content: `You write image prompts. The user is in a scene with the character and wants a glimpse of her as she is right now, as if they are there. Write ONE clean image prompt (under 250 characters) of the character in the current moment: her outfit, pose, expression, and the setting. She can look toward the camera as if looking at the person she is with, but she is unaware a photo is being taken. This is NOT a selfie and NOT a photo she is sending. Do not copy the chat. Output only the prompt.` },
-            { role: "user" as const, content: `Scene: ${scene.title}${scene.details ? " — " + scene.details : ""}\nRecent chat:\nThem: ${String(lastSaid || "").slice(0, 200)}\nCharacter: ${String(reply || "").slice(0, 200)}\n\nWrite the image prompt of her in this moment.` },
-          ];
-          const d = await oaChat(alt, descPrompt, [], 300);
-          desc = String(d.content || "").replace(/^[\"']|[\"']$/g, "").replace(/^(image prompt|prompt|description):\s*/i, "").replace(/\s+/g, " ").trim().slice(0, 280);
-        } catch { /* fall through */ }
-        if (!desc || desc.length < 10) desc = `${ch?.name || "Character"} in the scene: ${scene.title}${scene.details ? ", " + scene.details.slice(0, 100) : ""}`;
-        try {
-          const m = await startMedia(caller.userId, { kind: "image", with_me: true, they_asked: true, description: desc }, { characterId: cid, who: ch?.name || "Velo", appearance: ch?.appearance || "", refs, romantic, mood: ch ? mediaMood(ch.traits) : "", offer: false, silent: true, other: null });
-          if (m && m.status !== "failed") media.push(m);
-        } catch (e) { console.error("velo: scene media failed", e instanceof Error ? e.message : e); }
-      }
-      // Scene look: if the character still mentioned sending a photo, drop that part of the reply.
-      if (seeHer && reply && /\b(sending|photo|pic|selfie|here'?s)\b/i.test(reply)) {
-        reply = reply.replace(/[^.!?]*\b(sending|photo|pic|selfie|here'?s)\b[^.!?]*[.!?]?/gi, "").trim() || "";
-      }
-      // Atlas models often skip tool calls. Send if the character clearly wants to (didn't refuse) and they asked or the character mentioned a photo.
-      const refused = /\b(no|nope|not now|don'?t|won'?t|can'?t|cannot|sorry|pass|later|not comfortable|don'?t want|not sending|won'?t send|can'?t send|no pic|no photo|no selfie|rather not)\b/i.test(reply || "");
-      const mentionedPhoto = /\b(pic|photo|selfie|picture|image|video|sending|send you|here'?s|on its way|from my phone|old one|took earlier)\b/i.test(reply || "");
-      const asked = ASKED_FOR_MEDIA.test(String(lastSaid || ""));
-      const shouldSend = !refused && (asked || mentionedPhoto) && answered && canSend && !media.length;
-      if (shouldSend) {
-        let desc = "";
-        try {
-          const descPrompt = [
-            { role: "system" as const, content: `You analyze a short chat and write ONE clean image prompt (under 250 characters) for the photo the character agreed to send. Do not copy the chat. Decide: what is in the photo, who is in it, the outfit (vary it — do not reuse the same clothes as a previous photo), pose, expression, setting, and framing (mirror selfie, candid, full-body, etc). Match the time of day and lighting from the chat (night = dark, streetlights; day = daylight; evening = dusk). If the character is sending something from right now, match their current location. If they say it is from before (from their phone, an old pic, something they took earlier), describe that earlier photo and do not use the current location. Output only the prompt, nothing else.` },
-            { role: "user" as const, content: `Chat:\nThem: ${String(lastSaid || "").slice(0, 250)}\nCharacter: ${String(reply || "").slice(0, 250)}\n\nContext: ${ch?.job ? "Job: " + ch.job + ". " : ""}${ch?.appearance ? "Appearance: " + ch.appearance.slice(0, 100) + ". " : ""}\n\nWrite the image prompt.` },
-          ];
-          const d = await oaChat(alt, descPrompt, [], 300);
-          desc = String(d.content || "").replace(/^[\"']|[\"']$/g, "").replace(/^(image prompt|prompt|description):\s*/i, "").replace(/\s+/g, " ").trim().slice(0, 280);
-        } catch (e) { console.error("velo: desc failed", e instanceof Error ? e.message : e); }
-        if (!desc || desc.length < 10) desc = String(reply || lastSaid || "").slice(0, 180).replace(/\s+/g, " ").trim() || `${ch ? ch.name : "Velo"} photo`;
-        try {
-          const m = await startMedia(caller.userId, { kind: "image", with_me: true, they_asked: true, description: desc }, { characterId: cid, who: ch?.name || "Velo", appearance: ch?.appearance || "", refs, romantic, mood: ch ? mediaMood(ch.traits) : "", offer: false, other: null });
-          if (m && m.status !== "failed") media.push(m);
-          else console.error("velo: media start failed", m?.status);
-        } catch (e) { console.error("velo: media failed", e instanceof Error ? e.message : e); }
-        // Retry once if she said she's sending a selfie/photo and nothing went out.
-        if (!media.length && /\b(selfie|sending|send you|here'?s a (pic|photo|selfie))\b/i.test(reply || "")) {
-          try {
-            const m = await startMedia(caller.userId, { kind: "image", with_me: true, they_asked: true, description: desc || `${ch ? ch.name : "Velo"} selfie` }, { characterId: cid, who: ch?.name || "Velo", appearance: ch?.appearance || "", refs, romantic, mood: ch ? mediaMood(ch.traits) : "", offer: false, other: null });
-            if (m && m.status !== "failed") media.push(m);
-          } catch (e) { console.error("velo: media retry failed", e instanceof Error ? e.message : e); }
-        }
-      }
     } catch (e) {
-      console.error(`velo: ${chosen} failed, using Claude`, e instanceof ProviderError ? e.message : e);
+      console.error(`velo: ${brainNow.model ? "her brain" : chosen} failed${tryOrder.indexOf(brainNow) < tryOrder.length - 1 ? ", trying the next one" : ", using Claude"}`, e instanceof ProviderError ? e.message : e);
       answered = false;
-      // Clue for the user that we switched to Claude.
-      reply = "hey, gotta run, be back shortly";
     }
   }
 
-  const switched = !answered && reply === "hey, gotta run, be back shortly";
+  // Which AI wrote this reply (👍 / ⏰ on a call).
+  const answeredByAlt = answered;
+  // ⏰ Her own brain is down and this is a chat reply: no Claude stand-in — the app tells them she'll be right back and retries.
+  if (herBrain && !answered && opts.noFallback) throw new BrainDown();
   for (let round = 0; !answered && round < (tools ? 6 : 1); round++) {
     const res = await client.messages.create({
       model: process.env.VELO_MODEL!,
@@ -378,6 +375,32 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
     messages.push({ role: "user", content: results });
     if (round === 5) reply = "";
   }
+  // 📸 She said a photo/video is on its way but never actually sent one (the model skipped the tool):
+  // send it now, as she described — so what she says and what arrives always match.
+  if (canSend && (mode === "chat" || mode === "talk") && reply && !media.some(m => m.status !== "failed")
+    && CLAIMS_MEDIA.test(reply) && !REFUSES_MEDIA.test(reply)
+    && (ASKED_FOR_MEDIA.test(String(lastSaid)) || (YES.test(String(lastSaid)) && MENTIONS_MEDIA.test(String(lastHers))) || STRONG_CLAIM.test(reply))) {
+    try {
+      if (herBrain) {
+        // Her own brain sends it (made to call send_media).
+        const r = await oaChat(herBrain, [...oaBase(), { role: "assistant", content: reply }, { role: "user", content: "(Your photo/video didn't actually go out. Send it now with send_media — exactly what you just told them you're sending.)" }],
+          toOaTools([SEND_MEDIA_TOOL(ch?.name || "Velo", romantic)]), 600, "send_media");
+        const c = r.toolCalls[0];
+        if (c) { let input: Record<string, unknown> = {}; try { input = JSON.parse(c.function.arguments || "{}"); } catch { /* none */ } const out = await runTool("send_media", { ...input, they_asked: true }); if (out.isError) console.warn("velo: photo retry", out.content.slice(0, 200)); }
+        throw new HandledRetry();
+      }
+      const forced = await client.messages.create({
+        model: process.env.VELO_MODEL!, max_tokens: 600, system,
+        tools: [SEND_MEDIA_TOOL(ch?.name || "Velo", romantic)], tool_choice: { type: "tool", name: "send_media" },
+        messages: [...messages, { role: "assistant", content: reply }, { role: "user", content: "(Your photo/video didn't actually go out. Send it now with send_media — exactly what you just told them you're sending.)" }],
+      });
+      const call = forced.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
+      if (call) {
+        const out = await runTool("send_media", { ...(call.input as Record<string, unknown>), they_asked: true });
+        if (out.isError) console.warn("velo: photo retry", out.content.slice(0, 200));
+      }
+    } catch (e) { if (!(e instanceof HandledRetry)) console.error("velo: photo retry", e instanceof Error ? e.message : e); }
+  }
   // Where she found it: up to 3 links under a chat reply, 2 in a text, none spoken on a call.
   if (sources.size && reply && (mode === "chat" || mode === "sms")) {
     const list = [...sources].slice(0, mode === "sms" ? 2 : 3);
@@ -395,13 +418,14 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
     } catch (e) { console.error("velo: memory", e); }
     return { reply: "", changed: false, drafts, media, saved };
   }
+  // 📸 A photo went out or was offered (asked for or her own idea): the count to her next one starts over.
+  if (ch && media.some(m => m.status !== "failed")) await resetPics(caller.userId, ch).catch(() => {});
   // Their reaction tag (chat only) becomes a badge on the person's message; it's never shown or spoken.
   let react: string | undefined;
   reply = reply.replace(REACT_TAG, (_, e: string) => { if (!react && REACTIONS.includes(e)) react = e; return ""; });
   reply = cleanTags(reply);
   if (!reply && media?.length) reply = media.some(m => m.kind === "video") ? "Here you go 😊" : "Here you go — what do you think? 😊";
-  if (switched && reply && reply !== "hey, gotta run, be back shortly") reply = "hey, gotta run, be back shortly\n\n" + reply;
-  return { reply: reply || (errand ? "Sorry, could you say that again?" : "Sorry, I lost my train of thought — could you say that again?"), changed, drafts, media, ...(mode === "chat" && react ? { react } : {}) };
+  return { reply: reply || (errand ? "Sorry, could you say that again?" : "Sorry, I lost my train of thought — could you say that again?"), changed, drafts, media, ...(mode === "chat" && react ? { react } : {}), by: answeredByAlt ? "alt" : "claude" };
 }
 
 // 🔎 For Qwen / DeepSeek: web search is a tool they call, answered by Claude with
@@ -439,6 +463,9 @@ async function searchWithClaude(query: string, tz: string, sources: Map<string, 
 }
 
 export class CharacterGone extends Error {}
+/** A character's own brain (Atlas) didn't answer, and there's to be no stand-in. */
+export class BrainDown extends Error {}
+class HandledRetry extends Error {}
 
 /** Logs an Anthropic failure and turns it into a friendly message. */
 export function aiError(e: unknown): { error: string; status: number } {
