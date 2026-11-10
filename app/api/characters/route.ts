@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
     const action = String(b.action || "");
     const admin = await isAdmin(me);
 
-    if (action === "list") return NextResponse.json({ characters: await listCharacters(), portraits: portraitsReady(), admin, brains: admin ? availableBrains() : [], brainModels: admin ? brainList() : [] });
+    if (action === "list") return NextResponse.json({ characters: await listCharacters(me), portraits: portraitsReady(), admin, brains: admin ? availableBrains() : [], brainModels: admin ? brainList() : [] });
     if (action === "link.suggest") {
       const ch = admin ? await getCharacter(id) : null;
       return NextResponse.json({ suggest: ch ? await linkSuggestions(ch, clean(b.text, 2000), me).catch(() => []) : [] });
@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
         if (!allow(`chars:${me}`, [{ ms: 60_000, max: 10 }, { ms: 86_400_000, max: 200 }])) return bad("That's a lot of changes — try again in a bit.", 429);
         if (action === "update" && !(await getCharacter(id))) return bad("That character wasn't found.");
         if (action === "create") {
-          const [{ n }] = await sql()`select count(*)::int as n from chat_characters`;
+          const [{ n }] = await sql()`select count(*)::int as n from chat_characters where owner_id is null`;
           if (n >= MAX_CHARACTERS) return bad(`There can be up to ${MAX_CHARACTERS} characters — delete one first.`);
         }
         const romantic = b.romantic === true;

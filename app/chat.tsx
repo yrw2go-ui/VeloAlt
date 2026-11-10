@@ -39,7 +39,7 @@ const SUGGESTIONS = ["Plan my day", "Remind me to call Mom tomorrow at 6pm", "I 
 /** A message to drop into one chat (a call recap): cid null = Velo's chat. */
 export type ChatAdd = { msg: ChatMsg; cid: string | null };
 
-export default function Chat({ userId, name, onChanged, added, onAdded, character, adult = false, onAdult, onHistory }: { userId: string; name: string; onChanged: () => void; added: ChatAdd | null; onAdded?: () => void; character?: ChatWith | null; adult?: boolean; onAdult?: () => void; onHistory?: (m: { role: "user" | "assistant"; content: string }[]) => void }) {
+export default function Chat({ userId, name, onChanged, added, onAdded, character, adult = false, onAdult, onHistory, onNewCharacter }: { userId: string; name: string; onChanged: () => void; added: ChatAdd | null; onAdded?: () => void; character?: ChatWith | null; adult?: boolean; onAdult?: () => void; onHistory?: (m: { role: "user" | "assistant"; content: string }[]) => void; onNewCharacter?: (c: { id: string; name: string; portrait_url: string | null }) => void }) {
   const cid = character?.id || null;
   const thread = cid ? { characterId: cid } : {};
   const who = character?.name || "Velo";
@@ -142,6 +142,29 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     if (myId) { mine.id = myId; setMsgs(list => (list || []).map(x => (x === mine ? { ...x, id: myId } : x))); }
     if (cid && t) checkLinks(t);
     await respond(next, myId);
+  };
+
+  // 👋 Someone she wants them to meet: the card shows once her headshot is ready (checked every 15s).
+  type Intro = { id: string; name: string; age: number | null; kind: string; introducer: string; about: string; portrait_url: string | null };
+  const [intro, setIntro] = useState<Intro | null>(null);
+  const [introBusy, setIntroBusy] = useState(false);
+  useEffect(() => {
+    if (!cid) return;
+    let stop = false;
+    const look = () => data<{ intros: Intro[] }>("intros.ready", { characterId: cid }).then(r => { if (!stop) setIntro(r.intros[0] || null); }).catch(() => {});
+    look();
+    const t = setInterval(look, 15_000);
+    return () => { stop = true; clearInterval(t); };
+  }, [cid]);
+  const answerIntro = async (yes: boolean) => {
+    if (!intro) return;
+    setIntroBusy(true);
+    try {
+      if (yes) { const r = await data<{ character: { id: string; name: string; portrait_url: string | null } }>("intros.accept", { id: intro.id }); onNewCharacter?.(r.character); }
+      else await data("intros.decline", { id: intro.id });
+      setIntro(null);
+    } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't do that."); }
+    setIntroBusy(false);
   };
 
   // 👭 They mentioned someone who knows her, but she doesn't know them back: offer to link that way too (admins).
@@ -370,6 +393,23 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
         )}
         {busy && <div className="row">{face(28)}<div className="muted" style={{ fontSize: 14 }}>{who} is typing…</div></div>}
         {err && <div style={{ color: "var(--bad)", fontSize: 14 }}>⚠️ {err}</div>}
+        {intro && character && (
+          <div className="card" data-testid="intro-card" style={{ display: "flex", gap: 12, alignItems: "center", border: "1px solid var(--accent)", borderRadius: 14, padding: 12 }}>
+            {intro.portrait_url
+              // eslint-disable-next-line @next/next/no-img-element
+              ? <img src={intro.portrait_url} alt={intro.name} style={{ width: 84, height: 84, borderRadius: 12, objectFit: "cover", objectPosition: "top", flexShrink: 0 }} />
+              : null}
+            <div style={{ flex: 1, minWidth: 0, display: "grid", gap: 4 }}>
+              <div style={{ fontSize: 13 }} className="muted">👋 {intro.introducer} wants you to meet her {intro.kind}</div>
+              <div style={{ fontWeight: 800, fontSize: 16 }}>{intro.name}{intro.age ? `, ${intro.age}` : ""}</div>
+              {intro.about && <div className="muted" style={{ fontSize: 12 }}>{intro.about}</div>}
+              <div className="row" style={{ gap: 8, marginTop: 4 }}>
+                <button onClick={() => answerIntro(true)} disabled={introBusy} data-testid="intro-yes">Meet her</button>
+                <button className="ghost" onClick={() => answerIntro(false)} disabled={introBusy} data-testid="intro-no">Not now</button>
+              </div>
+            </div>
+          </div>
+        )}
         {linkAsk && character && (
           <div className="card" data-testid="link-ask" style={{ display: "grid", gap: 8, border: "1px solid var(--accent)", borderRadius: 12, padding: 12, fontSize: 14 }}>
             <div>👭 <b>{linkAsk.name}</b> knows {character.name}, but {character.name} doesn&apos;t know {linkAsk.name} yet. Link them so {character.name} knows {linkAsk.name} too? Check how they&apos;re related first.</div>

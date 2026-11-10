@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import { askVelo, CharacterGone, BrainDown, aiReady, aiError, type Mode, type Turn } from "../../lib/brain";
-import { getCharacter } from "../../lib/characters";
+import { getCharacterFor } from "../../lib/characters";
 import { sql } from "../../lib/db";
 import { holdsOnWhenDown } from "../../lib/models";
 import { mediaNote } from "../../lib/media";
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
     if (!messages.length) return NextResponse.json({ error: "No messages provided" }, { status: 400 });
 
     // 🎭 A character's chat or call, with that character's own memory of them.
-    const character = body.characterId ? await getCharacter(String(body.characterId)) : null;
+    const character = body.characterId ? await getCharacterFor(caller.userId, String(body.characterId)) : null;
     if (body.characterId && !character) throw new CharacterGone();
     // ⏰ A chat with a character on her own brain: if it's down, no stand-in (see BrainDown below).
     const noFallback = mode === "chat" && holdsOnWhenDown(character?.brain);

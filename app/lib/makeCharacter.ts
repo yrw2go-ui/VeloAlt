@@ -7,14 +7,14 @@ import { cleanTraits, TRAITS } from "./traits";
 import { CHARACTER_VOICES } from "./voices";
 import { scrub } from "./secrets";
 
-export type Hints = { name?: string; vibe?: string; job?: string; romantic?: boolean; male?: boolean };
+export type Hints = { name?: string; vibe?: string; job?: string; romantic?: boolean; male?: boolean; avoidNames?: string[] };
 const str = (v: unknown, n: number) => scrub(String(v ?? "").replace(/\s+/g, " ").trim()).slice(0, n);
 
 export async function makeCharacter(h: Hints) {
   const kind = h.male ? "male" : "female";
   const sys = `You invent ONE original character for a companion chat app. Make them feel like a real, specific person with a life of their own — not generic. Use the hints if given; invent everything else, varied and surprising (different backgrounds, cities, ages 21–45, looks, jobs, quirks). A ${kind} adult${h.romantic ? " — romance with the user is possible (PG-13), so give them a believable romance arc that starts from who they are, not instant love" : " — friendly and platonic"}. Never a real or famous person. Nothing sexual or explicit.
 Reply with ONLY a JSON object with these keys:
-"name" (first name), "personality" (2–4 sentences: how they talk and act), "backstory" (3–5 sentences: where they're from, what shaped them, what they care about), "relation" (who they are to the user, e.g. "a new neighbor you keep running into"), "appearance" (one detailed sentence for a portrait: age, hair, eyes, build, style — no clothing brands), "job" (specific, with a place), "casual_wear", "hobbies", "work_attire", "work_days" (array of day numbers 0=Sun…6=Sat), "work_start" ("HH:MM" 24h), "part_time" (true/false), "birthday" ("MM-DD"), ${h.romantic ? '"romance_arc" (2–3 sentences), ' : ""}"traits" (object of 0–10 numbers for: ${TRAITS.map(t => t.key).join(", ")}; suggestive at most ${h.romantic ? 4 : 1}, language at most 3).`;
+"name" (first name${h.avoidNames?.length ? `, not ${h.avoidNames.slice(0, 40).join(", ")}` : ""}), "age" (a number), "personality" (2–4 sentences: how they talk and act), "backstory" (3–5 sentences: where they're from, what shaped them, what they care about), "relation" (who they are to the user, e.g. "a new neighbor you keep running into"), "appearance" (one detailed sentence for a portrait: age, hair, eyes, build, style — no clothing brands), "job" (specific, with a place), "casual_wear", "hobbies", "work_attire", "work_days" (array of day numbers 0=Sun…6=Sat), "work_start" ("HH:MM" 24h), "part_time" (true/false), "birthday" ("MM-DD"), ${h.romantic ? '"romance_arc" (2–3 sentences), ' : ""}"traits" (object of 0–10 numbers for: ${TRAITS.map(t => t.key).join(", ")}; suggestive at most ${h.romantic ? 4 : 1}, language at most 3).`;
   const user = `HINTS (optional — keep any that are given):\nName: ${str(h.name, 40) || "(you pick)"}\nVibe / personality: ${str(h.vibe, 300) || "(surprise me)"}\nJob: ${str(h.job, 120) || "(you pick)"}`;
   // Claude writes it; if Claude can't right now, an Atlas brain (Qwen / DeepSeek) does.
   const raw = await writeText(null, sys, user, 1600).catch(async e => {
@@ -41,5 +41,6 @@ Reply with ONLY a JSON object with these keys:
     work_days: [...new Set((Array.isArray(j.work_days) ? j.work_days : []).map(Number).filter(d => Number.isInteger(d) && d >= 0 && d <= 6))],
     work_start: start, work_end: end, part_time: part, birthday: bday, romantic: !!h.romantic, romance_arc: h.romantic ? str(j.romance_arc, 1500) : "",
     traits, voice: v.voiceId, voice_name: v.name, voice_kind: v.kind,
+    age: Number.isInteger(Number(j.age)) && Number(j.age) >= 21 && Number(j.age) <= 60 ? Number(j.age) : null,
   };
 }

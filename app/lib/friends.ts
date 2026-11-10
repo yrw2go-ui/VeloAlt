@@ -40,7 +40,8 @@ const BOND_KIND = { 1: "new acquaintance — you met through them in a group cha
 /** Everyone this character knows firsthand: her own links from the editor, @mentions in her own backstory,
  *  and (for this person) the characters she met in their group chats. */
 export async function friendsOf(ch: Pick<Character, "id" | "name" | "backstory">, userId?: string): Promise<Friend[]> {
-  const all = (await sql()`select id, name, personality, backstory, relation, appearance, job, casual_wear, hobbies, romantic, sapphic from chat_characters where id <> ${ch.id}`) as Omit<Friend, "kind" | "story">[];
+  const all = (await sql()`select id, name, personality, backstory, relation, appearance, job, casual_wear, hobbies, romantic, sapphic from chat_characters
+    where id <> ${ch.id} and (owner_id is null or owner_id = ${userId || null}::uuid)`) as Omit<Friend, "kind" | "story">[];
   const links = await sql()`select known_id, kind, story from chat_character_links where knower_id = ${ch.id}`;
   const byId = new Map<string, Friend>();
   for (const l of links) {
@@ -53,11 +54,13 @@ export async function friendsOf(ch: Pick<Character, "id" | "name" | "backstory">
     byId.set(o.id, f ? { ...f, story: f.story || m.sentence } : { ...o, kind: "", story: `From your own story: ${m.sentence}` });
   }
   if (userId) {
-    const bonds = await sql()`select case when a_id = ${ch.id} then b_id else a_id end as other, story, messages, occasions from chat_bonds
+    const bonds = await sql()`select case when a_id = ${ch.id} then b_id else a_id end as other, story, messages, occasions, kind from chat_bonds
       where user_id = ${userId} and (a_id = ${ch.id} or b_id = ${ch.id}) order by last_at desc limit 10`;
     for (const b of bonds) {
       const o = all.find(x => x.id === String(b.other));
       if (!o || byId.has(o.id)) continue;
+      // An introduction says how they're related (sisters, best friends…): they know each other well.
+      if (b.kind) { byId.set(o.id, { ...o, kind: String(b.kind), story: String(b.story || "") }); continue; }
       const level = bondLevel(Number(b.messages), Number(b.occasions));
       byId.set(o.id, { ...o, kind: BOND_KIND[level], story: String(b.story || ""), level });
     }
@@ -70,7 +73,7 @@ export async function friendsOf(ch: Pick<Character, "id" | "name" | "backstory">
 export async function linkSuggestions(ch: Character, text: string, userId?: string): Promise<{ id: string; name: string; kind: string; story: string }[]> {
   if (!text || text.length < 3) return [];
   const mine = new Set((await friendsOf(ch, userId)).map(f => f.id));
-  const others = (await sql()`select id, name, backstory from chat_characters where id <> ${ch.id}`) as { id: string; name: string; backstory: string }[];
+  const others = (await sql()`select id, name, backstory from chat_characters where id <> ${ch.id} and (owner_id is null or owner_id = ${userId || null}::uuid)`) as { id: string; name: string; backstory: string }[];
   const out: { id: string; name: string; kind: string; story: string }[] = [];
   for (const o of others) {
     const name = String(o.name).trim();

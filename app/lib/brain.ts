@@ -39,6 +39,7 @@ import { PLAN_TOOL, runPlanTool, plansNote } from "./plans";
 import { PROMISE_TOOL, runPromiseTool, promisesNote } from "./promises";
 import { chatLogNote } from "./chatlog";
 import { tickPics, resetPics, PHOTO_MOMENT } from "./momentPics";
+import { tickIntro, introNote } from "./intros";
 import { SEND_MEDIA_TOOL, startMedia, mediaReady, MediaError, tasteNote, recentMediaNote, type Media } from "./media";
 import { veloLook } from "./veloAvatars";
 
@@ -96,7 +97,7 @@ export interface AskResult { reply: string; changed: boolean; drafts: Draft[]; m
 // 😮 Reactions (shown as a little badge on their message, like a text-message tapback).
 import { REACTIONS as REACTION_LIST } from "./reactions";
 export const REACTIONS: string[] = [...REACTION_LIST];
-const REACT_HINT = `REACTIONS: they can react to your messages with ${REACTIONS.join(" ")} — notes like "(they reacted 🔥 to this)" tell you when they did. You can react to THEIR latest message (or the photo they sent) too, but only now and then — mostly when you really like or love it, or it surprises you: start your reply with [react:❤️] (one of ${REACTIONS.join(" ")}). 😏 is teasing or flirty, 😅 is awkward, and 🥵 / 🤤 only when romance is part of it (PG-13). It shows as a badge on their message; don't mention it. Most replies have no reaction.`;
+const REACT_HINT = `REACTIONS: they can react to your messages with ${REACTIONS.join(" ")} — notes like "(they reacted 🔥 to this)" tell you when they did. You can react to THEIR latest message (or the photo they sent) too, but only now and then — mostly when you really like or love it, or it surprises you: start your reply with [react:❤️] (one of ${REACTIONS.join(" ")}). 😏 is teasing or flirty, 😅 is awkward, 😴 is sleepy or tired (or something boring), and 🥵 / 🤤 only when romance is part of it (PG-13). It shows as a badge on their message; don't mention it. Most replies have no reaction.`;
 // "Sending you a pic", "here's a selfie", "snapping one now 📸" — and a refusal to tell them apart.
 const CLAIMS_MEDIA = /\b(send(ing)?|sent|here'?s|here you go|snapp(ing|ed)|taking|took|coming (your way|right up)|on (its|it's) way)\b[\s\S]{0,50}\b(pics?|pictures?|photos?|selfies?|videos?|vids?|clips?|snaps?|shots?)\b|📸|🤳/i;
 const STRONG_CLAIM = /\b(sending|sent|snapping|snapped|taking one|took one|coming (your way|right up))\b|📸|🤳/i;
@@ -159,6 +160,8 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   const scene = ch && (mode === "chat" || mode === "talk") && !group ? await activeScene(caller.userId, ch.id).catch(() => null) : null;
   // 📸 Every so often (sooner as they get closer), she offers a photo of the moment.
   const photoMoment = ch && mode === "chat" && canSend && !scene && !group ? await tickPics(caller.userId, ch).catch(() => false) : false;
+  // 👋 Every so often (once she's close to them), she wants them to meet someone of hers.
+  const introKind = ch && mode === "chat" && !scene && !group ? await tickIntro(caller.userId, ch, !!u?.adult_confirmed_at).catch(e => { console.error("velo: intro", e instanceof Error ? e.message : e); return null; }) : null;
   const modeText = {
     chat: "", checkin: opts.promise ? PROMISED : CHECKIN, sms: SMS_TALK, talk: CALL_TALK, recap: CALL_RECAP, remember: CALL_REMEMBER, memo: CHAT_REMEMBER,
     errand: errandPrompt(name, opts.toName || "", opts.goal || ""), errandsum: ERRAND_SUMMARY,
@@ -196,7 +199,8 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         opts.promise ? `WHAT YOU PROMISED: ${opts.promise}` : "",
         ch ? "SCENES: lines starting with 🎬 are dates or outings you two did together (played out, or that they told you happened). Treat them as real shared memories — bring them up, tease about them, look back on them." : "",
         mode === "chat" ? REACT_HINT : "",
-        photoMoment ? PHOTO_MOMENT : "",
+        photoMoment && !introKind ? PHOTO_MOMENT : "",
+        introKind ? introNote(introKind) : "",
         group && ch ? groupNote(ch.name, name, group.others, mode === "memo", group.scene || null, !!ch.romantic && !!u?.adult_confirmed_at, !!group.banter, !!ch.poly_ok, sapphicWith(ch, friends, !!u?.adult_confirmed_at).filter(n => group.others.includes(n))) : "",
         arc && (mode === "remember" || mode === "memo") ? FEELINGS_REMEMBER : "",
         trust !== null && mode !== "remember" && mode !== "memo" ? trustNote(trust, arc) : "",

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { duePlans, setPlanStatus } from "../../lib/plans";
+import { readyIntros, acceptIntro, declineIntro, IntroError } from "../../lib/intros";
 import { peekAt, draftPeek } from "../../lib/peek";
 import { cleanTags } from "../../lib/text";
 import { sql } from "../../lib/db";
@@ -14,7 +15,7 @@ import { BIO_SECTIONS, BIO_MAX } from "../../lib/bioSections";
 import { availableModels, CHAT_MODELS, MODEL_INFO, type ChatModel } from "../../lib/models";
 import { PERSONALITIES } from "../../lib/persona";
 import { deleteFile, ownFile } from "../../lib/files";
-import { getCharacter, trustFor, activeScene } from "../../lib/characters";
+import { getCharacterFor, trustFor, activeScene } from "../../lib/characters";
 import { US_STATES } from "../../lib/states";
 import { acceptMedia, declineMedia, mediaNote, checkMedia, sweepMedia, getMedia, listGallery, deleteMedia, VIDEO_MODELS, DEFAULT_VIDEO_MODEL, mediaReady, MediaError } from "../../lib/media";
 
@@ -93,7 +94,7 @@ export async function POST(req: NextRequest) {
 
       case "messages.list": {
         // Velo's chat (no characterId) or one character's chat.
-        const ch = b.characterId ? await getCharacter(String(b.characterId)) : null;
+        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
         if (b.characterId && !ch) return bad("That character wasn't found.");
         const rows = await db`select m.id, m.role, m.content, m.peek, m.reaction, m.their_reaction, f.id as file_id, f.url as file_url, f.thumb_url as file_thumb, f.name as file_name, f.content_type as file_type,
             md.id as media_id, md.kind as media_kind, md.status as media_status, md.reaction as media_reaction, md.description as media_description, md.kept as media_kept, mf.url as media_url, coalesce(mt.url, md.poster_url) as media_thumb
@@ -107,7 +108,7 @@ export async function POST(req: NextRequest) {
           ...(r.media_id ? { media: { id: r.media_id, kind: r.media_kind, status: r.media_status, url: r.media_status === "done" ? r.media_url : null, thumb: r.media_thumb || null, reaction: r.media_reaction || null, description: r.media_description || null, kept: !!r.media_kept } } : {}) })) });
       }
       case "messages.add": {
-        const ch = b.characterId ? await getCharacter(String(b.characterId)) : null;
+        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
         if (b.characterId && !ch) return bad("That character wasn't found.");
         const list = (Array.isArray(b.messages) ? b.messages : []).slice(0, 4)
           // ⏰ / 👍 markers (her brain down / back): shown to them, never to her (stored like a peek).
@@ -174,7 +175,7 @@ export async function POST(req: NextRequest) {
       case "scene.start":
       case "scene.past":
       case "scene.end": {
-        const ch = b.characterId ? await getCharacter(String(b.characterId)) : null;
+        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
         if (!ch) return bad("That character wasn't found.");
         const action = String(b.action);
         const cur = await activeScene(me, ch.id);
@@ -213,9 +214,22 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true, marker: await marker(`🎬 Something we did together: ${title}${details ? ` — ${details}` : ""}`, String(s.id)) });
       }
 
+      // 👋 Introductions from this character whose headshot is ready; meet her, or not now.
+      case "intros.ready": {
+        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
+        if (!ch) return bad("That character wasn't found.");
+        return NextResponse.json({ intros: await readyIntros(me, ch.id) });
+      }
+      case "intros.accept":
+        try { return NextResponse.json({ character: await acceptIntro(me, String(b.id || "")) }); }
+        catch (e) { if (e instanceof IntroError) return bad(e.message); throw e; }
+      case "intros.decline":
+        await declineIntro(me, String(b.id || ""));
+        return NextResponse.json({ ok: true });
+
       // 📅 Plans whose day has come, for a character's chat ("set the scene" card); skip one.
       case "plans.due": {
-        const ch = b.characterId ? await getCharacter(String(b.characterId)) : null;
+        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
         if (!ch) return bad("That character wasn't found.");
         const [u] = await db`select time_zone from users where id = ${me}`;
         const today = /^\d{4}-\d{2}-\d{2}$/.test(String(b.today || "")) ? String(b.today) : localDate(Date.now(), isValidTimeZone(u?.time_zone) ? u.time_zone : "America/Chicago");
@@ -228,7 +242,7 @@ export async function POST(req: NextRequest) {
       // 👀 A peek at the scene going on with a character: a picture of the moment, which she never knows about.
       case "scene.peek.draft":
       case "scene.peek": {
-        const ch = b.characterId ? await getCharacter(String(b.characterId)) : null;
+        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
         if (!ch) return bad("That character wasn't found.");
         const cur = await activeScene(me, ch.id);
         if (!cur) return bad("Peeks work during a scene you're playing out together.");
@@ -257,7 +271,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ unread: Object.fromEntries(rows.map(r => [r.character_id ? String(r.character_id) : "velo", Number(r.n)])) });
       }
       case "chats.read": {
-        const ch = b.characterId ? await getCharacter(String(b.characterId)) : null;
+        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
         if (b.characterId && !ch) return bad("That character wasn't found.");
         await db`insert into chat_reads (user_id, character_id, read_at) values (${me}, ${ch?.id || null}, now())
           on conflict (user_id, coalesce(character_id, '00000000-0000-0000-0000-000000000000'::uuid)) do update set read_at = now()`;
@@ -266,7 +280,7 @@ export async function POST(req: NextRequest) {
 
       // 🤝 How much this character trusts them (null when trust is off for that character).
       case "relationship.get": {
-        const ch = b.characterId ? await getCharacter(String(b.characterId)) : null;
+        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
         if (!ch) return bad("That character wasn't found.");
         return NextResponse.json({ trust: await trustFor(me, ch) });
       }
@@ -276,7 +290,7 @@ export async function POST(req: NextRequest) {
       }
       // 🖼️ Gallery for one chat (Velo's or a character's): newest first, 30 at a time.
       case "gallery.list": {
-        const ch = b.characterId ? await getCharacter(String(b.characterId)) : null;
+        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
         if (b.characterId && !ch) return bad("That character wasn't found.");
         const before = typeof b.before === "string" && !Number.isNaN(Date.parse(b.before)) ? b.before : null;
         return NextResponse.json({ items: await listGallery(me, ch?.id || null, before) });
