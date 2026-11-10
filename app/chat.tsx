@@ -14,7 +14,7 @@ import { CharacterFace, LinkBackForm } from "./characters";
 import { MediaView, ReactionBar, type Media } from "./media";
 
 /** Who this chat is with: Velo (no character) or one of their characters. */
-export type ChatWith = { id: string; name: string; portrait_url: string | null; romantic?: boolean };
+export type ChatWith = { id: string; name: string; portrait_url: string | null; romantic?: boolean; brain?: string };
 
 export type ChatFile = { id: string; url: string; thumb?: string | null; name: string; type: string };
 export type ChatMsg = { id?: string; role: "user" | "assistant"; content: string; peek?: boolean; draft?: Draft; file?: ChatFile; media?: Media; reaction?: string | null; theirReaction?: string | null };
@@ -171,7 +171,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     const me = retry ? turn.current : ++turn.current;
     if (!retry || retry === 1) { setBusy(true); setErr(""); }
     try {
-      const r = await api<{ reply: string; changed?: boolean; drafts?: Draft[]; media?: Media[]; react?: string; brainDown?: boolean }>("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name, ...thread, ...(myId ? { replyTo: myId } : {}), ...(retry ? { retry: true } : {}) });
+      const r = await api<{ reply: string; changed?: boolean; drafts?: Draft[]; media?: Media[]; react?: string; brainDown?: boolean; by?: "claude" | "alt" }>("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name, ...thread, ...(myId ? { replyTo: myId } : {}), ...(retry ? { retry: true } : {}) });
       if (turn.current !== me) return;
       if (r.brainDown) {
         setBusy(false);
@@ -185,6 +185,12 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
         return;
       }
       if (retry >= 2) await marker("back");
+      // 🔗 The Qwen chain: ⏰ when Claude had to take over, 👍 when Qwen's back (once per switch; she never sees them).
+      if (character?.brain === "qwen-chain" && r.by) {
+        const lastMark = [...msgsRef.current].reverse().find(x => x.peek && !x.media && (x.content === "⏰" || x.content === "👍"))?.content;
+        if (r.by === "claude" && lastMark !== "⏰") await marker("wait");
+        if (r.by === "alt" && lastMark === "⏰") await marker("back");
+      }
       if (r.react) setMsgs(list => (list || []).map(x => (x.id && x.id === myId ? { ...x, theirReaction: r.react } : x)));
       // 🎨 Photos/videos being made show up right under the reply and fill in when ready.
       const sent: ChatMsg[] = (r.media || []).filter(x => x.status !== "failed").map(media => ({ role: "assistant", content: mediaNote(media), media }));
