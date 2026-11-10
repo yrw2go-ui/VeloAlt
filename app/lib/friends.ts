@@ -4,11 +4,10 @@
 // personality) and can talk about her. What stays private: how close each one is with the person.
 // They only know the person and their friend are friends — unless the person tells them more
 // themselves (then it's in that character's own chat and memory). Family ties are known.
-import Anthropic from "@anthropic-ai/sdk";
+import { writeText } from "./llm";
 import { sql } from "./db";
 import type { Character } from "./characters";
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, authToken: null });
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const first = (s: string, n = 200) => (String(s || "").split(/(?<=[.!?])\s/)[0] || "").slice(0, n);
 export const FAMILY = /\b(sister|brother|sibling|twin|mom|mum|mother|dad|father|parent|daughter|son|cousin|aunt|auntie|uncle|niece|nephew|grand\w*|step\w*|half[- ]?(sister|brother)|\w+-in-law|family|related)\b/i;
@@ -29,11 +28,20 @@ export function atMentions(backstory: string, others: { id: string; name: string
 }
 export const plainAt = (s: string) => s.replace(/@(?=\p{L})/gu, "");
 
-type Friend = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; kind: string; story: string };
+type Friend = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; romantic?: boolean; sapphic?: boolean; kind: string; story: string; level?: 1 | 2 | 3 };
 
-/** Everyone this character knows firsthand: her own links from the editor, plus @mentions in her own backstory. */
-export async function friendsOf(ch: Pick<Character, "id" | "name" | "backstory">): Promise<Friend[]> {
-  const all = (await sql()`select id, name, personality, backstory, relation, appearance, job, casual_wear, hobbies from chat_characters where id <> ${ch.id}`) as Omit<Friend, "kind" | "story">[];
+/** 🤝 How close two characters who met in group chats are: 1 just met, 2 getting to know each other, 3 friends. */
+export function bondLevel(messages: number, occasions: number): 1 | 2 | 3 {
+  const score = messages + occasions * 8;
+  return score >= 90 ? 3 : score >= 30 ? 2 : 1;
+}
+const BOND_KIND = { 1: "new acquaintance — you met through them in a group chat, and you're only starting to get to know each other", 2: "friend you're getting to know — you've chatted a fair bit in their group chats", 3: "friend — you've gotten close from all the group chats with them" } as const;
+
+/** Everyone this character knows firsthand: her own links from the editor, @mentions in her own backstory,
+ *  and (for this person) the characters she met in their group chats. */
+export async function friendsOf(ch: Pick<Character, "id" | "name" | "backstory">, userId?: string): Promise<Friend[]> {
+  const all = (await sql()`select id, name, personality, backstory, relation, appearance, job, casual_wear, hobbies, romantic, sapphic from chat_characters
+    where id <> ${ch.id} and (owner_id is null or owner_id = ${userId || null}::uuid)`) as Omit<Friend, "kind" | "story">[];
   const links = await sql()`select known_id, kind, story from chat_character_links where knower_id = ${ch.id}`;
   const byId = new Map<string, Friend>();
   for (const l of links) {
@@ -45,15 +53,27 @@ export async function friendsOf(ch: Pick<Character, "id" | "name" | "backstory">
     const f = byId.get(o.id);
     byId.set(o.id, f ? { ...f, story: f.story || m.sentence } : { ...o, kind: "", story: `From your own story: ${m.sentence}` });
   }
-  return [...byId.values()].slice(0, 8);
+  if (userId) {
+    const bonds = await sql()`select case when a_id = ${ch.id} then b_id else a_id end as other, story, messages, occasions, kind from chat_bonds
+      where user_id = ${userId} and (a_id = ${ch.id} or b_id = ${ch.id}) order by last_at desc limit 10`;
+    for (const b of bonds) {
+      const o = all.find(x => x.id === String(b.other));
+      if (!o || byId.has(o.id)) continue;
+      // An introduction says how they're related (sisters, best friends…): they know each other well.
+      if (b.kind) { byId.set(o.id, { ...o, kind: String(b.kind), story: String(b.story || "") }); continue; }
+      const level = bondLevel(Number(b.messages), Number(b.occasions));
+      byId.set(o.id, { ...o, kind: BOND_KIND[level], story: String(b.story || ""), level });
+    }
+  }
+  return [...byId.values()].slice(0, 10);
 }
 
 /** 💬 They mentioned someone to this character who knows HER, but she doesn't know them back:
  *  the chance to link them in this direction too. */
-export async function linkSuggestions(ch: Character, text: string): Promise<{ id: string; name: string; kind: string; story: string }[]> {
+export async function linkSuggestions(ch: Character, text: string, userId?: string): Promise<{ id: string; name: string; kind: string; story: string }[]> {
   if (!text || text.length < 3) return [];
-  const mine = new Set((await friendsOf(ch)).map(f => f.id));
-  const others = (await sql()`select id, name, backstory from chat_characters where id <> ${ch.id}`) as { id: string; name: string; backstory: string }[];
+  const mine = new Set((await friendsOf(ch, userId)).map(f => f.id));
+  const others = (await sql()`select id, name, backstory from chat_characters where id <> ${ch.id} and (owner_id is null or owner_id = ${userId || null}::uuid)`) as { id: string; name: string; backstory: string }[];
   const out: { id: string; name: string; kind: string; story: string }[] = [];
   for (const o of others) {
     const name = String(o.name).trim();
@@ -67,37 +87,40 @@ export async function linkSuggestions(ch: Character, text: string): Promise<{ id
 }
 
 /** For the character's system prompt: who they know, and what they must not know. */
-export async function friendsNote(ch: Character, ownerName: string, known?: Friend[]): Promise<string> {
-  const friends = known || await friendsOf(ch);
+/** 🌈 Who something more could slowly develop with: both romantic, both "kinda lesbian leaning" (adults only). */
+export const sapphicWith = (ch: Pick<Character, "romantic" | "sapphic">, friends: Friend[], adult: boolean) =>
+  adult && ch.romantic && ch.sapphic ? friends.filter(f => f.romantic && f.sapphic).map(f => f.name) : [];
+
+export async function friendsNote(ch: Character, ownerName: string, known?: Friend[], userId?: string, adult = false): Promise<string> {
+  const friends = known || await friendsOf(ch, userId);
   if (!friends.length) return "";
   const them = ownerName || "the person you're talking with";
   const lines = friends.map(f => {
     const bits = [`${f.name}${f.kind ? ` — your ${f.kind}` : ""}.`];
     if (f.story) bits.push(f.story.endsWith(".") ? f.story : `${f.story}.`);
+    // Met in group chats: what you know of each other grows as you get closer.
+    const lv = f.level ?? 3;
     if (f.job) bits.push(`Works: ${first(f.job)}`);
-    if (f.hobbies) bits.push(`Into: ${first(f.hobbies)}`);
-    if (f.personality) bits.push(`Like: ${first(f.personality)}`);
+    if (f.hobbies && lv >= 2) bits.push(`Into: ${first(f.hobbies)}`);
+    if (f.personality && lv >= 2) bits.push(`Like: ${first(f.personality)}`);
     if (f.appearance) bits.push(`Looks: ${first(f.appearance)}`);
+    if (lv === 1) bits.push("You don't know much about her yet beyond what's come up in the group chat — be curious, ask her things.");
     // Only a family tie to the person is shared — never a romance or how close they are.
     bits.push(f.relation && FAMILY.test(f.relation) ? `Family to ${them}: ${first(f.relation, 160)}` : `${them} and ${f.name} are friends.`);
+    if (sapphicWith(ch, [f], adult).length) bits.push(`🌈 You're both a little curious: something more could slowly develop between you two (PG-13), though men stay your main attraction.`);
     return `- ${plainAt(bits.join(" "))}`;
   });
-  return `YOUR FRIENDS AND FAMILY (you know them yourself, firsthand — you hang out, text, have history and inside jokes):
+  return `YOUR FRIENDS AND FAMILY (you know them yourself, firsthand${friends.some(f => (f.level ?? 3) === 3) ? " — you hang out, text, have history and inside jokes" : ""}; new acquaintances only as well as you've gotten to know them):
 ${lines.join("\n")}
-Talk about them naturally when it fits: their news, plans you made together, stories, opinions, a little teasing. Make up small everyday details that fit who they are, but keep them consistent. You can share a pic of one of them (send_media with of_person) when it fits.
+Talk about them naturally when it fits: their news, plans you made together, stories, opinions, a little teasing. For real friends, make up small everyday details that fit who they are, but keep them consistent; for new acquaintances, only what you've actually learned. You can share a pic of a friend (send_media with of_person) when it fits.
 WHAT YOU DON'T KNOW: beyond friendship (and any family tie above), you do NOT know how close ${them} is with any of them — whether they're dating, flirting, how often they talk, or anything they've told each other. Never guess, hint or assume. Only if ${them} tells you about it themselves do you know it (just what they told you). They never tell you what ${them} says to them, and you never tell them what ${them} says to you.`;
 }
 
 /** A short "how they know each other", written when a link is made without one (no mention of the person). */
 export async function writeStory(a: Character, b: Character, kind: string): Promise<string> {
   try {
-    const res = await client.messages.create({
-      model: process.env.VELO_MODEL!,
-      max_tokens: 160,
-      system: "Write one or two short sentences (under 280 characters) about how these two characters know each other and what they like doing together, as their shared history. Use 'they'. Don't mention any user, romance with anyone, or real people. Output only the sentences.",
-      messages: [{ role: "user", content: `RELATIONSHIP: ${kind}\nA: ${a.name} — ${first(a.personality)} Job: ${a.job || "?"}. Hobbies: ${a.hobbies || "?"}\nB: ${b.name} — ${first(b.personality)} Job: ${b.job || "?"}. Hobbies: ${b.hobbies || "?"}` }],
-    });
-    return res.content.map(x => (x.type === "text" ? x.text : "")).join(" ").replace(/\s+/g, " ").trim().slice(0, 600);
+    const raw = await writeText(a.brain, "Write one or two short sentences (under 280 characters) about how these two characters know each other and what they like doing together, as their shared history. Use 'they'. Don't mention any user, romance with anyone, or real people. Output only the sentences.", `RELATIONSHIP: ${kind}\nA: ${a.name} — ${first(a.personality)} Job: ${a.job || "?"}. Hobbies: ${a.hobbies || "?"}\nB: ${b.name} — ${first(b.personality)} Job: ${b.job || "?"}. Hobbies: ${b.hobbies || "?"}`, 160);
+    return raw.replace(/\s+/g, " ").trim().slice(0, 600);
   } catch (e) {
     console.error("friends: story", e instanceof Error ? e.message : e);
     return "";
