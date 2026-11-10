@@ -58,8 +58,8 @@ export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdi
 }
 
 /** Create or edit a character, and generate their portrait. */
-export function CharacterEditor({ initial, draft, portraits, brains = [], brainModels = [], onClose, onSaved, onDeleted }: {
-  initial: Character | null; draft?: Partial<Character> | null; portraits: boolean; brains?: string[]; brainModels?: { id: string; model: string }[]; onClose: () => void; onSaved: (c: Character) => void; onDeleted: (id: string) => void;
+export function CharacterEditor({ initial, draft, portraits, brains = [], brainModels = [], onClose, onSaved, onDeleted, onDuplicated }: {
+  initial: Character | null; draft?: Partial<Character> | null; portraits: boolean; brains?: string[]; brainModels?: { id: string; model: string }[]; onClose: () => void; onSaved: (c: Character) => void; onDeleted: (id: string) => void; onDuplicated?: (c: Character) => void;
 }) {
   const [c, setC] = useState<Character | null>(initial);
   // ✨ A "make one for me" draft fills everything in; nothing is saved until Save.
@@ -89,6 +89,16 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
   const [zone, setZone] = useState(seed?.time_zone || "");
   const [bday, setBday] = useState(seed?.birthday || "");
   const [brain, setBrain] = useState(seed?.brain || "");
+  // 📄 Duplicate: a copy under a new name (her pictures stay with her).
+  const [copying, setCopying] = useState(false);
+  const [copyName, setCopyName] = useState("");
+  const [copyErr, setCopyErr] = useState("");
+  const duplicate = async () => {
+    if (!c) return;
+    setCopyErr("");
+    try { const r = await api<{ character: Character }>("/api/characters", { action: "duplicate", id: c.id, name: copyName.trim() }); setCopying(false); onDuplicated?.(r.character); }
+    catch (e) { setCopyErr(e instanceof Error ? e.message : "Couldn't copy her."); }
+  };
   // 🎚️ A preset sets the sliders (and the personality, if it's empty or still another preset's text).
   const applyPreset = (id: string) => {
     setPreset(id);
@@ -265,8 +275,20 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
         <div className="row" style={{ flexWrap: "wrap" }}>
           <button className="btn" disabled={busy || !name.trim() || (!dirty && !!c)} onClick={save}>{busy ? "…" : c ? "Save" : "Create"}</button>
           {portraits && <button className="ghost" disabled={busy || working || !name.trim() || !appearance.trim()} onClick={portrait} data-testid="character-portrait">{c?.portrait_url ? "🎨 New portrait" : "🎨 Generate portrait"}</button>}
+          {c && onDuplicated && <button className="ghost" disabled={busy || dirty} onClick={() => { setCopyName(`${c.name} 2`); setCopying(true); }} data-testid="duplicate-open" title={dirty ? "Save first" : "Make a copy under a new name"}>📄 Duplicate</button>}
           {c && <button className="ghost" disabled={busy} onClick={remove} style={{ marginLeft: "auto", color: "var(--bad)" }}>Delete</button>}
         </div>
+        {copying && c && (
+          <div className="card" data-testid="duplicate-sheet" style={{ display: "grid", gap: 8, padding: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>📄 Copy {c.name} — everything except her pictures</div>
+            <input value={copyName} onChange={e => { setCopyName(e.target.value); setCopyErr(""); }} onKeyDown={e => { if (e.key === "Enter" && copyName.trim()) duplicate(); }} maxLength={60} autoFocus aria-label="Name for the copy" placeholder="New name" data-testid="duplicate-name" />
+            {copyErr && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {copyErr}</div>}
+            <div className="row">
+              <button className="btn" disabled={!copyName.trim()} onClick={duplicate} data-testid="duplicate-go">Make copy</button>
+              <button className="ghost" onClick={() => { setCopying(false); setCopyErr(""); }}>Cancel</button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

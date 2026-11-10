@@ -336,7 +336,8 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       {editing && (
         <CharacterEditor key={editing === "new" ? `new-${draft?.name || ""}` : editing.id} initial={editing === "new" ? null : editing} draft={editing === "new" ? draft : null} portraits={portraits} brains={brains} brainModels={brainModels}
           onClose={() => setEditing(null)} onSaved={savedChar}
-          onDeleted={id => { setChars(cs => cs.filter(c => c.id !== id)); setWithId(null); setEditing(null); }} />
+          onDeleted={id => { setChars(cs => cs.filter(c => c.id !== id)); setWithId(null); setEditing(null); }}
+          onDuplicated={c => { setChars(cs => [...cs, c]); setEditing(c); }} />
       )}
       {makingGroup && <GroupMaker chars={chars} name={name} onClose={() => setMakingGroup(false)} onMade={g => { setGroups(gs => [g, ...gs]); setGroupId(g.id); setMakingGroup(false); }} />}
       {newChar && <NewCharacterSheet onClose={() => setNewChar(false)} onBlank={() => { setDraft(null); setNewChar(false); setEditing("new"); }} onDraft={d => { setDraft(d); setNewChar(false); setEditing("new"); }} />}

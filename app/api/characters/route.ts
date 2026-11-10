@@ -14,6 +14,7 @@ import { MAX_CHARACTERS, DAILY_PORTRAITS, isAdmin, listCharacters, getCharacter,
 // 🎭 Characters. Everyone can list them and chat; only admins create and edit. POST { action, ... }:
 //   list                     → { characters, portraits, admin }
 //   create / update { id?, name, personality, backstory, relation, appearance, job, casualWear, hobbies, voice, romantic, romanceArc, traits, preset, timeZone, referenceIds, brain, workAttire, workDays, workStart, workEnd, partTime, polyOk, sapphic } → { character }   (admin)
+//   duplicate { id, name } → { character }   (admin) 📄 a copy under a new name, without her pictures
 //   brain.set { id, brain: '' | qwen | deepseek } → { character }   (admin) 🧠 from Settings → Brains
 //   generate { name?, vibe?, job?, romantic?, male? } → { draft }   (admin) ✨ a new character to look over in the editor
 //   gallery { id } → { items }   the admin's pictures of this character, to pick references from
@@ -82,6 +83,23 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ character: await getCharacter(String(row.id)) });
       }
 
+      // 📄 A copy of a character under a new name: everything except her pictures (portrait, references, gallery).
+      case "duplicate": {
+        const src = await getCharacter(id);
+        if (!src || (src.owner_id && src.owner_id !== me)) return bad("That character wasn't found.");
+        const name = clean(b.name, 60).replace(/\n/g, " ");
+        if (!name) return bad("Give the copy a name.");
+        const [dupe] = await sql()`select 1 from chat_characters where lower(name) = lower(${name}) and (owner_id is null or owner_id = ${me}) limit 1`;
+        if (dupe) return bad(`There's already a character named ${name}.`);
+        if (!src.owner_id) {
+          const [{ n }] = await sql()`select count(*)::int as n from chat_characters where owner_id is null`;
+          if (n >= MAX_CHARACTERS) return bad(`There can be up to ${MAX_CHARACTERS} characters — delete one first.`);
+        }
+        const [row] = await sql()`insert into chat_characters (created_by, owner_id, intro_status, name, personality, backstory, relation, appearance, job, casual_wear, hobbies, voice, voice_name, voice_kind, romantic, romance_arc, traits, preset, time_zone, birthday, brain, work_attire, work_days, work_start, work_end, part_time, poly_ok, sapphic)
+          select ${me}, owner_id, intro_status, ${name}, personality, backstory, relation, appearance, job, casual_wear, hobbies, voice, voice_name, voice_kind, romantic, romance_arc, traits, preset, time_zone, birthday, brain, work_attire, work_days, work_start, work_end, part_time, poly_ok, sapphic
+          from chat_characters where id = ${id} returning id`;
+        return NextResponse.json({ character: await getCharacter(String(row.id)) });
+      }
       // 🧠 Just her brain (from Settings → Brains): '' = same as Velo's, or qwen / deepseek through Atlas.
       case "brain.set": {
         if (!(await getCharacter(id))) return bad("That character wasn't found.");
