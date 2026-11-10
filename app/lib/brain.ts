@@ -84,7 +84,7 @@ const ASKED_FOR_MEDIA = /\b(send|show|share|snap|take|got|get|see|want|wanna|mak
 const YES = /^\s*(yes|yeah|yep|yup|ya|sure|ok(ay)?|please|pls|plz|of course|absolutely|definitely|do it|go ahead|i'?d love (that|one|to)|send it|why not|try (it |that )?again|retry|resend)\b/i;
 const MENTIONS_MEDIA = /\b(phone|pics?|pictures?|photos?|selfies?|videos?|vids?|clips?|snaps?|show you|send you)\b/i;
 
-export interface AskResult { reply: string; changed: boolean; drafts: Draft[]; media: Media[]; saved?: boolean; react?: string }
+export interface AskResult { reply: string; changed: boolean; drafts: Draft[]; media: Media[]; saved?: boolean; react?: string; by?: "claude" | "alt" }
 
 // 😮 Reactions (shown as a little badge on their message, like a text-message tapback).
 import { REACTIONS as REACTION_LIST } from "./reactions";
@@ -326,6 +326,8 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
     }
   }
 
+  // Which AI wrote this reply (👍 / ⏰ on a call).
+  const answeredByAlt = answered;
   // ⏰ Her own brain is down and this is a chat reply: no Claude stand-in — the app tells them she'll be right back and retries.
   if (herBrain && !answered && opts.noFallback) throw new BrainDown();
   for (let round = 0; !answered && round < (tools ? 6 : 1); round++) {
@@ -406,7 +408,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   reply = reply.replace(REACT_TAG, (_, e: string) => { if (!react && REACTIONS.includes(e)) react = e; return ""; });
   reply = cleanTags(reply);
   if (!reply && media?.length) reply = media.some(m => m.kind === "video") ? "Here you go 😊" : "Here you go — what do you think? 😊";
-  return { reply: reply || (errand ? "Sorry, could you say that again?" : "Sorry, I lost my train of thought — could you say that again?"), changed, drafts, media, ...(mode === "chat" && react ? { react } : {}) };
+  return { reply: reply || (errand ? "Sorry, could you say that again?" : "Sorry, I lost my train of thought — could you say that again?"), changed, drafts, media, ...(mode === "chat" && react ? { react } : {}), by: answeredByAlt ? "alt" : "claude" };
 }
 
 // 🔎 For Qwen / DeepSeek: web search is a tool they call, answered by Claude with

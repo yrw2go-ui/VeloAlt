@@ -219,7 +219,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   const [callMini, setCallMini] = useState(false);
   // 🎨 Photos/videos sent during the call: shown on the call screen, and saved to that chat.
   const [callMedia, setCallMedia] = useState<Media[]>([]);
-  const startCall = () => { primeSpeech(); setCallOpener(null); setCallWith(tab === "chat" ? withChar : null); setCallMedia([]); setCallMini(false); setCalling(true); };
+  const startCall = () => { primeSpeech(); setCallOpener(null); setCallWith(tab === "chat" ? withChar : null); setCallMedia([]); setCallMini(false); setCallBrain(null); setCalling(true); };
   // 📞↩ Continue in call: the call picks up the chat — her first line follows on from the last 12 messages.
   const chatHistory = useRef<{ role: "user" | "assistant"; content: string }[]>([]);
   const [historyCount, setHistoryCount] = useState(0);
@@ -235,7 +235,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       // Her chat with them comes along on every call; here she just picks up where the last 12 messages left off.
       const r = await api<{ reply: string }>("/api/velo", { mode: "talk", messages: [...context, { role: "user", content: "(They just called you to keep talking — you're on the phone now. Say your first line: pick up naturally right where the chat left off, short and warm. Don't mention apps or that you were told to.)" }], timeZone: timeZone(), name, ...(who ? { characterId: who.id } : {}) });
       setCallOpener(r.reply || null);
-      setCallWith(who); setCallMedia([]); setCallMini(false); setCalling(true);
+      setCallWith(who); setCallMedia([]); setCallMini(false); setCallBrain(null); setCalling(true);
     } catch (e) { await confirmAsk(e instanceof Error ? e.message : "Couldn't start the call.", { yes: "OK" }); }
     finally { setContinuing(false); }
   };
@@ -246,10 +246,13 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
     sweep();
     return () => clearInterval(t);
   }, [userId]);
+  const [callBrain, setCallBrain] = useState<"👍" | "⏰" | null>(null);
   const callRequest = async (turns: { role: "user" | "assistant"; content: string }[], mode: "talk" | "recap" | "remember") => {
     const thread = callWith ? { characterId: callWith.id } : {};
     // (The server gives every call her text chat with them, so the call only sends its own turns.)
-    const r = await api<{ reply: string; changed?: boolean; media?: Media[] }>("/api/velo", { mode, messages: turns, timeZone: timeZone(), name, ...thread });
+    const r = await api<{ reply: string; changed?: boolean; media?: Media[]; by?: "claude" | "alt" }>("/api/velo", { mode, messages: turns, timeZone: timeZone(), name, ...thread });
+    // 👍 her own brain (Qwen / DeepSeek) answered, ⏰ Claude stepped in.
+    if (mode === "talk" && callWith?.brain && r.by) setCallBrain(r.by === "alt" ? "👍" : "⏰");
     if (r.changed) bump();
     const sent = (r.media || []).filter(m => m.status !== "failed");
     if (sent.length) setCallMedia(list => [...list, ...sent]);
@@ -313,7 +316,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       </nav>
 
       {calling && (
-        <VeloCall key={look + (callWith?.id || "")} name={name} firstCall={!callWith && firstCall} request={callRequest} fetchVoice={fetchVoice}
+        <VeloCall key={look + (callWith?.id || "")} name={name} firstCall={!callWith && firstCall} request={callRequest} fetchVoice={fetchVoice} brainBadge={callBrain}
           voice={callWith ? callWith.voice_kind : undefined}
           opener={callOpener || (callWith ? `Hey${name ? ` ${name.split(" ")[0]}` : ""}, it's ${callWith.name}! What's going on?` : undefined)}
           who={callWith ? { name: callWith.name, face: (size: number) => <CharacterFace c={callWith} size={size} /> } : undefined}

@@ -141,7 +141,9 @@ const greetingFor = (name?: string, first = false) => {
   return options[Math.floor(Math.random() * options.length)];
 };
 
-export default function VeloCall({ request, onEnd, voice = "female", name, firstCall = false, fetchVoice, opener, startPrivate = false, who, mini = false, onMinimize, onExpand }: {
+export default function VeloCall({ request, onEnd, voice = "female", name, firstCall = false, fetchVoice, opener, startPrivate = false, who, mini = false, onMinimize, onExpand, brainBadge = null }: {
+  /** 👍 her own brain (Qwen / DeepSeek) is answering; ⏰ Claude stepped in. A tiny badge in the corner. */
+  brainBadge?: "👍" | "⏰" | null;
   /** ⤡ Shrunk to a bar so they can use the app while they talk; the call carries on. */
   mini?: boolean;
   onMinimize?: () => void;
@@ -469,6 +471,8 @@ export default function VeloCall({ request, onEnd, voice = "female", name, first
   return (
     <div role="dialog" aria-label={`Call with ${who?.name || "Velo"}`} data-testid="velo-call" onClick={interrupt} onPointerDownCapture={touched}
       style={{ position: "fixed", inset: 0, zIndex: 2000, background: "radial-gradient(circle at 50% 30%, #1e2a4a 0%, #0a0a0f 70%)", color: "#f1f1f3", display: "flex", flexDirection: "column", alignItems: "center", padding: "max(40px, env(safe-area-inset-top)) 20px max(28px, env(safe-area-inset-bottom))", fontFamily: "'Inter', -apple-system, sans-serif" }}>
+      {brainBadge && <span data-testid="call-brain" aria-label={brainBadge === "👍" ? "Her own brain is answering" : "Claude is answering"} title={brainBadge === "👍" ? "Her own brain is answering" : "Claude is answering"}
+        style={{ position: "absolute", top: "max(10px, env(safe-area-inset-top))", right: 12, fontSize: 13, opacity: 0.4, pointerEvents: "none" }}>{brainBadge}</span>}
       <style>{`@keyframes vcRing { 0% { box-shadow: 0 0 0 0 ${ring}88 } 70% { box-shadow: 0 0 0 26px ${ring}00 } 100% { box-shadow: 0 0 0 0 ${ring}00 } }
         @keyframes vcDot { 0%,80%,100% { opacity: .25 } 40% { opacity: 1 } }`}</style>
       <div style={{ fontSize: 13, color: "#9ca3af", letterSpacing: 1 }}>{phase === "ended" ? "CALL ENDED" : "ON A CALL"} · {clock(secs)}</div>
