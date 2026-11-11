@@ -132,7 +132,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   const [groupId, setGroupId] = useState<string | null>(() => (urlParam("chat") ? null : place.groupId || null));
   const [groupsLoaded, setGroupsLoaded] = useState(false);
   const [makingGroup, setMakingGroup] = useState(false);
-  useEffect(() => { if (userId) api<{ groups: Group[] }>("/api/groups", { action: "list" }).then(r => setGroups(r.groups)).catch(() => {}).finally(() => setGroupsLoaded(true)); }, [userId]);
+  useEffect(() => { if (userId) api<{ groups: Group[] }>("/api/groups", { action: "list" }).then(r => setGroups(Array.isArray(r.groups) ? r.groups : [])).catch(() => setGroups([])).finally(() => setGroupsLoaded(true)); }, [userId]);
   // 📍 Remember where they are.
   useEffect(() => { savePlace(userId, { tab, withId, groupId }); }, [userId, tab, withId, groupId]);
   // …and how far down they'd scrolled (Today, Memory, Settings): put back once the page has loaded after a reload.
