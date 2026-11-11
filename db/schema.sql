@@ -554,3 +554,5 @@ create table if not exists chat_in_person (
   started_at timestamptz not null default now(),
   primary key (user_id, character_id)
 );
+alter table chat_groups add column if not exists in_person_place text check (in_person_place is null or char_length(in_person_place) <= 120);
+alter table chat_groups add column if not exists catch_up jsonb not null default '{}'::jsonb;

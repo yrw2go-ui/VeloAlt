@@ -40,7 +40,7 @@ const SUGGESTIONS = ["Plan my day", "Remind me to call Mom tomorrow at 6pm", "I 
 /** A message to drop into one chat (a call recap): cid null = Velo's chat. */
 export type ChatAdd = { msg: ChatMsg; cid: string | null };
 
-export default function Chat({ userId, name, onChanged, added, onAdded, character, adult = false, onAdult, onHistory, onNewCharacter }: { userId: string; name: string; onChanged: () => void; added: ChatAdd | null; onAdded?: () => void; character?: ChatWith | null; adult?: boolean; onAdult?: () => void; onHistory?: (m: { role: "user" | "assistant"; content: string }[]) => void; onNewCharacter?: (c: { id: string; name: string; portrait_url: string | null }) => void }) {
+export default function Chat({ userId, name, onChanged, added, onAdded, character, adult = false, onAdult, onHistory, onNewCharacter, others = [], onGroup }: { others?: { id: string; name: string }[]; onGroup?: (g: { id: string; title: string; member_ids: string[]; updated_at: string; in_person_place?: string | null }) => void; userId: string; name: string; onChanged: () => void; added: ChatAdd | null; onAdded?: () => void; character?: ChatWith | null; adult?: boolean; onAdult?: () => void; onHistory?: (m: { role: "user" | "assistant"; content: string }[]) => void; onNewCharacter?: (c: { id: string; name: string; portrait_url: string | null }) => void }) {
   const cid = character?.id || null;
   const thread = cid ? { characterId: cid } : {};
   const who = character?.name || "Velo";
@@ -250,6 +250,17 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       await respond(next);
     } catch (e) { setTogetherSheet(t => (t ? { ...t, busy: false, error: e instanceof Error ? e.message : "Try again." } : t)); }
   };
+  // 👥 Meet up: bring others along (or go see them) — a group chat, in person, picking up from everyone's one-on-ones.
+  const [meetSheet, setMeetSheet] = useState<{ ids: string[]; place: string; busy: boolean; error?: string } | null>(null);
+  const meetUp = async () => {
+    if (!meetSheet || !meetSheet.ids.length || !onGroup) return;
+    setMeetSheet(m => (m ? { ...m, busy: true, error: undefined } : m));
+    try {
+      const r = await api<{ group: { id: string; title: string; member_ids: string[]; updated_at: string; in_person_place?: string | null } }>("/api/groups", { action: "bring", fromId: cid, ids: meetSheet.ids, place: meetSheet.place.trim(), name });
+      setMeetSheet(null); setInPerson(null);
+      onGroup(r.group);
+    } catch (e) { setMeetSheet(m => (m ? { ...m, busy: false, error: e instanceof Error ? e.message : "Try again." } : m)); }
+  };
   const endTogether = async () => {
     try {
       const r = await data<{ marker: ChatMsg }>("inperson.end", { characterId: cid });
@@ -408,6 +419,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       {character && !scene && inPerson && (
         <div data-testid="inperson-banner" className="row" style={{ gap: 8, padding: "8px 14px", borderBottom: "1px solid var(--border)", background: "linear-gradient(90deg, rgba(16,185,129,.16), rgba(124,140,255,.12))", fontSize: 13 }}>
           <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>🧍 <b>Together in person</b>{inPerson.place ? <span className="muted"> · {inPerson.place}</span> : null}</span>
+          {onGroup && others.length > 0 && <button className="ghost" onClick={() => setMeetSheet({ ids: [], place: inPerson.place, busy: false })} disabled={busy} data-testid="meetup-open" style={{ padding: "4px 10px", fontSize: 12 }}>👥 Meet up</button>}
           <button className="ghost" onClick={endTogether} disabled={busy} data-testid="inperson-end" style={{ padding: "4px 10px", fontSize: 12 }}>Leave</button>
         </div>
       )}
@@ -419,6 +431,26 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
             <button className="btn" data-testid="plan-start" disabled={busy || !msgs} onClick={() => { setFromPlan(plans[0]); setSceneSheet(true); }} style={{ padding: "8px 14px", fontSize: 13 }}>🎬 Set the scene</button>
             <button className="ghost" data-testid="plan-skip" onClick={() => skipPlan(plans[0])} style={{ padding: "8px 12px", fontSize: 13 }}>Not today</button>
           </div>
+        </div>
+      )}
+      {meetSheet && character && (
+        <div role="dialog" aria-modal="true" data-testid="meetup-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }} onClick={() => setMeetSheet(null)}>
+          <form className="card" onClick={e => e.stopPropagation()} onSubmit={e => { e.preventDefault(); meetUp(); }} style={{ width: "100%", maxWidth: 560, maxHeight: "80dvh", overflowY: "auto", borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+            <div className="row" style={{ justifyContent: "space-between" }}>
+              <div style={{ fontWeight: 800, fontSize: 17 }}>👥 Meet up with {character.name} and…</div>
+              <button type="button" className="ghost" onClick={() => setMeetSheet(null)} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
+            </div>
+            <div className="muted" style={{ fontSize: 12 }}>Moves you all into one group chat, together in person. Everyone picks up from their own recent chat with you — so if you told {character.name} you were bringing someone, she&apos;ll know who just walked in.</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {others.filter(o => o.id !== cid).map(o => {
+                const on = meetSheet.ids.includes(o.id);
+                return <button type="button" key={o.id} className={on ? "btn" : "ghost"} aria-pressed={on} data-testid="meetup-pick" onClick={() => setMeetSheet(m => (m ? { ...m, ids: on ? m.ids.filter(x => x !== o.id) : [...m.ids, o.id].slice(0, 5) } : m))} style={{ padding: "6px 12px", fontSize: 13 }}>{on ? "✓ " : ""}{o.name}</button>;
+              })}
+            </div>
+            <input value={meetSheet.place} onChange={e => setMeetSheet(m => (m ? { ...m, place: e.target.value } : m))} maxLength={120} aria-label="Where?" placeholder="Where? e.g. my place" data-testid="meetup-place" />
+            {meetSheet.error && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {meetSheet.error}</div>}
+            <button className="btn" disabled={meetSheet.busy || !meetSheet.ids.length} data-testid="meetup-go">{meetSheet.busy ? "…" : "👥 Meet up"}</button>
+          </form>
         </div>
       )}
       {togetherSheet && character && (

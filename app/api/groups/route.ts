@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import { aiReady, aiError } from "../../lib/brain";
-import { listGroups, getGroup, createGroup, deleteGroup, groupMessages, sendToGroup, rememberGroup, startGroupScene, endGroupScene, banterNext, reactInGroup, draftGroupPeek, groupPeekAt, GroupError } from "../../lib/groups";
+import { listGroups, getGroup, createGroup, deleteGroup, groupMessages, sendToGroup, rememberGroup, startGroupScene, endGroupScene, banterNext, reactInGroup, draftGroupPeek, groupPeekAt, bringTogether, endGroupInPerson, GroupError } from "../../lib/groups";
 import { MediaError } from "../../lib/media";
 import { sql } from "../../lib/db";
+import { getCharacterFor } from "../../lib/characters";
 import { isReaction } from "../../lib/reactions";
 
 // 👥 Group chats. POST { action, ... }:
@@ -14,6 +15,7 @@ import { isReaction } from "../../lib/reactions";
 //   memo { id, timeZone, name } → { saved }   (each character saves her own memory)
 //   delete { id }   react { id, msgId, reaction|null } (😮 theirs on a character's message)
 //   scene.start { id, kind: live|past, title, details } → { marker, group }   scene.end { id } → { marker }
+//   bring { fromId, ids, place } → { group }   (🧍 bring characters together in person; their 1:1s carry over)   inperson.end { id } → { marker }
 //   peek.draft { id, ids } → { description }   peek { id, ids, description } → { added }   (👀 nobody in the group knows)
 const bad = (error: string, status = 400) => NextResponse.json({ error }, { status });
 
@@ -28,6 +30,13 @@ export async function POST(req: NextRequest) {
     if (action === "create") {
       if (!allow(`groups:${c.userId}`, [{ ms: 60_000, max: 5 }, { ms: 86_400_000, max: 50 }])) return bad("That's a lot of new groups — try again in a bit.", 429);
       return NextResponse.json({ group: await createGroup(c.userId, Array.isArray(b.memberIds) ? b.memberIds.map(String) : [], String(b.title || ""), name) });
+    }
+    if (action === "bring") {
+      if (!allow(`groups:${c.userId}`, [{ ms: 60_000, max: 5 }, { ms: 86_400_000, max: 50 }])) return bad("That's a lot — try again in a bit.", 429);
+      const ids = [String(b.fromId || ""), ...(Array.isArray(b.ids) ? b.ids.map(String) : [])];
+      const ok = (await Promise.all(ids.map(id => getCharacterFor(c.userId, id)))).filter(Boolean).map(ch => ch!.id);
+      if (ok.length < ids.length) return bad("That character wasn't found.");
+      return NextResponse.json({ group: await bringTogether(c.userId, ok[0], ok.slice(1), String(b.place || ""), name) });
     }
     const g = await getGroup(c.userId, String(b.id || ""));
     if (!g) return bad("That group wasn't found.", 404);
@@ -53,6 +62,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ marker, group: await getGroup(c.userId, g.id) });
       }
       case "scene.end": return NextResponse.json({ marker: await endGroupScene(c.userId, g) });
+      case "inperson.end": return NextResponse.json({ marker: await endGroupInPerson(c.userId, g) });
       case "peek.draft":
       case "peek": {
         if (!aiReady()) return bad("Velo isn't set up yet (missing AI settings).", 503);
