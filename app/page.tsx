@@ -98,7 +98,7 @@ const urlParam = (k: string) => (typeof location === "undefined" ? null : new UR
 function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   // Back from Stripe checkout / billing: open Settings. A tapped notification opens that chat. Otherwise: right where they were.
   const [place] = useState<Place>(() => (typeof window === "undefined" ? {} : readPlace(userId)));
-  const [tab, setTab] = useState<Tab>("settings"); // forced once to escape crashing group
+  const [tab, setTab] = useState<Tab>(() => (urlParam("tab") === "settings" ? "settings" : urlParam("chat") ? "chat" : place.tab && TABS.some(t => t.id === place.tab) ? place.tab : "chat"));
   const [name, setName] = useState("");
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profileTick, setProfileTick] = useState(0);
@@ -129,7 +129,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   const withChar = chars.find(c => c.id === withId) || null;
   // 👥 Group chats (you and 2–6 characters).
   const [groups, setGroups] = useState<Group[]>([]);
-  const [groupId, setGroupId] = useState<string | null>(null); // cleared once to escape crashing group
+  const [groupId, setGroupId] = useState<string | null>(() => (urlParam("chat") ? null : place.groupId || null));
   const [groupsLoaded, setGroupsLoaded] = useState(false);
   const [makingGroup, setMakingGroup] = useState(false);
   useEffect(() => { if (userId) api<{ groups: Group[] }>("/api/groups", { action: "list" }).then(r => {

@@ -16,7 +16,7 @@ const PEEK = /^\s*\*?\s*pe(e|a)k\s*\*?\s*[.!]?\s*$/i;
 
 /** Up to three faces, overlapping, for a group's chip. */
 export function GroupFaces({ g, chars, size }: { g: Group; chars: Character[]; size: number }) {
-  const list = g.member_ids.map(id => chars.find(c => c.id === id)).filter((c): c is Character => !!c).slice(0, 3);
+  const list = (g.member_ids || []).map(id => chars.find(c => c.id === id)).filter((c): c is Character => !!c).slice(0, 3);
   return <span style={{ display: "flex" }}>{list.map((c, i) => <span key={c.id} style={{ marginLeft: i ? -size * 0.4 : 0, borderRadius: "50%", border: "2px solid var(--surface2)" }}><CharacterFace c={c} size={size} /></span>)}</span>;
 }
 
@@ -49,7 +49,7 @@ export function GroupChat({ group: initial, chars, name, onDeleted }: { group: G
   };
   useEffect(() => () => { run.current++; }, []);
   const log = useRef<HTMLDivElement>(null);
-  const members = group.member_ids.map(id => chars.find(c => c.id === id)).filter((c): c is Character => !!c);
+  const members = (group.member_ids || []).map(id => chars.find(c => c.id === id)).filter((c): c is Character => !!c);
   const byId = new Map(members.map(c => [c.id, c]));
 
   useEffect(() => {
