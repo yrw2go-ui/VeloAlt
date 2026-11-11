@@ -194,7 +194,7 @@ export function GroupChat({ group: initial, chars, name, onDeleted }: { group: G
       <div style={{ display: "flex", gap: 6, padding: "6px 12px 0", flexWrap: "wrap" }}>
         {members.map(c => (
           <button key={c.id} type="button" onClick={() => setText(t => t.startsWith(`@${c.name}`) ? t : `@${c.name} `)}
-            style={{ fontSize: 12, padding: "4px 10px", borderRadius: 999, border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer" }}>
+            style={{ fontSize: 13, padding: "5px 12px", borderRadius: 999, border: "1px solid var(--accent)", background: "var(--surface2)", color: "var(--text)", fontWeight: 600, cursor: "pointer" }}>
             @{c.name.split(" ")[0]}
           </button>
         ))}
