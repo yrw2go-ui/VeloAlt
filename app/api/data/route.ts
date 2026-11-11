@@ -17,7 +17,7 @@ import { PERSONALITIES } from "../../lib/persona";
 import { deleteFile, ownFile } from "../../lib/files";
 import { getCharacterFor, trustFor, activeScene } from "../../lib/characters";
 import { US_STATES } from "../../lib/states";
-import { acceptMedia, declineMedia, mediaNote, checkMedia, sweepMedia, getMedia, listGallery, deleteMedia, VIDEO_MODELS, DEFAULT_VIDEO_MODEL, mediaReady, MediaError } from "../../lib/media";
+import { acceptMedia, declineMedia, mediaNote, checkMedia, sweepMedia, getMedia, listGallery, deleteMedia, VIDEO_MODELS, DEFAULT_VIDEO_MODEL, mediaReady, MediaError, startMedia } from "../../lib/media";
 
 // 📦 Everything the app reads and changes, for the signed-in person only.
 // POST { action, ...args } → { ... }. Every query is scoped to their user_id.
@@ -263,7 +263,24 @@ export async function POST(req: NextRequest) {
         }
       }
       // 🔴 Unread: messages from Velo / each character since they last looked at that chat.
-      case "chats.unread": {
+      
+      case "media.icu": {
+        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
+        if (!ch) return bad("That character wasn't found.");
+        if (!mediaReady()) return bad("Photos aren't set up yet.");
+        if (!allow(`icu:${me}`, [{ ms: 60_000, max: 6 }, { ms: 86_400_000, max: 80 }])) return NextResponse.json({ error: "That's a lot of photos — try again in a bit." }, { status: 429 });
+        const [u] = await db`select adult_confirmed_at from users where id = ${me}`;
+        const romantic = !!u?.adult_confirmed_at && !!ch.romantic;
+        try {
+          const media = await startMedia(me, { kind: "image", with_me: true, they_asked: true, description: "a photo of you right now, as if you're with them in person" }, {
+            characterId: ch.id, who: ch.name, appearance: ch.appearance || "", refs: [], romantic, offer: false,
+          });
+          return NextResponse.json({ media });
+        } catch (e) {
+          return bad(e instanceof MediaError ? e.message : "Couldn't take that photo right now.");
+        }
+      }
+case "chats.unread": {
         const rows = await db`select m.character_id, count(*)::int as n from velo_messages m
           left join chat_reads r on r.user_id = m.user_id and r.character_id is not distinct from m.character_id
           where m.user_id = ${me} and m.role = 'assistant' and m.created_at > coalesce(r.read_at, '-infinity'::timestamptz)
