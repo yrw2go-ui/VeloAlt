@@ -137,7 +137,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       try {
         const r = await data<{ media: Media }>("media.icu", { characterId: cid });
         if (r.media) setMsgs(m => [...(m || []), { role: "assistant", content: "(sent a photo)", media: r.media }]);
-      } catch (e: unknown) { setErr(e instanceof Error ? e.message : "Couldn't take that photo right now."); }
+      } catch { setErr("Couldn't take that photo right now."); }
       finally { setBusy(false); }
       return;
     }
