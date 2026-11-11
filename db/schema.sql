@@ -556,3 +556,4 @@ create table if not exists chat_in_person (
 );
 alter table chat_groups add column if not exists in_person_place text check (in_person_place is null or char_length(in_person_place) <= 120);
 alter table chat_groups add column if not exists catch_up jsonb not null default '{}'::jsonb;
+alter table chat_group_messages add column if not exists private_to uuid references chat_characters(id) on delete cascade;

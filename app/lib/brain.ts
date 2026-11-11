@@ -110,7 +110,7 @@ const REACT_TAG = /\[react:\s*([^\]\s]+)\s*\]\s*/gu;
 
 /** Velo, or (with `character`) one of the characters: same chats, calls and memory flow, but in the
  *  character's own voice, with only their own memory of this person and no Velo tools. */
-export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn[]; timeZone?: unknown; name?: string; goal?: string; toName?: string; character?: Character | null; origin?: string; promise?: string; noFallback?: boolean; group?: { others: string[]; scene?: { title: string; details: string; time?: string } | null; banter?: boolean; inPerson?: string | null; catchUp?: string } }): Promise<AskResult> {
+export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn[]; timeZone?: unknown; name?: string; goal?: string; toName?: string; character?: Character | null; origin?: string; promise?: string; noFallback?: boolean; group?: { others: string[]; scene?: { title: string; details: string; time?: string } | null; banter?: boolean; inPerson?: string | null; catchUp?: string; private?: boolean } }): Promise<AskResult> {
   const { mode } = opts;
   const ch = opts.character || null;
   const cid = ch?.id || null;
@@ -208,7 +208,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         mode === "chat" ? REACT_HINT : "",
         photoMoment && !introKind ? PHOTO_MOMENT : "",
         introKind ? introNote(introKind) : "",
-        group && ch ? groupNote(ch.name, name, group.others, mode === "memo", group.scene || null, !!ch.romantic && !!u?.adult_confirmed_at, !!group.banter, !!ch.poly_ok, sapphicWith(ch, friends, !!u?.adult_confirmed_at).filter(n => group.others.includes(n)), group.inPerson ?? null, group.catchUp || "") : "",
+        group && ch ? groupNote(ch.name, name, group.others, mode === "memo", group.scene || null, !!ch.romantic && !!u?.adult_confirmed_at, !!group.banter, !!ch.poly_ok, sapphicWith(ch, friends, !!u?.adult_confirmed_at).filter(n => group.others.includes(n)), group.inPerson ?? null, group.catchUp || "") + (group.private ? `\n🔒 PRIVATE: ${name || "they"} just texted YOU privately (an @message) — the others can't see it or your answer. Answer only ${name || "them"}, privately, like a quick discreet text back (even if you're all in the same room). Don't announce it or say it out loud to the others.` : "") : "",
         arc && (mode === "remember" || mode === "memo") ? FEELINGS_REMEMBER : "",
         trust !== null && mode !== "remember" && mode !== "memo" ? trustNote(trust, arc) : "",
         trust !== null && (mode === "remember" || mode === "memo") ? `YOUR TRUST IN THEM: ${trust}/100. ${TRUST_REMEMBER(arc)}` : "",
