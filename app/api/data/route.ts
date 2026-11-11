@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { duePlans, setPlanStatus } from "../../lib/plans";
 import { readyIntros, acceptIntro, declineIntro, IntroError } from "../../lib/intros";
-import { peekAt, draftPeek } from "../../lib/peek";
+import { peekAt, draftPeek, draftIcu } from "../../lib/peek";
 import { cleanTags } from "../../lib/text";
 import { sql } from "../../lib/db";
 import { resolveCaller } from "../../lib/caller";
@@ -260,6 +260,25 @@ export async function POST(req: NextRequest) {
         } catch (e) {
           if (e instanceof MediaError && /can't be sent/.test(e.message)) return bad(/PG-13/.test(e.message) ? "That's past PG-13 — it can be flirty, but no nudity, lingerie or anything explicit. Try changing the description." : "Keep it family-friendly (fully clothed, nothing suggestive) — try changing the description.");
           return bad(e instanceof MediaError ? "Couldn't peek right now — try again in a moment." : "Couldn't peek right now.");
+        }
+      }
+      // 👁️ ICU: together in person (no scene) — the same two steps as a peek: a description to check, then exactly that.
+      case "icu.draft":
+      case "icu": {
+        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
+        if (!ch) return bad("That character wasn't found.");
+        if (!mediaReady()) return bad("Photos aren't set up yet.");
+        if (!allow(`peek:${me}`, [{ ms: 60_000, max: 10 }, { ms: 86_400_000, max: 300 }])) return NextResponse.json({ error: "That's a lot of peeks — try again in a bit." }, { status: 429 });
+        const [u] = await db`select adult_confirmed_at from users where id = ${me}`;
+        try {
+          if (b.action === "icu.draft") return NextResponse.json({ description: await draftIcu(me, ch, !!u?.adult_confirmed_at) });
+          const description = String(b.description || "").trim();
+          if (description.length < 10) return bad("Describe what you see in a few words first.");
+          const p = await peekAt(me, ch, null, !!u?.adult_confirmed_at, description);
+          if (p.media.status === "failed") return bad("The picture service wouldn't make that one — try changing the description.");
+          return NextResponse.json(p);
+        } catch (e) {
+          return bad(e instanceof MediaError ? "Couldn't make it right now — try again in a moment." : "Couldn't make it right now.");
         }
       }
       // 🔴 Unread: messages from Velo / each character since they last looked at that chat.

@@ -126,10 +126,10 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     const file = attach;
     if ((!t && !file) || busy || uploading || !msgs) return;
     // 👀 "*peek*" during a scene: first the picture's description pops up to check or tweak, then exactly that is made.
-    if (cid && scene && !file && /^\s*\*?\s*pe(e|a)k\s*\*?\s*[.!]?\s*$/i.test(t)) {
-      setText(""); setErr(""); setPeekSheet({ description: "", loading: true });
-      try { setPeekSheet({ description: (await data<{ description: string }>("scene.peek.draft", { characterId: cid })).description, loading: false }); }
-      catch (e) { setPeekSheet(null); setErr(e instanceof Error ? e.message : "Couldn't peek right now."); }
+    // 👁️ "ICU" when you're together in person (no scene): the same pop-up, for what you see right now.
+    const icu = /^\s*\*?\s*icu\s*\*?\s*[.!]?\s*$/i.test(t);
+    if (cid && !file && ((scene && /^\s*\*?\s*pe(e|a)k\s*\*?\s*[.!]?\s*$/i.test(t)) || icu)) {
+      setText(""); openPeek(!scene);
       return;
     }
     const opener: ChatMsg[] = msgs.length || cid ? [] : [{ role: "assistant", content: openingLine }];
@@ -235,18 +235,25 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   const [scene, setScene] = useState<{ id: string; title: string; details: string } | null>(null);
   const [sceneSheet, setSceneSheet] = useState(false);
   // 👀 The peek being set up: its description (editable) before the picture is made.
-  const [peekSheet, setPeekSheet] = useState<{ description: string; loading: boolean; error?: string } | null>(null);
+  const [peekSheet, setPeekSheet] = useState<{ description: string; loading: boolean; error?: string; icu?: boolean } | null>(null);
+  const openPeek = async (icu: boolean) => {
+    setErr(""); setPeekSheet({ description: "", loading: true, icu });
+    try { setPeekSheet({ description: (await data<{ description: string }>(icu ? "icu.draft" : "scene.peek.draft", { characterId: cid })).description, loading: false, icu }); }
+    catch (e) { setPeekSheet(null); setErr(e instanceof Error ? e.message : "Couldn't peek right now."); }
+  };
   const rewritePeek = async () => {
+    const icu = !!peekSheet?.icu;
     setPeekSheet(p => (p ? { ...p, loading: true, error: undefined } : p));
-    try { const r = await data<{ description: string }>("scene.peek.draft", { characterId: cid }); setPeekSheet({ description: r.description, loading: false }); }
+    try { const r = await data<{ description: string }>(icu ? "icu.draft" : "scene.peek.draft", { characterId: cid }); setPeekSheet({ description: r.description, loading: false, icu }); }
     catch (e) { setPeekSheet(p => (p ? { ...p, loading: false, error: e instanceof Error ? e.message : "Couldn't rewrite it." } : p)); }
   };
   const sendPeek = async (description: string) => {
     setPeekSheet(p => (p ? { ...p, loading: true, error: undefined } : p));
     try {
-      const r = await data<{ media: Media; userMsgId: string; mediaMsgId: string }>("scene.peek", { characterId: cid, description });
+      const icu = !!peekSheet?.icu;
+      const r = await data<{ media: Media; userMsgId: string; mediaMsgId: string }>(icu ? "icu" : "scene.peek", { characterId: cid, description });
       setPeekSheet(null);
-      setMsgs(list => [...(list || []), { id: r.userMsgId, role: "user", content: "*peek*", peek: true }, { id: r.mediaMsgId, role: "assistant", content: "(peek)", media: r.media, peek: true }]);
+      setMsgs(list => [...(list || []), { id: r.userMsgId, role: "user", content: icu ? "*ICU*" : "*peek*", peek: true }, { id: r.mediaMsgId, role: "assistant", content: "(peek)", media: r.media, peek: true }]);
     } catch (e) { setPeekSheet(p => (p ? { ...p, loading: false, error: e instanceof Error ? e.message : "Couldn't peek right now." } : p)); }
   };
   // 📅 A hangout/date you two planned for today: set the scene for it.
@@ -435,6 +442,8 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
         <input ref={picker} type="file" accept={ACCEPT} hidden onChange={e => pick(e.target.files?.[0])} data-testid="chat-file-input" />
         {cid && !scene && <button type="button" onClick={() => setSceneSheet(true)} disabled={!msgs || busy} aria-label="Start a scene" data-testid="scene-open"
           style={{ borderRadius: 999, width: 36, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 19, border: "none", background: "transparent", color: "var(--muted)" }}>🎬</button>}
+        {cid && !scene && <button type="button" onClick={() => openPeek(true)} disabled={!msgs || busy || !!peekSheet} aria-label="I see you: a picture of her right now, in person" title="ICU — you're with her: see her right now" data-testid="icu-open"
+          style={{ borderRadius: 999, width: 32, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 18, border: "none", background: "transparent", color: "var(--muted)" }}>👁️</button>}
         <button type="button" onClick={() => picker.current?.click()} disabled={!msgs || busy || uploading} aria-label="Attach a photo or file" data-testid="chat-attach"
           style={{ borderRadius: 999, width: 40, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 20, border: "none", background: "transparent", color: "var(--muted)" }}>
           {uploading ? "⏳" : "📎"}
@@ -476,7 +485,7 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
     <div data-testid="brain-marker" title={m.content === "⏰" ? `${who} is having trouble — still trying` : `${who} is back`} style={{ alignSelf: "center", fontSize: 18, lineHeight: 1, padding: "4px 10px", borderRadius: 999, border: "1px dashed var(--border)" }}>{m.content}</div>
   );
   if (m.peek && mine) return (
-    <div data-testid="peek-note" style={{ alignSelf: "flex-end", fontSize: 12, padding: "4px 10px", borderRadius: 999, border: "1px dashed var(--border)" }} className="muted">👀 you peeked</div>
+    <div data-testid="peek-note" style={{ alignSelf: "flex-end", fontSize: 12, padding: "4px 10px", borderRadius: 999, border: "1px dashed var(--border)" }} className="muted">{m.content === "*ICU*" ? "👁️ you looked" : "👀 you peeked"}</div>
   );
   if (m.peek && m.media) return (
     <div data-testid="peek-media" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
@@ -544,22 +553,22 @@ export function FileThumb({ f, size }: { f: { url: string; thumb?: string | null
 
 /** 🎬 Set up a scene: play it out now, or say it already happened. */
 /** 👀 The peek, before it's made: the picture's description to check, tweak or rewrite. */
-function PeekSheet({ who, sheet, onChange, onRewrite, onSend, onClose }: { who: string; sheet: { description: string; loading: boolean; error?: string }; onChange: (d: string) => void; onRewrite: () => void; onSend: (d: string) => void; onClose: () => void }) {
+function PeekSheet({ who, sheet, onChange, onRewrite, onSend, onClose }: { who: string; sheet: { description: string; loading: boolean; error?: string; icu?: boolean }; onChange: (d: string) => void; onRewrite: () => void; onSend: (d: string) => void; onClose: () => void }) {
   return (
     <div role="dialog" aria-modal="true" data-testid="peek-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }} onClick={onClose}>
       <div className="card" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 10 }}>
         <div className="row" style={{ justifyContent: "space-between" }}>
-          <div style={{ fontWeight: 800, fontSize: 17 }}>👀 Peek at {who}</div>
+          <div style={{ fontWeight: 800, fontSize: 17 }}>{sheet.icu ? `👁️ I see you, ${who}` : `👀 Peek at ${who}`}</div>
           <button className="ghost" onClick={onClose} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
         </div>
         <div className="muted" style={{ fontSize: 12 }}>This is the picture that will be made, using her reference pictures. Fix anything that&apos;s off — where you are, what she&apos;s wearing, her pose or look. She won&apos;t know.</div>
         <textarea value={sheet.description} onChange={e => onChange(e.target.value)} maxLength={1500} rows={5} aria-label="Peek description" disabled={sheet.loading && !sheet.description}
           placeholder={sheet.loading ? "Writing what you'd see…" : "e.g. Her at a candlelit corner table in an emerald dress, laughing and glancing up at me"} style={{ resize: "vertical" }} />
-        <div className="muted" style={{ fontSize: 11, textAlign: "right" }}>{sheet.description.length}/400</div>
+        <div className="muted" style={{ fontSize: 11, textAlign: "right" }}>{sheet.description.length}/1500</div>
         {sheet.error && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {sheet.error}</div>}
         <div className="row" style={{ gap: 8 }}>
           <button className="ghost" onClick={onRewrite} disabled={sheet.loading} data-testid="peek-rewrite" style={{ flexShrink: 0 }}>↻ Rewrite</button>
-          <button className="btn" onClick={() => onSend(sheet.description)} disabled={sheet.loading || sheet.description.trim().length < 10} data-testid="peek-go" style={{ flex: 1 }}>{sheet.loading ? "…" : "👀 Peek"}</button>
+          <button className="btn" onClick={() => onSend(sheet.description)} disabled={sheet.loading || sheet.description.trim().length < 10} data-testid="peek-go" style={{ flex: 1 }}>{sheet.loading ? "…" : sheet.icu ? "👁️ Look" : "👀 Peek"}</button>
         </div>
       </div>
     </div>
