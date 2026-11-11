@@ -131,6 +131,14 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       try { setPeekSheet({ description: (await data<{ description: string }>("scene.peek.draft", { characterId: cid })).description, loading: false }); }
       catch (e) { setPeekSheet(null); setErr(e instanceof Error ? e.message : "Couldn't peek right now."); }
       return;
+    // 👁️ "ICU" when you're together in person (no scene)
+    const icu = !scene && /^\s*\*?\s*icu\s*\*?\s*[.!]\s*$/i.test(t);
+    if (cid && !file && icu && !inPerson) { setErr("ICU works when you two are together in person — tap 🧍 first."); return; }
+    if (cid && !file && icu) {
+      setText(""); openPeek(true);
+      return;
+    }
+
     // 📸 "ICU" — in person: request a photo of them right now (outside a scene).
     if (cid && !scene && !file && /^\s*icu\s*[.!?]*\s*$/i.test(t)) {
       setText(""); setErr(""); setBusy(true);
@@ -243,9 +251,38 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
 
   // 🎬 Scenes: a date or outing, played out here, or something that already happened.
   const [scene, setScene] = useState<{ id: string; title: string; details: string } | null>(null);
+  // 🧍 Together in person (not a scene)
+  type InPerson = { place: string; started_at: string };
+  const [inPerson, setInPerson] = useState<InPerson | null>(null);
+  const [togetherSheet, setTogetherSheet] = useState<{ place: string; busy: boolean; error?: string } | null>(null);
+  const startTogether = async (place: string) => {
+    setTogetherSheet(t => (t ? { ...t, busy: true, error: undefined } : t));
+    try {
+      const r = await data<{ inPerson: InPerson; marker: ChatMsg }>("inperson.start", { characterId: cid, place });
+      setTogetherSheet(null); setInPerson(r.inPerson);
+      unsaved.current++;
+      const next = [...msgsRef.current, r.marker];
+      setMsgs(next);
+      await respond(next);
+    } catch (e) { setTogetherSheet(t => (t ? { ...t, busy: false, error: e instanceof Error ? e.message : "Try again." } : t)); }
+  };
+  const endTogether = async () => {
+    try {
+      const r = await data<{ marker: ChatMsg }>("inperson.end", { characterId: cid });
+      setInPerson(null);
+      setMsgs([...msgsRef.current, r.marker]);
+    } catch (e) { setErr(e instanceof Error ? e.message : "Try again."); }
+  };
   const [sceneSheet, setSceneSheet] = useState(false);
   // 👀 The peek being set up: its description (editable) before the picture is made.
-  const [peekSheet, setPeekSheet] = useState<{ description: string; loading: boolean; error?: string } | null>(null);
+  const [peekSheet, setPeekSheet] = useState<{ description: string; loading: boolean; error?: string; icu?: boolean } | null>(null);
+  const openPeek = async (icu = false) => {
+    setErr(""); setPeekSheet({ description: "", loading: true, icu });
+    try {
+      const r = await data<{ description: string }>(icu ? "icu.draft" : "scene.peek.draft", { characterId: cid });
+      setPeekSheet({ description: r.description, loading: false, icu });
+    } catch (e) { setPeekSheet(null); setErr(e instanceof Error ? e.message : "Couldn't start right now."); }
+  };
   const rewritePeek = async () => {
     setPeekSheet(p => (p ? { ...p, loading: true, error: undefined } : p));
     try { const r = await data<{ description: string }>("scene.peek.draft", { characterId: cid }); setPeekSheet({ description: r.description, loading: false }); }
@@ -254,7 +291,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   const sendPeek = async (description: string) => {
     setPeekSheet(p => (p ? { ...p, loading: true, error: undefined } : p));
     try {
-      const r = await data<{ media: Media; userMsgId: string; mediaMsgId: string }>("scene.peek", { characterId: cid, description });
+      const r = await data<{ media: Media; userMsgId: string; mediaMsgId: string }>(peekSheet?.icu ? "icu" : "scene.peek", { characterId: cid, description });
       setPeekSheet(null);
       setMsgs(list => [...(list || []), { id: r.userMsgId, role: "user", content: "*peek*", peek: true }, { id: r.mediaMsgId, role: "assistant", content: "(peek)", media: r.media, peek: true }]);
     } catch (e) { setPeekSheet(p => (p ? { ...p, loading: false, error: e instanceof Error ? e.message : "Couldn't peek right now." } : p)); }
@@ -393,6 +430,17 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
           </div>
         </div>
       )}
+      {togetherSheet && <div className="sheet" data-testid="together-sheet">
+        <div className="sheet-body">
+          <div style={{ fontWeight: 800, fontSize: 17 }}>🧍 Together in person</div>
+          <input value={togetherSheet.place} onChange={e => setTogetherSheet(t => t ? { ...t, place: e.target.value } : t)} placeholder="Where? (optional)" style={{ width: "100%", margin: "8px 0" }} />
+          {togetherSheet.error && <div className="err">{togetherSheet.error}</div>}
+          <div className="row" style={{ gap: 8 }}>
+            <button className="btn" onClick={() => startTogether(togetherSheet.place)} disabled={togetherSheet.busy}>{togetherSheet.busy ? "…" : "Start"}</button>
+            <button className="btn ghost" onClick={() => setTogetherSheet(null)}>Cancel</button>
+          </div>
+        </div>
+      </div>}
       {peekSheet && character && <PeekSheet who={character.name} sheet={peekSheet} onChange={d => setPeekSheet(p => (p ? { ...p, description: d } : p))} onRewrite={rewritePeek} onSend={sendPeek} onClose={() => setPeekSheet(null)} />}
       {sceneSheet && character && <SceneSheet key={fromPlan?.id || "new"} who={character.name} plan={fromPlan} onClose={() => { setSceneSheet(false); setFromPlan(null); }} onStart={startScene} />}
       <div data-testid="chat-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -443,6 +491,10 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       )}
       <form onSubmit={e => { e.preventDefault(); send(text); }} className="row" style={{ padding: "10px 12px", borderTop: "1px solid var(--border)" }}>
         <input ref={picker} type="file" accept={ACCEPT} hidden onChange={e => pick(e.target.files?.[0])} data-testid="chat-file-input" />
+        {cid && !scene && !inPerson && <button type="button" onClick={() => setTogetherSheet({ place: "", busy: false })} disabled={!msgs || busy} aria-label="We're together in person" title="Together in person" data-testid="inperson-open"
+          style={{ borderRadius: 999, width: 32, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 18, border: "none", background: "transparent", color: "var(--muted)" }}>🧍</button>}
+        {cid && !scene && inPerson && <button type="button" onClick={() => openPeek(true)} disabled={!msgs || busy || !!peekSheet} aria-label="I see you" title="ICU" data-testid="icu-open"
+          style={{ borderRadius: 999, width: 32, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 18, border: "none", background: "transparent", color: "var(--muted)" }}>👁️</button>}
         {cid && !scene && <button type="button" onClick={() => setSceneSheet(true)} disabled={!msgs || busy} aria-label="Start a scene" data-testid="scene-open"
           style={{ borderRadius: 999, width: 36, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 19, border: "none", background: "transparent", color: "var(--muted)" }}>🎬</button>}
         <button type="button" onClick={() => picker.current?.click()} disabled={!msgs || busy || uploading} aria-label="Attach a photo or file" data-testid="chat-attach"
