@@ -53,7 +53,7 @@ export function GroupChat({ group: initial, chars, name, onDeleted }: { group: G
   const byId = new Map(members.map(c => [c.id, c]));
 
   useEffect(() => {
-    api<{ messages: Msg[] }>("/api/groups", { action: "messages", id: group.id }).then(r => setMsgs(r.messages)).catch(e => { setMsgs([]); setErr(e instanceof Error ? e.message : "Couldn't load the group."); });
+    api<{ messages: Msg[] }>("/api/groups", { action: "messages", id: group.id }).then(r => setMsgs(Array.isArray(r.messages) ? r.messages : [])).catch(e => { setMsgs([]); setErr(e instanceof Error ? e.message : "Couldn't load the group."); });
   }, [group.id]);
   useEffect(() => { log.current?.scrollTo({ top: log.current.scrollHeight }); }, [msgs, busy]);
 
