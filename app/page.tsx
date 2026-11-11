@@ -69,7 +69,7 @@ function SignIn({ onIn }: { onIn: (u: User) => void }) {
       <form onSubmit={go} style={{ width: "100%", maxWidth: 380, display: "flex", flexDirection: "column", gap: 12, alignItems: "stretch" }}>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, marginBottom: 8 }}>
           <VeloLogo size={112} />
-          <h1 style={{ margin: 0, fontSize: 32 }}>Velo</h1>
+          <h1 style={{ margin: 0, fontSize: 32 }}>Velo 2</h1>
           <div className="muted" style={{ textAlign: "center" }}>Your personal assistant and companion.</div>
         </div>
         <input type="email" inputMode="email" autoCapitalize="none" autoComplete="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} aria-label="Email" />
