@@ -36,7 +36,7 @@ class GroupErrorBoundary extends React.Component<{ children: React.ReactNode; on
   render() {
     if (this.state.err) return (
       <div style={{ padding: 24, textAlign: "center" }}>
-        <div style={{ fontWeight: 800, marginBottom: 8 }}>This group couldn\'t load.</div>
+        <div style={{ fontWeight: 800, marginBottom: 8 }}>This group could not load.</div>
         <button className="btn" onClick={() => { this.setState({ err: false }); this.props.onReset(); }}>Back to chat</button>
       </div>
     );
