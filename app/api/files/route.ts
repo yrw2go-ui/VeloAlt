@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { put } from "@vercel/blob";
 import { randomUUID } from "node:crypto";
 import { sql } from "../../lib/db";
 import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import sharp from "sharp";
-import { IMAGE_TYPES, DOC_TYPES, MAX_BYTES, MAX_FILES, blobReady, deleteFile } from "../../lib/files";
+import { IMAGE_TYPES, DOC_TYPES, MAX_BYTES, MAX_FILES, blobReady, deleteFile, storagePut } from "../../lib/files";
 import { thumbOf, saveImageItem } from "../../lib/media";
 import { isAdmin, getCharacter } from "../../lib/characters";
 import { describePhoto } from "../../lib/bio";
@@ -64,9 +63,9 @@ export async function POST(req: NextRequest) {
       try { body = await cleanImage(body, type); }
       catch (e) { console.error("files: clean image", e instanceof Error ? e.message : e); return NextResponse.json({ error: "That picture couldn't be read. Try another one." }, { status: 400 }); }
       const t = await thumbOf(body);
-      if (t) thumbUrl = (await put(`${folder}/thumb.webp`, t, { access: "public", addRandomSuffix: true, contentType: "image/webp" })).url;
+      if (t) thumbUrl = (await storagePut(`${folder}/thumb.webp`, t, "image/webp")).url;
     }
-    const blob = await put(`${folder}/${name}`, body, { access: "public", addRandomSuffix: true, contentType: type });
+    const blob = await storagePut(`${folder}/${name}`, body, type);
     const [row] = await sql()`insert into velo_files (user_id, kind, url, pathname, name, content_type, size, thumb_url)
       values (${c.userId}, ${purpose === "chat" ? "file" : purpose}, ${blob.url}, ${blob.pathname}, ${name}, ${type}, ${body.length}, ${thumbUrl})
       returning id, url, thumb_url, name, content_type, size, kind`;
