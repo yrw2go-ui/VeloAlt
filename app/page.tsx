@@ -30,14 +30,15 @@ const TABS: { id: Tab; icon: string; label: string }[] = [
 type User = { id: string; email: string };
 
 
-class GroupErrorBoundary extends React.Component<{ children: React.ReactNode; onReset: () => void }, { err: boolean }> {
-  state = { err: false };
-  static getDerivedStateFromError() { return { err: true }; }
+class GroupErrorBoundary extends React.Component<{ children: React.ReactNode; onReset: () => void }, { err: boolean; msg: string }> {
+  state = { err: false, msg: "" };
+  static getDerivedStateFromError(e: Error) { return { err: true, msg: e.message || "Unknown error" }; }
   render() {
     if (this.state.err) return (
       <div style={{ padding: 24, textAlign: "center" }}>
         <div style={{ fontWeight: 800, marginBottom: 8 }}>This group could not load.</div>
-        <button className="btn" onClick={() => { this.setState({ err: false }); this.props.onReset(); }}>Back to chat</button>
+        <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>{this.state.msg}</div>
+        <button className="btn" onClick={() => { this.setState({ err: false, msg: "" }); this.props.onReset(); }}>Back to chat</button>
       </div>
     );
     return this.props.children;
