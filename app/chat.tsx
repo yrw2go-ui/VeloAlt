@@ -196,16 +196,13 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     if (!retry || retry === 1) { setBusy(true); setErr(""); }
     try {
       const r = await api<{ reply: string; changed?: boolean; drafts?: Draft[]; media?: Media[]; react?: string; brainDown?: boolean; by?: "claude" | "alt" }>("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name, ...thread, ...(myId ? { replyTo: myId } : {}), ...(retry ? { retry: true } : {}) });
-      // Always save the reply, even if the user switched chats (component unmounted / turn advanced).
-      if (r.reply) {
-        data("messages.add", { ...thread, messages: [{ role: "assistant", content: r.reply }] }).catch(() => {});
-      }
       if (turn.current !== me) return;
       if (r.brainDown) {
         setBusy(false);
         if (!retry && r.reply) {
           const hold: ChatMsg = { role: "assistant", content: r.reply };
           setMsgs(m => [...(m || []), hold]);
+          data("messages.add", { ...thread, messages: [{ role: "assistant", content: r.reply }] }).catch(() => {});
         }
         if (retry === 1) await marker("wait");
         setTimeout(() => { if (turn.current === me) respond(next, myId, retry ? 2 : 1); }, retry ? 30_000 : 5_000);
@@ -225,6 +222,9 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       setMsgs(m => [...(m || []), replyMsg, ...sent, ...(r.drafts || []).map(draft => ({ role: "assistant" as const, content: "", draft }))]);
       // Free the box as soon as her reply shows; saving it can finish in the background.
       setBusy(false);
+      const s2 = await data<{ ids?: string[] }>("messages.add", { ...thread, messages: [{ role: "assistant", content: r.reply }] }).catch(() => ({ ids: [] as string[] }));
+      const replyId = s2.ids?.[0];
+      if (replyId) setMsgs(list => (list || []).map(x => (x === replyMsg ? { ...x, id: replyId } : x)));
       if (r.changed) onChanged();
     } catch (e) {
       setErr(e instanceof Error ? e.message : `${who} didn't answer.`);
@@ -572,7 +572,8 @@ export type SceneClockChoice = { clock: "now" | "set"; time: string };
 export function SceneSheet({ who, plan, onClose, onStart }: { who: string; plan?: { title: string; details: string; time?: string } | null; onClose: () => void; onStart: (kind: "live" | "past", title: string, details: string, clock: SceneClockChoice) => Promise<void> }) {
   const [kind, setKind] = useState<"live" | "past">("live");
   // 🕒 Real time now, or the scene's own scheduled time (the plan's time, if it has one).
-  const [clock, setClock] = useState<"now" | "set">("now");
+  // If the plan already has a time, start on "Scheduled time" so it doesn't begin immediately.
+  const [clock, setClock] = useState<"now" | "set">(plan?.time ? "set" : "now");
   const [time, setTime] = useState(plan?.time || "");
   const [title, setTitle] = useState(plan?.title || "");
   const [details, setDetails] = useState(plan?.details || "");
