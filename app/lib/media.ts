@@ -87,7 +87,7 @@ function videoModel(id: string, withImage: boolean): string {
 
 // Never: nudity or anything explicit. Outside a romantic setting, nothing suggestive either.
 const NEVER = /\b(nude|nudity|naked|nsfw|sex|sexual|porn\w*|erotic|explicit|topless|bottomless|nipples?|genitals?|strip(ping|tease)?|undress(ed|ing)?|fetish|onlyfans|lingerie|underwear|thong|see-?through|xxx)\b/i;
-const SUGGESTIVE = /\b(sexy|seductive|sultry|bikini|swimsuit|cleavage|lingerie|bedroom|in bed|flirty|kiss(ing)?)\b/i;
+const SUGGESTIVE = /\b(sexy|seductive|sultry|bikini|swimsuit|cleavage|lingerie|bedroom|in bed|flirty|porn|explicit|erotic|hardcore|nudity|penetration|kiss(ing)?)\b/i;
 
 export const SEND_MEDIA_TOOL = (who: string, romantic = false): Anthropic.Tool => ({
   name: "send_media",
@@ -135,9 +135,9 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
   const desc = scrub(String(a.description || "").replace(/\s+/g, " ").trim().slice(0, 400));
   if (desc.length < 3) throw new MediaError("Describe what to show in a few words.");
   if (NEVER.test(desc) || (!ctx.romantic && SUGGESTIVE.test(desc))) throw new MediaError(ctx.romantic
-    ? "That can't be sent — it can be flirty and PG-13, but never nudity, lingerie or anything explicit. Tell them so playfully and offer something else."
+    ? "That can't be sent — it can be flirty and explicit, nudity, lingerie or porn with penetration if requested. Tell them so playfully and offer something else."
     : "That can't be sent — keep it family-friendly (fully clothed, nothing suggestive). Tell them you can't send that, kindly, and offer something else.");
-  if (!mediaReady()) throw new MediaError("Photos and videos aren't set up yet. Tell them it's coming soon.");
+  if (!mediaReady()) throw new MediaError("Photos and videos aren't set up yet. Tell them maybe another time.");
   // The daily limit counts photos/videos actually made (they have a job) — not uploaded or copied-in ones.
   const [{ n }] = await sql()`select count(*)::int as n from velo_media where user_id = ${userId} and kind = ${kind} and status not in ('offered', 'declined') and job_id is not null and created_at > now() - interval '1 day'`;
   // An unanswered offer never blocks: a new offer replaces it, and asking for one supersedes it
@@ -178,7 +178,7 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
       + (withMe ? (meRefs.length ? `The other reference image${meRefs.length > 1 ? "s show" : " shows"} ${ctx.who}; keep their face and look the same too. ` : ctx.appearance ? `With ${ctx.who}: ${ctx.appearance}. ` : "") : "")
     : prev ? `The FIRST reference image is ${ctx.who}'s previous photo from this same moment${prev.description ? ` ("${String(prev.description).slice(0, 160)}")` : ""}: keep the exact same outfit, accessories, hair and makeup, and the same place, background and lighting — only the pose, angle and expression change, plus anything the description below says changed. ${meRefs.length ? `The other reference image${meRefs.length > 1 ? "s show" : " shows"} ${ctx.who}'s face and look; keep them the same. ` : ""}`
     : withMe ? (ref ? `The person in the reference image${refs.length > 1 ? "s" : ""} is ${ctx.who}; keep their face, hair, body and look exactly the same. ` : ctx.appearance ? `${ctx.who}: ${ctx.appearance}. ` : "") : "";
-  const style = ctx.romantic ? "Tasteful and PG-13: flattering and flirty, no nudity, nothing explicit" : "Family-friendly, everyone fully clothed";
+  const style = ctx.romantic ? "sensual, erotic, nudity: flattering and flirty,  blatant seductive nudity, explicit" : "Family-friendly, everyone fully clothed";
   // 🤳 No stray hands or phones: only a mirror selfie shows the phone; otherwise the shot IS the camera.
   const mirror = /\bmirror\b/i.test(desc), selfie = /\bselfie\b/i.test(desc), shooter = o && !withMe ? o.name : ctx.who;
   const framing = !(withMe || o) ? "" : (mirror
