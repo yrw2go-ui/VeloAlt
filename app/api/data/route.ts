@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { duePlans, setPlanStatus } from "../../lib/plans";
 import { readyIntros, acceptIntro, declineIntro, IntroError } from "../../lib/intros";
-import { peekAt, draftPeek } from "../../lib/peek";
+import { peekAt, draftPeek, draftIcu } from "../../lib/peek";
+import { inPersonFor, startInPerson, endInPerson } from "../../lib/inPerson";
 import { cleanTags } from "../../lib/text";
 import { sql } from "../../lib/db";
 import { resolveCaller } from "../../lib/caller";
@@ -264,22 +265,47 @@ export async function POST(req: NextRequest) {
       }
       // 🔴 Unread: messages from Velo / each character since they last looked at that chat.
       
-      case "media.icu": {
+      
+      // 🧍 Together in person (not a scene): she talks face to face, and 👁️ ICU works.
+      case "inperson.get":
+      case "inperson.start":
+      case "inperson.end": {
         const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
         if (!ch) return bad("That character wasn't found.");
+        if (b.action === "inperson.get") return NextResponse.json({ inPerson: await inPersonFor(me, ch.id) });
+        const note = async (content: string) => {
+          const [row] = await db`insert into velo_messages (user_id, role, content, character_id) values (${me}, 'user', ${content}, ${ch.id}) returning id`;
+          return { id: String(row.id), role: "user", content };
+        };
+        if (b.action === "inperson.end") {
+          if (!(await endInPerson(me, ch.id))) return bad("You two aren't together right now.");
+          return NextResponse.json({ ok: true, marker: await note("🧍 you went your separate ways") });
+        }
+        const place = String(b.place || "").trim().slice(0, 80);
+        const ip = await startInPerson(me, ch.id, place);
+        return NextResponse.json({ inPerson: ip, marker: await note(`🧍 you're together in person${place ? ` (${place})` : ""}`) });
+      }
+      // 👁️ ICU: together in person (no scene)
+      case "icu.draft":
+      case "icu": {
+        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
+        if (!ch) return bad("That character wasn't found.");
+        if (!(await inPersonFor(me, ch.id))) return bad("ICU works when you two are together in person — tap 🧍 first.");
         if (!mediaReady()) return bad("Photos aren't set up yet.");
-        if (!allow(`icu:${me}`, [{ ms: 60_000, max: 6 }, { ms: 86_400_000, max: 80 }])) return NextResponse.json({ error: "That's a lot of photos — try again in a bit." }, { status: 429 });
+        if (!allow(`peek:${me}`, [{ ms: 60_000, max: 10 }, { ms: 86_400_000, max: 300 }])) return NextResponse.json({ error: "That's a lot of peeks — try again in a bit." }, { status: 429 });
         const [u] = await db`select adult_confirmed_at from users where id = ${me}`;
-        const romantic = !!u?.adult_confirmed_at && !!ch.romantic;
         try {
-          const media = await startMedia(me, { kind: "image", with_me: true, they_asked: true, description: "a photo of you right now, as if you're with them in person" }, {
-            characterId: ch.id, who: ch.name, appearance: ch.appearance || "", refs: [], romantic, offer: false,
-          });
-          return NextResponse.json({ media });
+          if (b.action === "icu.draft") return NextResponse.json({ description: await draftIcu(me, ch, !!u?.adult_confirmed_at) });
+          const description = String(b.description || "").trim();
+          if (description.length < 10) return bad("Describe what you see in a few words first.");
+          const p = await peekAt(me, ch, null, !!u?.adult_confirmed_at, description);
+          if (p.media.status === "failed") return bad("The picture service wouldn't make that one — try changing the description.");
+          return NextResponse.json(p);
         } catch (e) {
-          return bad(e instanceof MediaError ? e.message : "Couldn't take that photo right now.");
+          return bad(e instanceof MediaError ? "Couldn't make it right now — try again in a moment." : "Couldn't make it right now.");
         }
       }
+
 case "chats.unread": {
         const rows = await db`select m.character_id, count(*)::int as n from velo_messages m
           left join chat_reads r on r.user_id = m.user_id and r.character_id is not distinct from m.character_id
