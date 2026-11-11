@@ -163,15 +163,15 @@ export function GroupChat({ group: initial, chars, name, onDeleted }: { group: G
             <div key={m.id} style={{ alignSelf: "flex-end", maxWidth: "80%", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
               {m.private_to && <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)" }}>Private · @{byId.get(m.private_to)?.name || "someone"}</div>}
               <div style={{ padding: "10px 14px", borderRadius: 18, background: m.private_to ? "var(--surface)" : "linear-gradient(135deg, var(--accent), var(--accent2))", border: m.private_to ? "1.5px dashed var(--accent)" : undefined, whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 15, opacity: m.pending ? 0.75 : 1 }}>{typeof m.content === "string" ? m.content : ""}</div>
-              {Object.keys(m.their_reactions || {}).length > 0 && (
+              {(() => { const tr = typeof m.their_reactions === "string" ? JSON.parse(m.their_reactions) : (m.their_reactions || {}); return Object.keys(tr).length > 0 && (
                 <div data-testid="group-their-reactions" style={{ display: "flex", gap: 4 }}>
-                  {Object.entries(m.their_reactions || {}).map(([id, e]) => (
+                  {Object.entries(tr).map(([id, e]) => (
                     <span key={id} title={`${byId.get(id)?.name || "Someone"} reacted`} style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 13, padding: "2px 6px", borderRadius: 999, background: "var(--surface)", border: "1px solid var(--border)" }}>
                       {typeof e === "string" ? e : ""}{byId.get(id) && <CharacterFace c={byId.get(id)!} size={14} />}
                     </span>
                   ))}
                 </div>
-              )}
+              ); })()}
             </div>
           );
           return (
