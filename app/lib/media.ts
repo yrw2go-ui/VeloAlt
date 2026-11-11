@@ -13,7 +13,7 @@ import { randomUUID } from "node:crypto";
 import { sql } from "./db";
 import { scrub } from "./secrets";
 import { sendPush } from "./push";
-import { storagePut } from "./files";
+import { storagePut, storageDel } from "./files";
 
 export type Media = { id: string; kind: "image" | "video"; status: "offered" | "declined" | "working" | "done" | "failed"; url: string | null; thumb?: string | null; caption?: string | null; description?: string | null; subject?: string | null };
 
@@ -391,7 +391,7 @@ export async function deleteMedia(userId: string, id: string): Promise<boolean> 
     portrait_file_id = case when portrait_file_id = ${m.file_id} then null else portrait_file_id end where id = ${m.character_id}`;
   for (const fid of [m.file_id, m.thumb_file_id].filter(Boolean)) {
     const [f] = await sql()`delete from velo_files where id = ${fid} and user_id = ${userId} returning url`;
-    if (f) { try { await del(String(f.url)); } catch { /* already gone */ } }
+    if (f) { try { await storageDel([String(f.url)]); } catch { /* already gone */ } }
   }
   return true;
 }
