@@ -10,7 +10,7 @@ import { CharacterFace, type Character } from "./characters";
 import { SceneSheet, type SceneClockChoice } from "./chat";
 import { MediaView, ReactionBar, type Media } from "./media";
 
-export type Group = { id: string; title: string; member_ids: string[]; updated_at: string; scene_title?: string | null; scene_details?: string | null };
+export type Group = { id: string; title: string; member_ids: string[]; updated_at: string; scene_title?: string | null; scene_details?: string | null; in_person_place?: string | null };
 type Msg = { id: string; speaker_id: string | null; content: string; created_at: string; pending?: boolean; peek?: boolean; media?: Media | null; reaction?: string | null; their_reactions?: Record<string, string> };
 const PEEK = /^\s*\*?\s*pe(e|a)k\s*\*?\s*[.!]?\s*$/i;
 
@@ -75,6 +75,11 @@ export function GroupChat({ group: initial, chars, name, onDeleted }: { group: G
     if (!t || busy || !msgs) return;
     // 👀 "*peek*" in a scene: pick who's in it, check the description, then it's made. Nobody knows.
     if (group.scene_title && PEEK.test(t)) { setText(""); setPeek(true); return; }
+    // 👁️ "ICU" when you're all together in person: the same pop-up.
+    if (/^\s*\*?\s*icu\s*\*?\s*[.!]?\s*$/i.test(t)) {
+      if (group.in_person_place == null || group.scene_title) { setErr("ICU works when you're all together in person."); return; }
+      setText(""); setPeek(true); return;
+    }
     run.current++; setChatting(false);
     const mine: Msg = { id: `tmp-${Date.now()}`, speaker_id: null, content: t, created_at: new Date().toISOString(), pending: true };
     setMsgs(m => [...(m || []), mine]); setText(""); setBusy(true); setErr("");
@@ -93,6 +98,11 @@ export function GroupChat({ group: initial, chars, name, onDeleted }: { group: G
   const endScene = async () => {
     if (!(await confirmAsk(`End the scene "${group.scene_title}"? It'll become a memory you all share.`, { yes: "End scene" }))) return;
     try { const r = await api<{ marker: Msg | null }>("/api/groups", { action: "scene.end", id: group.id }); setGroup(g => ({ ...g, scene_title: null, scene_details: null })); if (r.marker) setMsgs(m => [...(m || []), r.marker!]); unsaved.current++; }
+    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't end it."); }
+  };
+  // 🧍 Everyone heads off: back to a group text.
+  const endTogether = async () => {
+    try { const r = await api<{ marker: Msg | null }>("/api/groups", { action: "inperson.end", id: group.id }); setGroup(g => ({ ...g, in_person_place: null })); if (r.marker) setMsgs(m => [...(m || []), r.marker!]); unsaved.current++; }
     catch (e) { setErr(e instanceof Error ? e.message : "Couldn't end it."); }
   };
   // 😮 Tap one of their messages to react (tap the same reaction again to take it back).
@@ -125,6 +135,13 @@ export function GroupChat({ group: initial, chars, name, onDeleted }: { group: G
           <button className="ghost" onClick={endScene} data-testid="group-scene-end" style={{ padding: "2px 10px", fontSize: 12 }}>End</button>
         </div>
       )}
+      {!group.scene_title && group.in_person_place != null && (
+        <div data-testid="group-inperson-banner" className="row" style={{ padding: "6px 12px", gap: 8, background: "linear-gradient(90deg, rgba(16,185,129,.16), rgba(124,140,255,.12))", borderBottom: "1px solid var(--border)", fontSize: 13 }}>
+          <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>🧍 <b>Together in person</b>{group.in_person_place ? <span className="muted"> · {group.in_person_place}</span> : null}</span>
+          <button type="button" className="ghost" onClick={() => setPeek(true)} aria-label="ICU" data-testid="group-icu-open" style={{ padding: "2px 10px", fontSize: 14 }}>👁️</button>
+          <button className="ghost" onClick={endTogether} data-testid="group-inperson-end" style={{ padding: "2px 10px", fontSize: 12 }}>Leave</button>
+        </div>
+      )}
       <div ref={log} data-testid="group-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
         {msgs && !msgs.length && <div className="muted" style={{ textAlign: "center", fontSize: 14, marginTop: 24 }}>Say hi to everyone 👋<br /><span style={{ fontSize: 12 }}>Mention someone by name to hear from her, or say &quot;you guys&quot; for everyone.</span></div>}
         {(msgs || []).map(m => {
@@ -136,7 +153,7 @@ export function GroupChat({ group: initial, chars, name, onDeleted }: { group: G
             </div>
           );
           if (m.peek) return <div key={m.id} className="muted" style={{ alignSelf: "flex-end", fontSize: 12, padding: "4px 10px", borderRadius: 999, border: "1px dashed var(--border)" }}>👀 you peeked</div>;
-          if (!m.speaker_id && m.content.startsWith("🎬")) return <div key={m.id} data-testid="group-scene-note" className="muted" style={{ alignSelf: "center", maxWidth: "90%", textAlign: "center", fontSize: 12, padding: "6px 12px", borderRadius: 999, background: "var(--surface2)", border: "1px solid var(--border)" }}>{m.content}</div>;
+          if (!m.speaker_id && (m.content.startsWith("🎬") || m.content.startsWith("🧍"))) return <div key={m.id} data-testid="group-scene-note" className="muted" style={{ alignSelf: "center", maxWidth: "90%", textAlign: "center", fontSize: 12, padding: "6px 12px", borderRadius: 999, background: "var(--surface2)", border: "1px solid var(--border)" }}>{m.content}</div>;
           if (!m.speaker_id) return (
             <div key={m.id} style={{ alignSelf: "flex-end", maxWidth: "80%", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
               <div style={{ padding: "10px 14px", borderRadius: 18, background: "linear-gradient(135deg, var(--accent), var(--accent2))", whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 15, opacity: m.pending ? 0.75 : 1 }}>{m.content}</div>
@@ -257,7 +274,7 @@ function GroupPeekSheet({ group, members, name, onClose, onMade }: { group: Grou
             </button>
           ))}
         </div>
-        <textarea value={desc} onChange={e => setDesc(e.target.value)} maxLength={400} rows={5} aria-label="Peek description" disabled={loading && !desc}
+        <textarea value={desc} onChange={e => setDesc(e.target.value)} maxLength={1500} rows={5} aria-label="Peek description" disabled={loading && !desc}
           placeholder={loading ? "Writing what you'd see…" : "What you see right now"} style={{ resize: "vertical" }} />
         {stale && <button className="ghost" onClick={() => draft(ids)} disabled={loading || !ids.length} data-testid="peek-rewrite">✍️ Rewrite for {members.filter(c => ids.includes(c.id)).map(c => c.name).join(" & ") || "…"}</button>}
         {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
