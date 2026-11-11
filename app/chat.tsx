@@ -240,6 +240,16 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       setErr(e instanceof Error ? e.message : `${who} didn't answer.`);
     } finally { setBusy(false); }
   };
+  const resendImage = async (msgId: string) => {
+    if (!cid || resendFor) return;
+    setResendFor(msgId);
+    try {
+      const r = await data<{ media: Media }>("media.resend", { characterId: cid });
+      if (r.media) setMsgs(list => [...(list || []), { role: "assistant", content: mediaNote(r.media), media: r.media }]);
+    } catch (e) { setErr(e instanceof Error ? e.message : "Could not resend."); }
+    setResendFor(null);
+  };
+
 
   // 🎬 Scenes: a date or outing, played out here, or something that already happened.
   const [scene, setScene] = useState<{ id: string; title: string; details: string } | null>(null);
@@ -292,6 +302,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   };
   // 👀 The peek being set up: its description (editable) before the picture is made.
   const [peekSheet, setPeekSheet] = useState<{ description: string; loading: boolean; error?: string; icu?: boolean } | null>(null);
+  const [resendFor, setResendFor] = useState<string | null>(null);
   const openPeek = async (icu: boolean) => {
     setErr(""); setPeekSheet({ description: "", loading: true, icu });
     try { setPeekSheet({ description: (await data<{ description: string }>(icu ? "icu.draft" : "scene.peek.draft", { characterId: cid })).description, loading: false, icu }); }
@@ -492,7 +503,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       {peekSheet && character && <PeekSheet who={character.name} sheet={peekSheet} onChange={d => setPeekSheet(p => (p ? { ...p, description: d } : p))} onRewrite={rewritePeek} onSend={sendPeek} onClose={() => setPeekSheet(null)} />}
       {sceneSheet && character && <SceneSheet key={fromPlan?.id || "new"} who={character.name} plan={fromPlan} onClose={() => { setSceneSheet(false); setFromPlan(null); }} onStart={startScene} />}
       <div data-testid="chat-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-        {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={m.media?.id || m.id || i} m={m} onReactMsg={reactMsg} selectMode={selectMode} selected={!!(m.id && selected.has(m.id))} onToggle={toggleSelect} face={face(28)} onMedia={mediaArrived} onFailed={reload} onReact={react} who={who} onAnswer={x => setMsgs(list => (list || []).map(y => (y.media?.id === x.id ? { ...y, content: mediaNote({ ...y.media!, ...x }), media: { ...y.media!, ...x } } : y)))} />)}
+        {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={m.media?.id || m.id || i} m={m} onReactMsg={reactMsg} selectMode={selectMode} selected={!!(m.id && selected.has(m.id))} onToggle={toggleSelect} face={face(28)} onMedia={mediaArrived} onFailed={reload} onReact={react} who={who} onResend={resendImage} resending={resendFor === m.id} onAnswer={x => setMsgs(list => (list || []).map(y => (y.media?.id === x.id ? { ...y, content: mediaNote({ ...y.media!, ...x }), media: { ...y.media!, ...x } } : y)))} />)}
         {character && msgs && !msgs.length && (
           <div className="muted" style={{ textAlign: "center", fontSize: 14, marginTop: 24, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
             {face(72)}<div>Say hi to {character.name} 👋</div>
@@ -581,7 +592,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   );
 }
 
-function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg, selectMode, selected, onToggle }: { m: ChatMsg; face: React.ReactNode; who: string; onMedia: (x: Media) => void; onFailed?: () => void; onReact: (id: string, r: string) => void; onAnswer: (x: Media) => void; onReactMsg: (id: string, r: string) => void; selectMode?: boolean; selected?: boolean; onToggle?: (id: string) => void }) {
+function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg, selectMode, selected, onToggle, onResend, resending }: { m: ChatMsg; face: React.ReactNode; who: string; onMedia: (x: Media) => void; onFailed?: () => void; onReact: (id: string, r: string) => void; onAnswer: (x: Media) => void; onReactMsg: (id: string, r: string) => void; selectMode?: boolean; selected?: boolean; onToggle?: (id: string) => void; onResend?: (id: string) => void; resending?: boolean }) {
   const mine = m.role === "user";
   const [picking, setPicking] = useState(false);
   // A small badge on the bubble's corner, like a text-message reaction.
@@ -627,6 +638,12 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
         background: mine ? "linear-gradient(135deg, var(--accent), var(--accent2))" : "var(--surface2)", color: "var(--text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", lineHeight: 1.45, fontSize: 15 }}>
         {m.file && <div style={{ marginBottom: m.content && m.content !== "📎" ? 8 : 0 }}><FileThumb f={m.file} size={180} /></div>}
         {m.content !== "📎" && styled(m.content.replace(/\*\*(.+?)\*\*/g, "$1"))}
+        {!mine && /sent.*(pic|photo|image|picture)|here.*(pic|photo)|sending you a/i.test(m.content) && !m.media && (
+          <button type="button" onClick={e => { e.stopPropagation(); onResend?.(m.id || ""); }} disabled={resending}
+            style={{ marginTop: 6, fontSize: 12, padding: "4px 10px", borderRadius: 999, border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer" }}>
+            {resending ? "Resending…" : "↻ Resend image"}
+          </button>
+        )}
         {mine && m.theirReaction && badge(m.theirReaction, who)}
         {!mine && m.reaction && badge(m.reaction, "You")}
       </div>
