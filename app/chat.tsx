@@ -238,6 +238,18 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   // 🧍 Together in person (not a scene): she talks face to face, and 👁️ ICU works.
   type InPerson = { place: string; started_at: string };
   const [inPerson, setInPerson] = useState<InPerson | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const toggleSelect = (id: string) => setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const deleteSelected = async () => {
+    if (!selected.size) return;
+    const ids = [...selected];
+    setMsgs(list => (list || []).filter(x => !x.id || !selected.has(x.id)));
+    setSelected(new Set()); setSelectMode(false);
+    try { await data("messages.delete", { ids }); } catch { /* removed locally */ }
+    const remaining = (msgsRef.current || []).filter(x => !x.id || !selected.has(x.id));
+    if (remaining.length && remaining[remaining.length - 1]?.role === "user") await respond(remaining);
+  };
   const [togetherSheet, setTogetherSheet] = useState<{ place: string; busy: boolean; error?: string } | null>(null);
   const startTogether = async (place: string) => {
     setTogetherSheet(t => (t ? { ...t, busy: true, error: undefined } : t));
