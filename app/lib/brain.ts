@@ -30,6 +30,7 @@ async function pushedLately(userId: string, sceneId: string): Promise<number> {
   return Number(r?.n || 0);
 }
 import { characterPrompt, feelingsFor, saveFeelings, trustFor, saveTrust, trustNote, activeScene, sceneNote, noteMentions, acquaintancesNote, referenceUrls, pictureOf, type Character } from "./characters";
+import { weatherNote } from "./weatherNote";
 import { aboutThem } from "./bio";
 import { mediaMood, allowsSuggestive } from "./traits";
 import { CHARACTER_ZONES } from "./states";
@@ -170,7 +171,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   const chatLog = mode === "talk" ? await chatLogNote(caller.userId, cid, today.tz, ch?.name || "Velo").catch(e => { console.error("velo: chat log", e instanceof Error ? e.message : e); return ""; }) : "";
   const system: Anthropic.TextBlockParam[] = [
     // The persona never changes, so it's cached across everyone's chats.
-    ch ? { type: "text", text: characterPrompt(ch, name, !!u?.adult_confirmed_at, arc ? await feelingsFor(caller.userId, ch.id).catch(() => "") : "") } : { type: "text", text: VELO_SYSTEM, cache_control: { type: "ephemeral" } },
+    ch ? { type: "text", text: characterPrompt(ch, name, !!u?.adult_confirmed_at, arc ? await feelingsFor(caller.userId, ch.id).catch(() => "") : "") + (await weatherNote(ch.time_zone || "America/Chicago").catch(() => "")) } : { type: "text", text: VELO_SYSTEM, cache_control: { type: "ephemeral" } },
     // Same for the whole call, so it's cached between turns.
     ...(chatLog ? [{ type: "text" as const, text: chatLog, cache_control: { type: "ephemeral" as const } }] : []),
     {
