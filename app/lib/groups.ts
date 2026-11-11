@@ -115,11 +115,77 @@ function pickSpeakers(text: string, chars: Character[], rows: GroupMsg[]): Chara
 }
 
 /** They said something: it's saved, then each character who answers replies in turn, seeing the others' replies. */
+/** 🔒 What everyone can see: no peeks and no private @texts. */
+const open = (rows: GroupMsg[]) => seen(rows).filter(r => !r.private_to);
+/** "@Hailey hey…" → a private text to that member (matched by her name or first name). */
+export function privateTarget(text: string, chars: Character[]): { c: Character; body: string } | null {
+  const m = text.match(/^\s*@([\p{L}\p{N}'’._-]+)[\s,:]+([\s\S]+)$/u);
+  if (!m) return null;
+  const tag = m[1].toLowerCase().replace(/[._-]+$/, "");
+  const c = chars.find(x => x.name.toLowerCase() === tag || x.name.toLowerCase().split(/\s+/)[0] === tag || x.name.toLowerCase().replace(/\s+/g, "") === tag);
+  return c ? { c, body: m[2].trim() } : null;
+}
+
+/** The thread as one character sees it: her own lines are hers, everyone else's carry their name. */
+function turnsFor(me: string, rows: GroupMsg[], names: Map<string, string>, personName: string): Turn[] {
+  const who = personName || "they";
+  // 😮 Reactions travel with the thread: theirs on a character's line, and the characters' on theirs.
+  const notes = (r: GroupMsg) => [
+    r.reaction ? (r.speaker_id === me ? `(${who} reacted ${r.reaction} to this)` : `(${who} reacted ${r.reaction})`) : "",
+    ...Object.entries(r.their_reactions || {}).map(([id, e]) => (id === me ? `(you reacted ${e} to this)` : `(${names.get(id) || "someone"} reacted ${e})`)),
+  ].filter(Boolean).join(" ");
+  // 🔒 Private @texts: only the one they were sent to sees them.
+  return seen(rows).filter(r => !r.private_to || r.private_to === me).map(r => {
+    const n = notes(r);
+    const priv = r.private_to ? (r.speaker_id === me ? `(you sent this privately to ${who} — the others didn't see it)` : `(sent privately to you — the others can't see it)`) : "";
+    return r.speaker_id === me
+      ? { role: "assistant" as const, content: `${r.content}${n ? `\n${n}` : ""}${priv ? `\n${priv}` : ""}` }
+      : { role: "user" as const, content: `[${r.speaker_id ? names.get(r.speaker_id) || "Someone" : personName || "Them"}]: ${r.content}${n ? `\n${n}` : ""}${priv ? `\n${priv}` : ""}` };
+  });
+}
+
+/** 😮 They react to a character's message in the group (tap the same one again to take it back). */
+export async function reactInGroup(userId: string, g: Group, msgId: string, reaction: string | null): Promise<boolean> {
+  if (!/^[0-9a-f-]{36}$/i.test(msgId)) return false;
+  const r = await sql()`update chat_group_messages set reaction = ${reaction} where id = ${msgId} and group_id = ${g.id} and user_id = ${userId} and speaker_id is not null returning id`;
+  return r.length > 0;
+}
+
+/** Who answers: whoever they named (or everyone, for "you guys"); otherwise one or two of them, whoever's been quietest. */
+function pickSpeakers(text: string, chars: Character[], rows: GroupMsg[]): Character[] {
+  if (ALL.test(text)) return [...chars].sort(() => Math.random() - 0.5).slice(0, 4);
+  const named = chars.map(c => ({ c, at: text.search(new RegExp(`(^|[^\\p{L}])${esc(c.name)}(?=$|[^\\p{L}])`, "iu")) })).filter(x => x.at >= 0).sort((a, b) => a.at - b.at).map(x => x.c);
+  if (named.length) return named.slice(0, 3);
+  const lastSpoke = (id: string) => { for (let i = rows.length - 1; i >= 0; i--) if (rows[i].speaker_id === id) return i; return -1; };
+  const quiet = [...chars].sort((a, b) => lastSpoke(a.id) - lastSpoke(b.id) || Math.random() - 0.5);
+  return quiet.slice(0, Math.random() < 0.5 ? 2 : 1);
+}
+
+/** They said something: it's saved, then each character who answers replies in turn, seeing the others' replies. */
+async function sendPrivate(caller: Caller, g: Group, chars: Character[], c: Character, body: string, timeZone: unknown, personName: string): Promise<{ replies: GroupMsg[]; banter: boolean; mine: { id: string; their_reactions: Record<string, string>; private_to: string } }> {
+  const [mineRow] = await sql()`insert into chat_group_messages (group_id, user_id, content, private_to) values (${g.id}, ${caller.userId}, ${body}, ${c.id}) returning id`;
+  await sql()`update chat_groups set updated_at = now(), banter_left = 0 where id = ${g.id}`;
+  const names = new Map(chars.map(x => [x.id, x.name]));
+  const rows = await groupMessages(caller.userId, g.id, 40);
+  const r = await askVelo(caller, { mode: "chat", messages: turnsFor(c.id, rows, names, personName), timeZone, name: personName, character: c, group: { others: chars.filter(x => x.id !== c.id).map(x => x.name), scene: g.scene_title ? { title: g.scene_title, details: g.scene_details || "", time: sceneClockNote(groupClock(g), await userTz(caller.userId)) } : null, inPerson: g.in_person_place ?? null, catchUp: g.catch_up?.[c.id] || "", private: true } });
+  const reply = scrub(r.reply.replace(/^\s*\[[^\]]{1,40}\]:\s*/, "")).trim().slice(0, 4000);
+  if (r.react) await sql()`update chat_group_messages set their_reactions = their_reactions || ${JSON.stringify({ [c.id]: r.react })}::jsonb where id = ${mineRow.id}`;
+  const out: GroupMsg[] = [];
+  if (reply) {
+    const [m] = await sql()`insert into chat_group_messages (group_id, user_id, speaker_id, content, private_to) values (${g.id}, ${caller.userId}, ${c.id}, ${reply}, ${c.id}) returning id, speaker_id, content, created_at, private_to`;
+    out.push({ ...(m as GroupMsg), private_to: c.id });
+  }
+  const [mine] = await sql()`select their_reactions from chat_group_messages where id = ${mineRow.id}`;
+  return { replies: out, banter: false, mine: { id: String(mineRow.id), their_reactions: mine?.their_reactions || {}, private_to: c.id } };
+}
+
 export async function sendToGroup(caller: Caller, g: Group, text: string, timeZone: unknown, personName: string): Promise<{ replies: GroupMsg[]; banter: boolean; mine: { id: string; their_reactions: Record<string, string> } }> {
   const clean = scrub(text).trim().slice(0, 4000);
   if (!clean) throw new GroupError("Say something first.");
   const chars = await members(g);
   if (chars.length < 2) throw new GroupError("This group needs at least 2 characters.");
+  const pt = privateTarget(clean, chars);
+  if (pt) return await sendPrivate(caller, g, chars, pt.c, pt.body, timeZone, personName);
   const [mineRow] = await sql()`insert into chat_group_messages (group_id, user_id, content) values (${g.id}, ${caller.userId}, ${clean}) returning id`;
   // They spoke: any back-and-forth between the characters stops right here.
   await sql()`update chat_groups set updated_at = now(), banter_left = 0, since_banter = since_banter + 1 where id = ${g.id}`;
