@@ -65,7 +65,7 @@ export async function groupMessages(userId: string, groupId: string, limit = 200
     from chat_group_messages g left join velo_media md on md.id = g.media_id left join velo_files mf on mf.id = md.file_id
     where g.group_id = ${groupId} and g.user_id = ${userId} order by g.created_at desc limit ${limit}`;
   return rows.reverse().map(r => ({ id: String(r.id), speaker_id: r.speaker_id ? String(r.speaker_id) : null, content: String(r.content), created_at: String(r.created_at), ...(r.peek ? { peek: true } : {}), ...(r.private_to ? { private_to: String(r.private_to) } : {}),
-    reaction: r.reaction || null, their_reactions: r.their_reactions && typeof r.their_reactions === "object" ? r.their_reactions : {},
+    reaction: r.reaction || null, their_reactions: typeof r.their_reactions === "string" ? JSON.parse(r.their_reactions) : (r.their_reactions && typeof r.their_reactions === "object" ? r.their_reactions : {}),
     ...(r.media_id ? { media: { id: String(r.media_id), kind: r.media_kind, status: r.media_status, url: r.media_status === "done" ? r.media_url : null, description: r.media_description || null } as Media } : {}) }));
 }
 const groupClock = (g: Group) => ({ clock: g.scene_clock, set_time: g.scene_set_time, started_at: g.scene_started_at || undefined });
