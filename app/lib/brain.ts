@@ -40,6 +40,7 @@ import { PLAN_TOOL, runPlanTool, plansNote } from "./plans";
 import { PROMISE_TOOL, runPromiseTool, promisesNote } from "./promises";
 import { chatLogNote } from "./chatlog";
 import { tickPics, resetPics, PHOTO_MOMENT } from "./momentPics";
+import { inPersonFor, inPersonNote } from "./inPerson";
 import { tickIntro, introNote } from "./intros";
 import { SEND_MEDIA_TOOL, startMedia, mediaReady, MediaError, tasteNote, recentMediaNote, type Media } from "./media";
 import { veloLook } from "./veloAvatars";
@@ -159,6 +160,8 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   const trust = ch ? await trustFor(caller.userId, ch).catch(() => null) : null;
   // 🎬 A scene (date/outing) being played out right now with this character.
   const scene = ch && (mode === "chat" || mode === "talk") && !group ? await activeScene(caller.userId, ch.id).catch(() => null) : null;
+  // 🧍 Together in person (no scene): she talks face to face.
+  const together = ch && (mode === "chat" || mode === "talk") && !scene && !group ? await inPersonFor(caller.userId, ch.id).catch(() => null) : null;
   // 📸 Every so often (sooner as they get closer), she offers a photo of the moment.
   const photoMoment = ch && mode === "chat" && canSend && !scene && !group ? await tickPics(caller.userId, ch).catch(() => false) : false;
   // 👋 Every so often (once she's close to them), she wants them to meet someone of hers.
@@ -194,6 +197,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         modeText,
         group ? "" : replyLengthNote(mode, u?.reply_length),
         scene ? sceneNote(scene) : "",
+        together && ch ? inPersonNote(together, name || "them") : "",
         scene ? sceneClockNote(scene, today.tz, scene.clock === "now" && scene.planned_time ? await pushedLately(caller.userId, scene.id).catch(() => 0) : 0) : "",
         ch && mode !== "remember" && mode !== "memo" && !group ? await plansNote(caller.userId, ch.id, today.date).catch(() => "") : "",
         ch && mode !== "remember" && mode !== "memo" && !opts.promise ? await promisesNote(caller.userId, ch.id, today.tz).catch(() => "") : "",
