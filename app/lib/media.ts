@@ -85,10 +85,6 @@ function videoModel(id: string, withImage: boolean): string {
   return withImage ? o.i2v || m.i2v : o.t2v || m.t2v;
 }
 
-// Never: nudity or anything explicit. Outside a romantic setting, nothing suggestive either.
-const NEVER = /\b(nude|nudity|naked|nsfw|sex|sexual|porn\w*|erotic|explicit|topless|bottomless|nipples?|genitals?|strip(ping|tease)?|undress(ed|ing)?|fetish|onlyfans|lingerie|underwear|thong|see-?through|xxx)\b/i;
-const SUGGESTIVE = /\b(sexy|seductive|sultry|bikini|swimsuit|cleavage|lingerie|bedroom|in bed|flirty|kiss(ing)?)\b/i;
-
 export const SEND_MEDIA_TOOL = (who: string, romantic = false): Anthropic.Tool => ({
   name: "send_media",
   description: `Send them a photo or a short video, like a friend would from their phone, to make the chat feel personal: a picture of you (${who}) somewhere, what you're "up to" right now (fit it to your time of day, season and plans), something you're describing, or when they ask for one. If it's another photo from the same day and place as your last one (same class, same outing), set same_moment: true — same outfit and setting, only the pose and expression change. Mix it up: not every picture of you is a selfie — often it's just a photo of you, as if a friend snapped it or it's on a timer (candid, full-body, mid-activity); only say \"mirror selfie\" when you're holding your phone up to a mirror. Be creative, and lean toward the settings, outfits and vibes they've loved. If they ASKED for it, set they_asked: true and it's made right away. If it's your own idea, it's only OFFERED: they get an Accept button, and nothing is made unless they accept — so ask casually ("want a pic of my view right now?") and never say it's sent. Once made it takes about a minute (a photo) or a few minutes (a video) and pops into the chat or onto their call screen — keep talking meanwhile. Use it now and then, not every message. ${romantic ? "This is a romantic setting with an adult, so it can be PG-13 — flirty, cute, date-night outfits, swimwear at the beach — but never nudity, underwear/lingerie or anything sexual or explicit." : "Always family-friendly: everyone fully clothed, nothing sexual or suggestive."} No real people, and never a picture of the person you're talking with. Vary it like real photos do: different expressions (a big smile, laughing, a soft look, mid-sentence, looking away, focused on something) and poses from one photo to the next — don't repeat the same expression or pose, and save a wink for the rare moment it really fits. Videos are a few seconds, no sound. A picture of someone else (of_person) or of a place or thing isn't a picture of you: don't talk about it as if it were ("miss me yet?"), and if they react to it (❤️, 🔥…) they're reacting to that person or thing, not to you — take it that way.`,
@@ -133,10 +129,7 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
   const a = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
   const kind = a.kind === "video" ? "video" : "image";
   const desc = scrub(String(a.description || "").replace(/\s+/g, " ").trim().slice(0, 400));
-  if (desc.length < 3) throw new MediaError("Describe what to show in a few words.");
-  if (NEVER.test(desc) || (!ctx.romantic && SUGGESTIVE.test(desc))) throw new MediaError(ctx.romantic
-    ? "That can't be sent — it can be flirty and PG-13, but never nudity, lingerie or anything explicit. Tell them so playfully and offer something else."
-    : "That can't be sent — keep it family-friendly (fully clothed, nothing suggestive). Tell them you can't send that, kindly, and offer something else.");
+  if (desc.length < 3) throw new MediaError("Describe what to show in a few words."); 
   if (!mediaReady()) throw new MediaError("Photos and videos aren't set up yet. Tell them it's coming soon.");
   // The daily limit counts photos/videos actually made (they have a job) — not uploaded or copied-in ones.
   const [{ n }] = await sql()`select count(*)::int as n from velo_media where user_id = ${userId} and kind = ${kind} and status not in ('offered', 'declined') and job_id is not null and created_at > now() - interval '1 day'`;
