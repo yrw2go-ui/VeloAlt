@@ -85,7 +85,8 @@ export function GroupChat({ group: initial, chars, name, onDeleted }: { group: G
     setMsgs(m => [...(m || []), mine]); setText(""); setBusy(true); setErr("");
     try {
       const r = await api<{ replies: Msg[]; banter?: boolean; mine?: { id: string; their_reactions: Record<string, string> } }>("/api/groups", { action: "send", id: group.id, text: t, timeZone: timeZone(), name });
-      setMsgs(m => [...(m || []).map(x => (x === mine ? { ...x, pending: false, ...(r.mine ? { id: r.mine.id, their_reactions: r.mine.their_reactions } : {}) } : x)), ...r.replies]);
+      const replies = Array.isArray(r.replies) ? r.replies : [];
+      setMsgs(m => [...(m || []).map(x => (x === mine ? { ...x, pending: false, ...(r.mine ? { id: r.mine.id, their_reactions: r.mine.their_reactions } : {}) } : x)), ...replies]);
       unsaved.current++;
       if (r.banter) banter();
     } catch (e) { setErr(e instanceof Error ? e.message : "No one answered."); }
