@@ -8,7 +8,7 @@
 // (from their portrait) or Velo's own preset faces are used as references — never a
 // photo someone uploaded, and never the person they're talking with.
 import type Anthropic from "@anthropic-ai/sdk";
-import { put, del } from "@vercel/blob";
+// Supabase Storage (replaces Vercel Blob)
 import sharp from "sharp";
 import { randomUUID } from "node:crypto";
 import { sql } from "./db";
@@ -40,10 +40,23 @@ export const captionFor = (kind: "image" | "video", romantic: boolean) => pick(r
 
 /** Saves bytes to Blob and as one of their files. */
 async function saveFile(userId: string, buf: Buffer, type: string, name: string): Promise<{ id: string; url: string }> {
-  const blob = await put(`velo/media/${randomUUID()}/${name}`, buf, { access: "public", addRandomSuffix: true, contentType: type });
+  const bucket = process.env.SUPABASE_BUCKET || "velo";
+  const path = `media/${randomUUID()}/${name}`;
+  const url = `${process.env.SUPABASE_URL}/storage/v1/object/${bucket}/${path}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+      "Content-Type": type,
+      "x-upsert": "true",
+    },
+    body: buf,
+  });
+  if (!res.ok) throw new Error(`Supabase upload failed: ${res.status}`);
+  const publicUrl = `${process.env.SUPABASE_URL}/storage/v1/object/public/${bucket}/${path}`;
   const [f] = await sql()`insert into velo_files (user_id, kind, url, pathname, name, content_type, size)
-    values (${userId}, 'media', ${blob.url}, ${blob.pathname}, ${name}, ${type}, ${buf.length}) returning id`;
-  return { id: String(f.id), url: blob.url };
+    values (${userId}, 'media', ${publicUrl}, ${path}, ${name}, ${type}, ${buf.length}) returning id`;
+  return { id: String(f.id), url: publicUrl };
 }
 /** 🖼️ A small WebP thumbnail (fast to load, light on data); null if the picture can't be read. */
 export async function thumbOf(buf: Buffer): Promise<Buffer | null> {
@@ -62,7 +75,7 @@ export async function saveImageItem(userId: string, characterId: string | null, 
 export class MediaError extends Error {}
 
 const ATLAS = () => process.env.ATLASCLOUD_API_URL || "https://api.atlascloud.ai";
-export const mediaReady = () => !!(process.env.ATLASCLOUD_API_KEY && process.env.BLOB_READ_WRITE_TOKEN);
+export const mediaReady = () => !!(process.env.ATLASCLOUD_API_KEY && process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
 const IMAGE_MODEL = () => process.env.ATLASCLOUD_IMAGE_MODEL || "bytedance/seedream-v5.0-pro/text-to-image";
 const EDIT_MODEL = () => process.env.ATLASCLOUD_IMAGE_EDIT_MODEL || "bytedance/seedream-v5.0-pro/edit";
 export const DAILY = { image: 200, video: 6 };
@@ -393,7 +406,14 @@ export async function deleteMedia(userId: string, id: string): Promise<boolean> 
     portrait_file_id = case when portrait_file_id = ${m.file_id} then null else portrait_file_id end where id = ${m.character_id}`;
   for (const fid of [m.file_id, m.thumb_file_id].filter(Boolean)) {
     const [f] = await sql()`delete from velo_files where id = ${fid} and user_id = ${userId} returning url`;
-    if (f) { try { await del(String(f.url)); } catch { /* already gone */ } }
+    if (f) { try {
+      const bucket = process.env.SUPABASE_BUCKET || "velo";
+      const path = String(f.pathname || "");
+      if (path) await fetch(`${process.env.SUPABASE_URL}/storage/v1/object/${bucket}/${path}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}` },
+      });
+    } catch { /* already gone */ } }
   }
   return true;
 }
