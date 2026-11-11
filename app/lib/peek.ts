@@ -43,7 +43,7 @@ export async function draftPeek(userId: string, ch: Character, scene: Scene, adu
 const romanticFor = (ch: Character, adult: boolean) => adult && !!ch.romantic && allowsSuggestive(ch.traits);
 
 /** Step 2: make the picture from their (possibly edited) description, with her chosen reference pictures. */
-export async function peekAt(userId: string, ch: Character, scene: Scene, adult: boolean, description: string): Promise<{ media: Media; userMsgId: string; mediaMsgId: string }> {
+export async function peekAt(userId: string, ch: Character, scene: Scene | null, adult: boolean, description: string): Promise<{ media: Media; userMsgId: string; mediaMsgId: string }> {
   const romantic = romanticFor(ch, adult);
   const desc = scrub(description.replace(/\s+/g, " ").trim()).slice(0, 400);
   const media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: desc },
