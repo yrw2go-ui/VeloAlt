@@ -209,6 +209,18 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   useEffect(() => () => { turn.current++; }, []);
 
   /** Her reply to the chat so far (after their message, or after a 🎬 scene note). */
+  const deleteAndRegen = async (id: string) => {
+    const list = msgsRef.current || [];
+    const idx = list.findIndex(x => x.id === id);
+    if (idx < 0) return;
+    // Remove the assistant message
+    const next = list.filter(x => x.id !== id);
+    setMsgs(next);
+    try { await data("messages.delete", { id }); } catch { /* still remove locally */ }
+    // Find the previous user message and regenerate from there
+    const prevUser = [...next].reverse().find(x => x.role === "user" && !x.peek);
+    if (prevUser) await respond(next);
+  };
   const respond = async (next: ChatMsg[], myId?: string, retry = 0) => {
     const me = retry ? turn.current : ++turn.current;
     if (!retry || retry === 1) { setBusy(true); setErr(""); }
@@ -254,6 +266,19 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   // 🧍 Together in person (not a scene)
   type InPerson = { place: string; started_at: string };
   const [inPerson, setInPerson] = useState<InPerson | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const toggleSelect = (id: string) => setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const deleteSelected = async () => {
+    if (!selected.size) return;
+    const ids = [...selected];
+    setMsgs(list => (list || []).filter(x => !x.id || !selected.has(x.id)));
+    setSelected(new Set()); setSelectMode(false);
+    try { await data("messages.delete", { ids }); } catch { /* removed locally */ }
+    // Regenerate if the last remaining message is from the user
+    const remaining = (msgsRef.current || []).filter(x => !x.id || !selected.has(x.id));
+    if (remaining.length && remaining[remaining.length - 1]?.role === "user") await respond(remaining);
+  };
   useEffect(() => {
     if (!cid) return;
     data<{ inPerson: InPerson | null }>("inperson.get", { characterId: cid }).then(r => setInPerson(r.inPerson)).catch(() => {});
@@ -454,7 +479,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       {peekSheet && character && <PeekSheet who={character.name} sheet={peekSheet} onChange={d => setPeekSheet(p => (p ? { ...p, description: d } : p))} onRewrite={rewritePeek} onSend={sendPeek} onClose={() => setPeekSheet(null)} />}
       {sceneSheet && character && <SceneSheet key={fromPlan?.id || "new"} who={character.name} plan={fromPlan} onClose={() => { setSceneSheet(false); setFromPlan(null); }} onStart={startScene} />}
       <div data-testid="chat-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-        {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={m.media?.id || m.id || i} m={m} onReactMsg={reactMsg} face={face(28)} onMedia={mediaArrived} onFailed={reload} onReact={react} who={who} onAnswer={x => setMsgs(list => (list || []).map(y => (y.media?.id === x.id ? { ...y, content: mediaNote({ ...y.media!, ...x }), media: { ...y.media!, ...x } } : y)))} />)}
+        {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={m.media?.id || m.id || i} m={m} onReactMsg={reactMsg} onDelete={deleteAndRegen} selectMode={selectMode} selected={!!(m.id && selected.has(m.id))} onToggle={toggleSelect} face={face(28)} onMedia={mediaArrived} onFailed={reload} onReact={react} who={who} onAnswer={x => setMsgs(list => (list || []).map(y => (y.media?.id === x.id ? { ...y, content: mediaNote({ ...y.media!, ...x }), media: { ...y.media!, ...x } } : y)))} />)}
         {character && msgs && !msgs.length && (
           <div className="muted" style={{ textAlign: "center", fontSize: 14, marginTop: 24, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
             {face(72)}<div>Say hi to {character.name} 👋</div>
@@ -499,6 +524,11 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
           <button type="button" className="ghost" onClick={() => setAttach(null)} aria-label="Remove attachment" style={{ padding: "4px 10px", fontSize: 13 }}>✕</button>
         </div>
       )}
+      {selectMode && <div className="row" style={{ padding: "8px 12px", gap: 8, borderTop: "1px solid var(--border)", background: "var(--surface2)" }}>
+        <span style={{ flex: 1, fontSize: 13 }}>{selected.size} selected</span>
+        <button type="button" className="btn ghost" onClick={() => { setSelectMode(false); setSelected(new Set()); }} style={{ fontSize: 13 }}>Cancel</button>
+        <button type="button" className="btn" onClick={deleteSelected} disabled={!selected.size} style={{ fontSize: 13 }}>Delete</button>
+      </div>}
       <form onSubmit={e => { e.preventDefault(); send(text); }} className="row" style={{ padding: "10px 12px", borderTop: "1px solid var(--border)" }}>
         <input ref={picker} type="file" accept={ACCEPT} hidden onChange={e => pick(e.target.files?.[0])} data-testid="chat-file-input" />
         {cid && !scene && !inPerson && <button type="button" onClick={() => setTogetherSheet({ place: "", busy: false })} disabled={!msgs || busy} aria-label="We're together in person" title="Together in person" data-testid="inperson-open"
@@ -507,6 +537,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
           style={{ borderRadius: 999, width: 32, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 18, border: "none", background: "transparent", color: "var(--muted)" }}>👁️</button>}
         {cid && !scene && <button type="button" onClick={() => setSceneSheet(true)} disabled={!msgs || busy} aria-label="Start a scene" data-testid="scene-open"
           style={{ borderRadius: 999, width: 36, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 19, border: "none", background: "transparent", color: "var(--muted)" }}>🎬</button>}
+        <button type="button" onClick={() => setSelectMode(s => !s)} aria-label="Select messages" title="Select messages to delete" style={{ borderRadius: 999, width: 36, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 16, border: "none", background: "transparent", color: selectMode ? "var(--accent)" : "var(--muted)" }}>☑</button>
         <button type="button" onClick={() => picker.current?.click()} disabled={!msgs || busy || uploading} aria-label="Attach a photo or file" data-testid="chat-attach"
           style={{ borderRadius: 999, width: 40, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 20, border: "none", background: "transparent", color: "var(--muted)" }}>
           {uploading ? "⏳" : "📎"}
@@ -535,7 +566,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   );
 }
 
-function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg }: { m: ChatMsg; face: React.ReactNode; who: string; onMedia: (x: Media) => void; onFailed?: () => void; onReact: (id: string, r: string) => void; onAnswer: (x: Media) => void; onReactMsg: (id: string, r: string) => void }) {
+function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg, onDelete, selectMode, selected, onToggle }: { m: ChatMsg; face: React.ReactNode; who: string; onMedia: (x: Media) => void; onFailed?: () => void; onReact: (id: string, r: string) => void; onAnswer: (x: Media) => void; onReactMsg: (id: string, r: string) => void; onDelete?: (id: string) => void; selectMode?: boolean; selected?: boolean; onToggle?: (id: string) => void }) {
   const mine = m.role === "user";
   const [picking, setPicking] = useState(false);
   // A small badge on the bubble's corner, like a text-message reaction.
@@ -575,6 +606,8 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
     <div style={{ display: "flex", gap: 8, alignItems: "flex-end", justifyContent: mine ? "flex-end" : "flex-start", marginBottom: (mine ? m.theirReaction : m.reaction) ? 10 : 0 }}>
       {!mine && face}
       <div style={{ maxWidth: "80%", display: "flex", flexDirection: "column", alignItems: mine ? "flex-end" : "flex-start" }}>
+      {selectMode && m.id && <input type="checkbox" checked={!!selected} onChange={() => onToggle?.(m.id!)} style={{ marginRight: 4 }} />}
+      {!selectMode && !mine && m.id && onDelete && <button type="button" onClick={e => { e.stopPropagation(); onDelete(m.id!); }} aria-label="Delete this reply" title="Delete and regenerate" style={{ fontSize: 11, padding: "2px 6px", borderRadius: 6, border: "1px solid var(--border)", background: "transparent", color: "var(--muted)", cursor: "pointer" }}>✕</button>}
       <div onClick={() => { if (!mine && m.id) setPicking(p => !p); }} data-testid={mine ? "my-bubble" : "her-bubble"}
         style={{ position: "relative", cursor: !mine && m.id ? "pointer" : undefined, padding: "10px 14px", borderRadius: 18, borderBottomLeftRadius: mine ? 18 : 4, borderBottomRightRadius: mine ? 4 : 18,
         background: mine ? "linear-gradient(135deg, var(--accent), var(--accent2))" : "var(--surface2)", color: "var(--text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", lineHeight: 1.45, fontSize: 15 }}>
