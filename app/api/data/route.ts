@@ -18,7 +18,7 @@ import { PERSONALITIES } from "../../lib/persona";
 import { deleteFile, ownFile } from "../../lib/files";
 import { getCharacterFor, trustFor, activeScene } from "../../lib/characters";
 import { US_STATES } from "../../lib/states";
-import { acceptMedia, declineMedia, mediaNote, checkMedia, sweepMedia, getMedia, listGallery, deleteMedia, VIDEO_MODELS, DEFAULT_VIDEO_MODEL, mediaReady, MediaError, startMedia } from "../../lib/media";
+import { acceptMedia, declineMedia, mediaNote, checkMedia, sweepMedia, getMedia, listGallery, deleteMedia, VIDEO_MODELS, DEFAULT_VIDEO_MODEL, mediaReady, MediaError } from "../../lib/media";
 
 // 📦 Everything the app reads and changes, for the signed-in person only.
 // POST { action, ...args } → { ... }. Every query is scoped to their user_id.
@@ -145,7 +145,6 @@ export async function POST(req: NextRequest) {
         if (!ids.length) return bad("No messages to delete.");
         const rows = await db`delete from velo_messages where id = any(${ids}) and user_id = ${me} returning id, character_id`;
         if (!rows.length) return bad("Unknown message.");
-        // Best-effort: drop recent memories from the same character if any were just created.
         const charId = rows[0]?.character_id;
         if (charId) await db`delete from velo_memories where user_id = ${me} and character_id = ${charId} and created_at > now() - interval '2 minutes'`;
         return NextResponse.json({ ok: true, deleted: rows.length });
@@ -217,6 +216,7 @@ export async function POST(req: NextRequest) {
         // Started from a plan's "today" card: that plan is done.
         if (b.planId) await setPlanStatus(me, String(b.planId), "done");
         if (action === "scene.start") {
+          await endInPerson(me, ch.id); // a scene takes over from just hanging out
           const [s] = await db`insert into chat_scenes (user_id, character_id, kind, title, details, clock, set_time, planned_time, pushed) values (${me}, ${ch.id}, 'live', ${title}, ${details}, ${clock}, ${setTime}, ${plannedTime}, ${pushed}) returning id, kind, title, details, status, started_at::text, clock, set_time, planned_time`;
           return NextResponse.json({ scene: s, marker: await marker(`🎬 Scene: ${title}${details ? ` — ${details}` : ""}`, String(s.id)) });
         }
@@ -273,9 +273,6 @@ export async function POST(req: NextRequest) {
           return bad(e instanceof MediaError ? "Couldn't peek right now — try again in a moment." : "Couldn't peek right now.");
         }
       }
-      // 🔴 Unread: messages from Velo / each character since they last looked at that chat.
-      
-      
       // 🧍 Together in person (not a scene): she talks face to face, and 👁️ ICU works.
       case "inperson.get":
       case "inperson.start":
@@ -289,13 +286,14 @@ export async function POST(req: NextRequest) {
         };
         if (b.action === "inperson.end") {
           if (!(await endInPerson(me, ch.id))) return bad("You two aren't together right now.");
-          return NextResponse.json({ ok: true, marker: await note("🧍 you went your separate ways") });
+          return NextResponse.json({ ok: true, marker: await note(`🧍 We went our separate ways`) });
         }
-        const place = String(b.place || "").trim().slice(0, 80);
-        const ip = await startInPerson(me, ch.id, place);
-        return NextResponse.json({ inPerson: ip, marker: await note(`🧍 you're together in person${place ? ` (${place})` : ""}`) });
+        if (await activeScene(me, ch.id)) return bad("End the scene first.");
+        const place = scrub(clean(b.place, 120)).replace(/\n/g, " ");
+        const p = await startInPerson(me, ch.id, place);
+        return NextResponse.json({ inPerson: p, marker: await note(`🧍 Together in person${place ? ` — ${place}` : ""}`) });
       }
-      // 👁️ ICU: together in person (no scene)
+      // 👁️ ICU: together in person (no scene) — the same two steps as a peek: a description to check, then exactly that.
       case "icu.draft":
       case "icu": {
         const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
@@ -315,8 +313,8 @@ export async function POST(req: NextRequest) {
           return bad(e instanceof MediaError ? "Couldn't make it right now — try again in a moment." : "Couldn't make it right now.");
         }
       }
-
-case "chats.unread": {
+      // 🔴 Unread: messages from Velo / each character since they last looked at that chat.
+      case "chats.unread": {
         const rows = await db`select m.character_id, count(*)::int as n from velo_messages m
           left join chat_reads r on r.user_id = m.user_id and r.character_id is not distinct from m.character_id
           where m.user_id = ${me} and m.role = 'assistant' and m.created_at > coalesce(r.read_at, '-infinity'::timestamptz)
