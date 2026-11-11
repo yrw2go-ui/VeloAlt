@@ -17,7 +17,7 @@ import { isValidTimeZone } from "./localTime";
 
 
 export type Group = { id: string; title: string; member_ids: string[]; updated_at: string; scene_title: string | null; scene_details: string | null; scene_clock?: string; scene_set_time?: string; scene_started_at?: string | null; in_person_place?: string | null; catch_up?: Record<string, string> };
-export type GroupMsg = { id: string; speaker_id: string | null; content: string; created_at: string; peek?: boolean; media?: Media | null; reaction?: string | null; their_reactions?: Record<string, string> };
+export type GroupMsg = { id: string; speaker_id: string | null; content: string; created_at: string; peek?: boolean; media?: Media | null; reaction?: string | null; their_reactions?: Record<string, string>; private_to?: string | null };
 const ALL = /\b(everyone|everybody|y'?all|you guys|guys|all of you|girls|ladies|both of you)\b/i;
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -179,7 +179,7 @@ async function sendPrivate(caller: Caller, g: Group, chars: Character[], c: Char
   return { replies: out, banter: false, mine: { id: String(mineRow.id), their_reactions: mine?.their_reactions || {}, private_to: c.id } };
 }
 
-export async function sendToGroup(caller: Caller, g: Group, text: string, timeZone: unknown, personName: string): Promise<{ replies: GroupMsg[]; banter: boolean; mine: { id: string; their_reactions: Record<string, string> } }> {
+export async function sendToGroup(caller: Caller, g: Group, text: string, timeZone: unknown, personName: string): Promise<{ replies: GroupMsg[]; banter: boolean; mine: { id: string; their_reactions: Record<string, string>; private_to?: string } }> {
   const clean = scrub(text).trim().slice(0, 4000);
   if (!clean) throw new GroupError("Say something first.");
   const chars = await members(g);
