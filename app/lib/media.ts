@@ -13,7 +13,7 @@ import { randomUUID } from "node:crypto";
 import { sql } from "./db";
 import { scrub } from "./secrets";
 import { sendPush } from "./push";
-import { storagePut, storageDel } from "./files";
+import { storagePut } from "./files";
 
 export type Media = { id: string; kind: "image" | "video"; status: "offered" | "declined" | "working" | "done" | "failed"; url: string | null; thumb?: string | null; caption?: string | null; description?: string | null; subject?: string | null };
 

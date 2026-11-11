@@ -33,7 +33,7 @@ export async function storagePut(pathname: string, body: Buffer, contentType: st
   const res = await storageFetch(`/object/${bucket}/${path}`, {
     method: "POST",
     headers: { "Content-Type": contentType, "x-upsert": "true" },
-    body,
+    body: new Uint8Array(body),
   });
   if (!res.ok) {
     const err = await res.text().catch(() => "");
