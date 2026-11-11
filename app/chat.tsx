@@ -196,13 +196,16 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     if (!retry || retry === 1) { setBusy(true); setErr(""); }
     try {
       const r = await api<{ reply: string; changed?: boolean; drafts?: Draft[]; media?: Media[]; react?: string; brainDown?: boolean; by?: "claude" | "alt" }>("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name, ...thread, ...(myId ? { replyTo: myId } : {}), ...(retry ? { retry: true } : {}) });
+      // Always save the reply, even if the user switched chats (component unmounted / turn advanced).
+      if (r.reply) {
+        data("messages.add", { ...thread, messages: [{ role: "assistant", content: r.reply }] }).catch(() => {});
+      }
       if (turn.current !== me) return;
       if (r.brainDown) {
         setBusy(false);
         if (!retry && r.reply) {
           const hold: ChatMsg = { role: "assistant", content: r.reply };
           setMsgs(m => [...(m || []), hold]);
-          data("messages.add", { ...thread, messages: [{ role: "assistant", content: r.reply }] }).catch(() => {});
         }
         if (retry === 1) await marker("wait");
         setTimeout(() => { if (turn.current === me) respond(next, myId, retry ? 2 : 1); }, retry ? 30_000 : 5_000);
@@ -222,9 +225,6 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       setMsgs(m => [...(m || []), replyMsg, ...sent, ...(r.drafts || []).map(draft => ({ role: "assistant" as const, content: "", draft }))]);
       // Free the box as soon as her reply shows; saving it can finish in the background.
       setBusy(false);
-      const s2 = await data<{ ids?: string[] }>("messages.add", { ...thread, messages: [{ role: "assistant", content: r.reply }] }).catch(() => ({ ids: [] as string[] }));
-      const replyId = s2.ids?.[0];
-      if (replyId) setMsgs(list => (list || []).map(x => (x === replyMsg ? { ...x, id: replyId } : x)));
       if (r.changed) onChanged();
     } catch (e) {
       setErr(e instanceof Error ? e.message : `${who} didn't answer.`);
