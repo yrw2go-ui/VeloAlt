@@ -129,6 +129,53 @@ export async function screenCharacter(_f: { name: string; personality: string; b
   return null;
 }
 
+// ── Portraits (Atlas Cloud, Seedream v5.0 pro text-to-image) ──
+// Env: ATLASCLOUD_API_KEY, ATLASCLOUD_IMAGE_MODEL (the text-to-image model id).
+const ATLAS = () => process.env.ATLASCLOUD_API_URL || "https://api.atlascloud.ai";
+export const portraitsReady = () => !!(process.env.ATLASCLOUD_API_KEY && process.env.ATLASCLOUD_IMAGE_MODEL && process.env.SUPABASE_URL && (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY));
+
+/** Starts a portrait from the written appearance. Returns Atlas Cloud's job id. */
+export async function startPortrait(name: string, appearance: string): Promise<string> {
+  const prompt = `Safe-for-work portrait of ${name}, a fictional character: ${appearance}. Fully clothed, head and shoulders, friendly expression, soft natural light, detailed, high quality.`;
+  const res = await fetch(`${ATLAS()}/api/v1/model/generateImage`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${process.env.ATLASCLOUD_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: process.env.ATLASCLOUD_IMAGE_MODEL, prompt: prompt.slice(0, 1500), size: "1664*2496", output_format: "jpeg" }),
+  });
+  const raw = await res.text();
+  if (!res.ok) { console.error(`characters: Atlas start ${res.status} ${raw.slice(0, 300)}`); throw new Error("The picture service didn't accept that. Please try again."); }
+  let id = "";
+  try { id = String(JSON.parse(raw)?.data?.id || ""); } catch { /* not JSON */ }
+  if (!id) { console.error(`characters: Atlas start, no id ${raw.slice(0, 200)}`); throw new Error("The picture service didn't start. Please try again."); }
+  return id;
+}
+
+/** Checks a portrait job. When it's done, saves the picture to Blob and makes it the character's portrait. */
+export async function checkPortrait(adminId: string, c: Character): Promise<"working" | "done" | "failed"> {
+  if (!c.portrait_job) return "done";
+  const res = await fetch(`${ATLAS()}/api/v1/model/prediction/${encodeURIComponent(c.portrait_job)}`, { headers: { Authorization: `Bearer ${process.env.ATLASCLOUD_API_KEY}` } });
+  if (!res.ok) return "working";
+  const p = await res.json().catch(() => ({}));
+  const status = String(p?.data?.status || "");
+  if (status === "failed") {
+    console.error(`characters: Atlas job failed ${String(p?.data?.error || "").slice(0, 200)}`);
+    await sql()`update chat_characters set portrait_job = null where id = ${c.id}`;
+    return "failed";
+  }
+  const out = String(p?.data?.outputs?.[0] || "");
+  if (status !== "completed" || !/^https:\/\//.test(out)) return "working";
+
+  const img = await fetch(out);
+  if (!img.ok) { await sql()`update chat_characters set portrait_job = null where id = ${c.id}`; return "failed"; }
+  const buf = Buffer.from(await img.arrayBuffer());
+  const raw = (img.headers.get("content-type") || "image/jpeg").split(";")[0];
+  const type = raw.startsWith("image/") ? raw : "image/jpeg";
+  // The new portrait goes into the character's gallery too (older portraits stay there until deleted).
+  const item = await saveImageItem(adminId, c.id, buf, type, `Portrait: ${c.appearance}`, process.env.ATLASCLOUD_IMAGE_MODEL || "portrait");
+  await sql()`update chat_characters set portrait_file_id = ${item.fileId}, portrait_job = null, updated_at = now() where id = ${c.id}`;
+  return "done";
+}
+
 /** Deletes a character, everyone's chats and memories with it, and its portrait. */
 export async function deleteCharacter(id: string): Promise<boolean> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return false;
