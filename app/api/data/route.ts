@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { duePlans, setPlanStatus } from "../../lib/plans";
 import { readyIntros, acceptIntro, declineIntro, IntroError } from "../../lib/intros";
 import { peekAt, draftPeek, draftIcu } from "../../lib/peek";
+import { inPersonFor, startInPerson, endInPerson } from "../../lib/inPerson";
 import { cleanTags } from "../../lib/text";
 import { sql } from "../../lib/db";
 import { resolveCaller } from "../../lib/caller";
@@ -206,6 +207,7 @@ export async function POST(req: NextRequest) {
         // Started from a plan's "today" card: that plan is done.
         if (b.planId) await setPlanStatus(me, String(b.planId), "done");
         if (action === "scene.start") {
+          await endInPerson(me, ch.id); // a scene takes over from just hanging out
           const [s] = await db`insert into chat_scenes (user_id, character_id, kind, title, details, clock, set_time, planned_time, pushed) values (${me}, ${ch.id}, 'live', ${title}, ${details}, ${clock}, ${setTime}, ${plannedTime}, ${pushed}) returning id, kind, title, details, status, started_at::text, clock, set_time, planned_time`;
           return NextResponse.json({ scene: s, marker: await marker(`🎬 Scene: ${title}${details ? ` — ${details}` : ""}`, String(s.id)) });
         }
@@ -262,11 +264,32 @@ export async function POST(req: NextRequest) {
           return bad(e instanceof MediaError ? "Couldn't peek right now — try again in a moment." : "Couldn't peek right now.");
         }
       }
+      // 🧍 Together in person (not a scene): she talks face to face, and 👁️ ICU works.
+      case "inperson.get":
+      case "inperson.start":
+      case "inperson.end": {
+        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
+        if (!ch) return bad("That character wasn't found.");
+        if (b.action === "inperson.get") return NextResponse.json({ inPerson: await inPersonFor(me, ch.id) });
+        const note = async (content: string) => {
+          const [row] = await db`insert into velo_messages (user_id, role, content, character_id) values (${me}, 'user', ${content}, ${ch.id}) returning id`;
+          return { id: String(row.id), role: "user", content };
+        };
+        if (b.action === "inperson.end") {
+          if (!(await endInPerson(me, ch.id))) return bad("You two aren't together right now.");
+          return NextResponse.json({ ok: true, marker: await note(`🧍 We went our separate ways`) });
+        }
+        if (await activeScene(me, ch.id)) return bad("End the scene first.");
+        const place = scrub(clean(b.place, 120)).replace(/\n/g, " ");
+        const p = await startInPerson(me, ch.id, place);
+        return NextResponse.json({ inPerson: p, marker: await note(`🧍 Together in person${place ? ` — ${place}` : ""}`) });
+      }
       // 👁️ ICU: together in person (no scene) — the same two steps as a peek: a description to check, then exactly that.
       case "icu.draft":
       case "icu": {
         const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
         if (!ch) return bad("That character wasn't found.");
+        if (!(await inPersonFor(me, ch.id))) return bad("ICU works when you two are together in person — tap 🧍 first.");
         if (!mediaReady()) return bad("Photos aren't set up yet.");
         if (!allow(`peek:${me}`, [{ ms: 60_000, max: 10 }, { ms: 86_400_000, max: 300 }])) return NextResponse.json({ error: "That's a lot of peeks — try again in a bit." }, { status: 429 });
         const [u] = await db`select adult_confirmed_at from users where id = ${me}`;

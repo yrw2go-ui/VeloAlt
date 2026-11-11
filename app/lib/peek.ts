@@ -11,6 +11,7 @@ import { writeText } from "./llm";
 import { sceneTime } from "./sceneClock";
 import { isValidTimeZone, formatClock, zonedParts } from "./localTime";
 import { partOfDay } from "./calendar";
+import { inPersonFor } from "./inPerson";
 
 export const PEEK = /^\s*\*?\s*pe(e|a)k\s*\*?\s*[.!]?\s*$/i;
 // 👁️ "ICU": you're with her in person right now (no scene) — a picture of what you see.
@@ -66,6 +67,7 @@ export function sceneFallback(who: string, title: string, details: string, time:
 /** 👁️ ICU, step 1: you're with her in person (not in a scene) — what you'd see right now, from the chat so far,
  *  the real time of day and what she'd be wearing (her last ICU look from the last few hours, else work or casual clothes). */
 export async function draftIcu(userId: string, ch: Character, adult: boolean): Promise<string> {
+  const together = await inPersonFor(userId, ch.id);
   const rows = (await sql()`select msg.role, msg.content from velo_messages msg
     where msg.user_id = ${userId} and msg.character_id = ${ch.id} and not msg.peek and msg.media_id is null and msg.scene_id is null
     order by msg.created_at desc limit 40`).reverse();
@@ -86,7 +88,7 @@ export async function draftIcu(userId: string, ch: Character, adult: boolean): P
 WHERE: what the recent chat says (her place, his place, the car, a store…); if it doesn't say, somewhere that fits the time of day and her life.
 OUTFIT: ${lastLook ? "exactly what she wore in THE LAST LOOK (same colors and items), plus only changes the chat mentions since" : `what she said she's wearing, else ${atWork ? `her work clothes (${ch.work_attire})` : `what fits the time and place in her usual style${ch.casual_wear ? ` (${ch.casual_wear})` : ""}`}`}.
 ${romantic ? "Tasteful and PG-13: flattering and flirty is fine; she's dressed (or in swimwear at the beach or pool)." : "Family-friendly, fully clothed."} One or two sentences, under 300 characters, no names of real people, output only the description.`,
-    `TIME NOW: ${time} (match the light and sky to it)${atWork ? `\nSHE'S AT WORK HOURS (${ch.job || "work"})` : ""}\nHER LOOK: ${ch.appearance || "(see reference pictures)"}${lastLook ? `\nTHE LAST LOOK: ${lastLook}` : ""}\n\nRECENT CHAT:\n${transcript.slice(-8000) || "(nothing yet)"}`, 300);
+    `${together?.place ? `WHERE YOU ARE TOGETHER: ${together.place}\n` : ""}TIME NOW: ${time} (match the light and sky to it)${atWork ? `\nSHE'S AT WORK HOURS (${ch.job || "work"})` : ""}\nHER LOOK: ${ch.appearance || "(see reference pictures)"}${lastLook ? `\nTHE LAST LOOK: ${lastLook}` : ""}\n\nRECENT CHAT:\n${transcript.slice(-8000) || "(nothing yet)"}`, 300);
   const text = raw.replace(/\s+/g, " ").trim();
   if (text) return text.slice(0, 380);
   // No AI answer: still something real to edit.

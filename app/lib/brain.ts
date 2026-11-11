@@ -23,6 +23,7 @@ import { ownFile, fileForAi } from "./files";
 import { friendsOf, friendsNote, sapphicWith } from "./friends";
 import { workNow } from "./work";
 import { sceneClockNote } from "./sceneClock";
+import { inPersonFor, inPersonNote } from "./inPerson";
 /** How many recent scenes (2 weeks) with her got pushed from their planned time. */
 async function pushedLately(userId: string, sceneId: string): Promise<number> {
   const [r] = await sql()`select count(*)::int as n from chat_scenes s where s.user_id = ${userId} and s.pushed
@@ -159,7 +160,9 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   // 🎬 A scene (date/outing) being played out right now with this character.
   const scene = ch && (mode === "chat" || mode === "talk") && !group ? await activeScene(caller.userId, ch.id).catch(() => null) : null;
   // 📸 Every so often (sooner as they get closer), she offers a photo of the moment.
-  const photoMoment = ch && mode === "chat" && canSend && !scene && !group ? await tickPics(caller.userId, ch).catch(() => false) : false;
+  // 🧍 Together in person (no scene): she talks face to face.
+  const together = ch && (mode === "chat" || mode === "talk") && !scene && !group ? await inPersonFor(caller.userId, ch.id).catch(() => null) : null;
+  const photoMoment = ch && mode === "chat" && canSend && !scene && !group && !together ? await tickPics(caller.userId, ch).catch(() => false) : false;
   // 👋 Every so often (once she's close to them), she wants them to meet someone of hers.
   const introKind = ch && mode === "chat" && !scene && !group ? await tickIntro(caller.userId, ch, !!u?.adult_confirmed_at).catch(e => { console.error("velo: intro", e instanceof Error ? e.message : e); return null; }) : null;
   const modeText = {
@@ -193,6 +196,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         modeText,
         group ? "" : replyLengthNote(mode, u?.reply_length),
         scene ? sceneNote(scene) : "",
+        together && ch ? inPersonNote(together, name || "them") : "",
         scene ? sceneClockNote(scene, today.tz, scene.clock === "now" && scene.planned_time ? await pushedLately(caller.userId, scene.id).catch(() => 0) : 0) : "",
         ch && mode !== "remember" && mode !== "memo" && !group ? await plansNote(caller.userId, ch.id, today.date).catch(() => "") : "",
         ch && mode !== "remember" && mode !== "memo" && !opts.promise ? await promisesNote(caller.userId, ch.id, today.tz).catch(() => "") : "",
