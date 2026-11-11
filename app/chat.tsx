@@ -338,6 +338,31 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   }, [cid, userId]);
 
   // 😮 React to one of her messages (tap it). Tap the same one again to take it back.
+  // 🗑 Long-press a message to select it (then tap up to 10); deleting also makes her forget what was in them.
+  const [selected, setSelected] = useState<Set<string> | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const toggleSelect = (id: string) => setSelected(sel => {
+    if (!sel) return sel;
+    const next = new Set(sel);
+    if (next.has(id)) next.delete(id); else if (next.size < 10) next.add(id);
+    return next.size ? next : null;
+  });
+  const deleteSelected = async () => {
+    if (!selected?.size) return;
+    const n = selected.size;
+    if (!(await confirmAsk(`Delete ${n === 1 ? "this message" : `these ${n} messages`}? Are you sure? ${who} will forget what was in ${n === 1 ? "it" : "them"}.`, { yes: "Delete", danger: true }))) return;
+    setDeleting(true); setErr("");
+    try {
+      await data("messages.delete", { ...thread, ids: [...selected] });
+      const gone = selected;
+      const next = msgsRef.current.filter(m => !(m.id && gone.has(m.id)));
+      setMsgs(next); setSelected(null);
+      // If your message is now the latest, she answers it again.
+      const last = [...next].reverse().find(m => !m.draft && !m.peek);
+      if (last && last.role === "user" && !busy) await respond(next, last.id);
+    } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't delete."); }
+    setDeleting(false);
+  };
   const reactMsg = async (id: string, emoji: string) => {
     const cur = msgsRef.current.find(x => x.id === id);
     if (!cur) return;
@@ -470,7 +495,11 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       {peekSheet && character && <PeekSheet who={character.name} sheet={peekSheet} onChange={d => setPeekSheet(p => (p ? { ...p, description: d } : p))} onRewrite={rewritePeek} onSend={sendPeek} onClose={() => setPeekSheet(null)} />}
       {sceneSheet && character && <SceneSheet key={fromPlan?.id || "new"} who={character.name} plan={fromPlan} onClose={() => { setSceneSheet(false); setFromPlan(null); }} onStart={startScene} />}
       <div data-testid="chat-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-        {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={m.media?.id || m.id || i} m={m} onReactMsg={reactMsg} face={face(28)} onMedia={mediaArrived} onFailed={reload} onReact={react} who={who} onAnswer={x => setMsgs(list => (list || []).map(y => (y.media?.id === x.id ? { ...y, content: mediaNote({ ...y.media!, ...x }), media: { ...y.media!, ...x } } : y)))} />)}
+        {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : (
+          <Selectable key={m.media?.id || m.id || i} id={m.id} selecting={selected} onStart={id => setSelected(new Set([id]))} onToggle={toggleSelect}>
+            <Bubble m={m} onReactMsg={reactMsg} face={face(28)} onMedia={mediaArrived} onFailed={reload} onReact={react} who={who} onAnswer={x => setMsgs(list => (list || []).map(y => (y.media?.id === x.id ? { ...y, content: mediaNote({ ...y.media!, ...x }), media: { ...y.media!, ...x } } : y)))} />
+          </Selectable>
+        ))}
         {character && msgs && !msgs.length && (
           <div className="muted" style={{ textAlign: "center", fontSize: 14, marginTop: 24, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
             {face(72)}<div>Say hi to {character.name} 👋</div>
@@ -515,7 +544,14 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
           <button type="button" className="ghost" onClick={() => setAttach(null)} aria-label="Remove attachment" style={{ padding: "4px 10px", fontSize: 13 }}>✕</button>
         </div>
       )}
-      <form onSubmit={e => { e.preventDefault(); send(text); }} className="row" style={{ padding: "10px 12px", borderTop: "1px solid var(--border)" }}>
+      {selected && (
+        <div data-testid="select-bar" className="row" style={{ padding: "10px 12px", borderTop: "1px solid var(--border)", gap: 8 }}>
+          <span style={{ flex: 1, fontSize: 14 }}><b>{selected.size}</b> selected <span className="muted" style={{ fontSize: 12 }}>(up to 10)</span></span>
+          <button className="ghost" onClick={() => setSelected(null)} data-testid="select-cancel">Cancel</button>
+          <button className="btn" onClick={deleteSelected} disabled={!selected.size || deleting} data-testid="select-delete" style={{ background: "var(--bad)" }}>{deleting ? "…" : `🗑 Delete${selected.size > 1 ? ` ${selected.size}` : ""}`}</button>
+        </div>
+      )}
+      <form onSubmit={e => { e.preventDefault(); send(text); }} className="row" style={{ padding: "10px 12px", borderTop: "1px solid var(--border)", ...(selected ? { display: "none" } : {}) }}>
         <input ref={picker} type="file" accept={ACCEPT} hidden onChange={e => pick(e.target.files?.[0])} data-testid="chat-file-input" />
         {cid && !scene && <button type="button" onClick={() => setSceneSheet(true)} disabled={!msgs || busy} aria-label="Start a scene" data-testid="scene-open"
           style={{ borderRadius: 999, width: 36, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 19, border: "none", background: "transparent", color: "var(--muted)" }}>🎬</button>}
@@ -730,3 +766,23 @@ export function SceneSheet({ who, plan, onClose, onStart }: { who: string; plan?
   );
 }
 
+
+/** 🗑 Long-press (or right-click) a message to start selecting; then a tap toggles it. */
+function Selectable({ id, selecting, onStart, onToggle, children }: { id?: string; selecting: Set<string> | null; onStart: (id: string) => void; onToggle: (id: string) => void; children: React.ReactNode }) {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fired = useRef(false);
+  if (!id) return <>{children}</>;
+  const on = !!selecting?.has(id);
+  const cancel = () => { if (timer.current) clearTimeout(timer.current); timer.current = null; };
+  return (
+    <div data-testid="msg-row" data-selected={on ? "1" : undefined}
+      onPointerDown={() => { if (selecting) return; fired.current = false; cancel(); timer.current = setTimeout(() => { fired.current = true; onStart(id); }, 550); }}
+      onPointerUp={cancel} onPointerLeave={cancel} onPointerCancel={cancel}
+      onContextMenu={e => { e.preventDefault(); if (!selecting) onStart(id); }}
+      onClickCapture={e => { if (selecting) { e.stopPropagation(); e.preventDefault(); if (!fired.current) onToggle(id); fired.current = false; } else if (fired.current) { e.stopPropagation(); fired.current = false; } }}
+      style={{ display: "flex", flexDirection: "column", borderRadius: 14, outline: on ? "2px solid var(--accent)" : undefined, background: on ? "rgba(124,140,255,.12)" : undefined, position: "relative", cursor: selecting ? "pointer" : undefined, userSelect: selecting ? "none" : undefined, WebkitTouchCallout: "none" } as React.CSSProperties}>
+      {selecting && <span aria-hidden style={{ position: "absolute", top: 4, left: 4, fontSize: 14, zIndex: 1 }}>{on ? "☑️" : "⬜"}</span>}
+      {children}
+    </div>
+  );
+}

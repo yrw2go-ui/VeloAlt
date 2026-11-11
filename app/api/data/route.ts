@@ -4,6 +4,7 @@ import { readyIntros, acceptIntro, declineIntro, IntroError } from "../../lib/in
 import { peekAt, draftPeek, draftIcu } from "../../lib/peek";
 import { inPersonFor, startInPerson, endInPerson } from "../../lib/inPerson";
 import { cleanTags } from "../../lib/text";
+import { deleteMessages } from "../../lib/forget";
 import { sql } from "../../lib/db";
 import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
@@ -139,6 +140,15 @@ export async function POST(req: NextRequest) {
         if (!needId()) return bad("Unknown message.");
         const [m] = await db`update velo_messages set reaction = ${reaction} where id = ${id} and user_id = ${me} and role = 'assistant' returning id`;
         return m ? NextResponse.json({ ok: true }) : bad("Unknown message.");
+      }
+      // 🗑 Delete up to 10 messages; she forgets whatever she learned only from them.
+      case "messages.delete": {
+        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
+        if (b.characterId && !ch) return bad("That character wasn't found.");
+        const ids = Array.isArray(b.ids) ? b.ids.map(String) : [];
+        if (!ids.length || ids.length > 10) return bad("Pick 1 to 10 messages.");
+        const [u] = await db`select name from users where id = ${me}`;
+        return NextResponse.json(await deleteMessages(me, ch?.id || null, ids, ch?.brain || "", String(u?.name || "").split(/\s+/)[0], ch?.name || "Velo"));
       }
       case "messages.clear":
         // Velo's chat only; each character's chat goes when the character is deleted.
