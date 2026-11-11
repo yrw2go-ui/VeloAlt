@@ -127,14 +127,15 @@ export async function sendToGroup(caller: Caller, g: Group, text: string, timeZo
   const out: GroupMsg[] = [];
   let rows = await groupMessages(caller.userId, g.id, 40);
   for (const c of pickSpeakers(clean, chars, seen(rows))) {
-    const r = await askVelo(caller, { mode: "chat", messages: turnsFor(c.id, rows, names, personName), timeZone, name: personName, character: c, group: { others: chars.filter(x => x.id !== c.id).map(x => x.name), scene: g.scene_title ? { title: g.scene_title, details: g.scene_details || "", time: sceneClockNote(groupClock(g), await userTz(caller.userId)) } : null, inPerson: g.in_person_place ?? null, catchUp: g.catch_up?.[c.id] || "" } });
-    const reply = scrub(r.reply.replace(/^\s*\[[^\]]{1,40}\]:\s*/, "")).trim().slice(0, 4000);
-    // 😮 Her reaction to their message: a little badge on it.
-    if (r.react) await sql()`update chat_group_messages set their_reactions = their_reactions || ${JSON.stringify({ [c.id]: r.react })}::jsonb where id = ${mineRow.id}`;
-    if (!reply) continue;
-    const [m] = await sql()`insert into chat_group_messages (group_id, user_id, speaker_id, content) values (${g.id}, ${caller.userId}, ${c.id}, ${reply}) returning id, speaker_id, content, created_at`;
-    out.push(m as GroupMsg);
-    rows = [...rows, m as GroupMsg];
+    try {
+      const r = await askVelo(caller, { mode: "chat", messages: turnsFor(c.id, rows, names, personName), timeZone, name: personName, character: c, group: { others: chars.filter(x => x.id !== c.id).map(x => x.name), scene: g.scene_title ? { title: g.scene_title, details: g.scene_details || "", time: sceneClockNote(groupClock(g), await userTz(caller.userId)) } : null, inPerson: g.in_person_place ?? null, catchUp: g.catch_up?.[c.id] || "" } });
+      const reply = scrub(r.reply.replace(/^\s*\[[^\]]{1,40}\]:\s*/, "")).trim().slice(0, 4000);
+      if (r.react) await sql()`update chat_group_messages set their_reactions = their_reactions || ${JSON.stringify({ [c.id]: r.react })}::jsonb where id = ${mineRow.id}`;
+      if (!reply) continue;
+      const [m] = await sql()`insert into chat_group_messages (group_id, user_id, speaker_id, content) values (${g.id}, ${caller.userId}, ${c.id}, ${reply}) returning id, speaker_id, content, created_at`;
+      out.push(m as GroupMsg);
+      rows = [...rows, m as GroupMsg];
+    } catch (e) { console.error("groups: speaker failed", c.name, e instanceof Error ? e.message : e); }
   }
   await closer(caller.userId, chars);
   // 💬 Every 5–10 of their messages, the characters talk among themselves for a few lines.
