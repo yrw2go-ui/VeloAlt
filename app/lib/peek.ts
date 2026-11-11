@@ -59,3 +59,29 @@ export function sceneFallback(who: string, title: string, details: string, time:
   if (lastPeek) return `${lastPeek.replace(/\.$/, "")} — ${time.split(" — ")[1] || time}, candid, glancing at the camera`.slice(0, 380);
   return `${who} during ${title}${details ? `: ${details.replace(/\.$/, "")}` : ""}. ${time.split(" — ")[1] || time} light, candid, glancing at the camera`.slice(0, 380);
 }
+
+/** ICU: together in person (no scene). Description of what they see right now. */
+export async function draftIcu(userId: string, ch: Character, adult: boolean): Promise<string> {
+  const rows = (await sql()`select role, content from velo_messages where user_id = ${userId} and character_id = ${ch.id} and scene_id is null and not peek order by created_at desc limit 40`).reverse();
+  const [u] = await sql()`select time_zone from users where id = ${userId}`;
+  const tz = isValidTimeZone(u?.time_zone) ? u.time_zone : "America/Chicago";
+  const now = new Date();
+  const p = { hour: now.getHours(), year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate() };
+  const time = `${p.hour}:00`;
+  const [together] = await sql()`select place from chat_in_person where user_id = ${userId} and character_id = ${ch.id}`;
+  const lastLook = String((await sql()`select m.description from velo_messages msg join velo_media m on m.id = msg.media_id where msg.user_id = ${userId} and msg.character_id = ${ch.id} and msg.peek and m.status = 'done' order by msg.created_at desc limit 1`)[0]?.description || "");
+  const dow = new Date(Date.UTC(p.year, p.month - 1, p.day)).getUTCDay();
+  const hm = `${String(p.hour).padStart(2,"0")}:00`;
+  const atWork = !!(ch.work_attire && ch.work_start && ch.work_end && (ch.work_days || []).includes(dow) && hm >= ch.work_start && hm < ch.work_end);
+  const romantic = adult && !!ch.romantic && allowsSuggestive(ch.traits);
+  const transcript = rows.map(r => `${r.role === "assistant" ? ch.name : "Them"}: ${r.content}`).join("\n");
+  const raw = await writeText(ch.brain, `You write the description for ONE photo for an image generator. The person is with ${ch.name} in person right now (not a planned outing — just together, wherever the chat says they are) and is looking at her: the photo is exactly what they see from where they are; they are behind the camera and NOT in the picture. Describe ${ch.name} in this exact moment: where they are (the place, time of day, lighting), what she is wearing, what she is doing, her pose and expression — candid and unaware, or glancing at them.
+WHERE: what the recent chat says (her place, his place, the car, a store…); if it doesn't say, somewhere that fits the time of day and her life.
+OUTFIT: ${lastLook ? "exactly what she wore in THE LAST LOOK (same colors and items), plus only changes the chat mentions since" : `what she said she's wearing, else ${atWork ? `her work clothes (${ch.work_attire})` : `what fits the time and place in her usual style${ch.casual_wear ? ` (${ch.casual_wear})` : ""}`}`}.
+One or two sentences, under 300 characters, no names of real people, output only the description.`,
+    `${together?.place ? `WHERE YOU ARE TOGETHER: ${together.place}\n` : ""}TIME NOW: ${time} (match the light and sky to it)${atWork ? `\nSHE'S AT WORK HOURS (${ch.job || "work"})` : ""}\nHER LOOK: ${ch.appearance || "(see reference pictures)"}${lastLook ? `\nTHE LAST LOOK: ${lastLook}` : ""}\n\nRECENT CHAT:\n${transcript.slice(-8000) || "(nothing yet)"}`, 300);
+  const text = raw.replace(/\s+/g, " ").trim();
+  if (text) return text.slice(0, 380);
+  const outfit = lastLook ? "" : atWork ? `, in her work clothes (${ch.work_attire})` : ch.casual_wear ? `, wearing ${ch.casual_wear}` : "";
+  return lastLook ? `${lastLook.replace(/\.$/, "")} — candid, glancing at the camera` : `${ch.name} right here with me${outfit}. candid, glancing at the camera`;
+}
