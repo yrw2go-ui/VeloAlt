@@ -195,8 +195,17 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   const respond = async (next: ChatMsg[], myId?: string, retry = 0) => {
     const me = retry ? turn.current : ++turn.current;
     if (!retry || retry === 1) { setBusy(true); setErr(""); }
+    // Fire the request and always save the result, even if the user switches chats.
+    const saveReply = async (reply: string, media?: Media[]) => {
+      try {
+        await data("messages.add", { ...thread, messages: [{ role: "assistant", content: reply }] });
+        // Media messages are added by the media flow; just ensure the text is saved.
+      } catch { /* already saved or network */ }
+    };
     try {
       const r = await api<{ reply: string; changed?: boolean; drafts?: Draft[]; media?: Media[]; react?: string; brainDown?: boolean; by?: "claude" | "alt" }>("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name, ...thread, ...(myId ? { replyTo: myId } : {}), ...(retry ? { retry: true } : {}) });
+      // Always save, even if this chat is no longer visible.
+      if (r.reply) saveReply(r.reply, r.media).catch(() => {});
       if (turn.current !== me) return;
       if (r.brainDown) {
         setBusy(false);
