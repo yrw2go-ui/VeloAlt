@@ -272,7 +272,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       <header className="row" style={{ padding: "max(12px, env(safe-area-inset-top)) 16px 12px", borderBottom: "1px solid var(--border)" }}>
         <VeloLogo size={40} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 800, fontSize: 18 }}>Velo</div>
+          <div style={{ fontWeight: 800, fontSize: 18 }}>Velo 2</div>
           <div className="muted" style={{ fontSize: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name ? `Here for you, ${name.split(" ")[0]}` : "Your assistant & companion"}</div>
         </div>
         {canCallVelo() && !calling && tab === "chat" && !inGroup && (
