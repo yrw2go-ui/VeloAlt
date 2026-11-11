@@ -131,6 +131,16 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       try { setPeekSheet({ description: (await data<{ description: string }>("scene.peek.draft", { characterId: cid })).description, loading: false }); }
       catch (e) { setPeekSheet(null); setErr(e instanceof Error ? e.message : "Couldn't peek right now."); }
       return;
+    // 📸 "ICU" — in person: request a photo of them right now (outside a scene).
+    if (cid && !scene && !file && /^\s*icu\s*[.!?]*\s*$/i.test(t)) {
+      setText(""); setErr(""); setBusy(true);
+      try {
+        const r = await data<{ media: Media }>("media.icu", { characterId: cid });
+        if (r.media) setMsgs(m => [...(m || []), { role: "assistant", content: "(sent a photo)", media: r.media }]);
+      } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't take that photo right now."); }
+      finally { setBusy(false); }
+      return;
+    }
     }
     const opener: ChatMsg[] = msgs.length || cid ? [] : [{ role: "assistant", content: openingLine }];
     const mine: ChatMsg = { role: "user", content: t || "📎", ...(file ? { file } : {}) };
