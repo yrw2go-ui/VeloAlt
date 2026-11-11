@@ -50,7 +50,7 @@ async function saveFile(userId: string, buf: Buffer, type: string, name: string)
       "Content-Type": type,
       "x-upsert": "true",
     },
-    body: buf,
+    body: new Uint8Array(buf),
   });
   if (!res.ok) throw new Error(`Supabase upload failed: ${res.status}`);
   const publicUrl = `${process.env.SUPABASE_URL}/storage/v1/object/public/${bucket}/${path}`;
