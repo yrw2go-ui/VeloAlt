@@ -154,15 +154,15 @@ export function GroupChat({ group: initial, chars, name, onDeleted }: { group: G
             </div>
           );
           if (m.peek) return <div key={m.id} className="muted" style={{ alignSelf: "flex-end", fontSize: 12, padding: "4px 10px", borderRadius: 999, border: "1px dashed var(--border)" }}>👀 you peeked</div>;
-          if (!m.speaker_id && (m.content.startsWith("🎬") || m.content.startsWith("🧍"))) return <div key={m.id} data-testid="group-scene-note" className="muted" style={{ alignSelf: "center", maxWidth: "90%", textAlign: "center", fontSize: 12, padding: "6px 12px", borderRadius: 999, background: "var(--surface2)", border: "1px solid var(--border)" }}>{m.content}</div>;
+          if (!m.speaker_id && (m.content.startsWith("🎬") || m.content.startsWith("🧍"))) return <div key={m.id} data-testid="group-scene-note" className="muted" style={{ alignSelf: "center", maxWidth: "90%", textAlign: "center", fontSize: 12, padding: "6px 12px", borderRadius: 999, background: "var(--surface2)", border: "1px solid var(--border)" }}>{typeof m.content === "string" ? m.content : ""}</div>;
           if (!m.speaker_id) return (
             <div key={m.id} style={{ alignSelf: "flex-end", maxWidth: "80%", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
-              <div style={{ padding: "10px 14px", borderRadius: 18, background: "linear-gradient(135deg, var(--accent), var(--accent2))", whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 15, opacity: m.pending ? 0.75 : 1 }}>{m.content}</div>
+              <div style={{ padding: "10px 14px", borderRadius: 18, background: "linear-gradient(135deg, var(--accent), var(--accent2))", whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 15, opacity: m.pending ? 0.75 : 1 }}>{typeof m.content === "string" ? m.content : ""}</div>
               {Object.keys(m.their_reactions || {}).length > 0 && (
                 <div data-testid="group-their-reactions" style={{ display: "flex", gap: 4 }}>
                   {Object.entries(m.their_reactions || {}).map(([id, e]) => (
                     <span key={id} title={`${byId.get(id)?.name || "Someone"} reacted`} style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 13, padding: "2px 6px", borderRadius: 999, background: "var(--surface)", border: "1px solid var(--border)" }}>
-                      {e}{byId.get(id) && <CharacterFace c={byId.get(id)!} size={14} />}
+                      {typeof e === "string" ? e : ""}{byId.get(id) && <CharacterFace c={byId.get(id)!} size={14} />}
                     </span>
                   ))}
                 </div>
@@ -175,8 +175,8 @@ export function GroupChat({ group: initial, chars, name, onDeleted }: { group: G
               <div>
                 <div className="muted" style={{ fontSize: 11, fontWeight: 700, margin: "0 0 2px 6px" }}>{c?.name || "Someone"}</div>
                 <div onClick={() => setPicking(p => (p === m.id ? null : m.id))} style={{ position: "relative", cursor: "pointer", padding: "10px 14px", borderRadius: 18, background: "var(--surface2)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 15, lineHeight: 1.45 }}>
-                  {m.content}
-                  {m.reaction && <span data-testid="group-reaction" style={{ position: "absolute", bottom: -12, right: -6, fontSize: 15, lineHeight: 1, padding: "3px 5px", borderRadius: 999, background: "var(--surface)", border: "1px solid var(--border)" }}>{m.reaction}</span>}
+                  {typeof m.content === "string" ? m.content : ""}
+                  {typeof m.reaction === "string" && m.reaction && <span data-testid="group-reaction" style={{ position: "absolute", bottom: -12, right: -6, fontSize: 15, lineHeight: 1, padding: "3px 5px", borderRadius: 999, background: "var(--surface)", border: "1px solid var(--border)" }}>{m.reaction}</span>}
                 </div>
                 {picking === m.id && <ReactionBar value={m.reaction} onPick={r => react(m.id, r)} />}
               </div>
