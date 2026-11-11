@@ -98,7 +98,7 @@ const urlParam = (k: string) => (typeof location === "undefined" ? null : new UR
 function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   // Back from Stripe checkout / billing: open Settings. A tapped notification opens that chat. Otherwise: right where they were.
   const [place] = useState<Place>(() => (typeof window === "undefined" ? {} : readPlace(userId)));
-  const [tab, setTab] = useState<Tab>(() => (urlParam("tab") === "settings" ? "settings" : urlParam("chat") ? "chat" : place.tab && TABS.some(t => t.id === place.tab) ? place.tab : "chat"));
+  const [tab, setTab] = useState<Tab>("settings"); // forced once to escape crashing group
   const [name, setName] = useState("");
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profileTick, setProfileTick] = useState(0);
@@ -129,10 +129,15 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   const withChar = chars.find(c => c.id === withId) || null;
   // 👥 Group chats (you and 2–6 characters).
   const [groups, setGroups] = useState<Group[]>([]);
-  const [groupId, setGroupId] = useState<string | null>(() => (urlParam("chat") ? null : place.groupId || null));
+  const [groupId, setGroupId] = useState<string | null>(null); // cleared once to escape crashing group
   const [groupsLoaded, setGroupsLoaded] = useState(false);
   const [makingGroup, setMakingGroup] = useState(false);
-  useEffect(() => { if (userId) api<{ groups: Group[] }>("/api/groups", { action: "list" }).then(r => setGroups(Array.isArray(r.groups) ? r.groups : [])).catch(() => setGroups([])).finally(() => setGroupsLoaded(true)); }, [userId]);
+  useEffect(() => { if (userId) api<{ groups: Group[] }>("/api/groups", { action: "list" }).then(r => {
+  const list = Array.isArray(r.groups) ? r.groups : [];
+  setGroups(list);
+  // If the saved groupId isn't in the list, clear it so we don't keep crashing on a bad group.
+  setGroupId(id => (id && !list.some(g => g.id === id) ? null : id));
+}).catch(() => { setGroups([]); setGroupId(null); }).finally(() => setGroupsLoaded(true)); }, [userId]);
   // 📍 Remember where they are.
   useEffect(() => { savePlace(userId, { tab, withId, groupId }); }, [userId, tab, withId, groupId]);
   // …and how far down they'd scrolled (Today, Memory, Settings): put back once the page has loaded after a reload.
