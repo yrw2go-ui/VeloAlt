@@ -239,6 +239,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   type InPerson = { place: string; started_at: string };
   const [inPerson, setInPerson] = useState<InPerson | null>(null);
   const [selectMode, setSelectMode] = useState(false);
+  const [moreMenu, setMoreMenu] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const toggleSelect = (id: string) => setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const deleteSelected = async () => {
@@ -534,13 +535,15 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       </div>}
       <form onSubmit={e => { e.preventDefault(); send(text); }} className="row" style={{ padding: "10px 12px", borderTop: "1px solid var(--border)" }}>
         <input ref={picker} type="file" accept={ACCEPT} hidden onChange={e => pick(e.target.files?.[0])} data-testid="chat-file-input" />
-        {cid && !scene && <button type="button" onClick={() => setSceneSheet(true)} disabled={!msgs || busy} aria-label="Start a scene" data-testid="scene-open"
-          style={{ borderRadius: 999, width: 36, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 19, border: "none", background: "transparent", color: "var(--muted)" }}>🎬</button>}
-        {cid && !scene && !inPerson && <button type="button" onClick={() => setTogetherSheet({ place: "", busy: false })} disabled={!msgs || busy} aria-label="We're together in person" title="Together in person — she talks face to face" data-testid="inperson-open"
-          style={{ borderRadius: 999, width: 32, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 18, border: "none", background: "transparent", color: "var(--muted)" }}>🧍</button>}
-        {cid && !scene && inPerson && <button type="button" onClick={() => openPeek(true)} disabled={!msgs || busy || !!peekSheet} aria-label="I see you: a picture of her right now, in person" title="ICU — you're with her: see her right now" data-testid="icu-open"
-          style={{ borderRadius: 999, width: 32, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 18, border: "none", background: "transparent", color: "var(--muted)" }}>👁️</button>}
-        <button type="button" onClick={() => setSelectMode(s => !s)} aria-label="Select messages" title="Select messages to delete" style={{ borderRadius: 999, width: 36, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 16, border: "none", background: "transparent", color: selectMode ? "var(--accent)" : "var(--muted)" }}>☑</button>
+        <div style={{ position: "relative" }}>
+          <button type="button" onClick={() => setMoreMenu(m => !m)} aria-label="More" title="More" style={{ borderRadius: 999, width: 36, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 18, border: "none", background: "transparent", color: moreMenu ? "var(--accent)" : "var(--muted)" }}>⋯</button>
+          {moreMenu && <div style={{ position: "absolute", bottom: 50, left: 0, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: 6, minWidth: 140, boxShadow: "0 4px 12px rgba(0,0,0,.3)", zIndex: 10 }}>
+            {cid && !scene && <button type="button" onClick={() => { setSceneSheet(true); setMoreMenu(false); }} disabled={!msgs || busy} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", border: "none", background: "transparent", color: "var(--text)", cursor: "pointer", fontSize: 14 }}>🎬 Scene</button>}
+            {cid && !scene && !inPerson && <button type="button" onClick={() => { setTogetherSheet({ place: "", busy: false }); setMoreMenu(false); }} disabled={!msgs || busy} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", border: "none", background: "transparent", color: "var(--text)", cursor: "pointer", fontSize: 14 }}>🧍 Together</button>}
+            {cid && !scene && inPerson && <button type="button" onClick={() => { openPeek(true); setMoreMenu(false); }} disabled={!msgs || busy || !!peekSheet} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", border: "none", background: "transparent", color: "var(--text)", cursor: "pointer", fontSize: 14 }}>👁️ ICU</button>}
+            <button type="button" onClick={() => { setSelectMode(s => !s); setMoreMenu(false); }} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", border: "none", background: "transparent", color: "var(--text)", cursor: "pointer", fontSize: 14 }}>☑ Select</button>
+          </div>}
+        </div>
         <button type="button" onClick={() => picker.current?.click()} disabled={!msgs || busy || uploading} aria-label="Attach a photo or file" data-testid="chat-attach"
           style={{ borderRadius: 999, width: 40, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 20, border: "none", background: "transparent", color: "var(--muted)" }}>
           {uploading ? "⏳" : "📎"}
