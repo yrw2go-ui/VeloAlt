@@ -191,6 +191,14 @@ export function GroupChat({ group: initial, chars, name, onDeleted }: { group: G
         {(busy || chatting) && <div className="muted" style={{ fontSize: 14 }} data-testid={chatting && !busy ? "group-banter-typing" : undefined}>💬 typing…{chatting && !busy ? <span style={{ fontSize: 12 }}> (they&apos;re chatting — jump in anytime)</span> : null}</div>}
         {err && <div style={{ color: "var(--bad)", fontSize: 14 }}>⚠️ {err}</div>}
       </div>
+      <div style={{ display: "flex", gap: 6, padding: "6px 12px 0", flexWrap: "wrap" }}>
+        {members.map(c => (
+          <button key={c.id} type="button" onClick={() => setText(t => t.startsWith(`@${c.name}`) ? t : `@${c.name} `)}
+            style={{ fontSize: 12, padding: "4px 10px", borderRadius: 999, border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer" }}>
+            @{c.name.split(" ")[0]}
+          </button>
+        ))}
+      </div>
       <form onSubmit={e => { e.preventDefault(); send(); }} className="row" style={{ padding: "10px 12px", borderTop: "1px solid var(--border)" }}>
         {!group.scene_title && <button type="button" onClick={() => setSceneSheet(true)} disabled={!msgs || busy} aria-label="Start a scene" data-testid="group-scene-open"
           style={{ borderRadius: 999, width: 36, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 19, border: "none", background: "transparent", color: "var(--muted)" }}>🎬</button>}
