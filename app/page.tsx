@@ -2,6 +2,7 @@
 // Velo — the app shell: sign-in, the four tabs (💬 Chat, ☀️ Today, 🧠 Memory,
 // ⚙️ Settings), the 📞 call screen, and due-reminder pop-ups.
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import React from "react";
 import { api, data } from "./lib/api";
 import { VersionCard, UpdateBanner } from "./version";
 import { confirmAsk, currentAsk, subscribeAsk } from "./lib/dialog";
@@ -27,6 +28,21 @@ const TABS: { id: Tab; icon: string; label: string }[] = [
   { id: "settings", icon: "⚙️", label: "Settings" },
 ];
 type User = { id: string; email: string };
+
+
+class GroupErrorBoundary extends React.Component<{ children: React.ReactNode; onReset: () => void }, { err: boolean }> {
+  state = { err: false };
+  static getDerivedStateFromError() { return { err: true }; }
+  render() {
+    if (this.state.err) return (
+      <div style={{ padding: 24, textAlign: "center" }}>
+        <div style={{ fontWeight: 800, marginBottom: 8 }}>This group couldn\'t load.</div>
+        <button className="btn" onClick={() => { this.setState({ err: false }); this.props.onReset(); }}>Back to chat</button>
+      </div>
+    );
+    return this.props.children;
+  }
+}
 
 export default function Home() {
   const [user, setUser] = useState<User | null | undefined>(undefined);
@@ -305,7 +321,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       <main ref={mainRef} onScroll={onMainScroll} style={{ flex: 1, minHeight: 0, overflowY: tab === "chat" ? "hidden" : "auto", display: "flex", flexDirection: "column" }}>
         {tab === "chat" && <CharacterStrip characters={chars} active={withChar?.id || null} admin={admin} onPick={pickChat} onNew={() => setNewChar(true)} onEdit={setEditing} onGallery={() => setGallery(true)} unread={unread}
           groups={groups} activeGroup={inGroup?.id || null} onPickGroup={setGroupId} onNewGroup={() => setMakingGroup(true)} />}
-        {inGroup && <GroupChat key={inGroup.id} group={inGroup} chars={chars} name={name} onDeleted={id => { setGroups(gs => gs.filter(g => g.id !== id)); setGroupId(null); }} />}
+        {inGroup && <GroupErrorBoundary onReset={() => setGroupId(null)}><GroupChat key={inGroup.id} group={inGroup} chars={chars} name={name} onDeleted={id => { setGroups(gs => gs.filter(g => g.id !== id)); setGroupId(null); }} /></GroupErrorBoundary>}
         {tab === "chat" && !inGroup && !(groupId && !groupsLoaded) && <Chat key={`${withChar?.id || "velo"}-${chatTick}`} userId={userId} name={name} onChanged={bump} added={chatAdd} onAdded={() => setChatAdd(null)} character={withChar} adult={!!profile?.adultConfirmed} onAdult={() => setProfileTick(t => t + 1)} onHistory={h => { chatHistory.current = h; setHistoryCount(h.length); }}
           onNewCharacter={() => api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => setChars(r.characters)).catch(() => {})}
           others={chars.map(c => ({ id: c.id, name: c.name }))} onGroup={g => { setGroups(gs => [g, ...gs.filter(x => x.id !== g.id)]); setGroupId(g.id); }} />}
