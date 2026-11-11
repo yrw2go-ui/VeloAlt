@@ -254,6 +254,10 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   // 🧍 Together in person (not a scene)
   type InPerson = { place: string; started_at: string };
   const [inPerson, setInPerson] = useState<InPerson | null>(null);
+  useEffect(() => {
+    if (!cid) return;
+    data<{ inPerson: InPerson | null }>("inperson.get", { characterId: cid }).then(r => setInPerson(r.inPerson)).catch(() => {});
+  }, [cid]);
   const [togetherSheet, setTogetherSheet] = useState<{ place: string; busy: boolean; error?: string } | null>(null);
   const startTogether = async (place: string) => {
     setTogetherSheet(t => (t ? { ...t, busy: true, error: undefined } : t));
@@ -412,6 +416,12 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
             <div style={{ width: `${trust}%`, height: "100%", borderRadius: 999, background: trust >= 70 ? "#10b981" : trust >= 40 ? "#f59e0b" : "#ef4444", transition: "width .4s" }} />
           </div>
           <span className="muted" style={{ minWidth: 30, textAlign: "right" }}>{trust}%</span>
+        </div>
+      )}
+      {character && inPerson && !scene && (
+        <div data-testid="inperson-banner" className="row" style={{ gap: 8, padding: "8px 14px", borderBottom: "1px solid var(--border)", background: "linear-gradient(90deg, rgba(52,211,153,.16), rgba(59,130,246,.12))", fontSize: 13 }}>
+          <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>🧍 Together in person{inPerson.place ? ` · ${inPerson.place}` : ""}</span>
+          <button className="ghost" onClick={endTogether} disabled={busy} data-testid="inperson-end" style={{ padding: "4px 10px", fontSize: 12 }}>End</button>
         </div>
       )}
       {character && scene && (
