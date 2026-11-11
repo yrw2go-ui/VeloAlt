@@ -140,6 +140,16 @@ export async function POST(req: NextRequest) {
         const [m] = await db`update velo_messages set reaction = ${reaction} where id = ${id} and user_id = ${me} and role = 'assistant' returning id`;
         return m ? NextResponse.json({ ok: true }) : bad("Unknown message.");
       }
+      case "messages.delete": {
+        const ids = Array.isArray(b.ids) ? b.ids.map(String).filter(Boolean).slice(0, 50) : (id ? [id] : []);
+        if (!ids.length) return bad("No messages to delete.");
+        const rows = await db`delete from velo_messages where id = any(${ids}) and user_id = ${me} returning id, character_id`;
+        if (!rows.length) return bad("Unknown message.");
+        // Best-effort: drop recent memories from the same character if any were just created.
+        const charId = rows[0]?.character_id;
+        if (charId) await db`delete from velo_memories where user_id = ${me} and character_id = ${charId} and created_at > now() - interval '2 minutes'`;
+        return NextResponse.json({ ok: true, deleted: rows.length });
+      }
       case "messages.clear":
         // Velo's chat only; each character's chat goes when the character is deleted.
         await db`delete from velo_messages where user_id = ${me} and character_id is null`;
