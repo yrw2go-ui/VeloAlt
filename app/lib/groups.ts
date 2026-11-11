@@ -22,7 +22,12 @@ const ALL = /\b(everyone|everybody|y'?all|you guys|guys|all of you|girls|ladies|
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 export async function listGroups(userId: string): Promise<Group[]> {
-  return (await sql()`select id, title, member_ids, updated_at, scene_title, scene_details, scene_clock, scene_set_time, scene_started_at::text, in_person_place, catch_up from chat_groups where user_id = ${userId} order by updated_at desc limit 30`) as Group[];
+  try {
+    return (await sql()`select id, title, member_ids, updated_at, scene_title, scene_details, scene_clock, scene_set_time, scene_started_at::text, in_person_place, catch_up from chat_groups where user_id = ${userId} order by updated_at desc limit 30`) as Group[];
+  } catch {
+    // Column may not exist yet — fall back without it.
+    return (await sql()`select id, title, member_ids, updated_at, scene_title, scene_details, scene_clock, scene_set_time, scene_started_at::text from chat_groups where user_id = ${userId} order by updated_at desc limit 30`) as Group[];
+  }
 }
 export async function getGroup(userId: string, id: string): Promise<Group | null> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
