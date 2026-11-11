@@ -40,7 +40,7 @@ const SUGGESTIONS = ["Plan my day", "Remind me to call Mom tomorrow at 6pm", "I 
 /** A message to drop into one chat (a call recap): cid null = Velo's chat. */
 export type ChatAdd = { msg: ChatMsg; cid: string | null };
 
-export default function Chat({ userId, name, onChanged, added, onAdded, character, adult = false, onAdult, onHistory, onNewCharacter }: { userId: string; name: string; onChanged: () => void; added: ChatAdd | null; onAdded?: () => void; character?: ChatWith | null; adult?: boolean; onAdult?: () => void; onHistory?: (m: { role: "user" | "assistant"; content: string }[]) => void; onNewCharacter?: (c: { id: string; name: string; portrait_url: string | null }) => void }) {
+export default function Chat({ userId, name, onChanged, added, onAdded, character, adult = false, onAdult, onHistory, onNewCharacter, others = [], onGroup }: { others?: { id: string; name: string }[]; onGroup?: (g: { id: string; title: string; member_ids: string[]; updated_at: string; in_person_place?: string | null }) => void; userId: string; name: string; onChanged: () => void; added: ChatAdd | null; onAdded?: () => void; character?: ChatWith | null; adult?: boolean; onAdult?: () => void; onHistory?: (m: { role: "user" | "assistant"; content: string }[]) => void; onNewCharacter?: (c: { id: string; name: string; portrait_url: string | null }) => void }) {
   const cid = character?.id || null;
   const thread = cid ? { characterId: cid } : {};
   const who = character?.name || "Velo";
@@ -126,29 +126,12 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     const file = attach;
     if ((!t && !file) || busy || uploading || !msgs) return;
     // 👀 "*peek*" during a scene: first the picture's description pops up to check or tweak, then exactly that is made.
-    if (cid && scene && !file && /^\s*\*?\s*pe(e|a)k\s*\*?\s*[.!]?\s*$/i.test(t)) {
-      setText(""); setErr(""); setPeekSheet({ description: "", loading: true });
-      try { setPeekSheet({ description: (await data<{ description: string }>("scene.peek.draft", { characterId: cid })).description, loading: false }); }
-      catch (e) { setPeekSheet(null); setErr(e instanceof Error ? e.message : "Couldn't peek right now."); }
-      return;
-    // 👁️ "ICU" when you're together in person (no scene)
-    const icu = !scene && /^\s*\*?\s*icu\s*\*?\s*[.!]\s*$/i.test(t);
+    // 👁️ "ICU" when you're together in person (no scene): the same pop-up, for what you see right now.
+    const icu = !scene && /^\s*\*?\s*icu\s*\*?\s*[.!]?\s*$/i.test(t);
     if (cid && !file && icu && !inPerson) { setErr("ICU works when you two are together in person — tap 🧍 first."); return; }
-    if (cid && !file && icu) {
-      setText(""); openPeek(true);
+    if (cid && !file && ((scene && /^\s*\*?\s*pe(e|a)k\s*\*?\s*[.!]?\s*$/i.test(t)) || icu)) {
+      setText(""); openPeek(!scene);
       return;
-    }
-
-    // 📸 "ICU" — in person: request a photo of them right now (outside a scene).
-    if (cid && !scene && !file && /^\s*icu\s*[.!?]*\s*$/i.test(t)) {
-      setText(""); setErr(""); setBusy(true);
-      try {
-        const r = await data<{ media: Media }>("media.icu", { characterId: cid });
-        if (r.media) setMsgs(m => [...(m || []), { role: "assistant", content: "(sent a photo)", media: r.media }]);
-      } catch { setErr("Couldn't take that photo right now."); }
-      finally { setBusy(false); }
-      return;
-    }
     }
     const opener: ChatMsg[] = msgs.length || cid ? [] : [{ role: "assistant", content: openingLine }];
     const mine: ChatMsg = { role: "user", content: t || "📎", ...(file ? { file } : {}) };
@@ -209,18 +192,6 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   useEffect(() => () => { turn.current++; }, []);
 
   /** Her reply to the chat so far (after their message, or after a 🎬 scene note). */
-  const deleteAndRegen = async (id: string) => {
-    const list = msgsRef.current || [];
-    const idx = list.findIndex(x => x.id === id);
-    if (idx < 0) return;
-    // Remove the assistant message
-    const next = list.filter(x => x.id !== id);
-    setMsgs(next);
-    try { await data("messages.delete", { id }); } catch { /* still remove locally */ }
-    // Find the previous user message and regenerate from there
-    const prevUser = [...next].reverse().find(x => x.role === "user" && !x.peek);
-    if (prevUser) await respond(next);
-  };
   const respond = async (next: ChatMsg[], myId?: string, retry = 0) => {
     const me = retry ? turn.current : ++turn.current;
     if (!retry || retry === 1) { setBusy(true); setErr(""); }
@@ -263,26 +234,10 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
 
   // 🎬 Scenes: a date or outing, played out here, or something that already happened.
   const [scene, setScene] = useState<{ id: string; title: string; details: string } | null>(null);
-  // 🧍 Together in person (not a scene)
+  const [sceneSheet, setSceneSheet] = useState(false);
+  // 🧍 Together in person (not a scene): she talks face to face, and 👁️ ICU works.
   type InPerson = { place: string; started_at: string };
   const [inPerson, setInPerson] = useState<InPerson | null>(null);
-  const [selectMode, setSelectMode] = useState(false);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const toggleSelect = (id: string) => setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const deleteSelected = async () => {
-    if (!selected.size) return;
-    const ids = [...selected];
-    setMsgs(list => (list || []).filter(x => !x.id || !selected.has(x.id)));
-    setSelected(new Set()); setSelectMode(false);
-    try { await data("messages.delete", { ids }); } catch { /* removed locally */ }
-    // Regenerate if the last remaining message is from the user
-    const remaining = (msgsRef.current || []).filter(x => !x.id || !selected.has(x.id));
-    if (remaining.length && remaining[remaining.length - 1]?.role === "user") await respond(remaining);
-  };
-  useEffect(() => {
-    if (!cid) return;
-    data<{ inPerson: InPerson | null }>("inperson.get", { characterId: cid }).then(r => setInPerson(r.inPerson)).catch(() => {});
-  }, [cid]);
   const [togetherSheet, setTogetherSheet] = useState<{ place: string; busy: boolean; error?: string } | null>(null);
   const startTogether = async (place: string) => {
     setTogetherSheet(t => (t ? { ...t, busy: true, error: undefined } : t));
@@ -295,6 +250,17 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       await respond(next);
     } catch (e) { setTogetherSheet(t => (t ? { ...t, busy: false, error: e instanceof Error ? e.message : "Try again." } : t)); }
   };
+  // 👥 Meet up: bring others along (or go see them) — a group chat, in person, picking up from everyone's one-on-ones.
+  const [meetSheet, setMeetSheet] = useState<{ ids: string[]; place: string; busy: boolean; error?: string } | null>(null);
+  const meetUp = async () => {
+    if (!meetSheet || !meetSheet.ids.length || !onGroup) return;
+    setMeetSheet(m => (m ? { ...m, busy: true, error: undefined } : m));
+    try {
+      const r = await api<{ group: { id: string; title: string; member_ids: string[]; updated_at: string; in_person_place?: string | null } }>("/api/groups", { action: "bring", fromId: cid, ids: meetSheet.ids, place: meetSheet.place.trim(), name });
+      setMeetSheet(null); setInPerson(null);
+      onGroup(r.group);
+    } catch (e) { setMeetSheet(m => (m ? { ...m, busy: false, error: e instanceof Error ? e.message : "Try again." } : m)); }
+  };
   const endTogether = async () => {
     try {
       const r = await data<{ marker: ChatMsg }>("inperson.end", { characterId: cid });
@@ -302,27 +268,26 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       setMsgs([...msgsRef.current, r.marker]);
     } catch (e) { setErr(e instanceof Error ? e.message : "Try again."); }
   };
-  const [sceneSheet, setSceneSheet] = useState(false);
   // 👀 The peek being set up: its description (editable) before the picture is made.
   const [peekSheet, setPeekSheet] = useState<{ description: string; loading: boolean; error?: string; icu?: boolean } | null>(null);
-  const openPeek = async (icu = false) => {
+  const openPeek = async (icu: boolean) => {
     setErr(""); setPeekSheet({ description: "", loading: true, icu });
-    try {
-      const r = await data<{ description: string }>(icu ? "icu.draft" : "scene.peek.draft", { characterId: cid });
-      setPeekSheet({ description: r.description, loading: false, icu });
-    } catch (e) { setPeekSheet(null); setErr(e instanceof Error ? e.message : "Couldn't start right now."); }
+    try { setPeekSheet({ description: (await data<{ description: string }>(icu ? "icu.draft" : "scene.peek.draft", { characterId: cid })).description, loading: false, icu }); }
+    catch (e) { setPeekSheet(null); setErr(e instanceof Error ? e.message : "Couldn't peek right now."); }
   };
   const rewritePeek = async () => {
+    const icu = !!peekSheet?.icu;
     setPeekSheet(p => (p ? { ...p, loading: true, error: undefined } : p));
-    try { const r = await data<{ description: string }>("scene.peek.draft", { characterId: cid }); setPeekSheet({ description: r.description, loading: false }); }
+    try { const r = await data<{ description: string }>(icu ? "icu.draft" : "scene.peek.draft", { characterId: cid }); setPeekSheet({ description: r.description, loading: false, icu }); }
     catch (e) { setPeekSheet(p => (p ? { ...p, loading: false, error: e instanceof Error ? e.message : "Couldn't rewrite it." } : p)); }
   };
   const sendPeek = async (description: string) => {
     setPeekSheet(p => (p ? { ...p, loading: true, error: undefined } : p));
     try {
-      const r = await data<{ media: Media; userMsgId: string; mediaMsgId: string }>(peekSheet?.icu ? "icu" : "scene.peek", { characterId: cid, description });
+      const icu = !!peekSheet?.icu;
+      const r = await data<{ media: Media; userMsgId: string; mediaMsgId: string }>(icu ? "icu" : "scene.peek", { characterId: cid, description });
       setPeekSheet(null);
-      setMsgs(list => [...(list || []), { id: r.userMsgId, role: "user", content: "*peek*", peek: true }, { id: r.mediaMsgId, role: "assistant", content: "(peek)", media: r.media, peek: true }]);
+      setMsgs(list => [...(list || []), { id: r.userMsgId, role: "user", content: icu ? "*ICU*" : "*peek*", peek: true }, { id: r.mediaMsgId, role: "assistant", content: "(peek)", media: r.media, peek: true }]);
     } catch (e) { setPeekSheet(p => (p ? { ...p, loading: false, error: e instanceof Error ? e.message : "Couldn't peek right now." } : p)); }
   };
   // 📅 A hangout/date you two planned for today: set the scene for it.
@@ -332,6 +297,8 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   useEffect(() => {
     if (!cid) return;
     data<{ scene: { id: string; title: string; details: string } | null }>("scene.active", { characterId: cid }).then(r => setScene(r.scene)).catch(() => {});
+    setInPerson(null);
+    data<{ inPerson: InPerson | null }>("inperson.get", { characterId: cid }).then(r => setInPerson(r.inPerson)).catch(() => {});
     data<{ plans: Plan[] }>("plans.due", { characterId: cid, today: todayYmd() }).then(r => setPlans(r.plans)).catch(() => {});
   }, [cid, userId]);
   const skipPlan = async (p: Plan) => {
@@ -343,7 +310,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     if (fromPlan) setPlans(ps => ps.filter(x => x.id !== fromPlan.id));
     setFromPlan(null);
     setSceneSheet(false);
-    if (kind === "live" && r.scene) setScene(r.scene);
+    if (kind === "live" && r.scene) { setScene(r.scene); setInPerson(null); }
     unsaved.current++;
     const next = [...msgsRef.current, r.marker];
     setMsgs(next);
@@ -443,16 +410,17 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
           <span className="muted" style={{ minWidth: 30, textAlign: "right" }}>{trust}%</span>
         </div>
       )}
-      {character && inPerson && !scene && (
-        <div data-testid="inperson-banner" className="row" style={{ gap: 8, padding: "8px 14px", borderBottom: "1px solid var(--border)", background: "linear-gradient(90deg, rgba(52,211,153,.16), rgba(59,130,246,.12))", fontSize: 13 }}>
-          <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>🧍 Together in person{inPerson.place ? ` · ${inPerson.place}` : ""}</span>
-          <button className="ghost" onClick={endTogether} disabled={busy} data-testid="inperson-end" style={{ padding: "4px 10px", fontSize: 12 }}>End</button>
-        </div>
-      )}
       {character && scene && (
         <div data-testid="scene-banner" className="row" style={{ gap: 8, padding: "8px 14px", borderBottom: "1px solid var(--border)", background: "linear-gradient(90deg, rgba(124,140,255,.16), rgba(236,72,153,.12))", fontSize: 13 }}>
           <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>🎬 <b>{scene.title}</b></span>
           <button className="ghost" onClick={endScene} disabled={busy} data-testid="scene-end" style={{ padding: "4px 10px", fontSize: 12 }}>End scene</button>
+        </div>
+      )}
+      {character && !scene && inPerson && (
+        <div data-testid="inperson-banner" className="row" style={{ gap: 8, padding: "8px 14px", borderBottom: "1px solid var(--border)", background: "linear-gradient(90deg, rgba(16,185,129,.16), rgba(124,140,255,.12))", fontSize: 13 }}>
+          <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>🧍 <b>Together in person</b>{inPerson.place ? <span className="muted"> · {inPerson.place}</span> : null}</span>
+          {onGroup && others.length > 0 && <button className="ghost" onClick={() => setMeetSheet({ ids: [], place: inPerson.place, busy: false })} disabled={busy} data-testid="meetup-open" style={{ padding: "4px 10px", fontSize: 12 }}>👥 Meet up</button>}
+          <button className="ghost" onClick={endTogether} disabled={busy} data-testid="inperson-end" style={{ padding: "4px 10px", fontSize: 12 }}>Leave</button>
         </div>
       )}
       {character && !scene && plans[0] && (
@@ -465,21 +433,44 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
           </div>
         </div>
       )}
-      {togetherSheet && <div className="sheet" data-testid="together-sheet">
-        <div className="sheet-body">
-          <div style={{ fontWeight: 800, fontSize: 17 }}>🧍 Together in person</div>
-          <input value={togetherSheet.place} onChange={e => setTogetherSheet(t => t ? { ...t, place: e.target.value } : t)} placeholder="Where? (optional)" style={{ width: "100%", margin: "8px 0" }} />
-          {togetherSheet.error && <div className="err">{togetherSheet.error}</div>}
-          <div className="row" style={{ gap: 8 }}>
-            <button className="btn" onClick={() => startTogether(togetherSheet.place)} disabled={togetherSheet.busy}>{togetherSheet.busy ? "…" : "Start"}</button>
-            <button className="btn ghost" onClick={() => setTogetherSheet(null)}>Cancel</button>
-          </div>
+      {meetSheet && character && (
+        <div role="dialog" aria-modal="true" data-testid="meetup-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }} onClick={() => setMeetSheet(null)}>
+          <form className="card" onClick={e => e.stopPropagation()} onSubmit={e => { e.preventDefault(); meetUp(); }} style={{ width: "100%", maxWidth: 560, maxHeight: "80dvh", overflowY: "auto", borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+            <div className="row" style={{ justifyContent: "space-between" }}>
+              <div style={{ fontWeight: 800, fontSize: 17 }}>👥 Meet up with {character.name} and…</div>
+              <button type="button" className="ghost" onClick={() => setMeetSheet(null)} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
+            </div>
+            <div className="muted" style={{ fontSize: 12 }}>Moves you all into one group chat, together in person. Everyone picks up from their own recent chat with you — so if you told {character.name} you were bringing someone, she&apos;ll know who just walked in.</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {others.filter(o => o.id !== cid).map(o => {
+                const on = meetSheet.ids.includes(o.id);
+                return <button type="button" key={o.id} className={on ? "btn" : "ghost"} aria-pressed={on} data-testid="meetup-pick" onClick={() => setMeetSheet(m => (m ? { ...m, ids: on ? m.ids.filter(x => x !== o.id) : [...m.ids, o.id].slice(0, 5) } : m))} style={{ padding: "6px 12px", fontSize: 13 }}>{on ? "✓ " : ""}{o.name}</button>;
+              })}
+            </div>
+            <input value={meetSheet.place} onChange={e => setMeetSheet(m => (m ? { ...m, place: e.target.value } : m))} maxLength={120} aria-label="Where?" placeholder="Where? e.g. my place" data-testid="meetup-place" />
+            {meetSheet.error && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {meetSheet.error}</div>}
+            <button className="btn" disabled={meetSheet.busy || !meetSheet.ids.length} data-testid="meetup-go">{meetSheet.busy ? "…" : "👥 Meet up"}</button>
+          </form>
         </div>
-      </div>}
+      )}
+      {togetherSheet && character && (
+        <div role="dialog" aria-modal="true" data-testid="inperson-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }} onClick={() => setTogetherSheet(null)}>
+          <form className="card" onClick={e => e.stopPropagation()} onSubmit={e => { e.preventDefault(); startTogether(togetherSheet.place.trim()); }} style={{ width: "100%", maxWidth: 560, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+            <div className="row" style={{ justifyContent: "space-between" }}>
+              <div style={{ fontWeight: 800, fontSize: 17 }}>🧍 Together with {character.name}</div>
+              <button type="button" className="ghost" onClick={() => setTogetherSheet(null)} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
+            </div>
+            <div className="muted" style={{ fontSize: 12 }}>You&apos;re with her in person — she&apos;ll talk face to face instead of texting, and 👁️ ICU shows what you see. Not a planned outing (that&apos;s 🎬).</div>
+            <input value={togetherSheet.place} onChange={e => setTogetherSheet(t => (t ? { ...t, place: e.target.value } : t))} maxLength={120} autoFocus aria-label="Where are you?" placeholder="Where? (optional) e.g. on her couch, in my car" data-testid="inperson-place" />
+            {togetherSheet.error && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {togetherSheet.error}</div>}
+            <button className="btn" disabled={togetherSheet.busy} data-testid="inperson-go">{togetherSheet.busy ? "…" : "🧍 We're together"}</button>
+          </form>
+        </div>
+      )}
       {peekSheet && character && <PeekSheet who={character.name} sheet={peekSheet} onChange={d => setPeekSheet(p => (p ? { ...p, description: d } : p))} onRewrite={rewritePeek} onSend={sendPeek} onClose={() => setPeekSheet(null)} />}
       {sceneSheet && character && <SceneSheet key={fromPlan?.id || "new"} who={character.name} plan={fromPlan} onClose={() => { setSceneSheet(false); setFromPlan(null); }} onStart={startScene} />}
       <div data-testid="chat-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-        {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={m.media?.id || m.id || i} m={m} onReactMsg={reactMsg} onDelete={deleteAndRegen} selectMode={selectMode} selected={!!(m.id && selected.has(m.id))} onToggle={toggleSelect} face={face(28)} onMedia={mediaArrived} onFailed={reload} onReact={react} who={who} onAnswer={x => setMsgs(list => (list || []).map(y => (y.media?.id === x.id ? { ...y, content: mediaNote({ ...y.media!, ...x }), media: { ...y.media!, ...x } } : y)))} />)}
+        {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={m.media?.id || m.id || i} m={m} onReactMsg={reactMsg} selectMode={selectMode} selected={!!(m.id && selected.has(m.id))} onToggle={toggleSelect} face={face(28)} onMedia={mediaArrived} onFailed={reload} onReact={react} who={who} onAnswer={x => setMsgs(list => (list || []).map(y => (y.media?.id === x.id ? { ...y, content: mediaNote({ ...y.media!, ...x }), media: { ...y.media!, ...x } } : y)))} />)}
         {character && msgs && !msgs.length && (
           <div className="muted" style={{ textAlign: "center", fontSize: 14, marginTop: 24, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
             {face(72)}<div>Say hi to {character.name} 👋</div>
@@ -531,12 +522,12 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       </div>}
       <form onSubmit={e => { e.preventDefault(); send(text); }} className="row" style={{ padding: "10px 12px", borderTop: "1px solid var(--border)" }}>
         <input ref={picker} type="file" accept={ACCEPT} hidden onChange={e => pick(e.target.files?.[0])} data-testid="chat-file-input" />
-        {cid && !scene && !inPerson && <button type="button" onClick={() => setTogetherSheet({ place: "", busy: false })} disabled={!msgs || busy} aria-label="We're together in person" title="Together in person" data-testid="inperson-open"
-          style={{ borderRadius: 999, width: 32, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 18, border: "none", background: "transparent", color: "var(--muted)" }}>🧍</button>}
-        {cid && !scene && inPerson && <button type="button" onClick={() => openPeek(true)} disabled={!msgs || busy || !!peekSheet} aria-label="I see you" title="ICU" data-testid="icu-open"
-          style={{ borderRadius: 999, width: 32, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 18, border: "none", background: "transparent", color: "var(--muted)" }}>👁️</button>}
         {cid && !scene && <button type="button" onClick={() => setSceneSheet(true)} disabled={!msgs || busy} aria-label="Start a scene" data-testid="scene-open"
           style={{ borderRadius: 999, width: 36, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 19, border: "none", background: "transparent", color: "var(--muted)" }}>🎬</button>}
+        {cid && !scene && !inPerson && <button type="button" onClick={() => setTogetherSheet({ place: "", busy: false })} disabled={!msgs || busy} aria-label="We're together in person" title="Together in person — she talks face to face" data-testid="inperson-open"
+          style={{ borderRadius: 999, width: 32, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 18, border: "none", background: "transparent", color: "var(--muted)" }}>🧍</button>}
+        {cid && !scene && inPerson && <button type="button" onClick={() => openPeek(true)} disabled={!msgs || busy || !!peekSheet} aria-label="I see you: a picture of her right now, in person" title="ICU — you're with her: see her right now" data-testid="icu-open"
+          style={{ borderRadius: 999, width: 32, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 18, border: "none", background: "transparent", color: "var(--muted)" }}>👁️</button>}
         <button type="button" onClick={() => setSelectMode(s => !s)} aria-label="Select messages" title="Select messages to delete" style={{ borderRadius: 999, width: 36, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 16, border: "none", background: "transparent", color: selectMode ? "var(--accent)" : "var(--muted)" }}>☑</button>
         <button type="button" onClick={() => picker.current?.click()} disabled={!msgs || busy || uploading} aria-label="Attach a photo or file" data-testid="chat-attach"
           style={{ borderRadius: 999, width: 40, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 20, border: "none", background: "transparent", color: "var(--muted)" }}>
@@ -566,7 +557,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   );
 }
 
-function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg, onDelete, selectMode, selected, onToggle }: { m: ChatMsg; face: React.ReactNode; who: string; onMedia: (x: Media) => void; onFailed?: () => void; onReact: (id: string, r: string) => void; onAnswer: (x: Media) => void; onReactMsg: (id: string, r: string) => void; onDelete?: (id: string) => void; selectMode?: boolean; selected?: boolean; onToggle?: (id: string) => void }) {
+function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg, selectMode, selected, onToggle }: { m: ChatMsg; face: React.ReactNode; who: string; onMedia: (x: Media) => void; onFailed?: () => void; onReact: (id: string, r: string) => void; onAnswer: (x: Media) => void; onReactMsg: (id: string, r: string) => void; selectMode?: boolean; selected?: boolean; onToggle?: (id: string) => void }) {
   const mine = m.role === "user";
   const [picking, setPicking] = useState(false);
   // A small badge on the bubble's corner, like a text-message reaction.
@@ -579,7 +570,7 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
     <div data-testid="brain-marker" title={m.content === "⏰" ? `${who} is having trouble — still trying` : `${who} is back`} style={{ alignSelf: "center", fontSize: 18, lineHeight: 1, padding: "4px 10px", borderRadius: 999, border: "1px dashed var(--border)" }}>{m.content}</div>
   );
   if (m.peek && mine) return (
-    <div data-testid="peek-note" style={{ alignSelf: "flex-end", fontSize: 12, padding: "4px 10px", borderRadius: 999, border: "1px dashed var(--border)" }} className="muted">👀 you peeked</div>
+    <div data-testid="peek-note" style={{ alignSelf: "flex-end", fontSize: 12, padding: "4px 10px", borderRadius: 999, border: "1px dashed var(--border)" }} className="muted">{m.content === "*ICU*" ? "👁️ you looked" : "👀 you peeked"}</div>
   );
   if (m.peek && m.media) return (
     <div data-testid="peek-media" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
@@ -590,7 +581,7 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
       </div>
     </div>
   );
-  if (m.content.startsWith("🎬 ")) return (
+  if (m.content.startsWith("🎬 ") || m.content.startsWith("🧍 ")) return (
     <div data-testid="scene-note" style={{ alignSelf: "center", maxWidth: "90%", textAlign: "center", fontSize: 12, padding: "6px 12px", borderRadius: 999, background: "var(--surface2)", border: "1px solid var(--border)" }} className="muted">{m.content}</div>
   );
   if (m.media) return (
@@ -607,7 +598,6 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
       {!mine && face}
       <div style={{ maxWidth: "80%", display: "flex", flexDirection: "column", alignItems: mine ? "flex-end" : "flex-start" }}>
       {selectMode && m.id && <input type="checkbox" checked={!!selected} onChange={() => onToggle?.(m.id!)} style={{ marginRight: 4 }} />}
-      {!selectMode && !mine && m.id && onDelete && <button type="button" onClick={e => { e.stopPropagation(); onDelete(m.id!); }} aria-label="Delete this reply" title="Delete and regenerate" style={{ fontSize: 11, padding: "2px 6px", borderRadius: 6, border: "1px solid var(--border)", background: "transparent", color: "var(--muted)", cursor: "pointer" }}>✕</button>}
       <div onClick={() => { if (!mine && m.id) setPicking(p => !p); }} data-testid={mine ? "my-bubble" : "her-bubble"}
         style={{ position: "relative", cursor: !mine && m.id ? "pointer" : undefined, padding: "10px 14px", borderRadius: 18, borderBottomLeftRadius: mine ? 18 : 4, borderBottomRightRadius: mine ? 4 : 18,
         background: mine ? "linear-gradient(135deg, var(--accent), var(--accent2))" : "var(--surface2)", color: "var(--text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", lineHeight: 1.45, fontSize: 15 }}>
@@ -649,22 +639,22 @@ export function FileThumb({ f, size }: { f: { url: string; thumb?: string | null
 
 /** 🎬 Set up a scene: play it out now, or say it already happened. */
 /** 👀 The peek, before it's made: the picture's description to check, tweak or rewrite. */
-function PeekSheet({ who, sheet, onChange, onRewrite, onSend, onClose }: { who: string; sheet: { description: string; loading: boolean; error?: string }; onChange: (d: string) => void; onRewrite: () => void; onSend: (d: string) => void; onClose: () => void }) {
+function PeekSheet({ who, sheet, onChange, onRewrite, onSend, onClose }: { who: string; sheet: { description: string; loading: boolean; error?: string; icu?: boolean }; onChange: (d: string) => void; onRewrite: () => void; onSend: (d: string) => void; onClose: () => void }) {
   return (
     <div role="dialog" aria-modal="true" data-testid="peek-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }} onClick={onClose}>
       <div className="card" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 10 }}>
         <div className="row" style={{ justifyContent: "space-between" }}>
-          <div style={{ fontWeight: 800, fontSize: 17 }}>👀 Peek at {who}</div>
+          <div style={{ fontWeight: 800, fontSize: 17 }}>{sheet.icu ? `👁️ I see you, ${who}` : `👀 Peek at ${who}`}</div>
           <button className="ghost" onClick={onClose} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
         </div>
         <div className="muted" style={{ fontSize: 12 }}>This is the picture that will be made, using her reference pictures. Fix anything that&apos;s off — where you are, what she&apos;s wearing, her pose or look. She won&apos;t know.</div>
-        <textarea value={sheet.description} onChange={e => onChange(e.target.value)} maxLength={400} rows={5} aria-label="Peek description" disabled={sheet.loading && !sheet.description}
+        <textarea value={sheet.description} onChange={e => onChange(e.target.value)} maxLength={1500} rows={5} aria-label="Peek description" disabled={sheet.loading && !sheet.description}
           placeholder={sheet.loading ? "Writing what you'd see…" : "e.g. Her at a candlelit corner table in an emerald dress, laughing and glancing up at me"} style={{ resize: "vertical" }} />
-        <div className="muted" style={{ fontSize: 11, textAlign: "right" }}>{sheet.description.length}/400</div>
+        <div className="muted" style={{ fontSize: 11, textAlign: "right" }}>{sheet.description.length}/1500</div>
         {sheet.error && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {sheet.error}</div>}
         <div className="row" style={{ gap: 8 }}>
           <button className="ghost" onClick={onRewrite} disabled={sheet.loading} data-testid="peek-rewrite" style={{ flexShrink: 0 }}>↻ Rewrite</button>
-          <button className="btn" onClick={() => onSend(sheet.description)} disabled={sheet.loading || sheet.description.trim().length < 10} data-testid="peek-go" style={{ flex: 1 }}>{sheet.loading ? "…" : "👀 Peek"}</button>
+          <button className="btn" onClick={() => onSend(sheet.description)} disabled={sheet.loading || sheet.description.trim().length < 10} data-testid="peek-go" style={{ flex: 1 }}>{sheet.loading ? "…" : sheet.icu ? "👁️ Look" : "👀 Peek"}</button>
         </div>
       </div>
     </div>
@@ -677,8 +667,7 @@ export type SceneClockChoice = { clock: "now" | "set"; time: string };
 export function SceneSheet({ who, plan, onClose, onStart }: { who: string; plan?: { title: string; details: string; time?: string } | null; onClose: () => void; onStart: (kind: "live" | "past", title: string, details: string, clock: SceneClockChoice) => Promise<void> }) {
   const [kind, setKind] = useState<"live" | "past">("live");
   // 🕒 Real time now, or the scene's own scheduled time (the plan's time, if it has one).
-  // If the plan already has a time, start on "Scheduled time" so it doesn't begin immediately.
-  const [clock, setClock] = useState<"now" | "set">(plan?.time ? "set" : "now");
+  const [clock, setClock] = useState<"now" | "set">("now");
   const [time, setTime] = useState(plan?.time || "");
   const [title, setTitle] = useState(plan?.title || "");
   const [details, setDetails] = useState(plan?.details || "");
