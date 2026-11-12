@@ -289,7 +289,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   };
 
   return (
-    <div style={{ height: "100dvh", display: "flex", flexDirection: "column", width: "100%" }}>
+    <div style={{ height: "100dvh", display: "flex", flexDirection: "column", width: "100%", maxWidth: 720, margin: "0 auto" }}>
       {calling && callMini && <div aria-hidden style={{ height: "calc(max(8px, env(safe-area-inset-top)) + 50px)", flexShrink: 0 }} />}
       <header className="row" style={{ padding: "max(12px, env(safe-area-inset-top)) 16px 12px", borderBottom: "1px solid var(--border)" }}>
         <VeloLogo size={40} />
@@ -380,7 +380,7 @@ function Settings({ name, setName, onOut, profile, onProfile, chars = [], admin 
     if (ok) { setName(n); setSaved(true); setTimeout(() => setSaved(false), 1500); }
   };
   return (
-    <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={{ padding: "12px 10px", display: "flex", flexDirection: "column", gap: 14 }}>
       <div className="card">
         <div style={{ fontWeight: 700, marginBottom: 8 }}>What should Velo call you?</div>
         <div className="row">
