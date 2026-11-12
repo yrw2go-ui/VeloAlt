@@ -3,11 +3,12 @@ import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import { sql } from "../../lib/db";
 import { MediaError, mediaReady } from "../../lib/media";
-import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost } from "../../lib/picagram";
+import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSavedList } from "../../lib/picagram";
 
 // 📸 Picagram. POST { action, ... }:
 //   feed { before? } → { posts }   (a few at a time; today's and missed days' posts are made as needed)
 //   comments { id } → { comments }   like { id, on }   seen { ids }   comment { id, text } → { added }
+//   follow { id, on }   profile { id } → { account, photos }   save { id: mediaId, on }   saved { before? } → { items }   (🔖 their Picagram gallery)
 //   post { caption, photo?, useMyPhotos? } → { id }   (photo: a description; Atlas makes it)
 const bad = (error: string, status = 400) => NextResponse.json({ error }, { status });
 const UUID = /^[0-9a-f-]{36}$/i;
@@ -24,12 +25,18 @@ export async function POST(req: NextRequest) {
         const before = typeof b.before === "string" && !Number.isNaN(Date.parse(b.before)) ? b.before : null;
         // First visit ever: make today's posts now; otherwise catch up in the background.
         if (!before) {
+          // ⏸️ After 4 days without a look it was paused: it picks up again from today (no make-up days).
+          const active = await picaLooked(me);
           const [any] = await sql()`select 1 from pica_posts where user_id = ${me} limit 1`;
           if (!any) await ensurePicaDays(me, 0).catch(e => console.error("pica: first", e instanceof Error ? e.message : e));
-          else after(() => ensurePicaDays(me, 2).then(() => {}, e => console.error("pica: catch up", e instanceof Error ? e.message : e)));
+          else after(() => ensurePicaDays(me, active ? 2 : 0).then(() => {}, e => console.error("pica: catch up", e instanceof Error ? e.message : e)));
         }
         return NextResponse.json({ posts: await picaFeed(me, before, 6) });
       }
+      case "follow": return UUID.test(id) && (await picaFollow(me, id, b.on === true)) ? NextResponse.json({ ok: true }) : bad("Unknown account.");
+      case "profile": { const p = UUID.test(id) ? await picaProfile(me, id) : null; return p ? NextResponse.json(p) : bad("Unknown account."); }
+      case "save": return UUID.test(id) && (await picaSave(me, id, b.on === true)) ? NextResponse.json({ ok: true }) : bad("Unknown picture.");
+      case "saved": return NextResponse.json({ items: await picaSavedList(me, typeof b.before === "string" && !Number.isNaN(Date.parse(b.before)) ? b.before : null) });
       case "comments": return UUID.test(id) ? NextResponse.json({ comments: await picaComments(me, id) }) : bad("Unknown post.");
       case "like": return UUID.test(id) && (await picaLike(me, id, b.on === true)) ? NextResponse.json({ ok: true }) : bad("Unknown post.");
       case "seen": await picaSeen(me, Array.isArray(b.ids) ? b.ids.map(String) : []); return NextResponse.json({ ok: true });

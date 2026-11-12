@@ -17,7 +17,7 @@ import { MediaView, ReactionBar, type Media } from "./media";
 export type ChatWith = { id: string; name: string; portrait_url: string | null; romantic?: boolean; brain?: string };
 
 export type ChatFile = { id: string; url: string; thumb?: string | null; name: string; type: string };
-export type ChatMsg = { id?: string; role: "user" | "assistant"; content: string; peek?: boolean; draft?: Draft; file?: ChatFile; media?: Media; reaction?: string | null; theirReaction?: string | null };
+export type ChatMsg = { id?: string; at?: string; role: "user" | "assistant"; content: string; peek?: boolean; draft?: Draft; file?: ChatFile; media?: Media; reaction?: string | null; theirReaction?: string | null };
 /** How a sent photo/video reads in the history the AI sees. */
 export const mediaNote = (m: Media) => {
   const other = m.subject && m.subject !== "me" && m.subject !== "none" ? m.subject.replace(/^me\+/, "") : "";
@@ -94,8 +94,27 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       data<{ messages: ChatMsg[] }>("messages.list", thread).then(r => r.messages).catch(() => [] as ChatMsg[]),
       // Drafts (texts, calls, posts) are Velo's; characters can't send anything.
       cid ? Promise.resolve([] as Draft[]) : data<{ drafts: Draft[] }>("drafts.list").then(r => r.drafts).catch(() => [] as Draft[]),
-    ]).then(([m, d]) => setMsgs([...m, ...d.filter(x => x.status === "pending" || x.status === "calling").map(draft => ({ role: "assistant" as const, content: "", draft }))]));
+    ]).then(([m, d]) => {
+      setMsgs([...m, ...d.filter(x => x.status === "pending" || x.status === "calling").map(draft => ({ role: "assistant" as const, content: "", draft }))]);
+      // Back in a chat where she was still "typing…": her answer is on its way — keep an eye out for it.
+      const last = [...m].reverse().find(x => !x.peek);
+      if (last?.role === "user" && last.at && Date.now() - Date.parse(last.at) < 3 * 60_000) setWaiting(Date.now());
+    });
   }, [userId, cid]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ⏳ Waiting for a reply that the server is still writing (or already saved while they were away).
+  const [waiting, setWaiting] = useState(0);
+  useEffect(() => {
+    if (!waiting) return;
+    let n = 0;
+    const t = setInterval(async () => {
+      n++;
+      const r = await data<{ messages: ChatMsg[] }>("messages.list", thread).catch(() => null);
+      const last = r ? [...r.messages].reverse().find(x => !x.peek) : null;
+      if (r && last?.role === "assistant") { reload(); setWaiting(0); clearInterval(t); }
+      else if (n >= 30) { setWaiting(0); clearInterval(t); setErr(`${who} didn't answer — try sending again.`); }
+    }, 4000);
+    return () => clearInterval(t);
+  }, [waiting]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [msgs, busy]);
 
   // A call recap lands in the chat.
@@ -196,7 +215,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     const me = retry ? turn.current : ++turn.current;
     if (!retry || retry === 1) { setBusy(true); setErr(""); }
     try {
-      const r = await api<{ reply: string; changed?: boolean; drafts?: Draft[]; media?: Media[]; react?: string; brainDown?: boolean; by?: "claude" | "alt" }>("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name, ...thread, ...(myId ? { replyTo: myId } : {}), ...(retry ? { retry: true } : {}) });
+      const r = await api<{ reply: string; replyId?: string; changed?: boolean; drafts?: Draft[]; media?: Media[]; react?: string; brainDown?: boolean; by?: "claude" | "alt" }>("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name, ...thread, saveReply: true, ...(myId ? { replyTo: myId } : {}), ...(retry ? { retry: true } : {}) });
       if (turn.current !== me) return;
       if (r.brainDown) {
         setBusy(false);
@@ -219,15 +238,17 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       if (r.react) setMsgs(list => (list || []).map(x => (x.id && x.id === myId ? { ...x, theirReaction: r.react } : x)));
       // 🎨 Photos/videos being made show up right under the reply and fill in when ready.
       const sent: ChatMsg[] = (r.media || []).filter(x => x.status !== "failed").map(media => ({ role: "assistant", content: mediaNote(media), media }));
-      const replyMsg: ChatMsg = { role: "assistant", content: r.reply };
+      const replyMsg: ChatMsg = { role: "assistant", content: r.reply, ...(r.replyId ? { id: r.replyId } : {}) };
       setMsgs(m => [...(m || []), replyMsg, ...sent, ...(r.drafts || []).map(draft => ({ role: "assistant" as const, content: "", draft }))]);
       // Free the box as soon as her reply shows; saving it can finish in the background.
       setBusy(false);
-      const s2 = await data<{ ids?: string[] }>("messages.add", { ...thread, messages: [{ role: "assistant", content: r.reply }] }).catch(() => ({ ids: [] as string[] }));
-      const replyId = s2.ids?.[0];
+      // (The server saved it already; older servers didn't, so save it here then.)
+      const replyId = r.replyId || (await data<{ ids?: string[] }>("messages.add", { ...thread, messages: [{ role: "assistant", content: r.reply }] }).catch(() => ({ ids: [] as string[] }))).ids?.[0];
       if (replyId) setMsgs(list => (list || []).map(x => (x === replyMsg ? { ...x, id: replyId } : x)));
       if (r.changed) onChanged();
     } catch (e) {
+      // The connection dropped (they left the app, or the phone slept): her answer may still be on its way — look for it.
+      if (e instanceof TypeError || /fetch|network|load failed/i.test(String((e as Error)?.message))) { setWaiting(Date.now()); return; }
       setErr(e instanceof Error ? e.message : `${who} didn't answer.`);
     } finally { setBusy(false); }
   };
@@ -507,7 +528,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
             {face(72)}<div>Say hi to {character.name} 👋</div>
           </div>
         )}
-        {busy && <div className="row">{face(28)}<div className="muted" style={{ fontSize: 14 }}>{who} is typing…</div></div>}
+        {(busy || !!waiting) && <div className="row" data-testid="typing">{face(28)}<div className="muted" style={{ fontSize: 14 }}>{who} is typing…</div></div>}
         {err && <div style={{ color: "var(--bad)", fontSize: 14 }}>⚠️ {err}</div>}
         {intro && character && (
           <div className="card" data-testid="intro-card" style={{ display: "flex", gap: 12, alignItems: "center", border: "1px solid var(--accent)", borderRadius: 14, padding: 12 }}>

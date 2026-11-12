@@ -34,7 +34,12 @@ export const awayText = (name: string, a: { place: string; until: string }) =>
   `${name} is out of town${a.place ? ` (${a.place})` : ""} until ${new Date(`${a.until}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })} — no meeting up in person till then.`;
 
 /** Make sure each day (today, and a few missed ones) has its posts. Returns how many days were made. */
-export async function ensurePicaDays(userId: string, backfill = 2): Promise<number> {
+export async function ensurePicaDays(userId: string, backfill = 2, scheduled = false): Promise<number> {
+  // ⏸️ Not looked at Picagram for 4 days: nobody posts until they look again.
+  if (scheduled) {
+    const [u] = await sql()`select pica_looked_at > now() - interval '4 days' as active from users where id = ${userId}`;
+    if (!u?.active) return 0;
+  }
   const { tz } = await userInfo(userId);
   const today = localDate(Date.now(), tz), hour = zonedParts(Date.now(), tz).hour;
   let made = 0;
@@ -52,12 +57,21 @@ export async function ensurePicaDays(userId: string, backfill = 2): Promise<numb
   return made;
 }
 
+/** They opened Picagram. Returns whether it was still going (looked in the last 4 days) — if not, it resumes from today. */
+export async function picaLooked(userId: string): Promise<boolean> {
+  const [u] = await sql()`update users x set pica_looked_at = now() from (select pica_looked_at as old from users where id = ${userId}) o where x.id = ${userId}
+    returning o.old > now() - interval '4 days' as active`;
+  return !!u?.active;
+}
+
 type Planned = { author: string; kind: "image" | "text"; caption: string; photo: string; with: string; vacation: { place: string; days: number } | null; friend_comments: { from: string; text: string }[] };
 
 async function generateDay(userId: string, day: string, isToday: boolean): Promise<boolean> {
   const chars = (await listCharacters(userId)).filter(c => !c.owner_id || c.owner_id === userId);
-  if (!chars.length) return false;
   const u = await userInfo(userId);
+  // 💃 Other accounts (people they follow, plus someone new to discover).
+  await accountPosts(userId, day, isToday, u).catch(e => console.error("pica: accounts", e instanceof Error ? e.message : e));
+  if (!chars.length) return true;
   const authors = shuffle(chars).slice(0, Math.min(rand(3, 5), chars.length));
   const info = await Promise.all(authors.map(async c => {
     const friends = (await friendsOf(c, userId).catch(() => [])).map(f => f.name).filter(n => chars.some(x => x.name === n)).slice(0, 6);
@@ -118,24 +132,30 @@ async function generateDay(userId: string, day: string, isToday: boolean): Promi
 
 // 📜 The feed, a few at a time (newest first), only what's been posted by now.
 const ramp = (target: number, at: string) => Math.round(target * Math.min(1, Math.sqrt(Math.max(0, Date.now() - Date.parse(at)) / (10 * 3600_000))));
-export type PicaPost = { id: string; author: { id: string | null; name: string; portrait: string | null; away: string | null }; kind: "image" | "text"; caption: string; media: Media | null; likes: number; liked: boolean; liked_by: string[]; comments: number; preview: PicaComment[]; created_at: string };
+export type PicaPost = { id: string; saved: boolean; author: { id: string | null; name: string; portrait: string | null; away: string | null; account?: { id: string; handle: string; followed: boolean } }; kind: "image" | "text"; caption: string; media: Media | null; likes: number; liked: boolean; liked_by: string[]; comments: number; preview: PicaComment[]; created_at: string };
 export type PicaComment = { id: string; who: string; me: boolean; known: boolean; text: string; created_at: string };
 
 export async function picaFeed(userId: string, before: string | null, limit = 6): Promise<PicaPost[]> {
   const { name } = await userInfo(userId);
   const rows = await sql()`select p.*, p.created_at::text as at, c.name as author_name, pf.url as portrait, m.id as m_id, m.kind as m_kind, m.status as m_status, mf.url as m_url, mt.url as m_thumb,
       a.place as away_place, a.until::text as away_until,
+      ac.id as acc_id, ac.handle as acc_handle, ac.name as acc_name, ac.followed as acc_followed, af.url as acc_avatar,
+      exists(select 1 from pica_saved s where s.user_id = p.user_id and s.media_id = p.media_id) as saved,
       (select count(*)::int from pica_comments k where k.post_id = p.id and k.created_at <= now()) as n_comments
     from pica_posts p left join chat_characters c on c.id = p.author_id left join velo_files pf on pf.id = c.portrait_file_id
       left join velo_media m on m.id = p.media_id left join velo_files mf on mf.id = m.file_id left join velo_files mt on mt.id = m.thumb_file_id
       left join chat_away a on a.user_id = p.user_id and a.character_id = p.author_id and a.until >= current_date
+      left join pica_accounts ac on ac.id = p.account_id left join velo_media am on am.id = ac.avatar_media_id left join velo_files af on af.id = am.file_id
     where p.user_id = ${userId} and p.created_at <= now() and (${before}::timestamptz is null or p.created_at < ${before}::timestamptz)
     order by p.created_at desc limit ${Math.min(limit, 20)}`;
   const ids = rows.map(r => String(r.id));
   const cm = ids.length ? await commentsFor(userId, ids, name, 2) : new Map<string, PicaComment[]>();
   return rows.map(r => ({
     id: String(r.id), kind: r.kind, caption: String(r.caption || ""), created_at: String(r.at),
-    author: { id: r.author_id ? String(r.author_id) : null, name: r.author_id ? String(r.author_name) : name, portrait: r.portrait ? String(r.portrait) : null, away: r.away_place && r.author_id ? `✈️ ${r.away_place}` : null },
+    author: r.acc_id
+      ? { id: null, name: String(r.acc_name), portrait: r.acc_avatar ? String(r.acc_avatar) : null, away: null, account: { id: String(r.acc_id), handle: String(r.acc_handle), followed: !!r.acc_followed } }
+      : { id: r.author_id ? String(r.author_id) : null, name: r.author_id ? String(r.author_name) : name, portrait: r.portrait ? String(r.portrait) : null, away: r.away_place && r.author_id ? `✈️ ${r.away_place}` : null },
+    saved: !!r.saved,
     media: r.m_id ? ({ id: String(r.m_id), kind: r.m_kind, status: r.m_status, url: r.m_status === "done" ? r.m_url : null, thumb: r.m_thumb || null } as Media) : null,
     likes: ramp(Number(r.likes_target), String(r.at)) + (r.liked ? 1 : 0), liked: !!r.liked, liked_by: (r.liked_by || []) as string[],
     comments: Number(r.n_comments), preview: cm.get(String(r.id)) || [],
@@ -249,4 +269,80 @@ export async function picaNote(userId: string, ch: Character, personName: string
   const awayLine = away ? `✈️ YOU'RE OUT OF TOWN right now (${away.place}) until ${away.until}: you can't meet up in person until you're back — texts and calls are fine. Talk about the trip naturally.` : "";
   if (!lines.length && !awayLine) return "";
   return `${lines.length ? `PICAGRAM (the photo app you both use, like Instagram) lately:\n${lines.join("\n")}\nBring it up naturally now and then (e.g. "did you see my post?", or about theirs) — don't list it.` : ""}${awayLine ? `\n${awayLine}` : ""}`.trim();
+}
+
+// 💃 Other accounts: good-looking women who aren't characters — follow them, like their posts, save their pictures.
+type U = { name: string; tz: string; adult: boolean; look: string };
+async function ensureAccounts(userId: string): Promise<void> {
+  const [{ open, all }] = await sql()`select count(*) filter (where not followed)::int as open, count(*)::int as all from pica_accounts where user_id = ${userId}`;
+  if (open >= 3 || all >= 40) return;
+  const taken = (await sql()`select handle from pica_accounts where user_id = ${userId}`).map(r => String(r.handle));
+  const raw = await writeText("", `Invent 4 different women who post on Picagram (a social photo app like Instagram): beautiful, aged 21–35, varied looks and backgrounds, each with her own vibe (fitness, travel, fashion, beach life, cooking, nightlife, yoga, cars, art…). Fictional people, never real ones. JSON only: {"accounts":[{"name":"First Last","handle":"lowercase_handle","bio":"short bio with emojis","look":"one detailed sentence for an image generator: age, face, hair, eyes, skin, build, usual style","followers":12000}]}`,
+    taken.length ? `Handles already taken: ${taken.join(", ")}` : "(none yet)", 1500).catch(() => "");
+  let list: { name?: string; handle?: string; bio?: string; look?: string; followers?: number }[] = [];
+  try { list = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]).accounts || []; } catch { /* none this time */ }
+  for (const a of list.slice(0, 4)) {
+    const handle = String(a.handle || a.name || "").toLowerCase().replace(/[^a-z0-9._]/g, "").slice(0, 28);
+    if (handle.length < 2 || taken.includes(handle) || !a.name) continue;
+    taken.push(handle);
+    await sql()`insert into pica_accounts (user_id, handle, name, bio, look, followers) values (${userId}, ${handle}, ${scrub(String(a.name)).slice(0, 60)}, ${scrub(String(a.bio || "")).slice(0, 300)}, ${scrub(String(a.look || "")).slice(0, 600)}, ${Math.max(2000, Math.min(900000, Number(a.followers) || rand(5000, 200000)))})`;
+  }
+}
+
+async function accountPosts(userId: string, day: string, isToday: boolean, u: U): Promise<void> {
+  await ensureAccounts(userId);
+  const followed = shuffle(await sql()`select * from pica_accounts where user_id = ${userId} and followed`).slice(0, rand(1, 2));
+  const fresh = shuffle(await sql()`select * from pica_accounts where user_id = ${userId} and not followed`).slice(0, followed.length ? 1 : 2);
+  const who = [...followed, ...fresh];
+  if (!who.length) return;
+  const raw = await writeText("", `Write one Picagram post for each of these women: a photo of her in her everyday life or her niche — gym, beach, pool, brunch, travel, a night out, at home, an outfit — with a short caption (emojis/hashtags okay). ${u.adult ? "Flattering, flirty and confident is fine (PG-13): swimwear at the beach or pool is okay; never nudity, lingerie or anything sexual." : "Keep it family-friendly, fully clothed."} "photo" describes exactly what the picture shows (where, outfit, pose, light) in 1–2 sentences. JSON only: {"posts":[{"handle":"...","caption":"...","photo":"..."}]}`,
+    who.map(a => `- @${a.handle} (${a.name}): ${a.bio} — looks: ${a.look}`).join("\n"), 1500).catch(() => "");
+  let plan: { handle?: string; caption?: string; photo?: string }[] = [];
+  try { plan = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]).posts || []; } catch { /* skip today */ }
+  const now = Date.now();
+  const start = isToday ? now : zonedToUtc(`${day}T09:00`, u.tz) || now, end = isToday ? Math.max(now + 2 * 3600_000, zonedToUtc(`${day}T22:00`, u.tz) || now) : zonedToUtc(`${day}T21:30`, u.tz) || now;
+  for (const a of who) {
+    const p = plan.find(x => String(x.handle || "").replace(/^@/, "").toLowerCase() === String(a.handle)) || null;
+    const photo = scrub(String(p?.photo || `${a.name} candid lifestyle photo, natural light`)).slice(0, 600), caption = scrub(String(p?.caption || "✨")).slice(0, 600);
+    const [av] = a.avatar_media_id ? await sql()`select f.url from velo_media m join velo_files f on f.id = m.file_id where m.id = ${a.avatar_media_id} and m.status = 'done'` : [];
+    const media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: photo },
+      { characterId: null, who: String(a.name), appearance: String(a.look), refs: av ? [String(av.url)] : [], romantic: u.adult, offer: false, other: null, pica: true }).catch(() => null);
+    if (!media) continue;
+    if (!a.avatar_media_id) await sql()`update pica_accounts set avatar_media_id = ${media.id} where id = ${a.id}`;
+    const at = isToday && a === who[0] ? now - rand(5, 40) * 60_000 : start + Math.random() * (end - start);
+    const likes = Math.max(150, Math.min(25000, Math.round(Number(a.followers) * (0.005 + Math.random() * 0.03))));
+    const [post] = await sql()`insert into pica_posts (user_id, account_id, kind, caption, photo, media_id, likes_target, created_at) values (${userId}, ${a.id}, 'image', ${caption}, ${photo}, ${media.id}, ${likes}, ${new Date(at).toISOString()}) returning id`;
+    for (const s of randomComments(`${caption} ${photo}`, "image", rand(3, 6)))
+      await sql()`insert into pica_comments (post_id, user_id, name, text, created_at) values (${post.id}, ${userId}, ${s.name}, ${s.text}, ${new Date(at + rand(2, 300) * 60_000).toISOString()})`;
+  }
+}
+
+export async function picaFollow(userId: string, accountId: string, on: boolean): Promise<boolean> {
+  const r = await sql()`update pica_accounts set followed = ${on}, followers = followers + ${on ? 1 : -1} where id = ${accountId} and user_id = ${userId} returning id`;
+  return r.length > 0;
+}
+
+/** 👤 Someone's profile: who she is and her photos. */
+export async function picaProfile(userId: string, accountId: string) {
+  const [a] = await sql()`select a.id, a.handle, a.name, a.bio, a.followers, a.followed, f.url as avatar from pica_accounts a left join velo_media m on m.id = a.avatar_media_id left join velo_files f on f.id = m.file_id where a.id = ${accountId} and a.user_id = ${userId}`;
+  if (!a) return null;
+  const posts = await sql()`select p.id, p.caption, m.id as media_id, f.url, t.url as thumb, exists(select 1 from pica_saved s where s.user_id = p.user_id and s.media_id = m.id) as saved
+    from pica_posts p join velo_media m on m.id = p.media_id join velo_files f on f.id = m.file_id left join velo_files t on t.id = m.thumb_file_id
+    where p.user_id = ${userId} and p.account_id = ${accountId} and p.created_at <= now() and m.status = 'done' order by p.created_at desc limit 60`;
+  return { account: { id: String(a.id), handle: String(a.handle), name: String(a.name), bio: String(a.bio), followers: Number(a.followers), followed: !!a.followed, avatar: a.avatar ? String(a.avatar) : null },
+    photos: posts.map(r => ({ media_id: String(r.media_id), url: String(r.url), thumb: r.thumb ? String(r.thumb) : null, caption: String(r.caption || ""), saved: !!r.saved })) };
+}
+
+/** 🔖 Their own Picagram gallery: pictures they saved. */
+export async function picaSave(userId: string, mediaId: string, on: boolean): Promise<boolean> {
+  const [m] = await sql()`select 1 from pica_posts where user_id = ${userId} and media_id = ${mediaId} limit 1`;
+  if (!m) return false;
+  if (on) await sql()`insert into pica_saved (user_id, media_id) values (${userId}, ${mediaId}) on conflict do nothing`;
+  else await sql()`delete from pica_saved where user_id = ${userId} and media_id = ${mediaId}`;
+  return true;
+}
+export async function picaSavedList(userId: string, before: string | null) {
+  const rows = await sql()`select s.media_id, s.created_at::text as at, f.url, t.url as thumb from pica_saved s join velo_media m on m.id = s.media_id join velo_files f on f.id = m.file_id left join velo_files t on t.id = m.thumb_file_id
+    where s.user_id = ${userId} and (${before}::timestamptz is null or s.created_at < ${before}::timestamptz) order by s.created_at desc limit 30`;
+  return rows.map(r => ({ media_id: String(r.media_id), url: String(r.url), thumb: r.thumb ? String(r.thumb) : null, at: String(r.at), saved: true }));
 }

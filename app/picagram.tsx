@@ -6,7 +6,7 @@ import { hideSecrets } from "./lib/secrets";
 import { MediaView, type Media } from "./media";
 
 type Comment = { id: string; who: string; me: boolean; known: boolean; text: string; created_at: string };
-type Post = { id: string; author: { id: string | null; name: string; portrait: string | null; away: string | null }; kind: "image" | "text"; caption: string; media: Media | null; likes: number; liked: boolean; liked_by: string[]; comments: number; preview: Comment[]; created_at: string; all?: Comment[] };
+type Post = { id: string; saved: boolean; author: { id: string | null; name: string; portrait: string | null; away: string | null; account?: { id: string; handle: string; followed: boolean } }; kind: "image" | "text"; caption: string; media: Media | null; likes: number; liked: boolean; liked_by: string[]; comments: number; preview: Comment[]; created_at: string; all?: Comment[] };
 
 const ago = (at: string) => {
   const m = Math.max(0, Math.round((Date.now() - Date.parse(at)) / 60_000));
@@ -27,6 +27,8 @@ export default function Picagram({ name }: { name: string }) {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [composing, setComposing] = useState(false);
+  const [profile, setProfile] = useState<string | null>(null);
+  const [savedOpen, setSavedOpen] = useState(false);
   const sentinel = useRef<HTMLDivElement>(null);
   const loadingRef = useRef(false);
 
@@ -75,21 +77,25 @@ export default function Picagram({ name }: { name: string }) {
     <div data-testid="picagram" style={{ maxWidth: 560, width: "100%", margin: "0 auto", display: "flex", flexDirection: "column" }}>
       <div className="row" style={{ padding: "10px 14px", position: "sticky", top: 0, zIndex: 5, background: "var(--bg)", borderBottom: "1px solid var(--border)", gap: 8 }}>
         <div style={{ flex: 1, fontSize: 24, fontWeight: 900, fontStyle: "italic", letterSpacing: -0.5, background: "linear-gradient(90deg,#f59e0b,#ec4899,#8b5cf6)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>Picagram</div>
+        <button className="ghost" onClick={() => setSavedOpen(true)} aria-label="Saved pictures" data-testid="pica-saved-open" style={{ padding: "6px 10px" }}>🔖</button>
         <button className="ghost" onClick={() => load(true)} disabled={loading} aria-label="Refresh" style={{ padding: "6px 10px" }}>↻</button>
         <button className="btn" onClick={() => setComposing(true)} data-testid="pica-new" style={{ padding: "8px 14px" }}>＋ Post</button>
       </div>
       {posts && !posts.length && !loading && <div className="muted" style={{ textAlign: "center", padding: 32 }}>No posts yet — check back soon 📸</div>}
-      {(posts || []).map(p => <PostCard key={p.id} p={p} me={name} obs={seenObs.current} onChange={f => update(p.id, f)} />)}
+      {(posts || []).map(p => <PostCard key={p.id} p={p} me={name} obs={seenObs.current} onChange={f => update(p.id, f)} onProfile={setProfile}
+        onFollow={(acc, on) => setPosts(ps => (ps || []).map(x => (x.author.account?.id === acc ? { ...x, author: { ...x.author, account: { ...x.author.account!, followed: on } } } : x)))} />)}
       <div ref={sentinel} style={{ height: 1 }} />
       {loading && <div className="muted" style={{ textAlign: "center", padding: 18 }} data-testid="pica-loading">Loading…</div>}
       {!more && posts && posts.length > 0 && <div className="muted" style={{ textAlign: "center", padding: 18, fontSize: 13 }}>You&apos;re all caught up ✨</div>}
       {err && <div style={{ color: "var(--bad)", padding: 14 }}>⚠️ {err}</div>}
+      {profile && <Profile id={profile} onClose={() => setProfile(null)} onFollow={(acc, on) => setPosts(ps => (ps || []).map(x => (x.author.account?.id === acc ? { ...x, author: { ...x.author, account: { ...x.author.account!, followed: on } } } : x)))} />}
+      {savedOpen && <Saved onClose={() => setSavedOpen(false)} />}
       {composing && <Composer onClose={() => setComposing(false)} onPosted={() => { setComposing(false); load(true); }} />}
     </div>
   );
 }
 
-function PostCard({ p, me, obs, onChange }: { p: Post; me: string; obs: IntersectionObserver | null; onChange: (f: (p: Post) => Post) => void }) {
+function PostCard({ p, me, obs, onChange, onProfile, onFollow }: { p: Post; me: string; obs: IntersectionObserver | null; onChange: (f: (p: Post) => Post) => void; onProfile: (id: string) => void; onFollow: (account: string, on: boolean) => void }) {
   const ref = useRef<HTMLElement>(null);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -118,15 +124,20 @@ function PostCard({ p, me, obs, onChange }: { p: Post; me: string; obs: Intersec
     setBusy(false);
   };
   const list = open && p.all ? p.all : p.preview;
+  const acc = p.author.account;
+  const follow = async () => { if (!acc) return; const on = !acc.followed; onFollow(acc.id, on); await api("/api/pica", { action: "follow", id: acc.id, on }).catch(() => onFollow(acc.id, !on)); };
+  const save = async () => { if (!p.media) return; const on = !p.saved; onChange(x => ({ ...x, saved: on })); await api("/api/pica", { action: "save", id: p.media.id, on }).catch(() => onChange(x => ({ ...x, saved: !on }))); };
   const likedBy = p.liked_by.filter(Boolean);
   return (
     <article ref={ref} data-post={p.id} data-testid="pica-post" style={{ borderBottom: "1px solid var(--border)", paddingBottom: 12 }}>
       <div className="row" style={{ gap: 10, padding: "10px 14px" }}>
-        <Avatar name={p.author.name} url={p.author.portrait} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 800, fontSize: 14 }}>{p.author.id ? p.author.name : `${me} (you)`}</div>
+        <span onClick={() => acc && onProfile(acc.id)} style={{ cursor: acc ? "pointer" : undefined, display: "flex" }}><Avatar name={p.author.name} url={p.author.portrait} /></span>
+        <div style={{ flex: 1, minWidth: 0 }} onClick={() => acc && onProfile(acc.id)} data-testid={acc ? "pica-account" : undefined}>
+          <div style={{ fontWeight: 800, fontSize: 14, cursor: acc ? "pointer" : undefined }}>{acc ? acc.handle : p.author.id ? p.author.name : `${me} (you)`}</div>
+          {acc && !acc.followed && <div className="muted" style={{ fontSize: 11 }}>Suggested for you</div>}
           {p.author.away && <div className="muted" style={{ fontSize: 11 }} data-testid="pica-away">{p.author.away}</div>}
         </div>
+        {acc && <button className={acc.followed ? "ghost" : "btn"} onClick={follow} data-testid="pica-follow" style={{ padding: "4px 12px", fontSize: 13 }}>{acc.followed ? "Following" : "Follow"}</button>}
         <span className="muted" style={{ fontSize: 12 }}>{ago(p.created_at)}</span>
       </div>
       {p.media ? (
@@ -137,11 +148,12 @@ function PostCard({ p, me, obs, onChange }: { p: Post; me: string; obs: Intersec
       <div className="row" style={{ gap: 14, padding: "8px 14px 2px" }}>
         <button onClick={like} aria-label={p.liked ? "Unlike" : "Like"} aria-pressed={p.liked} data-testid="pica-like" style={{ background: "none", border: "none", fontSize: 24, cursor: "pointer", padding: 0 }}>{p.liked ? "❤️" : "🤍"}</button>
         <button onClick={showAll} aria-label="Comments" style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", padding: 0 }}>💬</button>
+        {p.media && <button onClick={save} aria-label={p.saved ? "Unsave" : "Save to my Picagram gallery"} aria-pressed={p.saved} data-testid="pica-save" style={{ marginLeft: "auto", background: "none", border: "none", fontSize: 22, cursor: "pointer", padding: 0, opacity: p.saved ? 1 : 0.6 }}>{p.saved ? "🔖" : "📑"}</button>}
       </div>
       <div style={{ padding: "0 14px", fontSize: 14, fontWeight: 700 }} data-testid="pica-likes">
         {likedBy.length ? <>Liked by {likedBy.slice(0, 2).join(", ")}{p.likes > likedBy.length ? <> and {fmt(p.likes - Math.min(2, likedBy.length))} others</> : null}</> : <>{fmt(p.likes)} likes</>}
       </div>
-      {p.media && p.caption && <div style={{ padding: "4px 14px", fontSize: 14, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}><b>{p.author.id ? p.author.name : me}</b> {p.caption}</div>}
+      {p.media && p.caption && <div style={{ padding: "4px 14px", fontSize: 14, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}><b>{acc ? acc.handle : p.author.id ? p.author.name : me}</b> {p.caption}</div>}
       {p.comments > list.length && !open && <button onClick={showAll} className="muted" data-testid="pica-all" style={{ background: "none", border: "none", padding: "2px 14px", fontSize: 13, cursor: "pointer" }}>View all {p.comments} comments</button>}
       <div style={{ padding: "2px 14px", display: "grid", gap: 3 }}>
         {list.map(c => <div key={c.id} data-testid="pica-comment" style={{ fontSize: 13.5, overflowWrap: "anywhere" }}><b style={{ color: c.known ? "var(--text)" : "var(--muted)" }}>{c.me ? me : c.who}</b> {c.text}</div>)}
@@ -183,6 +195,92 @@ function Composer({ onClose, onPosted }: { onClose: () => void; onPosted: () => 
         {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
         <button className="btn" onClick={post} disabled={busy || (!caption.trim() && !photo.trim())} data-testid="pica-share">{busy ? "Posting…" : "Share"}</button>
       </div>
+    </div>
+  );
+}
+
+type Photo = { media_id: string; url: string; thumb: string | null; caption?: string; saved: boolean };
+
+/** 🖼️ A picture, full screen, with Save. */
+function Viewer({ photo, onClose, onSaved }: { photo: Photo; onClose: () => void; onSaved: (on: boolean) => void }) {
+  const [saved, setSaved] = useState(photo.saved);
+  const toggle = async () => { const on = !saved; setSaved(on); onSaved(on); await api("/api/pica", { action: "save", id: photo.media_id, on }).catch(() => { setSaved(!on); onSaved(!on); }); };
+  return (
+    <div role="dialog" aria-modal="true" data-testid="pica-viewer" onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.95)", zIndex: 2700, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 12 }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={photo.url} alt={photo.caption || "Photo"} onClick={e => e.stopPropagation()} style={{ maxWidth: "100%", maxHeight: "80dvh", objectFit: "contain", borderRadius: 12 }} />
+      <div className="row" style={{ gap: 10 }} onClick={e => e.stopPropagation()}>
+        <button className={saved ? "ghost" : "btn"} onClick={toggle} data-testid="pica-viewer-save">{saved ? "🔖 Saved" : "📑 Save"}</button>
+        <button className="ghost" onClick={onClose}>Close</button>
+      </div>
+    </div>
+  );
+}
+
+function Grid({ photos, onOpen }: { photos: Photo[]; onOpen: (p: Photo) => void }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 3 }}>
+      {photos.map(p => (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img key={p.media_id} src={p.thumb || p.url} alt={p.caption || "Photo"} loading="lazy" onClick={() => onOpen(p)} data-testid="pica-grid-item" style={{ width: "100%", aspectRatio: "1", objectFit: "cover", cursor: "pointer", background: "var(--surface2)" }} />
+      ))}
+    </div>
+  );
+}
+
+/** 👤 Her profile: bio, followers, Follow, and all her photos. */
+function Profile({ id, onClose, onFollow }: { id: string; onClose: () => void; onFollow: (account: string, on: boolean) => void }) {
+  const [data, setData] = useState<{ account: { id: string; handle: string; name: string; bio: string; followers: number; followed: boolean; avatar: string | null }; photos: Photo[] } | null>(null);
+  const [view, setView] = useState<Photo | null>(null);
+  useEffect(() => { api<NonNullable<typeof data>>("/api/pica", { action: "profile", id }).then(setData).catch(() => onClose()); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const follow = async () => {
+    if (!data) return;
+    const on = !data.account.followed;
+    setData(d => (d ? { ...d, account: { ...d.account, followed: on, followers: d.account.followers + (on ? 1 : -1) } } : d)); onFollow(id, on);
+    await api("/api/pica", { action: "follow", id, on }).catch(() => {});
+  };
+  return (
+    <div role="dialog" aria-modal="true" data-testid="pica-profile" style={{ position: "fixed", inset: 0, background: "var(--bg)", zIndex: 2600, overflowY: "auto" }}>
+      <div className="row" style={{ padding: "10px 14px", gap: 8, position: "sticky", top: 0, background: "var(--bg)", borderBottom: "1px solid var(--border)" }}>
+        <button className="ghost" onClick={onClose} aria-label="Back" style={{ padding: "4px 10px" }}>←</button>
+        <b style={{ flex: 1 }}>{data?.account.handle || "…"}</b>
+      </div>
+      {data && (
+        <div style={{ maxWidth: 560, margin: "0 auto" }}>
+          <div className="row" style={{ gap: 16, padding: 16 }}>
+            <Avatar name={data.account.name} url={data.account.avatar} size={76} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 800 }}>{data.account.name}</div>
+              <div className="muted" style={{ fontSize: 13 }}><b style={{ color: "var(--text)" }}>{data.photos.length}</b> posts · <b style={{ color: "var(--text)" }}>{fmt(data.account.followers)}</b> followers</div>
+              <div style={{ fontSize: 13, marginTop: 4, whiteSpace: "pre-wrap" }}>{data.account.bio}</div>
+            </div>
+          </div>
+          <div style={{ padding: "0 16px 12px" }}><button className={data.account.followed ? "ghost" : "btn"} onClick={follow} data-testid="pica-profile-follow" style={{ width: "100%" }}>{data.account.followed ? "Following" : "Follow"}</button></div>
+          <Grid photos={data.photos} onOpen={setView} />
+          {!data.photos.length && <div className="muted" style={{ textAlign: "center", padding: 24 }}>No photos yet</div>}
+        </div>
+      )}
+      {view && <Viewer photo={view} onClose={() => setView(null)} onSaved={on => setData(d => (d ? { ...d, photos: d.photos.map(x => (x.media_id === view.media_id ? { ...x, saved: on } : x)) } : d))} />}
+    </div>
+  );
+}
+
+/** 🔖 Their own Picagram gallery: pictures they saved. */
+function Saved({ onClose }: { onClose: () => void }) {
+  const [items, setItems] = useState<(Photo & { at: string })[] | null>(null);
+  const [view, setView] = useState<Photo | null>(null);
+  useEffect(() => { api<{ items: (Photo & { at: string })[] }>("/api/pica", { action: "saved" }).then(r => setItems(r.items)).catch(() => setItems([])); }, []);
+  return (
+    <div role="dialog" aria-modal="true" data-testid="pica-saved" style={{ position: "fixed", inset: 0, background: "var(--bg)", zIndex: 2600, overflowY: "auto" }}>
+      <div className="row" style={{ padding: "10px 14px", gap: 8, position: "sticky", top: 0, background: "var(--bg)", borderBottom: "1px solid var(--border)" }}>
+        <button className="ghost" onClick={onClose} aria-label="Back" style={{ padding: "4px 10px" }}>←</button>
+        <b style={{ flex: 1 }}>🔖 Saved</b>
+      </div>
+      <div style={{ maxWidth: 560, margin: "0 auto" }}>
+        {items && !items.length && <div className="muted" style={{ textAlign: "center", padding: 24 }}>Tap 📑 on a photo to save it here</div>}
+        {items && <Grid photos={items} onOpen={setView} />}
+      </div>
+      {view && <Viewer photo={view} onClose={() => setView(null)} onSaved={on => { if (!on) setItems(l => (l || []).filter(x => x.media_id !== view.media_id)); }} />}
     </div>
   );
 }
