@@ -3,7 +3,7 @@ import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import { sql } from "../../lib/db";
 import { MediaError, mediaReady } from "../../lib/media";
-import { dmThreads, dmUnread, dmOpen, dmSend, dmSendPhoto, DmError } from "../../lib/picaDm";
+import { dmThreads, dmUnread, dmOpen, dmSend, dmSendPhoto, dmBrain, DmError } from "../../lib/picaDm";
 import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSavedList, picaFollowing, picaBefriend, picaCounts, picaDeletePost, picaNew, picaFromPhoto, PicaLimit } from "../../lib/picagram";
 
 // 📸 Picagram. POST { action, ... }:
@@ -45,6 +45,7 @@ export async function POST(req: NextRequest) {
       // ✉️ DMs with accounts (characters chat in the normal chat).
       case "dm.threads": return NextResponse.json({ threads: await dmThreads(me) });
       case "dm.open": return UUID.test(id) ? NextResponse.json(await dmOpen(me, id)) : bad("Unknown account.");
+      case "dm.brain": return UUID.test(id) && (await dmBrain(me, id, String(b.brain ?? ""))) ? NextResponse.json({ ok: true }) : bad("Unknown account.");
       case "dm.send":
       case "dm.photo": {
         if (!UUID.test(id)) return bad("Unknown account.");

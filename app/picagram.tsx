@@ -374,7 +374,7 @@ function Following({ onClose, onUnfollow, onOpen }: { onClose: () => void; onUnf
 }
 
 type DmMsg = { id: string; role: "user" | "assistant"; content: string; created_at: string; media: Media | null };
-type DmAccount = { id: string; handle: string; name: string; avatar: string | null };
+type DmAccount = { id: string; handle: string; name: string; avatar: string | null; brain?: string };
 
 /** ✉️ Picagram messages: one row per person you've DM'd. */
 function Inbox({ onClose, onOpen }: { onClose: () => void; onOpen: (id: string) => void }) {
@@ -406,12 +406,13 @@ function Inbox({ onClose, onOpen }: { onClose: () => void; onOpen: (id: string) 
 /** 💬 A DM thread with one account: she answers in her own voice and can send photos (📸 if one didn't come through). */
 function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; onProfile: (id: string) => void }) {
   const [acc, setAcc] = useState<DmAccount | null>(null);
+  const [brains, setBrains] = useState<{ id: string; label: string }[]>([]);
   const [msgs, setMsgs] = useState<DmMsg[] | null>(null);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const end = useRef<HTMLDivElement>(null);
-  useEffect(() => { api<{ account: DmAccount; messages: DmMsg[] }>("/api/pica", { action: "dm.open", id }).then(r => { setAcc(r.account); setMsgs(r.messages); }).catch(e => setErr(e instanceof Error ? e.message : "Couldn't open it.")); }, [id]);
+  useEffect(() => { api<{ account: DmAccount; messages: DmMsg[]; brains?: { id: string; label: string }[] }>("/api/pica", { action: "dm.open", id }).then(r => { setAcc(r.account); setMsgs(r.messages); setBrains(r.brains || []); }).catch(e => setErr(e instanceof Error ? e.message : "Couldn't open it.")); }, [id]);
   useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [msgs, busy]);
   const send = async () => {
     const t = hideSecrets(text.trim()).text;
@@ -440,7 +441,15 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
     <div role="dialog" aria-modal="true" data-testid="pica-thread" style={{ position: "fixed", inset: 0, background: "var(--bg)", zIndex: 2650, display: "flex", flexDirection: "column" }}>
       <div className="row" style={{ padding: "10px 14px", gap: 10, borderBottom: "1px solid var(--border)" }}>
         <button className="ghost" onClick={onClose} aria-label="Back" style={{ padding: "4px 10px" }}>←</button>
-        {acc && <span onClick={() => onProfile(acc.id)} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}><Avatar name={acc.name} url={acc.avatar} size={32} /><b>{acc.handle}</b></span>}
+        {acc && <span onClick={() => onProfile(acc.id)} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", flex: 1, minWidth: 0 }}><Avatar name={acc.name} url={acc.avatar} size={32} /><b style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{acc.handle}</b></span>}
+        {acc && brains.length > 0 && (
+          <label className="row" style={{ gap: 4, fontSize: 12 }} title="Her brain">🧠
+            <select value={acc.brain || ""} aria-label="Her brain" data-testid="dm-brain" onChange={async e => { const b = e.target.value; setAcc(x => (x ? { ...x, brain: b } : x)); await api("/api/pica", { action: "dm.brain", id, brain: b }).catch(err => setErr(err instanceof Error ? err.message : "Couldn't change it.")); }}
+              style={{ padding: "4px 6px", fontSize: 12, width: "auto", borderRadius: 8 }}>
+              {brains.map(o => <option key={o.id || "same"} value={o.id}>{o.label}</option>)}
+            </select>
+          </label>
+        )}
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: 14, display: "flex", flexDirection: "column", gap: 8, maxWidth: 560, width: "100%", margin: "0 auto" }}>
         {msgs && !msgs.length && <div className="muted" style={{ textAlign: "center", marginTop: 24, fontSize: 14 }}>Say hi to {acc?.name || "her"} 👋</div>}

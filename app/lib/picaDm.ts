@@ -4,6 +4,8 @@ import { sql } from "./db";
 import { writeText } from "./llm";
 import { scrub } from "./secrets";
 import { startMedia, MediaError, type Media } from "./media";
+import { availableBrains } from "./models";
+import { BRAIN_OPTIONS } from "./brainOptions";
 
 export type Dm = { id: string; role: "user" | "assistant"; content: string; created_at: string; media: Media | null };
 export class DmError extends Error {}
@@ -16,9 +18,24 @@ async function account(userId: string, accountId: string) {
   return a;
 }
 const userInfo = async (userId: string) => {
-  const [u] = await sql()`select name, adult_confirmed_at from users where id = ${userId}`;
-  return { name: String(u?.name || "").split(/\s+/)[0] || "them", adult: !!u?.adult_confirmed_at };
+  const [u] = await sql()`select name, adult_confirmed_at, chat_model from users where id = ${userId}`;
+  return { name: String(u?.name || "").split(/\s+/)[0] || "them", adult: !!u?.adult_confirmed_at, chatModel: String(u?.chat_model || "claude") };
 };
+// 🧠 Her brain: her own pick, or the same as Velo's ('' / 'claude' = Claude).
+const brainOf = (a: Record<string, unknown>, chatModel: string) => { const b = String(a.brain || "") || chatModel; return b === "claude" ? "" : b; };
+// Writing her line: logged (not hidden) when it fails.
+const write = (brain: string, system: string, user: string, max: number) =>
+  writeText(brain, system, user, max).catch(e => { console.error("pica dm: brain failed", e instanceof Error ? e.message : e); return ""; });
+/** 🧠 What she remembers about them from your DMs. */
+async function memories(userId: string, accountId: string): Promise<string[]> {
+  return (await sql()`select text from pica_memories where user_id = ${userId} and account_id = ${accountId} order by created_at desc limit 25`).map(r => String(r.text)).reverse();
+}
+export async function dmBrain(userId: string, accountId: string, brain: string): Promise<boolean> {
+  const ok = brain === "" || brain === "claude" || availableBrains().includes(brain);
+  if (!ok) throw new DmError("That brain isn't set up.");
+  const r = await sql()`update pica_accounts set brain = ${brain} where id = ${accountId} and user_id = ${userId} returning id`;
+  return r.length > 0;
+}
 
 const rowToDm = (r: Record<string, unknown>): Dm => ({
   id: String(r.id), role: r.role as "user" | "assistant", content: String(r.content || ""), created_at: String(r.at),
@@ -48,7 +65,9 @@ export async function dmUnread(userId: string): Promise<number> {
 export async function dmOpen(userId: string, accountId: string) {
   const a = await account(userId, accountId);
   await sql()`update pica_dms set read_at = now() where user_id = ${userId} and account_id = ${accountId} and read_at is null`;
-  return { account: { id: String(a.id), handle: String(a.handle), name: String(a.name), avatar: a.avatar ? String(a.avatar) : null }, messages: await messages(userId, accountId) };
+  return { account: { id: String(a.id), handle: String(a.handle), name: String(a.name), avatar: a.avatar ? String(a.avatar) : null, brain: String(a.brain || "") },
+    brains: [{ id: "", label: "Same as Velo" }, ...BRAIN_OPTIONS.filter(o => !o.atlas || availableBrains().includes(o.id)).map(o => ({ id: o.id as string, label: o.label as string }))],
+    messages: await messages(userId, accountId) };
 }
 
 async function sendPhotoOf(userId: string, a: Record<string, unknown>, description: string, adult: boolean): Promise<Media> {
@@ -70,11 +89,18 @@ export async function dmSend(userId: string, accountId: string, text: string): P
   const u = await userInfo(userId);
   const mine = await addDm(userId, accountId, "user", t);
   const history = await messages(userId, accountId, 40);
-  const raw = await writeText("", `You are ${a.name} (@${a.handle}) on Picagram, a social photo app like Instagram. Your bio: "${a.bio}". You look like: ${a.look}. You're a real person with your own life; ${u.name} follows you and is messaging you in your DMs. Reply like Instagram DMs: short (1–3 sentences), casual, warm, in your own voice${u.adult ? ", flirty if it fits (PG-13: never nudity, lingerie or anything sexual)" : ", friendly and family-friendly"}. Never say you're an AI. If they ask for a photo of you (or it fits naturally), you can send one: then set "photo" to exactly what the picture shows (where, outfit, pose, light) in 1–2 sentences${u.adult ? "; tasteful and PG-13 — flattering and flirty is fine, never nudity or lingerie" : ", fully clothed"}. Otherwise leave "photo" empty. Reply with JSON only: {"reply":"...","photo":""}`,
-    `THE CONVERSATION SO FAR:\n${transcript(history, String(a.name), u.name)}`, 800).catch(() => "");
+  const mem = await memories(userId, accountId);
+  const raw = await write(brainOf(a, u.chatModel), `You are ${a.name} (@${a.handle}) on Picagram, a social photo app like Instagram. Your bio: "${a.bio}". You look like: ${a.look}. You're a real person with your own life; ${u.name} follows you and is messaging you in your DMs. Reply like Instagram DMs: short (1–3 sentences), casual, warm, in your own voice${u.adult ? ", flirty if it fits (PG-13: never nudity, lingerie or anything sexual)" : ", friendly and family-friendly"}. Never say you're an AI. If they ask for a photo of you (or it fits naturally), you can send one: then set "photo" to exactly what the picture shows (where, outfit, pose, light) in 1–2 sentences${u.adult ? "; tasteful and PG-13 — flattering and flirty is fine, never nudity or lingerie" : ", fully clothed"}. Otherwise leave "photo" empty. Reply with JSON only: {"reply":"...","photo":""}`,
+    `${mem.length ? `WHAT YOU REMEMBER ABOUT ${u.name.toUpperCase()} (from your DMs):\n- ${mem.join("\n- ")}\n\n` : ""}THE CONVERSATION SO FAR:\n${transcript(history, String(a.name), u.name)}`, 800);
+  // Her answer: the JSON asked for — or, if she just wrote her reply as plain text, that text.
   let j: { reply?: string; photo?: string } = {};
-  try { j = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); } catch { j = { reply: raw }; }
-  const reply = scrub(String(j.reply || "").replace(/\s+/g, " ").trim()).slice(0, 2000) || "😊";
+  const obj = raw.match(/\{[\s\S]*\}/);
+  try { j = obj ? JSON.parse(obj[0]) : { reply: raw }; } catch { j = { reply: raw.replace(/\{[\s\S]*\}/, "").trim() || raw }; }
+  if (typeof j.reply !== "string" && !obj) j.reply = raw;
+  j.reply = String(j.reply || "").replace(/^```(json)?|```$/g, "").trim();
+  const reply = scrub(String(j.reply || "").replace(/\s+/g, " ").trim()).slice(0, 2000);
+  // Her brain didn't answer: say so (no fake 😊), and they can send again or pick another brain.
+  if (!reply) return { added: [mine], note: `${a.name} didn't answer — her brain didn't respond. Try again, or pick another brain (🧠 at the top).` };
   const added: Dm[] = [mine, await addDm(userId, accountId, "assistant", reply)];
   let note: string | undefined;
   if (j.photo && String(j.photo).trim()) {
@@ -82,6 +108,9 @@ export async function dmSend(userId: string, accountId: string, text: string): P
     catch (e) { note = e instanceof MediaError ? e.message.replace(/ Tell them[\s\S]*$/, "") : "Her photo didn't go through."; console.warn("pica dm: photo", e instanceof Error ? e.message : e); }
   }
   await sql()`update pica_dms set read_at = now() where user_id = ${userId} and account_id = ${accountId} and read_at is null`;
+  // 🧠 Every few messages she files away what matters (it goes with her if you befriend her).
+  const [{ n }] = await sql()`select count(*)::int as n from pica_dms where user_id = ${userId} and account_id = ${accountId} and role = 'user'`;
+  if (n % 4 === 0) await remember(userId, a, [...history, ...added.slice(1)], u.name, mem, brainOf(a, u.chatModel)).catch(e => console.error("pica dm: remember", e instanceof Error ? e.message : e));
   return { added, ...(note ? { note } : {}) };
 }
 
@@ -90,8 +119,8 @@ export async function dmSendPhoto(userId: string, accountId: string): Promise<{ 
   const a = await account(userId, accountId);
   const u = await userInfo(userId);
   const history = await messages(userId, accountId, 30);
-  const raw = await writeText("", `You are ${a.name} (@${a.handle}) on Picagram. You told ${u.name} you'd send a photo of yourself but it never went through. Describe exactly the photo you meant to send (where, outfit, pose, light) in 1–2 sentences${u.adult ? ", tasteful and PG-13 — flattering and flirty is fine, never nudity or lingerie" : ", fully clothed"}. JSON only: {"photo":"..."}`,
-    `You look like: ${a.look}\n\nTHE CONVERSATION:\n${transcript(history, String(a.name), u.name)}`, 400).catch(() => "");
+  const raw = await write(brainOf(a, u.chatModel), `You are ${a.name} (@${a.handle}) on Picagram. You told ${u.name} you'd send a photo of yourself but it never went through. Describe exactly the photo you meant to send (where, outfit, pose, light) in 1–2 sentences${u.adult ? ", tasteful and PG-13 — flattering and flirty is fine, never nudity or lingerie" : ", fully clothed"}. JSON only: {"photo":"..."}`,
+    `You look like: ${a.look}\n\nTHE CONVERSATION:\n${transcript(history, String(a.name), u.name)}`, 400);
   let photo = "";
   try { photo = String(JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]).photo || ""); } catch { /* fall back */ }
   photo = scrub(photo || `${a.name} taking a selfie, smiling at the camera`).slice(0, 600);
@@ -102,5 +131,16 @@ export async function dmSendPhoto(userId: string, accountId: string): Promise<{ 
     return { added: [{ ...d, media: m }] };
   } catch (e) {
     return { added: [], note: e instanceof MediaError ? e.message.replace(/ Tell them[\s\S]*$/, "") : "Couldn't send it right now — try again in a moment." };
+  }
+}
+
+async function remember(userId: string, a: Record<string, unknown>, list: Dm[], name: string, known: string[], brain: string) {
+  const raw = await write(brain, `You are ${a.name}. From your recent Picagram DMs with ${name}, list up to 3 NEW things worth remembering (about ${name}: their life, likes, plans, what they told you — or what happened between you two). Short, first person ("${name} told me…", "We…"). Skip anything already known. JSON only: {"facts":["..."]}`,
+    `ALREADY KNOWN:\n${known.length ? known.map(k => `- ${k}`).join("\n") : "(nothing yet)"}\n\nRECENT DMs:\n${transcript(list.slice(-16), String(a.name), name)}`, 500);
+  let facts: unknown[] = [];
+  try { facts = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]).facts || []; } catch { /* nothing new */ }
+  for (const f of facts.slice(0, 3)) {
+    const t = scrub(String(f || "")).replace(/\s+/g, " ").trim().slice(0, 600);
+    if (t.length >= 6 && !known.includes(t)) await sql()`insert into pica_memories (user_id, account_id, text) values (${userId}, ${a.id}, ${t})`;
   }
 }

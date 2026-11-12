@@ -402,6 +402,12 @@ export async function picaBefriend(userId: string, accountId: string): Promise<s
   // Her pictures are hers now (her gallery and references), and she keeps posting as a character.
   if (photos.length) await sql()`update velo_media set character_id = ${c.id} where id = any(${photos.map(p => String(p.id))}::uuid[]) and user_id = ${userId}`;
   await sql()`update pica_accounts set character_id = ${c.id}, followed = true where id = ${accountId}`;
+  // 🧠 Her brain and what she remembers from your DMs come with her.
+  if (a.brain) await sql()`update chat_characters set brain = ${String(a.brain)} where id = ${c.id}`;
+  const mem = await sql()`delete from pica_memories where user_id = ${userId} and account_id = ${accountId} returning text, created_at`;
+  for (const m of mem) await sql()`insert into velo_memories (user_id, character_id, kind, text, created_at) values (${userId}, ${c.id}, 'fact', ${String(m.text)}, ${m.created_at})`;
+  const [dm] = await sql()`select count(*)::int as n from pica_dms where user_id = ${userId} and account_id = ${accountId}`;
+  if (Number(dm?.n) > 0) await sql()`insert into velo_memories (user_id, character_id, kind, text) values (${userId}, ${c.id}, 'fact', ${`We met on Picagram (I'm @${a.handle} there) and chatted in DMs before becoming friends.`})`;
   await sql()`update pica_posts set author_id = ${c.id} where account_id = ${accountId} and user_id = ${userId}`;
   return String(c.id);
 }
