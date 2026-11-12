@@ -106,6 +106,17 @@ function PostCard({ p, me, obs, onChange, onProfile, onFollow, onNote }: { p: Po
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
   useEffect(() => { const el = ref.current; if (el && obs) { obs.observe(el); return () => obs.unobserve(el); } }, [obs]);
+  // ❤️ A fresh post: likes (and comments) keep trickling in while you watch.
+  useEffect(() => {
+    if (Date.now() - Date.parse(p.created_at) > 30 * 60_000) return;
+    const t = setInterval(async () => {
+      if (Date.now() - Date.parse(p.created_at) > 30 * 60_000) { clearInterval(t); return; }
+      const r = await api<{ counts: { id: string; likes: number; liked_by: string[]; comments: number }[] }>("/api/pica", { action: "counts", ids: [p.id] }).catch(() => null);
+      const c = r?.counts[0];
+      if (c) onChange(x => ({ ...x, likes: c.likes, liked_by: c.liked_by, comments: Math.max(x.comments, c.comments) }));
+    }, 5000);
+    return () => clearInterval(t);
+  }, [p.id, p.created_at]); // eslint-disable-line react-hooks/exhaustive-deps
   const like = async () => {
     const on = !p.liked;
     onChange(x => ({ ...x, liked: on, likes: x.likes + (on ? 1 : -1) }));

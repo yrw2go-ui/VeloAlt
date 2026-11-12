@@ -620,3 +620,4 @@ create table if not exists pica_saved (
   primary key (user_id, media_id)
 );
 alter table pica_accounts add column if not exists character_id uuid references chat_characters(id) on delete set null;
+alter table pica_posts add column if not exists liker_secs int[] not null default '{}';

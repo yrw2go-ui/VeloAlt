@@ -120,8 +120,9 @@ async function generateDay(userId: string, day: string, isToday: boolean): Promi
     const big = !!c.big_following;
     const fc = (Array.isArray(p.friend_comments) ? p.friend_comments : []).map(x => ({ c: byName.get(String(x.from || "").toLowerCase()), text: scrub(String(x.text || "")).slice(0, 300) })).filter(x => x.c && x.c.id !== c.id && x.text && lk.knownBy.includes(x.c.name)).slice(0, Math.random() < 0.5 ? 1 : 0);
     const likers = [...new Set([...fc.map(x => x.c!.name), ...lk.knownBy.filter(() => Math.random() < 0.4)])];
-    const [post] = await sql()`insert into pica_posts (user_id, author_id, kind, caption, photo, media_id, likes_target, liked_by, place, created_at)
-      values (${userId}, ${c.id}, ${media ? "image" : "text"}, ${caption || (media ? "" : photo)}, ${media ? photo : ""}, ${media?.id || null}, ${big ? rand(200, 1500) : rand(20, 300)}, ${likers}, ${p.vacation?.place ? scrub(String(p.vacation.place)).slice(0, 80) : ""}, ${at.toISOString()}) returning id`;
+    const likerSecs = likers.map(() => rand(60, 6 * 3600));
+    const [post] = await sql()`insert into pica_posts (user_id, author_id, kind, caption, photo, media_id, likes_target, liked_by, liker_secs, place, created_at)
+      values (${userId}, ${c.id}, ${media ? "image" : "text"}, ${caption || (media ? "" : photo)}, ${media ? photo : ""}, ${media?.id || null}, ${big ? rand(200, 1500) : rand(20, 300)}, ${likers}, ${likerSecs}, ${p.vacation?.place ? scrub(String(p.vacation.place)).slice(0, 80) : ""}, ${at.toISOString()}) returning id`;
     for (const x of fc) await sql()`insert into pica_comments (post_id, user_id, author_id, text, created_at) values (${post.id}, ${userId}, ${x.c!.id}, ${x.text}, ${new Date(times[i] + rand(10, 240) * 60_000).toISOString()})`;
     // Her followers comment: more with a big following (up to 5 comments in all, counting a friend's).
     for (const s of randomComments(`${caption} ${photo}`, media ? "image" : "text", Math.max(0, (big ? rand(3, 5) : rand(1, 3)) - fc.length)))
@@ -138,7 +139,18 @@ async function generateDay(userId: string, day: string, isToday: boolean): Promi
 }
 
 // 📜 The feed, a few at a time (newest first), only what's been posted by now.
-const ramp = (target: number, at: string) => Math.round(target * Math.min(1, Math.sqrt(Math.max(0, Date.now() - Date.parse(at)) / (10 * 3600_000))));
+// ❤️ Likes trickle in: none for the first several seconds, then a climb that's fast at first and slows over ~10 hours —
+// in little uneven steps (each post its own rhythm), not all at once.
+const ramp = (target: number, at: string, id = "") => {
+  const seed = [...id].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) % 997, 7);
+  const t = Math.max(0, Date.now() - Date.parse(at) - (8 + (seed % 13)) * 1000);
+  if (t <= 0) return 0;
+  const steps = Math.floor(t / 3000) + 1; // a new batch every few seconds
+  const f = Math.min(1, Math.pow(Math.min(t, steps * 3000) / (10 * 3600_000), 0.35));
+  return Math.max(1, Math.round(target * f * (0.85 + (seed % 7) / 40))); // never goes down
+};
+/** Named likers show up once their moment has come. */
+const likersNow = (names: string[], secs: number[], at: string) => { const age = (Date.now() - Date.parse(at)) / 1000; return names.filter((_, i) => (secs[i] ?? 0) <= age); };
 export type PicaPost = { id: string; saved: boolean; author: { id: string | null; name: string; portrait: string | null; away: string | null; account?: { id: string; handle: string; followed: boolean } }; kind: "image" | "text"; caption: string; media: Media | null; likes: number; liked: boolean; liked_by: string[]; comments: number; preview: PicaComment[]; created_at: string };
 export type PicaComment = { id: string; who: string; me: boolean; known: boolean; text: string; created_at: string };
 
@@ -156,7 +168,7 @@ export async function picaFeed(userId: string, before: string | null, limit = 6)
     where p.user_id = ${userId} and p.created_at <= now() and (${before}::timestamptz is null or p.created_at < ${before}::timestamptz)
     order by p.created_at desc limit ${Math.min(limit, 20)}`;
   const ids = rows.map(r => String(r.id));
-  const cm = ids.length ? await commentsFor(userId, ids, name, 2) : new Map<string, PicaComment[]>();
+  const cm = ids.length ? await commentsFor(userId, ids, name, 3) : new Map<string, PicaComment[]>();
   return rows.map(r => ({
     id: String(r.id), kind: r.kind, caption: String(r.caption || ""), created_at: String(r.at),
     author: r.acc_id && !r.author_id
@@ -164,7 +176,8 @@ export async function picaFeed(userId: string, before: string | null, limit = 6)
       : { id: r.author_id ? String(r.author_id) : null, name: r.author_id ? String(r.author_name) : name, portrait: r.portrait ? String(r.portrait) : null, away: r.away_place && r.author_id ? `✈️ ${r.away_place}` : null },
     saved: !!r.saved,
     media: r.m_id ? ({ id: String(r.m_id), kind: r.m_kind, status: r.m_status, url: r.m_status === "done" ? r.m_url : null, thumb: r.m_thumb || null } as Media) : null,
-    likes: ramp(Number(r.likes_target), String(r.at)) + (r.liked ? 1 : 0), liked: !!r.liked, liked_by: (r.liked_by || []) as string[],
+    likes: Math.max(ramp(Number(r.likes_target), String(r.at), String(r.id)), likersNow(r.liked_by || [], r.liker_secs || [], String(r.at)).length) + (r.liked ? 1 : 0), liked: !!r.liked,
+    liked_by: likersNow((r.liked_by || []) as string[], (r.liker_secs || []) as number[], String(r.at)),
     comments: Number(r.n_comments), preview: cm.get(String(r.id)) || [],
   }));
 }
@@ -180,7 +193,12 @@ async function commentsFor(userId: string, postIds: string[], myName: string, pe
     out.set(String(r.post_id), list);
   }
   // The preview: known people and their own first, then the latest strangers.
-  if (perPost) for (const [k, list] of out) out.set(k, [...list.filter(x => x.known), ...list.filter(x => !x.known).reverse()].slice(0, perPost));
+  // The preview: the latest few — always including yours and the replies to them (newest at the bottom).
+  if (perPost) for (const [k, list] of out) {
+    const known = list.filter(x => x.known).slice(-perPost);
+    const pad = list.filter(x => !x.known).slice(-Math.max(0, perPost - known.length));
+    out.set(k, [...known, ...pad].sort((a, b) => a.created_at.localeCompare(b.created_at)));
+  }
   return out;
 }
 export async function picaComments(userId: string, postId: string): Promise<PicaComment[]> {
@@ -248,7 +266,7 @@ export async function picaPost(userId: string, caption: string, photo: string, u
       `POST: ${cap}${desc ? ` (photo: ${desc})` : ""}\nPEOPLE:\n${fans.map(f => `- ${f.name}: ${String(f.personality || "").slice(0, 200)}`).join("\n")}`, 800).catch(() => "");
     let cs: { from: string; text: string }[] = [];
     try { cs = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]).comments || []; } catch { /* likes only */ }
-    await sql()`update pica_posts set liked_by = ${fans.map(f => String(f.name))} where id = ${post.id}`;
+    await sql()`update pica_posts set liked_by = ${fans.map(f => String(f.name))}, liker_secs = ${fans.map(() => rand(10, 900))} where id = ${post.id}`;
     for (const f of fans) {
       const text = scrub(String(cs.find(x => String(x.from).toLowerCase() === String(f.name).toLowerCase())?.text || "")).slice(0, 300);
       if (text) await sql()`insert into pica_comments (post_id, user_id, author_id, text, created_at) values (${post.id}, ${userId}, ${f.id}, ${text}, ${new Date(now + rand(2, 90) * 60_000).toISOString()})`;
@@ -385,4 +403,17 @@ export async function picaBefriend(userId: string, accountId: string): Promise<s
   await sql()`update pica_accounts set character_id = ${c.id}, followed = true where id = ${accountId}`;
   await sql()`update pica_posts set author_id = ${c.id} where account_id = ${accountId} and user_id = ${userId}`;
   return String(c.id);
+}
+
+/** 🔄 Likes and comments right now, for posts still collecting them. */
+export async function picaCounts(userId: string, ids: string[]) {
+  const want = ids.filter(x => /^[0-9a-f-]{36}$/i.test(x)).slice(0, 10);
+  if (!want.length) return [];
+  const rows = await sql()`select p.id, p.likes_target, p.liked, p.liked_by, p.liker_secs, p.created_at::text as at,
+      (select count(*)::int from pica_comments k where k.post_id = p.id and k.created_at <= now()) as n
+    from pica_posts p where p.user_id = ${userId} and p.id = any(${want}::uuid[])`;
+  return rows.map(r => {
+    const liked_by = likersNow((r.liked_by || []) as string[], (r.liker_secs || []) as number[], String(r.at));
+    return { id: String(r.id), likes: Math.max(ramp(Number(r.likes_target), String(r.at), String(r.id)), liked_by.length) + (r.liked ? 1 : 0), liked_by, comments: Number(r.n) };
+  });
 }

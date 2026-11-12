@@ -3,7 +3,7 @@ import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import { sql } from "../../lib/db";
 import { MediaError, mediaReady } from "../../lib/media";
-import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSavedList, picaFollowing, picaBefriend, PicaLimit } from "../../lib/picagram";
+import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSavedList, picaFollowing, picaBefriend, picaCounts, PicaLimit } from "../../lib/picagram";
 
 // 📸 Picagram. POST { action, ... }:
 //   feed { before? } → { posts }   (a few at a time; today's and missed days' posts are made as needed)
@@ -34,6 +34,7 @@ export async function POST(req: NextRequest) {
         }
         return NextResponse.json({ posts: await picaFeed(me, before, 6) });
       }
+      case "counts": return NextResponse.json({ counts: await picaCounts(me, Array.isArray(b.ids) ? b.ids.map(String) : []) });
       case "following": return NextResponse.json({ accounts: await picaFollowing(me) });
       case "befriend": {
         if (!UUID.test(id)) return bad("Unknown account.");
