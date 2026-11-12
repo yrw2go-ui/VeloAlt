@@ -3,6 +3,7 @@ import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import { sql } from "../../lib/db";
 import { MediaError, mediaReady } from "../../lib/media";
+import { dmThreads, dmUnread, dmOpen, dmSend, dmSendPhoto, DmError } from "../../lib/picaDm";
 import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSavedList, picaFollowing, picaBefriend, picaCounts, picaDeletePost, picaNew, picaFromPhoto, PicaLimit } from "../../lib/picagram";
 
 // 📸 Picagram. POST { action, ... }:
@@ -41,7 +42,16 @@ export async function POST(req: NextRequest) {
         if (!allow(`pica-f:${me}`, [{ ms: 60_000, max: 3 }, { ms: 86_400_000, max: 20 }])) return bad("Slow down a little — try again in a bit.", 429);
         return NextResponse.json({ accountId: await picaFromPhoto(me, id) });
       }
-      case "new": return NextResponse.json({ n: await picaNew(me) });
+      // ✉️ DMs with accounts (characters chat in the normal chat).
+      case "dm.threads": return NextResponse.json({ threads: await dmThreads(me) });
+      case "dm.open": return UUID.test(id) ? NextResponse.json(await dmOpen(me, id)) : bad("Unknown account.");
+      case "dm.send":
+      case "dm.photo": {
+        if (!UUID.test(id)) return bad("Unknown account.");
+        if (!allow(`pica-dm:${me}`, [{ ms: 60_000, max: 15 }, { ms: 86_400_000, max: 600 }])) return bad("Slow down a little — try again in a bit.", 429);
+        return NextResponse.json(b.action === "dm.photo" ? await dmSendPhoto(me, id) : await dmSend(me, id, String(b.text || "")));
+      }
+      case "new": return NextResponse.json({ n: await picaNew(me), dms: await dmUnread(me) });
       case "following": return NextResponse.json({ accounts: await picaFollowing(me) });
       case "befriend": {
         if (!UUID.test(id)) return bad("Unknown account.");
@@ -68,7 +78,7 @@ export async function POST(req: NextRequest) {
       default: return bad("Unknown action.");
     }
   } catch (e) {
-    if (e instanceof PicaLimit) return bad(e.message);
+    if (e instanceof PicaLimit || e instanceof DmError) return bad(e.message);
     if (e instanceof MediaError) return bad(e.message.replace(/ Tell them.*$/, ""));
     console.error("pica", e instanceof Error ? e.message : e);
     return bad("Something went wrong.", 500);

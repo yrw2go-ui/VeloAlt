@@ -32,6 +32,15 @@ export default function Picagram({ name, onChat, openProfile, onProfileOpened }:
   useEffect(() => { if (openProfile) { setProfile(openProfile); onProfileOpened?.(); } }, [openProfile]); // eslint-disable-line react-hooks/exhaustive-deps
   const [savedOpen, setSavedOpen] = useState(false);
   const [followingOpen, setFollowingOpen] = useState(false);
+  // ✉️ DMs with accounts (characters chat in the normal chat).
+  const [inbox, setInbox] = useState(false);
+  const [thread, setThread] = useState<string | null>(null);
+  const [dmUnread, setDmUnread] = useState(0);
+  useEffect(() => {
+    const tick = () => api<{ dms?: number }>("/api/pica", { action: "new" }).then(r => setDmUnread(r.dms || 0)).catch(() => {});
+    tick(); const t = setInterval(tick, 20000);
+    return () => clearInterval(t);
+  }, [thread, inbox]);
   const [note, setNote] = useState("");
   const setFollowed = (acc: string, on: boolean) => setPosts(ps => (ps || []).map(x => (x.author.account?.id === acc ? { ...x, author: { ...x.author, account: { ...x.author.account!, followed: on } } } : x)));
   const sentinel = useRef<HTMLDivElement>(null);
@@ -82,6 +91,9 @@ export default function Picagram({ name, onChat, openProfile, onProfileOpened }:
     <div data-testid="picagram" style={{ maxWidth: 560, width: "100%", margin: "0 auto", display: "flex", flexDirection: "column" }}>
       <div className="row" style={{ padding: "10px 14px", position: "sticky", top: 0, zIndex: 5, background: "var(--bg)", borderBottom: "1px solid var(--border)", gap: 8 }}>
         <div style={{ flex: 1, fontSize: 24, fontWeight: 900, fontStyle: "italic", letterSpacing: -0.5, background: "linear-gradient(90deg,#f59e0b,#ec4899,#8b5cf6)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>Picagram</div>
+        <button className="ghost" onClick={() => setInbox(true)} aria-label="Messages" data-testid="pica-inbox-open" style={{ padding: "6px 10px", position: "relative" }}>✉️
+          {dmUnread > 0 && <span data-testid="pica-dm-badge" style={{ position: "absolute", top: -4, right: -4, minWidth: 16, height: 16, padding: "0 4px", borderRadius: 999, background: "#ef4444", color: "#fff", fontSize: 10, fontWeight: 800, lineHeight: "16px" }}>{dmUnread}</span>}
+        </button>
         <button className="ghost" onClick={() => setFollowingOpen(true)} aria-label="Following" data-testid="pica-following-open" style={{ padding: "6px 10px" }}>👥</button>
         <button className="ghost" onClick={() => setSavedOpen(true)} aria-label="Saved pictures" data-testid="pica-saved-open" style={{ padding: "6px 10px" }}>🔖</button>
         <button className="ghost" onClick={() => load(true)} disabled={loading} aria-label="Refresh" style={{ padding: "6px 10px" }}>↻</button>
@@ -94,7 +106,9 @@ export default function Picagram({ name, onChat, openProfile, onProfileOpened }:
       {loading && <div className="muted" style={{ textAlign: "center", padding: 18 }} data-testid="pica-loading">Loading…</div>}
       {!more && posts && posts.length > 0 && <div className="muted" style={{ textAlign: "center", padding: 18, fontSize: 13 }}>You&apos;re all caught up ✨</div>}
       {err && <div style={{ color: "var(--bad)", padding: 14 }}>⚠️ {err}</div>}
-      {profile && <Profile id={profile} onClose={() => setProfile(null)} onFollow={setFollowed} onChat={onChat} />}
+      {profile && <Profile id={profile} onClose={() => setProfile(null)} onFollow={setFollowed} onChat={onChat} onMessage={id => { setProfile(null); setThread(id); }} />}
+      {inbox && <Inbox onClose={() => setInbox(false)} onOpen={id => setThread(id)} />}
+      {thread && <Thread id={thread} onClose={() => setThread(null)} onProfile={id => { setThread(null); setInbox(false); setProfile(id); }} />}
       {followingOpen && <Following onClose={() => setFollowingOpen(false)} onUnfollow={acc => setFollowed(acc, false)} onOpen={id => { setFollowingOpen(false); setProfile(id); }} />}
       {savedOpen && <Saved onClose={() => setSavedOpen(false)} />}
       {composing && <Composer onClose={() => setComposing(false)} onPosted={() => { setComposing(false); load(true); }} />}
@@ -253,7 +267,7 @@ function Grid({ photos, onOpen }: { photos: Photo[]; onOpen: (p: Photo) => void 
 }
 
 /** 👤 Her profile: bio, followers, Follow, and all her photos. */
-function Profile({ id, onClose, onFollow, onChat }: { id: string; onClose: () => void; onFollow: (account: string, on: boolean) => void; onChat?: (characterId: string) => void }) {
+function Profile({ id, onClose, onFollow, onChat, onMessage }: { id: string; onClose: () => void; onFollow: (account: string, on: boolean) => void; onChat?: (characterId: string) => void; onMessage?: (id: string) => void }) {
   const [data, setData] = useState<{ account: { id: string; handle: string; name: string; bio: string; followers: number; followed: boolean; avatar: string | null; character_id: string | null }; photos: Photo[] } | null>(null);
   const [err, setErr] = useState("");
   const [befriending, setBefriending] = useState(false);
@@ -292,7 +306,10 @@ function Profile({ id, onClose, onFollow, onChat }: { id: string; onClose: () =>
             <button className={data.account.followed ? "ghost" : "btn"} onClick={follow} data-testid="pica-profile-follow" style={{ flex: 1 }}>{data.account.followed ? "Following" : "Follow"}</button>
             {data.account.character_id
               ? <button className="btn" onClick={() => onChat?.(data.account.character_id!)} data-testid="pica-chat" style={{ flex: 1 }}>💬 Chat</button>
-              : <button className="ghost" onClick={befriend} disabled={befriending} data-testid="pica-befriend" style={{ flex: 1 }}>{befriending ? "Making her profile…" : "🤝 Befriend"}</button>}
+              : <>
+                  <button className="ghost" onClick={() => onMessage?.(id)} data-testid="pica-message" style={{ flex: 1 }}>✉️ Message</button>
+                  <button className="ghost" onClick={befriend} disabled={befriending} data-testid="pica-befriend" style={{ flex: 1 }}>{befriending ? "Making her profile…" : "🤝 Befriend"}</button>
+                </>}
           </div>
           {data.account.character_id && <div className="muted" style={{ padding: "0 16px 10px", fontSize: 12 }}>🤝 You&apos;re friends — she&apos;s one of your characters now (edit her in her character card).</div>}
           {err && <div style={{ color: "var(--bad)", padding: "0 16px 10px", fontSize: 13 }}>⚠️ {err}</div>}
@@ -352,6 +369,97 @@ function Following({ onClose, onUnfollow, onOpen }: { onClose: () => void; onUnf
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+type DmMsg = { id: string; role: "user" | "assistant"; content: string; created_at: string; media: Media | null };
+type DmAccount = { id: string; handle: string; name: string; avatar: string | null };
+
+/** ✉️ Picagram messages: one row per person you've DM'd. */
+function Inbox({ onClose, onOpen }: { onClose: () => void; onOpen: (id: string) => void }) {
+  const [list, setList] = useState<{ account: DmAccount; last: string; at: string; unread: number }[] | null>(null);
+  useEffect(() => { api<{ threads: NonNullable<typeof list> }>("/api/pica", { action: "dm.threads" }).then(r => setList(r.threads)).catch(() => setList([])); }, []);
+  return (
+    <div role="dialog" aria-modal="true" data-testid="pica-inbox" style={{ position: "fixed", inset: 0, background: "var(--bg)", zIndex: 2600, overflowY: "auto" }}>
+      <div className="row" style={{ padding: "10px 14px", gap: 8, position: "sticky", top: 0, background: "var(--bg)", borderBottom: "1px solid var(--border)" }}>
+        <button className="ghost" onClick={onClose} aria-label="Back" style={{ padding: "4px 10px" }}>←</button>
+        <b style={{ flex: 1 }}>✉️ Messages</b>
+      </div>
+      <div style={{ maxWidth: 560, margin: "0 auto" }}>
+        {list && !list.length && <div className="muted" style={{ textAlign: "center", padding: 24, fontSize: 14 }}>No messages yet — open someone&apos;s profile and tap ✉️ Message.<br /><span style={{ fontSize: 12 }}>(Your characters chat with you in Chat.)</span></div>}
+        {(list || []).map(t => (
+          <button key={t.account.id} onClick={() => onOpen(t.account.id)} data-testid="pica-thread-row" className="row" style={{ width: "100%", gap: 10, padding: "10px 14px", borderBottom: "1px solid var(--border)", background: "none", border: "none", borderBottomStyle: "solid", color: "var(--text)", textAlign: "left", cursor: "pointer" }}>
+            <Avatar name={t.account.name} url={t.account.avatar} size={46} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: t.unread ? 800 : 600, fontSize: 14 }}>{t.account.handle}</div>
+              <div className="muted" style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: t.unread ? 700 : 400, color: t.unread ? "var(--text)" : undefined }}>{t.last} · {ago(t.at)}</div>
+            </div>
+            {t.unread > 0 && <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#3b82f6" }} />}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** 💬 A DM thread with one account: she answers in her own voice and can send photos (📸 if one didn't come through). */
+function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; onProfile: (id: string) => void }) {
+  const [acc, setAcc] = useState<DmAccount | null>(null);
+  const [msgs, setMsgs] = useState<DmMsg[] | null>(null);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const end = useRef<HTMLDivElement>(null);
+  useEffect(() => { api<{ account: DmAccount; messages: DmMsg[] }>("/api/pica", { action: "dm.open", id }).then(r => { setAcc(r.account); setMsgs(r.messages); }).catch(e => setErr(e instanceof Error ? e.message : "Couldn't open it.")); }, [id]);
+  useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [msgs, busy]);
+  const send = async () => {
+    const t = hideSecrets(text.trim()).text;
+    if (!t || busy) return;
+    setText(""); setBusy(true); setErr("");
+    const tmp: DmMsg = { id: `tmp-${Date.now()}`, role: "user", content: t, created_at: new Date().toISOString(), media: null };
+    setMsgs(m => [...(m || []), tmp]);
+    try {
+      const r = await api<{ added: DmMsg[]; note?: string }>("/api/pica", { action: "dm.send", id, text: t });
+      setMsgs(m => [...(m || []).filter(x => x !== tmp), ...r.added]);
+      if (r.note) setErr(r.note);
+    } catch (e) { setErr(e instanceof Error ? e.message : "Didn't send."); setMsgs(m => (m || []).filter(x => x !== tmp)); setText(t); }
+    setBusy(false);
+  };
+  // 📸 She said she's sending a photo but none came through.
+  const last = (msgs || []).at(-1);
+  const pendingPic = !busy && !!last && last.role === "assistant" && !last.media
+    && /\b(pic|pics|picture|photo|selfie|snap)\b/i.test(last.content) && /\b(send|sending|sent|here'?s|here you go|coming|on (its|it's) way|incoming|let me)\b/i.test(last.content);
+  const sendPic = async () => {
+    setBusy(true); setErr("");
+    try { const r = await api<{ added: DmMsg[]; note?: string }>("/api/pica", { action: "dm.photo", id }); if (r.added.length) setMsgs(m => [...(m || []), ...r.added]); else setErr(r.note || "Couldn't send it."); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't send it."); }
+    setBusy(false);
+  };
+  return (
+    <div role="dialog" aria-modal="true" data-testid="pica-thread" style={{ position: "fixed", inset: 0, background: "var(--bg)", zIndex: 2650, display: "flex", flexDirection: "column" }}>
+      <div className="row" style={{ padding: "10px 14px", gap: 10, borderBottom: "1px solid var(--border)" }}>
+        <button className="ghost" onClick={onClose} aria-label="Back" style={{ padding: "4px 10px" }}>←</button>
+        {acc && <span onClick={() => onProfile(acc.id)} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}><Avatar name={acc.name} url={acc.avatar} size={32} /><b>{acc.handle}</b></span>}
+      </div>
+      <div style={{ flex: 1, overflowY: "auto", padding: 14, display: "flex", flexDirection: "column", gap: 8, maxWidth: 560, width: "100%", margin: "0 auto" }}>
+        {msgs && !msgs.length && <div className="muted" style={{ textAlign: "center", marginTop: 24, fontSize: 14 }}>Say hi to {acc?.name || "her"} 👋</div>}
+        {(msgs || []).map(m => (
+          <div key={m.id} data-testid={m.role === "user" ? "dm-mine" : "dm-hers"} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "80%" }}>
+            {m.media ? <MediaView media={m.media} who={acc?.name || ""} /> : (
+              <div style={{ padding: "9px 13px", borderRadius: 18, background: m.role === "user" ? "linear-gradient(135deg,#8b5cf6,#ec4899)" : "var(--surface2)", color: m.role === "user" ? "#fff" : "var(--text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 15 }}>{m.content}</div>
+            )}
+          </div>
+        ))}
+        {busy && <div className="muted" style={{ fontSize: 13 }}>{acc?.name || "She"} is typing…</div>}
+        {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
+        <div ref={end} />
+      </div>
+      {pendingPic && <div style={{ padding: "0 12px 6px" }}><button className="ghost" onClick={sendPic} data-testid="dm-send-pic" style={{ padding: "6px 12px", fontSize: 13, borderColor: "#ec4899" }}>📸 {acc?.name || "She"} didn&apos;t send it — send the pic</button></div>}
+      <form onSubmit={e => { e.preventDefault(); send(); }} className="row" style={{ padding: "10px 12px", gap: 8, borderTop: "1px solid var(--border)" }}>
+        <input value={text} onChange={e => setText(e.target.value)} placeholder={`Message ${acc?.name || ""}…`} aria-label="Message" maxLength={2000} disabled={!msgs} style={{ borderRadius: 999 }} />
+        <button className="btn" disabled={!text.trim() || busy || !msgs} style={{ borderRadius: 999, padding: "10px 16px" }}>Send</button>
+      </form>
     </div>
   );
 }

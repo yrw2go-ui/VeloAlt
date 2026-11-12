@@ -169,7 +169,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       if (document.visibilityState !== "visible") return;
       if (tab === "chat") await data("chats.read", withId ? { characterId: withId } : {}).catch(() => {});
       // 📸 New Picagram posts since they last looked (the tab clears it).
-      if (tab !== "pica") api<{ n: number }>("/api/pica", { action: "new" }).then(x => setPicaNew(x.n)).catch(() => {});
+      if (tab !== "pica") api<{ n: number; dms?: number }>("/api/pica", { action: "new" }).then(x => setPicaNew(x.n + (x.dms || 0))).catch(() => {});
       else setPicaNew(0);
       const r = await data<{ unread: Record<string, number> }>("chats.unread").catch(() => null);
       if (!r) return;
