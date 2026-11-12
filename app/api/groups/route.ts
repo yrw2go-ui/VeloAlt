@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import { aiReady, aiError } from "../../lib/brain";
-import { listGroups, getGroup, createGroup, deleteGroup, groupMessages, sendToGroup, rememberGroup, startGroupScene, endGroupScene, banterNext, reactInGroup, draftGroupPeek, groupPeekAt, bringTogether, endGroupInPerson, GroupError } from "../../lib/groups";
+import { listGroups, getGroup, createGroup, deleteGroup, groupMessages, sendToGroup, rememberGroup, startGroupScene, endGroupScene, banterNext, reactInGroup, draftGroupPeek, groupPeekAt, bringTogether, endGroupInPerson, deleteGroupMessages, GroupError } from "../../lib/groups";
 import { MediaError } from "../../lib/media";
 import { sql } from "../../lib/db";
 import { getCharacterFor } from "../../lib/characters";
@@ -15,6 +15,7 @@ import { isReaction } from "../../lib/reactions";
 //   memo { id, timeZone, name } → { saved }   (each character saves her own memory)
 //   delete { id }   react { id, msgId, reaction|null } (😮 theirs on a character's message)
 //   scene.start { id, kind: live|past, title, details } → { marker, group }   scene.end { id } → { marker }
+//   messages.delete { id, ids (1–10), timeZone, name } → { deleted, replies }   (🗑 they forget what was in them; your latest gets re-answered)
 //   bring { fromId, ids, place } → { group }   (🧍 bring characters together in person; their 1:1s carry over)   inperson.end { id } → { marker }
 //   peek.draft { id, ids } → { description }   peek { id, ids, description } → { added }   (👀 nobody in the group knows)
 const bad = (error: string, status = 400) => NextResponse.json({ error }, { status });
@@ -62,6 +63,11 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ marker, group: await getGroup(c.userId, g.id) });
       }
       case "scene.end": return NextResponse.json({ marker: await endGroupScene(c.userId, g) });
+      case "messages.delete": {
+        const ids = Array.isArray(b.ids) ? b.ids.map(String) : [];
+        if (!ids.length || ids.length > 10) return bad("Pick 1 to 10 messages.");
+        return NextResponse.json(await deleteGroupMessages(c, g, ids, b.timeZone, name));
+      }
       case "inperson.end": return NextResponse.json({ marker: await endGroupInPerson(c.userId, g) });
       case "peek.draft":
       case "peek": {

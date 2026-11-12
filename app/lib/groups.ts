@@ -12,6 +12,7 @@ import { startMedia, type Media } from "./media";
 import { allowsSuggestive } from "./traits";
 import { writeText } from "./llm";
 import { sceneFallback } from "./peek";
+import { forgetLines } from "./forget";
 import { sceneClockNote, sceneTime, HHMM } from "./sceneClock";
 import { isValidTimeZone } from "./localTime";
 
@@ -122,8 +123,8 @@ function pickSpeakers(text: string, chars: Character[], rows: GroupMsg[]): Chara
 }
 
 /** They said something: it's saved, then each character who answers replies in turn, seeing the others' replies. */
-async function sendPrivate(caller: Caller, g: Group, chars: Character[], c: Character, body: string, timeZone: unknown, personName: string): Promise<{ replies: GroupMsg[]; banter: boolean; mine: { id: string; their_reactions: Record<string, string>; private_to: string } }> {
-  const [mineRow] = await sql()`insert into chat_group_messages (group_id, user_id, content, private_to) values (${g.id}, ${caller.userId}, ${body}, ${c.id}) returning id`;
+async function sendPrivate(caller: Caller, g: Group, chars: Character[], c: Character, body: string, timeZone: unknown, personName: string, existingId?: string): Promise<{ replies: GroupMsg[]; banter: boolean; mine: { id: string; their_reactions: Record<string, string>; private_to: string } }> {
+  const [mineRow] = existingId ? [{ id: existingId }] : await sql()`insert into chat_group_messages (group_id, user_id, content, private_to) values (${g.id}, ${caller.userId}, ${body}, ${c.id}) returning id`;
   await sql()`update chat_groups set updated_at = now(), banter_left = 0 where id = ${g.id}`;
   const names = new Map(chars.map(x => [x.id, x.name]));
   const rows = await groupMessages(caller.userId, g.id, 40);
@@ -150,6 +151,12 @@ export async function sendToGroup(caller: Caller, g: Group, text: string, timeZo
   const [mineRow] = await sql()`insert into chat_group_messages (group_id, user_id, content) values (${g.id}, ${caller.userId}, ${clean}) returning id`;
   // They spoke: any back-and-forth between the characters stops right here.
   await sql()`update chat_groups set updated_at = now(), banter_left = 0, since_banter = since_banter + 1 where id = ${g.id}`;
+  return answerGroup(caller, g, chars, clean, String(mineRow.id), timeZone, personName);
+}
+
+/** Who answers their message (already saved), and their replies. */
+async function answerGroup(caller: Caller, g: Group, chars: Character[], clean: string, mineId: string, timeZone: unknown, personName: string): Promise<{ replies: GroupMsg[]; banter: boolean; mine: { id: string; their_reactions: Record<string, string> } }> {
+  const mineRow = { id: mineId };
   const names = new Map(chars.map(c => [c.id, c.name]));
   const out: GroupMsg[] = [];
   let rows = await groupMessages(caller.userId, g.id, 40);
@@ -315,4 +322,31 @@ export async function endGroupInPerson(userId: string, g: Group): Promise<GroupM
   await sql()`update chat_groups set in_person_place = null, catch_up = '{}'::jsonb where id = ${g.id} and user_id = ${userId}`;
   const [m] = await sql()`insert into chat_group_messages (group_id, user_id, content) values (${g.id}, ${userId}, '🧍 Everyone went their separate ways') returning id, speaker_id, content, created_at`;
   return { ...(m as GroupMsg), speaker_id: null };
+}
+
+// 🗑 Deleting up to 10 messages in a group: gone from the thread, and each character forgets what she
+// learned only from the ones she could see. If their own message is now the latest, it gets answered again.
+export async function deleteGroupMessages(caller: Caller, g: Group, ids: string[], timeZone: unknown, personName: string): Promise<{ deleted: number; replies: GroupMsg[] }> {
+  const want = [...new Set(ids.filter(x => /^[0-9a-f-]{36}$/i.test(x)))].slice(0, 10);
+  if (!want.length) return { deleted: 0, replies: [] };
+  const gone = await sql()`delete from chat_group_messages where group_id = ${g.id} and user_id = ${caller.userId} and id = any(${want}::uuid[])
+    returning speaker_id, content, created_at::text, peek, private_to`;
+  if (!gone.length) return { deleted: 0, replies: [] };
+  const chars = await members(g);
+  const names = new Map(chars.map(c => [c.id, c.name]));
+  for (const c of chars) {
+    const mine = gone.filter(r => !r.peek && (!r.private_to || String(r.private_to) === c.id));
+    if (!mine.length) continue;
+    const lines = mine.map(r => `${r.speaker_id ? names.get(String(r.speaker_id)) || "Someone" : personName || "Them"}: ${String(r.content).slice(0, 600)}`).join("\n");
+    await forgetLines(caller.userId, c.id, lines, mine.map(r => String(r.created_at)).sort()[0], c.brain).catch(e => console.error("groups: forget", e instanceof Error ? e.message : e));
+  }
+  // Their message is now the last thing said: it gets answered again.
+  const rows = seen(await groupMessages(caller.userId, g.id, 5));
+  const last = rows[rows.length - 1];
+  let replies: GroupMsg[] = [];
+  if (last && !last.speaker_id && !last.content.startsWith("🎬") && !last.content.startsWith("🧍") && chars.length >= 2) {
+    const to = last.private_to ? chars.find(c => c.id === last.private_to) : null;
+    replies = (to ? await sendPrivate(caller, g, chars, to, last.content, timeZone, personName, last.id) : await answerGroup(caller, g, chars, last.content, last.id, timeZone, personName)).replies;
+  }
+  return { deleted: gone.length, replies };
 }

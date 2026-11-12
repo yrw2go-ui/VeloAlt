@@ -768,7 +768,7 @@ export function SceneSheet({ who, plan, onClose, onStart }: { who: string; plan?
 
 
 /** 🗑 Long-press (or right-click) a message to start selecting; then a tap toggles it. */
-function Selectable({ id, selecting, onStart, onToggle, children }: { id?: string; selecting: Set<string> | null; onStart: (id: string) => void; onToggle: (id: string) => void; children: React.ReactNode }) {
+export function Selectable({ id, selecting, onStart, onToggle, children }: { id?: string; selecting: Set<string> | null; onStart: (id: string) => void; onToggle: (id: string) => void; children: React.ReactNode }) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fired = useRef(false);
   if (!id) return <>{children}</>;

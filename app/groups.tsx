@@ -7,7 +7,7 @@ import { hideSecrets } from "./lib/secrets";
 import { timeZone } from "./lib/tz";
 import { confirmAsk } from "./lib/dialog";
 import { CharacterFace, type Character } from "./characters";
-import { SceneSheet, type SceneClockChoice } from "./chat";
+import { SceneSheet, Selectable, type SceneClockChoice } from "./chat";
 import { MediaView, ReactionBar, type Media } from "./media";
 
 export type Group = { id: string; title: string; member_ids: string[]; updated_at: string; scene_title?: string | null; scene_details?: string | null; in_person_place?: string | null };
@@ -110,6 +110,28 @@ export function GroupChat({ group: initial, chars, name, onDeleted }: { group: G
     try { const r = await api<{ marker: Msg | null }>("/api/groups", { action: "inperson.end", id: group.id }); setGroup(g => ({ ...g, in_person_place: null })); if (r.marker) setMsgs(m => [...(m || []), r.marker!]); unsaved.current++; }
     catch (e) { setErr(e instanceof Error ? e.message : "Couldn't end it."); }
   };
+  // 🗑 Long-press to select up to 10 messages; they're deleted and forgotten (and your latest gets re-answered).
+  const [selected, setSelected] = useState<Set<string> | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const toggleSelect = (id: string) => setSelected(sel => {
+    if (!sel) return sel;
+    const next = new Set(sel);
+    if (next.has(id)) next.delete(id); else if (next.size < 10) next.add(id);
+    return next.size ? next : null;
+  });
+  const deleteSelected = async () => {
+    if (!selected?.size) return;
+    const n = selected.size;
+    if (!(await confirmAsk(`Delete ${n === 1 ? "this message" : `these ${n} messages`}? Are you sure? Everyone forgets what was in ${n === 1 ? "it" : "them"}.`, { yes: "Delete", danger: true }))) return;
+    const gone = selected;
+    setDeleting(true); setErr(""); setBusy(true);
+    try {
+      setMsgs(m => (m || []).filter(x => !gone.has(x.id))); setSelected(null);
+      const r = await api<{ replies: Msg[] }>("/api/groups", { action: "messages.delete", id: group.id, ids: [...gone], timeZone: timeZone(), name });
+      if (r.replies.length) setMsgs(m => [...(m || []), ...r.replies]);
+    } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't delete."); }
+    setDeleting(false); setBusy(false);
+  };
   // 😮 Tap one of their messages to react (tap the same reaction again to take it back).
   const [picking, setPicking] = useState<string | null>(null);
   const react = async (id: string, emoji: string) => {
@@ -149,7 +171,7 @@ export function GroupChat({ group: initial, chars, name, onDeleted }: { group: G
       )}
       <div ref={log} data-testid="group-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
         {msgs && !msgs.length && <div className="muted" style={{ textAlign: "center", fontSize: 14, marginTop: 24 }}>Say hi to everyone 👋<br /><span style={{ fontSize: 12 }}>Mention someone by name to hear from her, or say &quot;you guys&quot; for everyone.</span></div>}
-        {(msgs || []).map(m => {
+        {(msgs || []).map(m => <Selectable key={m.id} id={m.id.startsWith("tmp-") ? undefined : m.id} selecting={selected} onStart={id => setSelected(new Set([id]))} onToggle={toggleSelect}>{(() => {
           const c = m.speaker_id ? byId.get(m.speaker_id) : null;
           if (m.peek && m.media) return (
             <div key={m.id} data-testid="group-peek-media" style={{ alignSelf: "center", maxWidth: "85%", display: "flex", flexDirection: "column", gap: 4 }}>
@@ -187,7 +209,7 @@ export function GroupChat({ group: initial, chars, name, onDeleted }: { group: G
               </div>
             </div>
           );
-        })}
+        })()}</Selectable>)}
         {(busy || chatting) && <div className="muted" style={{ fontSize: 14 }} data-testid={chatting && !busy ? "group-banter-typing" : undefined}>💬 typing…{chatting && !busy ? <span style={{ fontSize: 12 }}> (they&apos;re chatting — jump in anytime)</span> : null}</div>}
         {err && <div style={{ color: "var(--bad)", fontSize: 14 }}>⚠️ {err}</div>}
       </div>
@@ -199,7 +221,14 @@ export function GroupChat({ group: initial, chars, name, onDeleted }: { group: G
           ))}
         </div>
       )}
-      <form onSubmit={e => { e.preventDefault(); send(); }} className="row" style={{ padding: "10px 12px", borderTop: "1px solid var(--border)" }}>
+      {selected && (
+        <div data-testid="select-bar" className="row" style={{ padding: "10px 12px", borderTop: "1px solid var(--border)", gap: 8 }}>
+          <span style={{ flex: 1, fontSize: 14 }}><b>{selected.size}</b> selected <span className="muted" style={{ fontSize: 12 }}>(up to 10)</span></span>
+          <button className="ghost" onClick={() => setSelected(null)} data-testid="select-cancel">Cancel</button>
+          <button className="btn" onClick={deleteSelected} disabled={!selected.size || deleting} data-testid="select-delete" style={{ background: "var(--bad)" }}>{deleting ? "…" : `🗑 Delete${selected.size > 1 ? ` ${selected.size}` : ""}`}</button>
+        </div>
+      )}
+      <form onSubmit={e => { e.preventDefault(); send(); }} className="row" style={{ padding: "10px 12px", borderTop: "1px solid var(--border)", ...(selected ? { display: "none" } : {}) }}>
         {!group.scene_title && <button type="button" onClick={() => setSceneSheet(true)} disabled={!msgs || busy} aria-label="Start a scene" data-testid="group-scene-open"
           style={{ borderRadius: 999, width: 36, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 19, border: "none", background: "transparent", color: "var(--muted)" }}>🎬</button>}
         <textarea rows={1} value={text} onChange={e => setText(e.target.value)} placeholder={msgs ? `Message ${group.title}…` : "Loading…"} aria-label="Message the group" disabled={!msgs}
