@@ -379,6 +379,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   const [selected, setSelected] = useState<Set<string> | null>(null);
   // ＋ The chat's extras (🎬 scene, 🧍 together / 👁️ ICU, 📎 attach) live in one menu, so the typing box gets the room.
   const [moreOpen, setMoreOpen] = useState(false);
+  const [pickGallery, setPickGallery] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const toggleSelect = (id: string) => setSelected(sel => {
     if (!sel) return sel;
@@ -497,6 +498,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
           </div>
         </div>
       )}
+      {pickGallery && <GalleryPicker onClose={() => setPickGallery(false)} onPick={f => { setAttach(f); setPickGallery(false); box.current?.focus(); }} />}
       {meetSheet && character && (
         <div role="dialog" aria-modal="true" data-testid="meetup-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }} onClick={() => setMeetSheet(null)}>
           <form className="card" onClick={e => e.stopPropagation()} onSubmit={e => { e.preventDefault(); meetUp(); }} style={{ width: "100%", maxWidth: 560, maxHeight: "80dvh", overflowY: "auto", borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -607,6 +609,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
                 {cid && !scene && <button type="button" role="menuitem" data-testid="scene-open" onClick={() => { setMoreOpen(false); setSceneSheet(true); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", fontSize: 15, cursor: "pointer" }}><span style={{ fontSize: 19 }}>🎬</span> Start a scene</button>}
                 {cid && !scene && !inPerson && <button type="button" role="menuitem" data-testid="inperson-open" onClick={() => { setMoreOpen(false); setTogetherSheet({ place: "", busy: false }); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", fontSize: 15, cursor: "pointer" }}><span style={{ fontSize: 19 }}>🧍</span> Together in person</button>}
                 {cid && !scene && inPerson && <button type="button" role="menuitem" data-testid="icu-open" disabled={!!peekSheet} onClick={() => { setMoreOpen(false); openPeek(true); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", fontSize: 15, cursor: "pointer" }}><span style={{ fontSize: 19 }}>👁️</span> ICU — see {who} right now</button>}
+                <button type="button" role="menuitem" data-testid="chat-from-gallery" onClick={() => { setMoreOpen(false); setPickGallery(true); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", fontSize: 15, cursor: "pointer" }}><span style={{ fontSize: 19 }}>🖼️</span> From my gallery</button>
                 <button type="button" role="menuitem" data-testid="chat-attach" disabled={uploading} onClick={() => { setMoreOpen(false); picker.current?.click(); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", fontSize: 15, cursor: "pointer" }}><span style={{ fontSize: 19 }}>📎</span> Photo or file</button>
               </div>
             </>
@@ -832,6 +835,40 @@ export function Selectable({ id, selecting, onStart, onToggle, children }: { id?
       style={{ display: "flex", flexDirection: "column", borderRadius: 14, outline: on ? "2px solid var(--accent)" : undefined, background: on ? "rgba(124,140,255,.12)" : undefined, position: "relative", cursor: selecting ? "pointer" : undefined, userSelect: selecting ? "none" : undefined, WebkitTouchCallout: "none" } as React.CSSProperties}>
       {selecting && <span aria-hidden style={{ position: "absolute", top: 4, left: 4, fontSize: 14, zIndex: 1 }}>{on ? "☑️" : "⬜"}</span>}
       {children}
+    </div>
+  );
+}
+
+/** 🖼️ Pick one of your pictures (from any chat, peeks or Picagram) to send with your next message. */
+function GalleryPicker({ onClose, onPick }: { onClose: () => void; onPick: (f: ChatFile) => void }) {
+  type Item = ChatFile & { at: string; from: string };
+  const [items, setItems] = useState<Item[] | null>(null);
+  const [more, setMore] = useState(true);
+  const load = async (before: string | null) => {
+    const r = await data<{ items: Item[] }>("gallery.pick", before ? { before } : {}).catch(() => ({ items: [] as Item[] }));
+    setItems(l => [...(before ? l || [] : []), ...r.items]); setMore(r.items.length >= 30);
+  };
+  useEffect(() => { load(null); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <div role="dialog" aria-modal="true" data-testid="gallery-picker" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }} onClick={onClose}>
+      <div className="card" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, maxHeight: "80dvh", overflowY: "auto", borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          <div style={{ fontWeight: 800, fontSize: 17 }}>🖼️ Share a picture</div>
+          <button className="ghost" onClick={onClose} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
+        </div>
+        {items && !items.length && <div className="muted" style={{ textAlign: "center", padding: 20 }}>No pictures yet</div>}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4 }}>
+          {(items || []).map(it => (
+            <button key={it.id} type="button" onClick={() => onPick({ id: it.id, url: it.url, thumb: it.thumb, name: it.name, type: it.type })} data-testid="gallery-pick-item" title={it.from}
+              style={{ position: "relative", padding: 0, border: "none", background: "var(--surface2)", cursor: "pointer", aspectRatio: "1", borderRadius: 8, overflow: "hidden" }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={it.thumb || it.url} alt={`From ${it.from}`} loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+              <span style={{ position: "absolute", left: 4, bottom: 4, fontSize: 10, padding: "1px 6px", borderRadius: 999, background: "rgba(0,0,0,.6)", color: "#fff" }}>{it.from}</span>
+            </button>
+          ))}
+        </div>
+        {items && more && <button className="ghost" onClick={() => load(items.at(-1)?.at || null)}>Show more</button>}
+      </div>
     </div>
   );
 }
