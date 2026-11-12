@@ -24,7 +24,7 @@ import { friendsOf, friendsNote, sapphicWith } from "./friends";
 import { workNow } from "./work";
 import { sceneClockNote } from "./sceneClock";
 import { inPersonFor, inPersonNote } from "./inPerson";
-import { picaNote } from "./picagram";
+import { picaNote, picaHandleNote } from "./picagram";
 /** How many recent scenes (2 weeks) with her got pushed from their planned time. */
 async function pushedLately(userId: string, sceneId: string): Promise<number> {
   const [r] = await sql()`select count(*)::int as n from chat_scenes s where s.user_id = ${userId} and s.pushed
@@ -202,6 +202,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
         scene ? sceneNote(scene) : "",
         together && ch ? inPersonNote(together, name || "them") : "",
         ch && mode !== "memo" && mode !== "remember" ? await picaNote(caller.userId, ch, name).catch(() => "") : "",
+        ch ? await picaHandleNote(caller.userId, ch).catch(() => "") : "",
         scene ? sceneClockNote(scene, today.tz, scene.clock === "now" && scene.planned_time ? await pushedLately(caller.userId, scene.id).catch(() => 0) : 0) : "",
         ch && mode !== "remember" && mode !== "memo" && !group ? await plansNote(caller.userId, ch.id, today.date).catch(() => "") : "",
         ch && mode !== "remember" && mode !== "memo" && !opts.promise ? await promisesNote(caller.userId, ch.id, today.tz).catch(() => "") : "",

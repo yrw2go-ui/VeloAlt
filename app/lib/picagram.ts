@@ -404,6 +404,9 @@ export async function picaBefriend(userId: string, accountId: string): Promise<s
   // Her pictures are hers now (her gallery and references), and she keeps posting as a character.
   if (photos.length) await sql()`update velo_media set character_id = ${c.id} where id = any(${photos.map(p => String(p.id))}::uuid[]) and user_id = ${userId}`;
   await sql()`update pica_accounts set character_id = ${c.id}, followed = true where id = ${accountId}`;
+  // 🧠 Everyone who knows her learns her Picagram name.
+  await sql()`insert into velo_memories (user_id, character_id, kind, text) select ${userId}, character_id, 'fact',
+      ${`Her name is ${a.name} — on Picagram she's @${a.handle}.`.slice(0, 600)} from velo_media where user_id = ${userId} and id = ${a.avatar_media_id} and character_id is not null`;
   // 🧠 Her brain and what she remembers from your DMs come with her.
   if (a.brain) await sql()`update chat_characters set brain = ${String(a.brain)} where id = ${c.id}`;
   const mem = await sql()`delete from pica_memories where user_id = ${userId} and account_id = ${accountId} returning text, created_at`;
@@ -467,9 +470,10 @@ export async function picaFromPhoto(userId: string, mediaId: string): Promise<st
   let a: { name?: string; handle?: string; bio?: string; look?: string; followers?: number } = {};
   try { a = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); } catch { /* defaults */ }
   const name = named || scrub(String(a.name || "")).replace(/\s+/g, " ").trim().slice(0, 60) || ["Maya Brooks", "Lena Carter", "Sofia Reyes", "Chloe Hart", "Ava Monroe"][rand(0, 4)];
-  const taken = new Set((await sql()`select handle from pica_accounts where user_id = ${userId}`).map(r => String(r.handle)));
-  let handle = String(a.handle || name).toLowerCase().replace(/[^a-z0-9._]/g, "").slice(0, 24) || "new_friend";
-  while (taken.has(handle) || handle.length < 2) handle = `${handle.replace(/\d+$/, "")}${rand(1, 99)}`.slice(0, 28);
+  // Her handle keeps her name's capitals (@JulieWelsh) — it's her name, not a label.
+  const taken = new Set((await sql()`select handle from pica_accounts where user_id = ${userId}`).map(r => String(r.handle).toLowerCase()));
+  let handle = String(a.handle || name).replace(/[^A-Za-z0-9._]/g, "").slice(0, 24) || "newfriend";
+  while (taken.has(handle.toLowerCase()) || handle.length < 2) handle = `${handle.replace(/\d+$/, "")}${rand(1, 99)}`.slice(0, 28);
   const [{ n }] = await sql()`select count(*)::int as n from pica_accounts where user_id = ${userId} and followed`;
   const [acc] = await sql()`insert into pica_accounts (user_id, handle, name, bio, look, followers, followed, avatar_media_id)
     values (${userId}, ${handle}, ${scrub(name).slice(0, 60)}, ${scrub(String(a.bio || "")).slice(0, 300)}, ${scrub(String(a.look || m.description || "")).slice(0, 600)}, ${Math.max(300, Math.min(900000, Number(a.followers) || rand(800, 30000)))}, ${n < MAX_FOLLOWING}, ${m.id}) returning id`;
@@ -478,5 +482,50 @@ export async function picaFromPhoto(userId: string, mediaId: string): Promise<st
     values (${userId}, ${acc.id}, 'image', '✨', ${String(m.description || "").slice(0, 600)}, ${m.id}, ${rand(80, 900)}, now() - interval '3 hours') returning id`;
   for (const s of randomComments(String(m.description || ""), "image", rand(2, 4)))
     await sql()`insert into pica_comments (post_id, user_id, name, text, created_at) values (${post.id}, ${userId}, ${s.name}, ${s.text}, now() - interval '2 hours')`;
+  // 🧠 Whoever sent the photo knows her — and knows they're both on Picagram now.
+  if (m.character_id) {
+    const u = await userInfo(userId);
+    await sql()`insert into velo_memories (user_id, character_id, kind, text) values (${userId}, ${m.character_id}, 'fact',
+      ${`Her name is ${name}. I sent ${u.name} a photo of her, and they found her on Picagram (she's @${handle} there).`.slice(0, 600)})`;
+  }
   return String(acc.id);
+}
+
+/** ✍️ She was renamed: her Picagram account and everyone's memories of her follow the new name. */
+export async function picaRenamed(userId: string, characterId: string, from: string, to: string): Promise<number> {
+  const old = from.trim(), now = to.trim();
+  if (!old || !now || old.toLowerCase() === now.toLowerCase()) return 0;
+  await sql()`update pica_accounts set name = ${now.slice(0, 60)} where user_id = ${userId} and character_id = ${characterId}`;
+  // Her name wherever it's written — but @handles are left exactly as they are (they're account names, not her name).
+  const esc = old.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = () => new RegExp(`(?<![\\p{L}\\p{N}_])${esc}(?![\\p{L}\\p{N}_])`, "giu");
+  const hide = (t: string) => { const keep: string[] = []; return { text: t.replace(/@[A-Za-z0-9._]+/g, m => `\u0000${keep.push(m) - 1}\u0000`), keep }; };
+  const show = (t: string, keep: string[]) => t.replace(/\u0000(\d+)\u0000/g, (_m, i) => keep[Number(i)]);
+  const word = (t: string) => re().test(hide(t).text);
+  const swap = (t: string) => { const h = hide(t); return show(h.text.replace(re(), now), h.keep); };
+  let n = 0;
+  // Her own memories, and what everyone else remembers about her (chats, Picagram DMs, bonds, links).
+  for (const r of await sql()`select id, text from velo_memories where user_id = ${userId} and position(lower(${old}) in lower(text)) > 0 limit 400`)
+    if (word(String(r.text))) { await sql()`update velo_memories set text = ${swap(String(r.text)).slice(0, 600)}, updated_at = now() where id = ${r.id}`; n++; }
+  for (const r of await sql()`select id, text from pica_memories where user_id = ${userId} and position(lower(${old}) in lower(text)) > 0 limit 200`)
+    if (word(String(r.text))) { await sql()`update pica_memories set text = ${swap(String(r.text)).slice(0, 600)} where id = ${r.id}`; n++; }
+  for (const r of await sql()`select user_id, a_id, b_id, story from chat_bonds where user_id = ${userId} and position(lower(${old}) in lower(story)) > 0 limit 200`)
+    if (word(String(r.story))) { await sql()`update chat_bonds set story = ${swap(String(r.story)).slice(0, 600)} where user_id = ${userId} and a_id = ${r.a_id} and b_id = ${r.b_id}`; n++; }
+  for (const r of await sql()`select knower_id, known_id, story from chat_character_links where position(lower(${old}) in lower(story)) > 0 limit 200`)
+    if (word(String(r.story))) { await sql()`update chat_character_links set story = ${swap(String(r.story)).slice(0, 600)} where knower_id = ${r.knower_id} and known_id = ${r.known_id}`; n++; }
+  // Her own story, and how she's described in other characters' stories.
+  for (const r of await sql()`select id, backstory, relation, romance_arc from chat_characters where (owner_id is null or owner_id = ${userId})
+      and (position(lower(${old}) in lower(backstory)) > 0 or position(lower(${old}) in lower(relation)) > 0 or position(lower(${old}) in lower(romance_arc)) > 0) limit 200`) {
+    const b = String(r.backstory || ""), rel = String(r.relation || ""), arc = String(r.romance_arc || "");
+    if (!word(b) && !word(rel) && !word(arc)) continue;
+    await sql()`update chat_characters set backstory = ${swap(b).slice(0, 3000)}, relation = ${swap(rel).slice(0, 600)}, romance_arc = ${swap(arc).slice(0, 1500)}, updated_at = now() where id = ${r.id}`;
+    n++;
+  }
+  return n;
+}
+
+/** 📸 Her own Picagram handle (when she came from an account), for her prompt. */
+export async function picaHandleNote(userId: string, ch: { id: string; name: string }): Promise<string> {
+  const [a] = await sql()`select handle from pica_accounts where user_id = ${userId} and character_id = ${ch.id}`;
+  return a ? `📸 YOUR PICAGRAM: your name is ${ch.name}; on Picagram your handle is @${a.handle} (just your account name — people who know you call you ${ch.name.split(/\s+/)[0]}). That's how they found you; your posts and DMs there are yours, so talk about them naturally.` : "";
 }

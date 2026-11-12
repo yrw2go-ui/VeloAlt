@@ -10,6 +10,7 @@ import { availableBrains, brainList } from "../../lib/models";
 import { makeCharacter } from "../../lib/makeCharacter";
 import { listLinks, setLink, removeLink, writeStory, linkSuggestions } from "../../lib/friends";
 import { MAX_CHARACTERS, DAILY_PORTRAITS, isAdmin, listCharacters, getCharacter, screenCharacter, startPortrait, checkPortrait, deleteCharacter, portraitsReady, chooseVoice, VoiceError } from "../../lib/characters";
+import { picaRenamed } from "../../lib/picagram";
 
 // 🎭 Characters. Everyone can list them and chat; only admins create and edit. POST { action, ... }:
 //   list                     → { characters, portraits, admin }
@@ -75,11 +76,14 @@ export async function POST(req: NextRequest) {
         const problem = await screenCharacter({ ...f, casual_wear: work.attire ? `${f.casual_wear} / at work: ${work.attire}` : f.casual_wear, arc, romantic });
         if (problem) return bad(problem);
         const prev = action === "update" ? await getCharacter(id) : null;
+        const renamedFrom = prev && prev.name !== f.name ? prev.name : "";
         // Same voice as before: keep it (no trip to ElevenLabs).
         const v = prev && (b.voice?.id ?? b.voice) === prev.voice ? { id: prev.voice, name: prev.voice_name, kind: prev.voice_kind } : await chooseVoice(b.voice);
         const [row] = action === "create"
           ? await sql()`insert into chat_characters (created_by, name, personality, backstory, relation, appearance, job, casual_wear, hobbies, voice, voice_name, voice_kind, romantic, romance_arc, traits, preset, time_zone, birthday, brain, work_attire, work_days, work_start, work_end, part_time, poly_ok, sapphic, big_following) values (${me}, ${f.name}, ${f.personality}, ${f.backstory}, ${f.relation}, ${f.appearance}, ${f.job}, ${f.casual_wear}, ${f.hobbies}, ${v.id}, ${v.name}, ${v.kind}, ${romantic}, ${arc}, ${JSON.stringify(traits)}::jsonb, ${presetId}, ${zone}, ${bday}, ${brain}, ${work.attire}, ${work.days}::int[], ${work.start}, ${work.end}, ${work.part}, ${polyOk}, ${sapphic}, ${bigFollowing}) returning id`
           : await sql()`update chat_characters set name = ${f.name}, personality = ${f.personality}, backstory = ${f.backstory}, relation = ${f.relation}, appearance = ${f.appearance}, job = ${f.job}, casual_wear = ${f.casual_wear}, hobbies = ${f.hobbies}, voice = ${v.id}, voice_name = ${v.name}, voice_kind = ${v.kind}, romantic = ${romantic}, romance_arc = ${arc}, traits = ${JSON.stringify(traits)}::jsonb, preset = ${presetId}, time_zone = ${zone}, birthday = ${bday}, brain = ${brain}, work_attire = ${work.attire}, work_days = ${work.days}::int[], work_start = ${work.start}, work_end = ${work.end}, part_time = ${work.part}, poly_ok = ${polyOk}, sapphic = ${sapphic}, big_following = ${bigFollowing}, reference_ids = ${want.filter((x: string) => refs.includes(x))}::uuid[], updated_at = now() where id = ${id} returning id`;
+        // ✍️ Renamed: her Picagram account and everyone's memories of her follow the new name.
+        if (renamedFrom) await picaRenamed(me, id, renamedFrom, f.name).catch(e => console.error("characters: rename", e instanceof Error ? e.message : e));
         return NextResponse.json({ character: await getCharacter(String(row.id)) });
       }
 
