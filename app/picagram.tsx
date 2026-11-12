@@ -134,7 +134,7 @@ function PostCard({ p, me, obs, onChange, onProfile, onFollow, onNote }: { p: Po
     try {
       const r = await api<{ added: Comment[] }>("/api/pica", { action: "comment", id: p.id, text: t });
       setText("");
-      onChange(x => ({ ...x, all: [...(x.all || x.preview), ...r.added], comments: x.comments + r.added.length }));
+      onChange(x => ({ ...x, all: [...[...r.added].reverse(), ...(x.all || x.preview)], comments: x.comments + r.added.length }));
       setOpen(true);
     } catch { /* keep the text to retry */ }
     setBusy(false);

@@ -193,17 +193,18 @@ async function commentsFor(userId: string, postIds: string[], myName: string, pe
     out.set(String(r.post_id), list);
   }
   // The preview: known people and their own first, then the latest strangers.
-  // The preview: the latest few — always including yours and the replies to them (newest at the bottom).
+  // The preview: the latest few — always including yours and the replies to them (newest on top).
   if (perPost) for (const [k, list] of out) {
     const known = list.filter(x => x.known).slice(-perPost);
     const pad = list.filter(x => !x.known).slice(-Math.max(0, perPost - known.length));
-    out.set(k, [...known, ...pad].sort((a, b) => a.created_at.localeCompare(b.created_at)));
+    out.set(k, [...known, ...pad].sort((a, b) => b.created_at.localeCompare(a.created_at)));
   }
   return out;
 }
 export async function picaComments(userId: string, postId: string): Promise<PicaComment[]> {
   const { name } = await userInfo(userId);
-  return (await commentsFor(userId, [postId], name)).get(postId) || [];
+  // Newest first.
+  return ((await commentsFor(userId, [postId], name)).get(postId) || []).reverse();
 }
 
 export async function picaLike(userId: string, postId: string, on: boolean): Promise<boolean> {
