@@ -391,7 +391,12 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   };
   const createSocial = async (md: Media) => {
     setErr("");
-    try { const r = await api<{ accountId: string }>("/api/pica", { action: "fromPhoto", id: md.id }); onSocial?.(r.accountId); }
+    try {
+      const r = await api<{ accountId: string }>("/api/pica", { action: "fromPhoto", id: md.id });
+      // Done: the button stays, greyed out.
+      setMsgs(list => (list || []).map(x => (x.media?.id === md.id ? { ...x, media: { ...x.media!, social: true } } : x)));
+      onSocial?.(r.accountId);
+    }
     catch (e) { setErr(e instanceof Error ? e.message : "Couldn't make her account."); }
   };
   const [pickGallery, setPickGallery] = useState(false);
@@ -687,7 +692,7 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
       <div style={{ maxWidth: "min(80%, 380px)" }}>
         <MediaView media={m.media} onReady={onMedia} onFailed={onFailed} who={who} onAnswer={x => onAnswer(x)} />
         {m.media.status === "done" && <ReactionBar value={m.media.reaction} onPick={r => onReact(m.media!.id, r)} />}
-        {social && m.media.status === "done" && <SocialButton onGo={() => social(m.media!)} />}
+        {social && m.media.status === "done" && <SocialButton done={!!m.media.social} onGo={() => social(m.media!)} />}
       </div>
     </div>
   );
@@ -889,8 +894,10 @@ function GalleryPicker({ onClose, onPick }: { onClose: () => void; onPick: (f: C
   );
 }
 
-function SocialButton({ onGo }: { onGo: () => Promise<void> | void }) {
+function SocialButton({ onGo, done }: { onGo: () => Promise<void> | void; done?: boolean }) {
   const [busy, setBusy] = useState(false);
+  // Already made: shown greyed out, can't be tapped again.
+  if (done) return <button className="ghost" data-testid="create-social" disabled aria-disabled="true" style={{ marginTop: 6, padding: "4px 12px", fontSize: 13, opacity: 0.5, cursor: "default" }}>✓ Social created</button>;
   return (
     <button className="ghost" data-testid="create-social" disabled={busy} onClick={async () => { setBusy(true); await onGo(); setBusy(false); }}
       style={{ marginTop: 6, padding: "4px 12px", fontSize: 13, borderColor: "#ec4899" }}>{busy ? "✨ Making her profile…" : "✨ Create social"}</button>

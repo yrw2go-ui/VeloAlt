@@ -6,7 +6,7 @@
 import { useEffect, useState } from "react";
 import { data } from "./lib/api";
 
-export type Media = { id: string; kind: "image" | "video"; status: "offered" | "declined" | "working" | "done" | "failed"; url: string | null; thumb?: string | null; caption?: string | null; reaction?: string | null; description?: string | null; kept?: boolean; subject?: string | null };
+export type Media = { id: string; kind: "image" | "video"; status: "offered" | "declined" | "working" | "done" | "failed"; url: string | null; thumb?: string | null; caption?: string | null; reaction?: string | null; description?: string | null; kept?: boolean; subject?: string | null; social?: boolean };
 
 // ❤️ Reactions they can leave on a photo/video.
 import { REACTIONS } from "./lib/reactions";
