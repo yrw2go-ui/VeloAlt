@@ -71,7 +71,7 @@ export function VeloLogo({ size = 40 }: { size?: number }) {
 
 const tile = (on: boolean) => ({ display: "block", borderRadius: "50%", padding: 3, border: `3px solid ${on ? "var(--accent)" : "transparent"}` } as const);
 const tileBtn = (on: boolean) => ({ background: "none", border: "none", padding: 0, cursor: on ? "default" : "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, color: "inherit" } as const);
-const caption = (on: boolean) => ({ fontSize: 12, fontWeight: on ? 800 : 600, color: on ? "var(--accent)" : "var(--muted)" } as const);
+const caption = (on: boolean) => ({ fontSize: 14, fontWeight: on ? 800 : 600, color: on ? "var(--accent)" : "var(--muted)" } as const);
 
 /** Settings → Velo's look: tap a face to pick (each face has its own voice on calls), or upload your own picture. */
 export function VeloLookPicker({ onFace }: { onFace?: () => void }) {
@@ -103,14 +103,14 @@ export function VeloLookPicker({ onFace }: { onFace?: () => void }) {
           return (
             <button key={l.id} role="radio" aria-checked={on} aria-label={`${l.label} look, ${l.voiceName} voice`}
               onClick={() => { if (!on) setVeloLook(l.id); }} style={tileBtn(on)}>
-              <span style={tile(on)}><VeloAvatar size={56} look={l.id} /></span>
+              <span style={tile(on)}><VeloAvatar size={72} look={l.id} /></span>
               <span style={caption(on)}>{on ? "✓ " : ""}{l.id === "classic" ? "Classic" : l.voiceName}</span>
             </button>
           );
         })}
         {face ? (
           <button role="radio" aria-checked={chosen === "custom"} aria-label="Your picture" onClick={() => { if (chosen !== "custom") setVeloLook("custom"); }} style={tileBtn(chosen === "custom")} data-testid="look-custom">
-            <span style={tile(chosen === "custom")}><VeloAvatar size={56} look="custom" /></span>
+            <span style={tile(chosen === "custom")}><VeloAvatar size={72} look="custom" /></span>
             <span style={caption(chosen === "custom")}>{chosen === "custom" ? "✓ " : ""}Yours</span>
           </button>
         ) : null}

@@ -380,9 +380,9 @@ function Settings({ name, setName, onOut, profile, onProfile, chars = [], admin 
     if (ok) { setName(n); setSaved(true); setTimeout(() => setSaved(false), 1500); }
   };
   return (
-    <div style={{ padding: "12px 10px", display: "flex", flexDirection: "column", gap: 14 }}>
+    <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 20 }}>
       <div className="card">
-        <div style={{ fontWeight: 700, marginBottom: 8 }}>What should Velo call you?</div>
+        <div style={{ fontWeight: 700, marginBottom: 10, fontSize: 17 }}>What should Velo call you?</div>
         <div className="row">
           <input value={draft} onChange={e => setDraft(e.target.value)} placeholder="Your name" aria-label="Your name" maxLength={80} />
           <button className="btn" disabled={!dirty} onClick={save}>{saved ? "Saved ✓" : "Save"}</button>
@@ -390,7 +390,7 @@ function Settings({ name, setName, onOut, profile, onProfile, chars = [], admin 
       </div>
       <div className="card">
         <div style={{ fontWeight: 700 }}>🧑 Velo&apos;s look</div>
-        <div className="muted" style={{ fontSize: 13, margin: "2px 0 12px" }}>Each face has her own voice on calls. You can also upload your own picture (she keeps the default voice).</div>
+        <div className="muted" style={{ fontSize: 15, margin: "4px 0 14px" }}>Each face has her own voice on calls. You can also upload your own picture (she keeps the default voice).</div>
         <VeloLookPicker />
       </div>
       {profile && <AboutCard profile={profile} onChange={onProfile} />}

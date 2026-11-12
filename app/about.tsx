@@ -51,13 +51,13 @@ export default function AboutCard({ profile, onChange }: { profile: Profile; onC
     try { await data("bio.photoRemove"); onChange(); } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't remove it."); }
     finally { setBusy(false); }
   };
-  const lab = { fontSize: 13, fontWeight: 700, display: "block" } as const;
+  const lab = { fontSize: 15, fontWeight: 700, display: "block" } as const;
 
   return (
     <div className="card" data-testid="about-you" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div>
-        <div style={{ fontWeight: 700 }}>👤 About you <span className="muted" style={{ fontWeight: 500, fontSize: 13 }}>· all optional</span></div>
-        <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>Velo and your characters use this to know you — like noticing your glasses or your birthday. Your photo is only described to them in words; it&apos;s never used to make pictures.</div>
+        <div style={{ fontWeight: 700 }}>👤 About you <span className="muted" style={{ fontWeight: 500, fontSize: 15 }}>· all optional</span></div>
+        <div className="muted" style={{ fontSize: 15, marginTop: 2 }}>Velo and your characters use this to know you — like noticing your glasses or your birthday. Your photo is only described to them in words; it&apos;s never used to make pictures.</div>
       </div>
       <div className="row" style={{ gap: 12, alignItems: "center" }}>
         {bio.photo
@@ -66,10 +66,10 @@ export default function AboutCard({ profile, onChange }: { profile: Profile; onC
           : <div style={{ width: 72, height: 72, borderRadius: "50%", border: "2px dashed var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, flexShrink: 0 }}>🙂</div>}
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 6 }}>
           <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-            <button type="button" className="ghost" disabled={busy} onClick={() => input.current?.click()} data-testid="about-upload" style={{ padding: "6px 12px", fontSize: 13 }}>{bio.photo ? "Change photo" : "Add a photo"}</button>
-            {bio.photo && <button type="button" className="ghost" disabled={busy} onClick={removePhoto} style={{ padding: "6px 12px", fontSize: 13, color: "var(--bad)" }}>Remove</button>}
+            <button type="button" className="ghost" disabled={busy} onClick={() => input.current?.click()} data-testid="about-upload" style={{ padding: "6px 12px", fontSize: 15 }}>{bio.photo ? "Change photo" : "Add a photo"}</button>
+            {bio.photo && <button type="button" className="ghost" disabled={busy} onClick={removePhoto} style={{ padding: "6px 12px", fontSize: 15, color: "var(--bad)" }}>Remove</button>}
           </div>
-          {bio.photoNote && <div className="muted" data-testid="about-photo-note" style={{ fontSize: 12 }}>They&apos;ll know: {bio.photoNote}</div>}
+          {bio.photoNote && <div className="muted" data-testid="about-photo-note" style={{ fontSize: 14 }}>They&apos;ll know: {bio.photoNote}</div>}
         </div>
         <input ref={input} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={e => upload(e.target.files?.[0])} data-testid="about-file-input" />
       </div>
@@ -93,7 +93,7 @@ export default function AboutCard({ profile, onChange }: { profile: Profile; onC
         </select>
       </label>
       <button type="button" className="ghost" onClick={() => setOpen(o => !o)} aria-expanded={open} data-testid="about-more-toggle" style={{ textAlign: "left", fontWeight: 700 }}>
-        {open ? "▾" : "▸"} More about you <span className="muted" style={{ fontWeight: 500, fontSize: 12 }}>· work, hobbies, favorites, family, goals…</span>
+        {open ? "▾" : "▸"} More about you <span className="muted" style={{ fontWeight: 500, fontSize: 14 }}>· work, hobbies, favorites, family, goals…</span>
       </button>
       {open && BIO_SECTIONS.map(sct => (
         <label key={sct.key} style={lab}>{sct.label}
@@ -101,7 +101,7 @@ export default function AboutCard({ profile, onChange }: { profile: Profile; onC
             data-testid={`about-${sct.key}`} placeholder={sct.placeholder} style={{ marginTop: 4, resize: "vertical" }} />
         </label>
       ))}
-      {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
+      {err && <div style={{ color: "var(--bad)", fontSize: 15 }}>⚠️ {err}</div>}
       <button className="btn" disabled={!dirty || busy} onClick={save} data-testid="about-save">{saved ? "Saved ✓" : busy ? "…" : "Save"}</button>
     </div>
   );
