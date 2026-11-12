@@ -380,7 +380,7 @@ function Settings({ name, setName, onOut, profile, onProfile, chars = [], admin 
     if (ok) { setName(n); setSaved(true); setTimeout(() => setSaved(false), 1500); }
   };
   return (
-    <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 20 }}>
+    <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16, overflowWrap: "anywhere" }}>
       <div className="card">
         <div style={{ fontWeight: 700, marginBottom: 10, fontSize: 17 }}>What should Velo call you?</div>
         <div className="row">
