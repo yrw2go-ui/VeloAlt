@@ -21,8 +21,15 @@ async function account(userId: string, accountId: string) {
 }
 const userInfo = async (userId: string) => {
   const [u] = await sql()`select name, adult_confirmed_at, chat_model, time_zone from users where id = ${userId}`;
-  return { name: String(u?.name || "").split(/\s+/)[0] || "them", adult: !!u?.adult_confirmed_at, chatModel: String(u?.chat_model || "claude"), now: nowLabel(u?.time_zone) };
+  return { name: String(u?.name || "").split(/\s+/)[0] || "them", adult: !!u?.adult_confirmed_at, chatModel: String(u?.chat_model || "claude"), now: nowLabel(u?.time_zone), today: todayLabel(u?.time_zone) };
 };
+/** The date where they are, short ("Nov 12, 2026"), to stamp her notes. */
+function todayLabel(rawTz: unknown): string {
+  const tz = isValidTimeZone(rawTz) ? String(rawTz) : "America/Chicago";
+  const p = zonedParts(Date.now(), tz);
+  return new Date(Date.UTC(p.year, p.month - 1, p.day, 12)).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+}
+const undated = (t: string) => t.replace(/^[A-Z][a-z]{2} \d{1,2}, \d{4}: /, "");
 // 🕒 What day and time it is (where they are), so she lives on the same clock: "good morning", "it's late", weekends…
 function nowLabel(rawTz: unknown): string {
   const tz = isValidTimeZone(rawTz) ? String(rawTz) : "America/Chicago";
@@ -119,7 +126,7 @@ export async function dmSend(userId: string, accountId: string, text: string): P
   await sql()`update pica_dms set read_at = now() where user_id = ${userId} and account_id = ${accountId} and read_at is null`;
   // 🧠 Every few messages she files away what matters (it goes with her if you befriend her).
   const [{ n }] = await sql()`select count(*)::int as n from pica_dms where user_id = ${userId} and account_id = ${accountId} and role = 'user'`;
-  if (n % 4 === 0) await remember(userId, a, [...history, ...added.slice(1)], u.name, mem, brainOf(a, u.chatModel)).catch(e => console.error("pica dm: remember", e instanceof Error ? e.message : e));
+  if (n % 4 === 0) await remember(userId, a, [...history, ...added.slice(1)], u.name, mem, brainOf(a, u.chatModel), u.now, u.today).catch(e => console.error("pica dm: remember", e instanceof Error ? e.message : e));
   return { added, ...(note ? { note } : {}) };
 }
 
@@ -143,13 +150,14 @@ export async function dmSendPhoto(userId: string, accountId: string): Promise<{ 
   }
 }
 
-async function remember(userId: string, a: Record<string, unknown>, list: Dm[], name: string, known: string[], brain: string) {
-  const raw = await write(brain, `You are ${a.name}. From your recent Picagram DMs with ${name}, list up to 3 NEW things worth remembering (about ${name}: their life, likes, plans, what they told you — or what happened between you two). Short, first person ("${name} told me…", "We…"). Skip anything already known. JSON only: {"facts":["..."]}`,
-    `ALREADY KNOWN:\n${known.length ? known.map(k => `- ${k}`).join("\n") : "(nothing yet)"}\n\nRECENT DMs:\n${transcript(list.slice(-16), String(a.name), name)}`, 500);
+async function remember(userId: string, a: Record<string, unknown>, list: Dm[], name: string, known: string[], brain: string, now: string, today: string) {
+  const raw = await write(brain, `You are ${a.name}. From your recent Picagram DMs with ${name}, list up to 3 NEW things worth remembering (about ${name}: their life, likes, plans, what they told you — or what happened between you two). Short, first person ("${name} told me…", "We…"). Skip anything already known. When something has a time to it (plans, "tomorrow", "this weekend"), write the actual date. JSON only: {"facts":["..."]}`,
+    `${now}\n\nALREADY KNOWN:\n${known.length ? known.map(k => `- ${k}`).join("\n") : "(nothing yet)"}\n\nRECENT DMs:\n${transcript(list.slice(-16), String(a.name), name)}`, 500);
   let facts: unknown[] = [];
   try { facts = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]).facts || []; } catch { /* nothing new */ }
   for (const f of facts.slice(0, 3)) {
     const t = scrub(String(f || "")).replace(/\s+/g, " ").trim().slice(0, 600);
-    if (t.length >= 6 && !known.includes(t)) await sql()`insert into pica_memories (user_id, account_id, text) values (${userId}, ${a.id}, ${t})`;
+    // 📅 Each note carries the day it was made ("Nov 12, 2026: Sam told me…").
+    if (t.length >= 6 && !known.some(k => undated(k) === undated(t))) await sql()`insert into pica_memories (user_id, account_id, text) values (${userId}, ${a.id}, ${`${today}: ${undated(t)}`.slice(0, 600)})`;
   }
 }
