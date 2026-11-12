@@ -35,7 +35,7 @@ import { characterPrompt, feelingsFor, saveFeelings, trustFor, saveTrust, trustN
 import { aboutThem } from "./bio";
 import { mediaMood, allowsSuggestive } from "./traits";
 import { CHARACTER_ZONES } from "./states";
-import { provider, atlasChain, type ChatModel } from "./models";
+import { provider, atlasChain, atlasBrain, type ChatModel } from "./models";
 import { oaChat, toOaTools, ProviderError, type OaMessage } from "./openai";
 import { PLAN_TOOL, runPlanTool, plansNote } from "./plans";
 import { PROMISE_TOOL, runPromiseTool, promisesNote } from "./promises";
@@ -322,29 +322,38 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
     { role: "system", content: system.map(b => b.text).join("\n\n") },
     ...messages.map(m => ({ role: m.role, content: asText(m.content) }) as OaMessage),
   ];
+  // 📸 Getting a photo that she said she's sending: her own brain first, then DeepSeek, then Kimi (through Atlas), then
+  // Claude — the first one that actually picks the photo (calls send_media) wins. (A Claude-brain character starts with Claude.)
+  const photoInput = async (extra: OaMessage[], nudge: string): Promise<Record<string, unknown> | null> => {
+    const viaClaude = async () => {
+      const forced = await client.messages.create({
+        model: process.env.VELO_MODEL!, max_tokens: 600, system,
+        tools: [SEND_MEDIA_TOOL(ch?.name || "Velo", romantic)], tool_choice: { type: "tool", name: "send_media" },
+        messages: [...messages, ...extra.map(m => ({ role: m.role as "assistant" | "user", content: String((m as { content?: unknown }).content || "") })), { role: "user", content: nudge }],
+      }).catch(e => { console.warn("velo: photo via Claude", e instanceof Error ? e.message : e); return null; });
+      const call = forced?.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
+      return call ? (call.input as Record<string, unknown>) : null;
+    };
+    const own = herBrain || herChain[0] || null;
+    if (!own) { const got = await viaClaude(); if (got) return got; }
+    const seen = new Set<string>();
+    for (const p of [own, atlasBrain("deepseek"), atlasBrain("kimi")]) {
+      if (!p || seen.has(p.model)) continue;
+      seen.add(p.model);
+      const r = await oaChat(p, [...oaBase(), ...extra, { role: "user", content: nudge }], toOaTools([SEND_MEDIA_TOOL(ch?.name || "Velo", romantic)]), 600, "send_media")
+        .catch(e => { console.warn(`velo: photo via ${p.model}`, e instanceof Error ? e.message : e); return null; });
+      const c = r?.toolCalls.find(t => t.function.name === "send_media");
+      if (c) { try { return JSON.parse(c.function.arguments || "{}"); } catch { return {}; } }
+    }
+    return own ? viaClaude() : null;
+  };
   // 📸 "Send the pic" button: she said a photo/video was coming but none arrived — make her send it now.
   if (opts.sendPhoto) {
     if (!canSend) return { reply: "", changed: false, drafts, media, note: "Photos aren't available here." };
     const nudge = "(They're still waiting for the photo/video you said you'd send — it never went out. Send it now with send_media: exactly what you told them you're sending.)";
     let note = "";
     try {
-      const own = herChain[0] || null;
-      let input: Record<string, unknown> | null = null;
-      if (own) {
-        const r = await oaChat(own, [...oaBase(), { role: "user", content: nudge }], toOaTools([SEND_MEDIA_TOOL(ch?.name || "Velo", romantic)]), 600, "send_media").catch(e => { console.warn("velo: send the pic", e instanceof Error ? e.message : e); return null; });
-        const c = r?.toolCalls.find(t => t.function.name === "send_media");
-        if (c) { try { input = JSON.parse(c.function.arguments || "{}"); } catch { input = {}; } }
-      }
-      // Her own brain wouldn't (or couldn't) send it: Claude picks the photo instead.
-      if (!input) {
-        const forced = await client.messages.create({
-          model: process.env.VELO_MODEL!, max_tokens: 600, system,
-          tools: [SEND_MEDIA_TOOL(ch?.name || "Velo", romantic)], tool_choice: { type: "tool", name: "send_media" },
-          messages: [...messages, { role: "user", content: nudge }],
-        });
-        const call = forced.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
-        if (call) input = call.input as Record<string, unknown>;
-      }
+      const input = await photoInput([], nudge);
       if (!input) note = "She couldn't work out which photo — ask her again.";
       else {
         const out = await runTool("send_media", { ...input, they_asked: true });
@@ -421,22 +430,9 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
     && CLAIMS_MEDIA.test(reply) && !REFUSES_MEDIA.test(reply)
     && (ASKED_FOR_MEDIA.test(String(lastSaid)) || (YES.test(String(lastSaid)) && MENTIONS_MEDIA.test(String(lastHers))) || STRONG_CLAIM.test(reply))) {
     try {
-      if (herBrain) {
-        // Her own brain sends it (made to call send_media).
-        const r = await oaChat(herBrain, [...oaBase(), { role: "assistant", content: reply }, { role: "user", content: "(Your photo/video didn't actually go out. Send it now with send_media — exactly what you just told them you're sending.)" }],
-          toOaTools([SEND_MEDIA_TOOL(ch?.name || "Velo", romantic)]), 600, "send_media").catch(e => { console.warn("velo: photo retry (her brain)", e instanceof Error ? e.message : e); return null; });
-        const c = r?.toolCalls.find(t => t.function.name === "send_media");
-        if (c) { let input: Record<string, unknown> = {}; try { input = JSON.parse(c.function.arguments || "{}"); } catch { /* none */ } const out = await runTool("send_media", { ...input, they_asked: true }); if (out.isError) console.warn("velo: photo retry", out.content.slice(0, 200)); throw new HandledRetry(); }
-        // Her brain still didn't send it: Claude writes the photo description instead (below).
-      }
-      const forced = await client.messages.create({
-        model: process.env.VELO_MODEL!, max_tokens: 600, system,
-        tools: [SEND_MEDIA_TOOL(ch?.name || "Velo", romantic)], tool_choice: { type: "tool", name: "send_media" },
-        messages: [...messages, { role: "assistant", content: reply }, { role: "user", content: "(Your photo/video didn't actually go out. Send it now with send_media — exactly what you just told them you're sending.)" }],
-      });
-      const call = forced.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
-      if (call) {
-        const out = await runTool("send_media", { ...(call.input as Record<string, unknown>), they_asked: true });
+      const input = await photoInput([{ role: "assistant", content: reply }], "(Your photo/video didn't actually go out. Send it now with send_media — exactly what you just told them you're sending.)");
+      if (input) {
+        const out = await runTool("send_media", { ...input, they_asked: true });
         if (out.isError) console.warn("velo: photo retry", out.content.slice(0, 200));
       }
     } catch (e) { if (!(e instanceof HandledRetry)) console.error("velo: photo retry", e instanceof Error ? e.message : e); }
