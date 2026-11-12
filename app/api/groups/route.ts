@@ -6,6 +6,7 @@ import { listGroups, getGroup, createGroup, deleteGroup, groupMessages, sendToGr
 import { MediaError } from "../../lib/media";
 import { sql } from "../../lib/db";
 import { getCharacterFor } from "../../lib/characters";
+import { awayFor, awayText } from "../../lib/picagram";
 import { isReaction } from "../../lib/reactions";
 
 // 👥 Group chats. POST { action, ... }:
@@ -37,6 +38,7 @@ export async function POST(req: NextRequest) {
       const ids = [String(b.fromId || ""), ...(Array.isArray(b.ids) ? b.ids.map(String) : [])];
       const ok = (await Promise.all(ids.map(id => getCharacterFor(c.userId, id)))).filter(Boolean).map(ch => ch!.id);
       if (ok.length < ids.length) return bad("That character wasn't found.");
+      for (const cid of ok) { const gone = await awayFor(c.userId, cid); if (gone) { const [ch] = await sql()`select name from chat_characters where id = ${cid}`; return bad(awayText(String(ch?.name || "They"), gone)); } }
       return NextResponse.json({ group: await bringTogether(c.userId, ok[0], ok.slice(1), String(b.place || ""), name) });
     }
     const g = await getGroup(c.userId, String(b.id || ""));

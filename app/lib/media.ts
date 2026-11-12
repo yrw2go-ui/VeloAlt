@@ -129,7 +129,7 @@ async function atlasStart(kind: "image" | "video", model: string, prompt: string
 }
 
 /** Starts a photo or video (from the send_media tool) — or, with `offer`, only offers it: nothing is made until they accept. */
-export async function startMedia(userId: string, input: unknown, ctx: { characterId: string | null; who: string; appearance: string; refs: string[]; romantic: boolean; mood?: string; offer?: boolean; other?: { name: string; refs: string[]; appearance: string } | null; peek?: boolean; people?: { name: string; refs: string[]; appearance: string }[]; raw?: boolean }): Promise<Media> {
+export async function startMedia(userId: string, input: unknown, ctx: { characterId: string | null; who: string; appearance: string; refs: string[]; romantic: boolean; mood?: string; offer?: boolean; other?: { name: string; refs: string[]; appearance: string } | null; peek?: boolean; people?: { name: string; refs: string[]; appearance: string }[]; raw?: boolean; pica?: boolean }): Promise<Media> {
   const a = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
   const kind = a.kind === "video" ? "video" : "image";
   // ✏️ raw (their own peek edits): their words go to Atlas exactly as written — no rewording, no extra instructions, no word filter here (Atlas still checks it).
@@ -143,15 +143,15 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
   const [{ n }] = await sql()`select count(*)::int as n from velo_media where user_id = ${userId} and kind = ${kind} and status not in ('offered', 'declined') and job_id is not null and created_at > now() - interval '1 day'`;
   // An unanswered offer never blocks: a new offer replaces it, and asking for one supersedes it
   // (its card then shows as passed on). A fresh offer (under 10 minutes) still waits its turn.
-  if (ctx.offer) {
+  if (ctx.offer && !ctx.pica) {
     const [fresh] = await sql()`select 1 from velo_media where user_id = ${userId} and character_id is not distinct from ${ctx.characterId} and status = 'offered' and created_at > now() - interval '10 minutes' limit 1`;
     if (fresh) throw new MediaError("You just offered one and they haven't answered yet — wait for that first.");
   }
   if (n >= DAILY[kind]) throw new MediaError(`That's the limit of ${kind === "image" ? "photos" : "videos"} for today. Tell them you'll send more tomorrow.`);
   // One at a time: if one is still being made in this chat, don't start another.
-  const [busy] = await sql()`select kind, extract(epoch from now() - created_at)::int as secs from velo_media where user_id = ${userId} and character_id is not distinct from ${ctx.characterId} and status = 'working' and not peek and created_at > now() - interval '6 minutes' order by created_at desc limit 1`;
+  const [busy] = ctx.pica ? [] : await sql()`select kind, extract(epoch from now() - created_at)::int as secs from velo_media where user_id = ${userId} and character_id is not distinct from ${ctx.characterId} and status = 'working' and not peek and not pica and created_at > now() - interval '6 minutes' order by created_at desc limit 1`;
   if (busy) throw new MediaError(`You already sent a ${busy.kind === "image" ? "photo" : "video"} ${busy.secs < 60 ? `${busy.secs} seconds` : `${Math.round(busy.secs / 60)} min`} ago and it's still on its way (it WILL arrive — photos take about a minute, videos a few). Tell them it's coming; don't make another.`);
-  await sql()`update velo_media set status = 'declined' where user_id = ${userId} and character_id is not distinct from ${ctx.characterId} and status = 'offered'`;
+  if (!ctx.pica) await sql()`update velo_media set status = 'declined' where user_id = ${userId} and character_id is not distinct from ${ctx.characterId} and status = 'offered'`;
 
   const withMe = a.with_me === true;
   // 👥 Someone else they know of can be in it (her references first), with or without them.
@@ -159,7 +159,7 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
   // 📸 Same moment as her last photo (same day, place, outfit): that photo leads the references.
   const [prev] = withMe && !o && a.same_moment === true
     ? await sql()`select f.url, m.description from velo_media m join velo_files f on f.id = m.file_id where m.user_id = ${userId} and m.character_id is not distinct from ${ctx.characterId}
-        and m.kind = 'image' and m.status = 'done' and not m.peek and m.created_at > now() - interval '14 hours' order by m.created_at desc limit 1`
+        and m.kind = 'image' and m.status = 'done' and not m.peek and not m.pica and m.created_at > now() - interval '14 hours' order by m.created_at desc limit 1`
     : [];
   // 👥 Several characters in one picture (a group peek): up to 4 reference images, shared between them.
   const people = ctx.people?.length ? [{ name: ctx.who, refs: ctx.refs, appearance: ctx.appearance }, ...ctx.people] : null;
@@ -195,9 +195,9 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
   const sendRefs = kind === "image" ? refs : ref ? [ref] : [];
   const who = people ? null : o ? (withMe ? `me+${o.name}` : o.name) : withMe ? "me" : "none";
   // 💬 Her line when it arrives: none for a picture of someone else ("miss me yet?" would make no sense), nothing flirty for a view or a thing.
-  const caption = ctx.peek || (o && !withMe) ? null : captionFor(kind, ctx.romantic && withMe);
-  const [row] = await sql()`insert into velo_media (user_id, character_id, kind, prompt, model, caption, description, refs, poster_url, status, peek, subject)
-    values (${userId}, ${ctx.characterId}, ${kind}, ${prompt}, ${model}, ${caption}, ${desc.slice(0, ctx.raw ? 1500 : 400)}, ${sendRefs}, ${kind === "video" ? ref : null}, ${ctx.offer ? "offered" : "working"}, ${!!ctx.peek}, ${who}) returning id`;
+  const caption = ctx.peek || ctx.pica || (o && !withMe) ? null : captionFor(kind, ctx.romantic && withMe);
+  const [row] = await sql()`insert into velo_media (user_id, character_id, kind, prompt, model, caption, description, refs, poster_url, status, peek, subject, pica)
+    values (${userId}, ${ctx.characterId}, ${kind}, ${prompt}, ${model}, ${caption}, ${desc.slice(0, ctx.raw ? 1500 : 400)}, ${sendRefs}, ${kind === "video" ? ref : null}, ${ctx.offer ? "offered" : "working"}, ${!!ctx.peek}, ${who}, ${!!ctx.pica}) returning id`;
   if (ctx.offer) return { id: row.id, kind, status: "offered", url: null, description: desc, subject: who };
   return { ...(await launch(row.id, kind, model, prompt, sendRefs, desc)), subject: who };
 }
@@ -240,7 +240,7 @@ export async function declineMedia(userId: string, id: string): Promise<Media | 
 /** 💡 What they've liked (reactions) or turned down, so photos lean toward their taste. */
 export async function tasteNote(userId: string, characterId: string | null): Promise<string> {
   const rows = await sql()`select kind, description, reaction, status from velo_media where user_id = ${userId} and character_id is not distinct from ${characterId}
-    and description is not null and not peek and (reaction is not null or status = 'declined') order by created_at desc limit 12`;
+    and description is not null and not peek and not pica and (reaction is not null or status = 'declined') order by created_at desc limit 12`;
   if (!rows.length) return "";
   const liked = rows.filter(r => r.reaction).map(r => `${r.reaction} "${r.description}"`), passed = rows.filter(r => r.status === "declined").map(r => `"${r.description}"`);
   return `THEIR TASTE IN YOUR PHOTOS/VIDEOS (lean toward what they love — settings, outfits, vibes — and be creative with new ideas in that spirit):${liked.length ? `\n- Loved: ${liked.join("; ")}` : ""}${passed.length ? `\n- Turned down: ${passed.join("; ")}` : ""}`;
@@ -378,7 +378,7 @@ export async function sweepMedia(userId: string, max = 4): Promise<Media[]> {
 export async function listGallery(userId: string, characterId: string | null, before: string | null, limit = 30) {
   const rows = await sql()`select m.id, m.kind, m.kept, m.created_at::text, m.poster_url, f.url, t.url as thumb
     from velo_media m join velo_files f on f.id = m.file_id left join velo_files t on t.id = m.thumb_file_id
-    where m.user_id = ${userId} and m.character_id is not distinct from ${characterId} and m.status = 'done'
+    where m.user_id = ${userId} and m.character_id is not distinct from ${characterId} and m.status = 'done' and not m.pica
       and (${before}::timestamptz is null or m.created_at < ${before}::timestamptz)
     order by m.created_at desc limit ${limit}`;
   return rows.map(r => ({ id: String(r.id), kind: r.kind as "image" | "video", kept: !!r.kept, created_at: String(r.created_at), url: String(r.url), thumb: (r.thumb || r.poster_url || null) as string | null }));
@@ -401,7 +401,7 @@ export async function deleteMedia(userId: string, id: string): Promise<boolean> 
 /** 📸 What they've actually sent here lately — real, so they never think they didn't send one (or send it twice). */
 export async function recentMediaNote(userId: string, characterId: string | null, tz: string): Promise<string> {
   const rows = await sql()`select kind, status, description, extract(epoch from now() - created_at)::int as secs, created_at from velo_media
-    where user_id = ${userId} and character_id is not distinct from ${characterId} and created_at > now() - interval '12 hours' and status in ('working', 'done', 'failed') and not peek
+    where user_id = ${userId} and character_id is not distinct from ${characterId} and created_at > now() - interval '12 hours' and status in ('working', 'done', 'failed') and not peek and not pica
     order by created_at desc limit 6`;
   if (!rows.length) return "";
   const ago = (s: number) => (s < 90 ? `${s} seconds ago` : s < 5400 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`);

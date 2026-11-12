@@ -9,6 +9,7 @@ import { VeloLogo, VeloLookPicker, applyVeloLook, useVeloLook } from "./avatar";
 import VeloCall, { canCallVelo, primeSpeech } from "./call";
 import Chat, { type ChatAdd } from "./chat";
 import { CallMedia, type Media } from "./media";
+import Picagram from "./picagram";
 import { CharacterStrip, CharacterEditor, CharacterFace, NewCharacterSheet, type Character } from "./characters";
 import { GroupChat, GroupMaker, type Group } from "./groups";
 import Gallery from "./gallery";
@@ -19,9 +20,10 @@ import Memory from "./memory";
 import { timeZone } from "./lib/tz";
 import ProCard, { BrainCard, PersonalityCard, ReplyLengthCard, VideoCard, type Profile } from "./pro";
 
-type Tab = "chat" | "today" | "memory" | "settings";
+type Tab = "chat" | "pica" | "today" | "memory" | "settings";
 const TABS: { id: Tab; icon: string; label: string }[] = [
   { id: "chat", icon: "💬", label: "Chat" },
+  { id: "pica", icon: "📸", label: "Picagram" },
   { id: "today", icon: "☀️", label: "Today" },
   { id: "memory", icon: "🧠", label: "Memory" },
   { id: "settings", icon: "⚙️", label: "Settings" },
@@ -304,6 +306,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
         {tab === "chat" && !inGroup && !(groupId && !groupsLoaded) && <Chat key={`${withChar?.id || "velo"}-${chatTick}`} userId={userId} name={name} onChanged={bump} added={chatAdd} onAdded={() => setChatAdd(null)} character={withChar} adult={!!profile?.adultConfirmed} onAdult={() => setProfileTick(t => t + 1)} onHistory={h => { chatHistory.current = h; setHistoryCount(h.length); }}
           onNewCharacter={() => api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => setChars(r.characters)).catch(() => {})}
           others={chars.map(c => ({ id: c.id, name: c.name }))} onGroup={g => { setGroups(gs => [g, ...gs.filter(x => x.id !== g.id)]); setGroupId(g.id); }} />}
+        {tab === "pica" && <Picagram name={name} />}
         {tab === "today" && <Today refresh={refresh} />}
         {tab === "memory" && <Memory refresh={refresh} />}
         {tab === "settings" && <Settings name={name} setName={setName} onOut={onOut} profile={profile} onProfile={() => setProfileTick(t => t + 1)}

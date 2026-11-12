@@ -3,6 +3,7 @@ import { duePlans, setPlanStatus } from "../../lib/plans";
 import { readyIntros, acceptIntro, declineIntro, IntroError } from "../../lib/intros";
 import { peekAt, draftPeek, draftIcu } from "../../lib/peek";
 import { inPersonFor, startInPerson, endInPerson } from "../../lib/inPerson";
+import { awayFor, awayText } from "../../lib/picagram";
 import { cleanTags } from "../../lib/text";
 import { deleteMessages } from "../../lib/forget";
 import { sql } from "../../lib/db";
@@ -217,6 +218,8 @@ export async function POST(req: NextRequest) {
         // Started from a plan's "today" card: that plan is done.
         if (b.planId) await setPlanStatus(me, String(b.planId), "done");
         if (action === "scene.start") {
+          const gone = await awayFor(me, ch.id);
+          if (gone) return bad(awayText(ch.name, gone));
           await endInPerson(me, ch.id); // a scene takes over from just hanging out
           const [s] = await db`insert into chat_scenes (user_id, character_id, kind, title, details, clock, set_time, planned_time, pushed) values (${me}, ${ch.id}, 'live', ${title}, ${details}, ${clock}, ${setTime}, ${plannedTime}, ${pushed}) returning id, kind, title, details, status, started_at::text, clock, set_time, planned_time`;
           return NextResponse.json({ scene: s, marker: await marker(`🎬 Scene: ${title}${details ? ` — ${details}` : ""}`, String(s.id)) });
@@ -290,6 +293,8 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ ok: true, marker: await note(`🧍 We went our separate ways`) });
         }
         if (await activeScene(me, ch.id)) return bad("End the scene first.");
+        const gone = await awayFor(me, ch.id);
+        if (gone) return bad(awayText(ch.name, gone));
         const place = scrub(clean(b.place, 120)).replace(/\n/g, " ");
         const p = await startInPerson(me, ch.id, place);
         return NextResponse.json({ inPerson: p, marker: await note(`🧍 Together in person${place ? ` — ${place}` : ""}`) });
