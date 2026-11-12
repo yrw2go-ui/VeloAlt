@@ -304,9 +304,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   const [peekSheet, setPeekSheet] = useState<{ description: string; loading: boolean; error?: string; icu?: boolean } | null>(null);
   const [resendFor, setResendFor] = useState<string | null>(null);
   const openPeek = async (icu: boolean) => {
-    setErr(""); setPeekSheet({ description: "", loading: true, icu });
-    try { setPeekSheet({ description: (await data<{ description: string }>(icu ? "icu.draft" : "scene.peek.draft", { characterId: cid })).description, loading: false, icu }); }
-    catch (e) { setPeekSheet(null); setErr(e instanceof Error ? e.message : "Couldn't peek right now."); }
+    setErr(""); setPeekSheet({ description: "", loading: false, icu });
   };
   const rewritePeek = async () => {
     const icu = !!peekSheet?.icu;
