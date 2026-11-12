@@ -6,7 +6,6 @@ import { sql } from "./db";
 import { writeText } from "./llm";
 import { scrub } from "./secrets";
 import { listCharacters, referenceUrls, type Character } from "./characters";
-import { friendsOf } from "./friends";
 import { startMedia, MediaError, type Media } from "./media";
 import { allowsSuggestive, mediaMood } from "./traits";
 import { isValidTimeZone, localDate, zonedParts, zonedToUtc } from "./localTime";
@@ -74,13 +73,18 @@ async function generateDay(userId: string, day: string, isToday: boolean): Promi
   await accountPosts(userId, day, isToday, u).catch(e => console.error("pica: accounts", e instanceof Error ? e.message : e));
   if (!chars.length) return true;
   const authors = shuffle(chars).slice(0, Math.min(rand(3, 5), chars.length));
+  const links = new Map<string, { knows: string[]; knownBy: string[] }>();
   const info = await Promise.all(authors.map(async c => {
-    const friends = (await friendsOf(c, userId).catch(() => [])).map(f => f.name).filter(n => chars.some(x => x.name === n)).slice(0, 6);
+    // Only characters linked in their character cards: who she knows (could be in her photo), and who knows her (could comment).
+    const knows = (await sql()`select known_id from chat_character_links where knower_id = ${c.id}`).map(r => chars.find(x => x.id === String(r.known_id))?.name).filter((n): n is string => !!n).slice(0, 6);
+    const knownBy = (await sql()`select knower_id from chat_character_links where known_id = ${c.id}`).map(r => chars.find(x => x.id === String(r.knower_id))?.name).filter((n): n is string => !!n).slice(0, 6);
+    links.set(c.id, { knows, knownBy });
+    const friends = knows;
     const away = await awayFor(userId, c.id);
-    return `- ${c.name}: ${c.job || "no job listed"}; hobbies: ${c.hobbies || "—"}; style: ${c.casual_wear || "—"}${c.work_attire ? `; at work: ${c.work_attire}` : ""}; about: ${(c.backstory || c.personality || "").slice(0, 300)}${friends.length ? `; friends on Picagram: ${friends.join(", ")}` : ""}${romanticFor(c, u.adult) ? "; romantic/flirty allowed (PG-13)" : "; keep family-friendly"}${away ? `; ✈️ CURRENTLY OUT OF TOWN at ${away.place} until ${away.until} — post from there` : ""}`;
+    return `- ${c.name}: ${c.job || "no job listed"}; hobbies: ${c.hobbies || "—"}; style: ${c.casual_wear || "—"}${c.work_attire ? `; at work: ${c.work_attire}` : ""}; about: ${(c.backstory || c.personality || "").slice(0, 300)}${friends.length ? `; friends (could be in her photo): ${friends.join(", ")}` : ""}${links.get(c.id)?.knownBy.length ? `; people who know her (could comment): ${links.get(c.id)!.knownBy.join(", ")}` : "; nobody she knows comments"}${romanticFor(c, u.adult) ? "; romantic/flirty allowed (PG-13)" : "; keep family-friendly"}${away ? `; ✈️ CURRENTLY OUT OF TOWN at ${away.place} until ${away.until} — post from there` : ""}`;
   }));
   const weekday = new Date(`${day}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" });
-  const raw = await writeText("", `You plan one day of posts on Picagram (a social photo app like Instagram) for these characters. ${weekday}. Write ${authors.length} posts, one per character listed, in their own voice: everyday life — at the gym (a confident or sensual gym selfie is fine, PG-13), at home in whatever they're wearing, at work, with their pet if they have one, with a friend or a parent, food, a walk, the beach, a pool or waterpark, a night out, a hobby. At least ${Math.min(authors.length, rand(2, 3))} must be photos ("image"); the rest can be text posts (thoughts, jokes, little updates). A vacation should be RARE (most days none, never more than one): only then add "vacation" with the place and how many days they'll be away (2–7). For photos, "photo" describes exactly what the picture shows (who, where, outfit, pose, light) in 1–2 sentences — the character is in it unless it's clearly a picture of something else; "with" names ONE friend from their list who's in the photo, or "". Captions are short and natural (emojis/hashtags okay). Add 0–2 "friend_comments" from people in their friends list. Everything PG-13 at most: flattering and flirty is fine, never nudity, lingerie or anything sexual; family-friendly characters stay fully clothed. Reply with JSON only: {"posts":[{"author":"Name","kind":"image"|"text","caption":"...","photo":"...","with":"","vacation":null|{"place":"...","days":3},"friend_comments":[{"from":"Name","text":"..."}]}]}`,
+  const raw = await writeText("", `You plan one day of posts on Picagram (a social photo app like Instagram) for these characters. ${weekday}. Write ${authors.length} posts, one per character listed, in their own voice: everyday life — at the gym (a confident or sensual gym selfie is fine, PG-13), at home in whatever they're wearing, at work, with their pet if they have one, with a friend or a parent, food, a walk, the beach, a pool or waterpark, a night out, a hobby. At least ${Math.min(authors.length, rand(2, 3))} must be photos ("image"); the rest can be text posts (thoughts, jokes, little updates). A vacation should be RARE (most days none, never more than one): only then add "vacation" with the place and how many days they'll be away (2–7). For photos, "photo" describes exactly what the picture shows (who, where, outfit, pose, light) in 1–2 sentences — the character is in it unless it's clearly a picture of something else; "with" names ONE friend from their list who's in the photo, or "". Captions are short and natural (emojis/hashtags okay). Now and then (not every post) add ONE "friend_comments" entry from someone in "people who know her"; never anyone else — if that list is empty, leave it empty. Everything PG-13 at most: flattering and flirty is fine, never nudity, lingerie or anything sexual; family-friendly characters stay fully clothed. Reply with JSON only: {"posts":[{"author":"Name","kind":"image"|"text","caption":"...","photo":"...","with":"","vacation":null|{"place":"...","days":3},"friend_comments":[{"from":"Name","text":"..."}]}]}`,
     `CHARACTERS:\n${info.join("\n")}`, 2500).catch(() => "");
   let plan: Planned[] = [];
   try { plan = (JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]).posts || []) as Planned[]; } catch { /* fall back below */ }
@@ -105,7 +109,8 @@ async function generateDay(userId: string, day: string, isToday: boolean): Promi
     const { c, p } = posts[i];
     const at = new Date(times[i]);
     const caption = scrub(String(p.caption || "")).slice(0, 600), photo = scrub(String(p.photo || "")).slice(0, 600);
-    const friend = p.with ? byName.get(String(p.with).toLowerCase()) : undefined;
+    const lk = links.get(c.id) || { knows: [], knownBy: [] };
+    const friend = p.with && lk.knows.some(n => n.toLowerCase() === String(p.with).toLowerCase()) ? byName.get(String(p.with).toLowerCase()) : undefined;
     let media: Media | null = null;
     if (p.kind === "image" && photo) {
       media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: photo },
@@ -113,12 +118,13 @@ async function generateDay(userId: string, day: string, isToday: boolean): Promi
           other: friend && friend.id !== c.id ? { name: friend.name, refs: await referenceUrls(friend), appearance: friend.appearance } : null }).catch(e => { if (!(e instanceof MediaError)) console.error("pica: photo", e instanceof Error ? e.message : e); return null; });
     }
     const big = !!c.big_following;
-    const fc = (Array.isArray(p.friend_comments) ? p.friend_comments : []).map(x => ({ c: byName.get(String(x.from || "").toLowerCase()), text: scrub(String(x.text || "")).slice(0, 300) })).filter(x => x.c && x.c.id !== c.id && x.text);
-    const likers = [...new Set([...fc.map(x => x.c!.name), ...(Math.random() < 0.6 && friend ? [friend.name] : [])])];
+    const fc = (Array.isArray(p.friend_comments) ? p.friend_comments : []).map(x => ({ c: byName.get(String(x.from || "").toLowerCase()), text: scrub(String(x.text || "")).slice(0, 300) })).filter(x => x.c && x.c.id !== c.id && x.text && lk.knownBy.includes(x.c.name)).slice(0, Math.random() < 0.5 ? 1 : 0);
+    const likers = [...new Set([...fc.map(x => x.c!.name), ...lk.knownBy.filter(() => Math.random() < 0.4)])];
     const [post] = await sql()`insert into pica_posts (user_id, author_id, kind, caption, photo, media_id, likes_target, liked_by, place, created_at)
       values (${userId}, ${c.id}, ${media ? "image" : "text"}, ${caption || (media ? "" : photo)}, ${media ? photo : ""}, ${media?.id || null}, ${big ? rand(200, 1500) : rand(20, 300)}, ${likers}, ${p.vacation?.place ? scrub(String(p.vacation.place)).slice(0, 80) : ""}, ${at.toISOString()}) returning id`;
     for (const x of fc) await sql()`insert into pica_comments (post_id, user_id, author_id, text, created_at) values (${post.id}, ${userId}, ${x.c!.id}, ${x.text}, ${new Date(times[i] + rand(10, 240) * 60_000).toISOString()})`;
-    for (const s of randomComments(`${caption} ${photo}`, media ? "image" : "text", rand(2, 5)))
+    // Her followers comment: more with a big following (up to 5 comments in all, counting a friend's).
+    for (const s of randomComments(`${caption} ${photo}`, media ? "image" : "text", Math.max(0, (big ? rand(3, 5) : rand(1, 3)) - fc.length)))
       await sql()`insert into pica_comments (post_id, user_id, name, text, created_at) values (${post.id}, ${userId}, ${s.name}, ${s.text}, ${new Date(times[i] + rand(2, 360) * 60_000).toISOString()})`;
     // ✈️ A (rare) vacation: they're out of town for a few days.
     if (p.vacation?.place && !vacationUsed && !(await awayFor(userId, c.id))) {
@@ -313,7 +319,7 @@ async function accountPosts(userId: string, day: string, isToday: boolean, u: U)
     const at = isToday && a === who[0] ? now - rand(5, 40) * 60_000 : start + Math.random() * (end - start);
     const likes = Math.max(150, Math.min(25000, Math.round(Number(a.followers) * (0.005 + Math.random() * 0.03))));
     const [post] = await sql()`insert into pica_posts (user_id, account_id, kind, caption, photo, media_id, likes_target, created_at) values (${userId}, ${a.id}, 'image', ${caption}, ${photo}, ${media.id}, ${likes}, ${new Date(at).toISOString()}) returning id`;
-    for (const s of randomComments(`${caption} ${photo}`, "image", rand(3, 6)))
+    for (const s of randomComments(`${caption} ${photo}`, "image", rand(3, 5)))
       await sql()`insert into pica_comments (post_id, user_id, name, text, created_at) values (${post.id}, ${userId}, ${s.name}, ${s.text}, ${new Date(at + rand(2, 300) * 60_000).toISOString()})`;
   }
 }
