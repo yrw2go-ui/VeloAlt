@@ -4,6 +4,7 @@ export const BRAIN_OPTIONS = [
   { id: "qwen", label: "Qwen (fast)", atlas: true, about: "Through Atlas Cloud — quick and cheap." },
   { id: "qwen2", label: "Qwen (big)", atlas: true, about: "Through Atlas Cloud — smarter, follows the details better." },
   { id: "deepseek", label: "DeepSeek", atlas: true, about: "Through Atlas Cloud." },
+  { id: "kimi", label: "Kimi K2.6", atlas: true, about: "Through Atlas Cloud — Moonshot K2.6." },
   { id: "qwen-chain", label: "Qwen chain: fast → big → Claude", atlas: true, about: "Qwen (fast) first; if it fails, Qwen (big); if both fail, Claude." },
 ] as const;
 export const brainLabel = (id: string | undefined) => BRAIN_OPTIONS.find(o => o.id === id)?.label || "";

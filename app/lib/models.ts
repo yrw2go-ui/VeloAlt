@@ -35,9 +35,9 @@ export const availableModels = (): ChatModel[] => CHAT_MODELS.filter(m => m === 
 // ATLASCLOUD_DEEPSEEK_MODEL (base URL ATLASCLOUD_LLM_URL, default Atlas's /v1).
 // Two Qwens can be set up side by side: "qwen" (ATLASCLOUD_QWEN_MODEL, the fast one) and "qwen2" (ATLASCLOUD_QWEN2_MODEL, the big one).
 // A character can also be pinned to "claude" (always Claude, whatever Velo uses).
-export type Brain = "qwen" | "qwen2" | "deepseek";
-export const BRAINS: Brain[] = ["qwen", "qwen2", "deepseek"];
-const BRAIN_ENV: Record<Brain, string> = { qwen: "ATLASCLOUD_QWEN_MODEL", qwen2: "ATLASCLOUD_QWEN2_MODEL", deepseek: "ATLASCLOUD_DEEPSEEK_MODEL" };
+export type Brain = "qwen" | "qwen2" | "deepseek" | "kimi";
+export const BRAINS: Brain[] = ["qwen", "qwen2", "deepseek", "kimi"];
+const BRAIN_ENV: Record<Brain, string> = { qwen: "ATLASCLOUD_QWEN_MODEL", qwen2: "ATLASCLOUD_QWEN2_MODEL", deepseek: "ATLASCLOUD_DEEPSEEK_MODEL", kimi: "ATLASCLOUD_KIMI_MODEL" };
 export const brainModel = (b: Brain) => process.env[BRAIN_ENV[b]] || "";
 export function atlasBrain(b: unknown): OpenAiProvider | null {
   const key = process.env.ATLASCLOUD_API_KEY;
