@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
     // ⏰ A chat with a character on her own brain: if it's down, no stand-in (see BrainDown below).
     const noFallback = mode === "chat" && holdsOnWhenDown(character?.brain);
     let r;
-    try { r = await askVelo(caller, { mode, messages, timeZone: body.timeZone, name: body.name, character, origin: req.nextUrl.origin, noFallback }); }
+    try { r = await askVelo(caller, { mode, messages, timeZone: body.timeZone, name: body.name, character, origin: req.nextUrl.origin, noFallback, sendPhoto: body.sendPhoto === true && mode === "chat" }); }
     catch (e) {
       if (!(e instanceof BrainDown)) throw e;
       // First time: she says she'll be right back. On retries: nothing to show yet.
@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
       await sql()`insert into velo_messages (user_id, role, content, media_id, character_id, created_at)
         values (${caller.userId}, 'assistant', ${mediaNote(m.kind, m.status, m.description, null, m.subject)}, ${m.id}, ${character?.id || null}, now() + ${`${2000 + i} milliseconds`}::interval)`;
     }
-    return NextResponse.json({ reply: r.reply, ...(replyId ? { replyId } : {}), ...(r.changed ? { changed: true } : {}), ...(r.drafts.length ? { drafts: r.drafts } : {}), ...(r.media.length ? { media: r.media } : {}), ...(r.react ? { react: r.react } : {}), ...(r.by ? { by: r.by } : {}) });
+    return NextResponse.json({ reply: r.reply, ...(replyId ? { replyId } : {}), ...(r.changed ? { changed: true } : {}), ...(r.drafts.length ? { drafts: r.drafts } : {}), ...(r.media.length ? { media: r.media } : {}), ...(r.react ? { react: r.react } : {}), ...(r.by ? { by: r.by } : {}), ...(r.note ? { note: r.note } : {}) });
   } catch (e) {
     if (e instanceof CharacterGone) return NextResponse.json({ error: "That character was deleted." }, { status: 404 });
     const { error, status } = aiError(e);

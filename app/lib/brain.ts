@@ -97,7 +97,7 @@ const ASKED_FOR_MEDIA = /\b(send|show|share|snap|take|got|get|see|want|wanna|mak
 const YES = /^\s*(yes|yeah|yep|yup|ya|sure|ok(ay)?|please|pls|plz|of course|absolutely|definitely|do it|go ahead|i'?d love (that|one|to)|send it|why not|try (it |that )?again|retry|resend)\b/i;
 const MENTIONS_MEDIA = /\b(phone|pics?|pictures?|photos?|selfies?|videos?|vids?|clips?|snaps?|show you|send you)\b/i;
 
-export interface AskResult { reply: string; changed: boolean; drafts: Draft[]; media: Media[]; saved?: boolean; react?: string; by?: "claude" | "alt" }
+export interface AskResult { reply: string; changed: boolean; drafts: Draft[]; media: Media[]; saved?: boolean; react?: string; by?: "claude" | "alt"; note?: string }
 
 // 😮 Reactions (shown as a little badge on their message, like a text-message tapback).
 import { REACTIONS as REACTION_LIST } from "./reactions";
@@ -111,7 +111,7 @@ const REACT_TAG = /\[react:\s*([^\]\s]+)\s*\]\s*/gu;
 
 /** Velo, or (with `character`) one of the characters: same chats, calls and memory flow, but in the
  *  character's own voice, with only their own memory of this person and no Velo tools. */
-export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn[]; timeZone?: unknown; name?: string; goal?: string; toName?: string; character?: Character | null; origin?: string; promise?: string; noFallback?: boolean; group?: { others: string[]; scene?: { title: string; details: string; time?: string } | null; banter?: boolean; inPerson?: string | null; catchUp?: string; private?: boolean } }): Promise<AskResult> {
+export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode: Mode; messages: Turn[]; timeZone?: unknown; name?: string; goal?: string; toName?: string; character?: Character | null; origin?: string; promise?: string; noFallback?: boolean; group?: { others: string[]; scene?: { title: string; details: string; time?: string } | null; banter?: boolean; inPerson?: string | null; catchUp?: string; private?: boolean } }): Promise<AskResult> {
   const { mode } = opts;
   const ch = opts.character || null;
   const cid = ch?.id || null;
@@ -322,6 +322,37 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
     { role: "system", content: system.map(b => b.text).join("\n\n") },
     ...messages.map(m => ({ role: m.role, content: asText(m.content) }) as OaMessage),
   ];
+  // 📸 "Send the pic" button: she said a photo/video was coming but none arrived — make her send it now.
+  if (opts.sendPhoto) {
+    if (!canSend) return { reply: "", changed: false, drafts, media, note: "Photos aren't available here." };
+    const nudge = "(They're still waiting for the photo/video you said you'd send — it never went out. Send it now with send_media: exactly what you told them you're sending.)";
+    let note = "";
+    try {
+      const own = herChain[0] || null;
+      let input: Record<string, unknown> | null = null;
+      if (own) {
+        const r = await oaChat(own, [...oaBase(), { role: "user", content: nudge }], toOaTools([SEND_MEDIA_TOOL(ch?.name || "Velo", romantic)]), 600, "send_media").catch(e => { console.warn("velo: send the pic", e instanceof Error ? e.message : e); return null; });
+        const c = r?.toolCalls.find(t => t.function.name === "send_media");
+        if (c) { try { input = JSON.parse(c.function.arguments || "{}"); } catch { input = {}; } }
+      }
+      // Her own brain wouldn't (or couldn't) send it: Claude picks the photo instead.
+      if (!input) {
+        const forced = await client.messages.create({
+          model: process.env.VELO_MODEL!, max_tokens: 600, system,
+          tools: [SEND_MEDIA_TOOL(ch?.name || "Velo", romantic)], tool_choice: { type: "tool", name: "send_media" },
+          messages: [...messages, { role: "user", content: nudge }],
+        });
+        const call = forced.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
+        if (call) input = call.input as Record<string, unknown>;
+      }
+      if (!input) note = "She couldn't work out which photo — ask her again.";
+      else {
+        const out = await runTool("send_media", { ...input, they_asked: true });
+        if (out.isError) note = out.content.replace(/ Tell them[\s\S]*$/, "").slice(0, 200);
+      }
+    } catch (e) { console.error("velo: send the pic", e instanceof Error ? e.message : e); note = "Couldn't send it right now — try again in a moment."; }
+    return { reply: "", changed: false, drafts, media, ...(note ? { note } : {}) };
+  }
   let answered = false;
   const tryOrder = herChain.length ? herChain : alt ? [alt] : [];
   for (const brainNow of tryOrder) {
@@ -393,10 +424,10 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
       if (herBrain) {
         // Her own brain sends it (made to call send_media).
         const r = await oaChat(herBrain, [...oaBase(), { role: "assistant", content: reply }, { role: "user", content: "(Your photo/video didn't actually go out. Send it now with send_media — exactly what you just told them you're sending.)" }],
-          toOaTools([SEND_MEDIA_TOOL(ch?.name || "Velo", romantic)]), 600, "send_media");
-        const c = r.toolCalls[0];
-        if (c) { let input: Record<string, unknown> = {}; try { input = JSON.parse(c.function.arguments || "{}"); } catch { /* none */ } const out = await runTool("send_media", { ...input, they_asked: true }); if (out.isError) console.warn("velo: photo retry", out.content.slice(0, 200)); }
-        throw new HandledRetry();
+          toOaTools([SEND_MEDIA_TOOL(ch?.name || "Velo", romantic)]), 600, "send_media").catch(e => { console.warn("velo: photo retry (her brain)", e instanceof Error ? e.message : e); return null; });
+        const c = r?.toolCalls.find(t => t.function.name === "send_media");
+        if (c) { let input: Record<string, unknown> = {}; try { input = JSON.parse(c.function.arguments || "{}"); } catch { /* none */ } const out = await runTool("send_media", { ...input, they_asked: true }); if (out.isError) console.warn("velo: photo retry", out.content.slice(0, 200)); throw new HandledRetry(); }
+        // Her brain still didn't send it: Claude writes the photo description instead (below).
       }
       const forced = await client.messages.create({
         model: process.env.VELO_MODEL!, max_tokens: 600, system,

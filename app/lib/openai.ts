@@ -16,6 +16,19 @@ export const toOaTools = (tools: Anthropic.Tool[]) =>
 export class ProviderError extends Error {}
 
 export async function oaChat(p: OpenAiProvider, messages: OaMessage[], tools: ReturnType<typeof toOaTools>, maxTokens: number, mustUse?: string): Promise<{ content: string; toolCalls: OaToolCall[] }> {
+  // Some models (Qwen on Atlas) refuse a forced tool choice ("invalid request params"): then ask nicely instead —
+  // just that one tool on offer, and "auto".
+  if (mustUse && tools.length) {
+    try { return await oaChatOnce(p, messages, tools, maxTokens, mustUse); }
+    catch (e) {
+      if (!(e instanceof ProviderError) || !/^400\b/.test(e.message)) throw e;
+      return oaChatOnce(p, messages, tools.filter(t => t.function.name === mustUse), maxTokens);
+    }
+  }
+  return oaChatOnce(p, messages, tools, maxTokens, mustUse);
+}
+
+async function oaChatOnce(p: OpenAiProvider, messages: OaMessage[], tools: ReturnType<typeof toOaTools>, maxTokens: number, mustUse?: string): Promise<{ content: string; toolCalls: OaToolCall[] }> {
   const res = await fetch(`${p.baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${p.key}`, "Content-Type": "application/json" },

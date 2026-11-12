@@ -359,6 +359,22 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   }, [cid, userId]);
 
   // 😮 React to one of her messages (tap it). Tap the same one again to take it back.
+  // 📸 She said a photo/video was coming but it never showed up: a button to make her actually send it.
+  const lastReal = [...(msgs || [])].reverse().find(m => !m.draft && !(m.peek && !m.media));
+  const pendingPic = !!character && !busy && !!lastReal && lastReal.role === "assistant" && !lastReal.media
+    && /\b(pic|pics|picture|pictures|photo|photos|selfie|selfies|snap|video|vid)\b/i.test(lastReal.content)
+    && /\b(send|sending|sent|here'?s|here you go|coming|on (its|it's) way|incoming|attached|uploading|take one|taking one|let me)\b/i.test(lastReal.content);
+  const [picBusy, setPicBusy] = useState(false);
+  const sendPic = async () => {
+    setPicBusy(true); setErr("");
+    try {
+      const r = await api<{ media?: Media[]; note?: string }>("/api/velo", { mode: "chat", messages: realMsgs(msgsRef.current), timeZone: timeZone(), name, ...thread, sendPhoto: true });
+      const sent: ChatMsg[] = (r.media || []).filter(x => x.status !== "failed").map(media => ({ role: "assistant", content: mediaNote(media), media }));
+      if (sent.length) setMsgs(m => [...(m || []), ...sent]);
+      else setErr(r.note || `${who} couldn't send it — try again in a moment.`);
+    } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't send it."); }
+    setPicBusy(false);
+  };
   // 🗑 Long-press a message to select it (then tap up to 10); deleting also makes her forget what was in them.
   const [selected, setSelected] = useState<Set<string> | null>(null);
   // ＋ The chat's extras (🎬 scene, 🧍 together / 👁️ ICU, 📎 attach) live in one menu, so the typing box gets the room.
@@ -565,6 +581,11 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
           <FileThumb f={attach} size={44} />
           <div style={{ flex: 1, minWidth: 0, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{attach.name}</div>
           <button type="button" className="ghost" onClick={() => setAttach(null)} aria-label="Remove attachment" style={{ padding: "4px 10px", fontSize: 13 }}>✕</button>
+        </div>
+      )}
+      {pendingPic && !selected && (
+        <div className="row" style={{ padding: "8px 12px 0", gap: 8 }}>
+          <button className="ghost" onClick={sendPic} disabled={picBusy} data-testid="send-pic" style={{ padding: "6px 12px", fontSize: 13, borderColor: "var(--accent)" }}>{picBusy ? "📸 Sending…" : `📸 ${who} didn't send it — send the pic`}</button>
         </div>
       )}
       {selected && (
