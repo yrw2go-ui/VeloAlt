@@ -161,11 +161,15 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   const pickChat = (id: string | null) => { setGroupId(null); setWithId(id); };
   // 🔴 Unread counts per chat ("velo" or character id). The open chat is marked read as it updates.
   const [unread, setUnread] = useState<Record<string, number>>({});
+  const [picaNew, setPicaNew] = useState(0);
   useEffect(() => {
     const key = withId || "velo";
     const tick = async () => {
       if (document.visibilityState !== "visible") return;
       if (tab === "chat") await data("chats.read", withId ? { characterId: withId } : {}).catch(() => {});
+      // 📸 New Picagram posts since they last looked (the tab clears it).
+      if (tab !== "pica") api<{ n: number }>("/api/pica", { action: "new" }).then(x => setPicaNew(x.n)).catch(() => {});
+      else setPicaNew(0);
       const r = await data<{ unread: Record<string, number> }>("chats.unread").catch(() => null);
       if (!r) return;
       const u = { ...r.unread };
@@ -317,7 +321,9 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} aria-current={tab === t.id ? "page" : undefined}
             style={{ flex: 1, background: "none", border: "none", padding: "10px 0 12px", color: tab === t.id ? "var(--accent)" : "var(--muted)", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, fontSize: 12, fontWeight: 700 }}>
-            <span style={{ fontSize: 20 }}>{t.icon}</span>{t.label}
+            <span style={{ fontSize: 20, position: "relative" }}>{t.icon}
+              {t.id === "pica" && picaNew > 0 && tab !== "pica" && <span data-testid="pica-badge" aria-label={`${picaNew} new posts`} style={{ position: "absolute", top: -6, right: -14, minWidth: 18, height: 18, padding: "0 5px", borderRadius: 999, background: "#ef4444", color: "#fff", fontSize: 11, fontWeight: 800, lineHeight: "18px", textAlign: "center" }}>{picaNew > 99 ? "99+" : picaNew}</span>}
+            </span>{t.label}
           </button>
         ))}
       </nav>

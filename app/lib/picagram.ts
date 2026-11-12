@@ -429,3 +429,10 @@ export async function picaDeletePost(userId: string, postId: string): Promise<bo
   if (needle) await sql()`delete from velo_memories where user_id = ${userId} and position(${needle} in text) > 0`;
   return true;
 }
+
+/** 🔴 New posts since they last looked at Picagram (not their own). */
+export async function picaNew(userId: string): Promise<number> {
+  const [r] = await sql()`select count(*)::int as n from pica_posts p join users u on u.id = p.user_id
+    where p.user_id = ${userId} and u.pica_looked_at is not null and p.created_at > u.pica_looked_at and p.created_at <= now() and (p.author_id is not null or p.account_id is not null)`;
+  return Number(r?.n || 0);
+}
