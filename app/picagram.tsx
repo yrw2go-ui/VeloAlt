@@ -59,6 +59,17 @@ export default function Picagram({ name, onChat, openProfile, onProfileOpened }:
   }, [posts]);
 
   useEffect(() => { load(true); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // 🆕 Newer posts slide in at the top while you're here (newest first, above your own if they're more recent).
+  const newestRef = useRef<string | null>(null);
+  newestRef.current = posts?.[0]?.created_at || null;
+  useEffect(() => {
+    const t = setInterval(async () => {
+      if (!newestRef.current || document.visibilityState !== "visible") return;
+      const r = await api<{ posts: Post[] }>("/api/pica", { action: "newer", after: newestRef.current }).catch(() => null);
+      if (r?.posts.length) setPosts(p => [...r.posts.filter(x => !(p || []).some(y => y.id === x.id)), ...(p || [])].sort((a, b) => b.created_at.localeCompare(a.created_at)));
+    }, 20000);
+    return () => clearInterval(t);
+  }, []);
   // ♾️ Load more as you get near the bottom.
   useEffect(() => {
     const el = sentinel.current;

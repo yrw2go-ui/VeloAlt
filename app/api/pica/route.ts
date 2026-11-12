@@ -63,6 +63,11 @@ export async function POST(req: NextRequest) {
       case "profile": { const p = UUID.test(id) ? await picaProfile(me, id) : null; return p ? NextResponse.json(p) : bad("Unknown account."); }
       case "save": return UUID.test(id) && (await picaSave(me, id, b.on === true)) ? NextResponse.json({ ok: true }) : bad("Unknown picture.");
       case "saved": return NextResponse.json({ items: await picaSavedList(me, typeof b.before === "string" && !Number.isNaN(Date.parse(b.before)) ? b.before : null) });
+      // 🆕 Posts that went up since the newest one on screen (they slide in at the top).
+      case "newer": {
+        const after = typeof b.after === "string" && !Number.isNaN(Date.parse(b.after)) ? b.after : null;
+        return NextResponse.json({ posts: after ? await picaFeed(me, null, 20, after) : [] });
+      }
       case "comments": return UUID.test(id) ? NextResponse.json({ comments: await picaComments(me, id) }) : bad("Unknown post.");
       case "like": return UUID.test(id) && (await picaLike(me, id, b.on === true)) ? NextResponse.json({ ok: true }) : bad("Unknown post.");
       case "seen": await picaSeen(me, Array.isArray(b.ids) ? b.ids.map(String) : []); return NextResponse.json({ ok: true });

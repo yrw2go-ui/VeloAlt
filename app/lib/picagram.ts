@@ -154,7 +154,7 @@ const likersNow = (names: string[], secs: number[], at: string) => { const age =
 export type PicaPost = { id: string; saved: boolean; author: { id: string | null; name: string; portrait: string | null; away: string | null; account?: { id: string; handle: string; followed: boolean } }; kind: "image" | "text"; caption: string; media: Media | null; likes: number; liked: boolean; liked_by: string[]; comments: number; preview: PicaComment[]; created_at: string };
 export type PicaComment = { id: string; who: string; me: boolean; known: boolean; text: string; created_at: string };
 
-export async function picaFeed(userId: string, before: string | null, limit = 6): Promise<PicaPost[]> {
+export async function picaFeed(userId: string, before: string | null, limit = 6, after: string | null = null): Promise<PicaPost[]> {
   const { name } = await userInfo(userId);
   const rows = await sql()`select p.*, p.created_at::text as at, c.name as author_name, pf.url as portrait, m.id as m_id, m.kind as m_kind, m.status as m_status, mf.url as m_url, mt.url as m_thumb,
       a.place as away_place, a.until::text as away_until,
@@ -166,6 +166,7 @@ export async function picaFeed(userId: string, before: string | null, limit = 6)
       left join chat_away a on a.user_id = p.user_id and a.character_id = p.author_id and a.until >= current_date
       left join pica_accounts ac on ac.id = p.account_id left join velo_media am on am.id = ac.avatar_media_id left join velo_files af on af.id = am.file_id
     where p.user_id = ${userId} and p.created_at <= now() and (${before}::timestamptz is null or p.created_at < ${before}::timestamptz)
+      and (${after}::timestamptz is null or p.created_at > ${after}::timestamptz)
     order by p.created_at desc limit ${Math.min(limit, 20)}`;
   const ids = rows.map(r => String(r.id));
   const cm = ids.length ? await commentsFor(userId, ids, name, 3) : new Map<string, PicaComment[]>();
