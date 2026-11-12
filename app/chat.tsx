@@ -638,9 +638,9 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
         background: mine ? "linear-gradient(135deg, var(--accent), var(--accent2))" : "var(--surface2)", color: "var(--text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", lineHeight: 1.5, fontSize: 19 }}>
         {m.file && <div style={{ marginBottom: m.content && m.content !== "📎" ? 8 : 0 }}><FileThumb f={m.file} size={180} /></div>}
         {m.content !== "📎" && styled(m.content.replace(/\*\*(.+?)\*\*/g, "$1"))}
-        {!mine && /sent.*(pic|photo|image|picture)|here.*(pic|photo)|sending you a/i.test(m.content) && !m.media && (
+        {!mine && /sent.*(pic|photo|image|picture)|here.*(pic|photo)|sending you|on the way|coming|sent it/i.test(m.content) && !m.media && (
           <button type="button" onClick={e => { e.stopPropagation(); onResend?.(m.id || ""); }} disabled={resending}
-            style={{ marginTop: 6, fontSize: 14, padding: "4px 10px", borderRadius: 999, border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer" }}>
+            style={{ marginTop: 8, fontSize: 15, padding: "6px 14px", borderRadius: 999, border: "1px solid var(--accent)", background: "var(--accent)", color: "#fff", fontWeight: 600, cursor: "pointer" }}>
             {resending ? "Resending…" : "↻ Resend image"}
           </button>
         )}
