@@ -6,6 +6,8 @@ import { scrub } from "./secrets";
 import { startMedia, MediaError, type Media } from "./media";
 import { availableBrains } from "./models";
 import { BRAIN_OPTIONS } from "./brainOptions";
+import { isValidTimeZone, zonedParts, formatClock } from "./localTime";
+import { partOfDay } from "./calendar";
 
 export type Dm = { id: string; role: "user" | "assistant"; content: string; created_at: string; media: Media | null };
 export class DmError extends Error {}
@@ -18,9 +20,16 @@ async function account(userId: string, accountId: string) {
   return a;
 }
 const userInfo = async (userId: string) => {
-  const [u] = await sql()`select name, adult_confirmed_at, chat_model from users where id = ${userId}`;
-  return { name: String(u?.name || "").split(/\s+/)[0] || "them", adult: !!u?.adult_confirmed_at, chatModel: String(u?.chat_model || "claude") };
+  const [u] = await sql()`select name, adult_confirmed_at, chat_model, time_zone from users where id = ${userId}`;
+  return { name: String(u?.name || "").split(/\s+/)[0] || "them", adult: !!u?.adult_confirmed_at, chatModel: String(u?.chat_model || "claude"), now: nowLabel(u?.time_zone) };
 };
+// 🕒 What day and time it is (where they are), so she lives on the same clock: "good morning", "it's late", weekends…
+function nowLabel(rawTz: unknown): string {
+  const tz = isValidTimeZone(rawTz) ? String(rawTz) : "America/Chicago";
+  const now = Date.now(), p = zonedParts(now, tz);
+  const day = new Date(Date.UTC(p.year, p.month - 1, p.day, 12)).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+  return `RIGHT NOW: ${day}, ${formatClock(now, tz)} (${partOfDay(p.hour)}). Act like you know it — say good morning/night when it fits, notice if it's late, weekends, holidays — but don't announce the time unless it matters.`;
+}
 // 🧠 Her brain: her own pick, or the same as Velo's ('' / 'claude' = Claude).
 const brainOf = (a: Record<string, unknown>, chatModel: string) => { const b = String(a.brain || "") || chatModel; return b === "claude" ? "" : b; };
 // Writing her line: logged (not hidden) when it fails.
@@ -91,7 +100,7 @@ export async function dmSend(userId: string, accountId: string, text: string): P
   const history = await messages(userId, accountId, 40);
   const mem = await memories(userId, accountId);
   const raw = await write(brainOf(a, u.chatModel), `You are ${a.name} (@${a.handle}) on Picagram, a social photo app like Instagram. Your bio: "${a.bio}". You look like: ${a.look}. You're a real person with your own life; ${u.name} follows you and is messaging you in your DMs. Reply like Instagram DMs: short (1–3 sentences), casual, warm, in your own voice${u.adult ? ", flirty if it fits (PG-13: never nudity, lingerie or anything sexual)" : ", friendly and family-friendly"}. Never say you're an AI. If they ask for a photo of you (or it fits naturally), you can send one: then set "photo" to exactly what the picture shows (where, outfit, pose, light) in 1–2 sentences${u.adult ? "; tasteful and PG-13 — flattering and flirty is fine, never nudity or lingerie" : ", fully clothed"}. Otherwise leave "photo" empty. Reply with JSON only: {"reply":"...","photo":""}`,
-    `${mem.length ? `WHAT YOU REMEMBER ABOUT ${u.name.toUpperCase()} (from your DMs):\n- ${mem.join("\n- ")}\n\n` : ""}THE CONVERSATION SO FAR:\n${transcript(history, String(a.name), u.name)}`, 800);
+    `${u.now}\n\n${mem.length ? `WHAT YOU REMEMBER ABOUT ${u.name.toUpperCase()} (from your DMs):\n- ${mem.join("\n- ")}\n\n` : ""}THE CONVERSATION SO FAR:\n${transcript(history, String(a.name), u.name)}`, 800);
   // Her answer: the JSON asked for — or, if she just wrote her reply as plain text, that text.
   let j: { reply?: string; photo?: string } = {};
   const obj = raw.match(/\{[\s\S]*\}/);
@@ -120,7 +129,7 @@ export async function dmSendPhoto(userId: string, accountId: string): Promise<{ 
   const u = await userInfo(userId);
   const history = await messages(userId, accountId, 30);
   const raw = await write(brainOf(a, u.chatModel), `You are ${a.name} (@${a.handle}) on Picagram. You told ${u.name} you'd send a photo of yourself but it never went through. Describe exactly the photo you meant to send (where, outfit, pose, light) in 1–2 sentences${u.adult ? ", tasteful and PG-13 — flattering and flirty is fine, never nudity or lingerie" : ", fully clothed"}. JSON only: {"photo":"..."}`,
-    `You look like: ${a.look}\n\nTHE CONVERSATION:\n${transcript(history, String(a.name), u.name)}`, 400);
+    `${u.now}\nYou look like: ${a.look}\n\nTHE CONVERSATION:\n${transcript(history, String(a.name), u.name)}`, 400);
   let photo = "";
   try { photo = String(JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]).photo || ""); } catch { /* fall back */ }
   photo = scrub(photo || `${a.name} taking a selfie, smiling at the camera`).slice(0, 600);
