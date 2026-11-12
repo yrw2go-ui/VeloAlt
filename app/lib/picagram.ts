@@ -442,16 +442,23 @@ export async function picaNew(userId: string): Promise<number> {
 export async function picaFromPhoto(userId: string, mediaId: string): Promise<string> {
   const [m] = await sql()`select m.id, m.subject, m.description, m.character_id, c.name as sender from velo_media m left join chat_characters c on c.id = m.character_id
     where m.id = ${mediaId} and m.user_id = ${userId} and m.kind = 'image' and m.status = 'done'`;
-  const name = String(m?.subject || "");
-  if (!m || !name || name === "me" || name === "none" || name.startsWith("me+")) throw new PicaLimit("That photo isn't of someone new.");
-  const [isChar] = await sql()`select 1 from chat_characters where lower(name) = lower(${name}) and (owner_id is null or owner_id = ${userId}) limit 1`;
-  if (isChar) throw new PicaLimit(`${name} is already one of your characters.`);
-  const [had] = await sql()`select id from pica_accounts where user_id = ${userId} and lower(name) = lower(${name}) limit 1`;
+  if (!m) throw new PicaLimit("That photo wasn't found.");
+  const sub = String(m.subject || ""), desc = String(m.description || "");
+  if (sub === "me" || sub.startsWith("me+")) throw new PicaLimit("That's a photo of them — it isn't someone new.");
+  // An unnamed woman (or an older photo that didn't say who's in it): it has to show a woman, not one of your characters.
+  const named = sub && sub !== "none" ? sub : "";
+  const chars = (await sql()`select name from chat_characters where owner_id is null or owner_id = ${userId}`).map(r => String(r.name));
+  if (named && chars.some(c => c.toLowerCase() === named.toLowerCase())) throw new PicaLimit(`${named} is already one of your characters.`);
+  if (!named && (!/\b(woman|girl|lady|she|her|blonde|brunette|redhead|model|babe)\b/i.test(desc) || chars.some(c => new RegExp(`\\b${c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(desc))))
+    throw new PicaLimit("That photo isn't of someone new.");
+  // Already made from this same photo (or she's on Picagram by name): open her.
+  const [had] = await sql()`select id from pica_accounts where user_id = ${userId} and (avatar_media_id = ${m.id} or (${named} <> '' and lower(name) = lower(${named}))) limit 1`;
   if (had) return String(had.id);
-  const raw = await writeText("", `Make a Picagram (a social photo app like Instagram) profile for this woman, from the photo of her. Fictional details are fine. JSON only: {"handle":"lowercase_handle","bio":"short bio with emojis","look":"one detailed sentence for an image generator: age, face, hair, eyes, skin, build, usual style","followers":12000}`,
-    `NAME: ${name}\nTHE PHOTO: ${String(m.description || "").slice(0, 400)}${m.sender ? `\nSENT BY: ${m.sender} (who knows her)` : ""}`, 600).catch(() => "");
-  let a: { handle?: string; bio?: string; look?: string; followers?: number } = {};
+  const raw = await writeText("", `Make a Picagram (a social photo app like Instagram) profile for this woman, from the photo of her. ${named ? "" : "Give her a first and last name too (fictional, not a celebrity). "}Fictional details are fine. JSON only: {"name":"First Last","handle":"lowercase_handle","bio":"short bio with emojis","look":"one detailed sentence for an image generator: age, face, hair, eyes, skin, build, usual style","followers":12000}`,
+    `${named ? `NAME: ${named}\n` : ""}THE PHOTO: ${desc.slice(0, 400)}${m.sender ? `\nSENT BY: ${m.sender} (who knows her)` : ""}\nNames already used (don't reuse): ${chars.slice(0, 40).join(", ")}`, 600).catch(() => "");
+  let a: { name?: string; handle?: string; bio?: string; look?: string; followers?: number } = {};
   try { a = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); } catch { /* defaults */ }
+  const name = named || scrub(String(a.name || "")).replace(/\s+/g, " ").trim().slice(0, 60) || ["Maya Brooks", "Lena Carter", "Sofia Reyes", "Chloe Hart", "Ava Monroe"][rand(0, 4)];
   const taken = new Set((await sql()`select handle from pica_accounts where user_id = ${userId}`).map(r => String(r.handle)));
   let handle = String(a.handle || name).toLowerCase().replace(/[^a-z0-9._]/g, "").slice(0, 24) || "new_friend";
   while (taken.has(handle) || handle.length < 2) handle = `${handle.replace(/\d+$/, "")}${rand(1, 99)}`.slice(0, 28);

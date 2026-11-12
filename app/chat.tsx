@@ -380,9 +380,14 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   // ＋ The chat's extras (🎬 scene, 🧍 together / 👁️ ICU, 📎 attach) live in one menu, so the typing box gets the room.
   const [moreOpen, setMoreOpen] = useState(false);
   // ✨ A photo she sent of someone new (not a character): make her a Picagram account from it.
+  // (Named: not one of your characters. Unnamed or older photos: the description shows a woman and names none of your characters.)
   const socialOk = (md?: Media) => {
-    const sub = md?.status === "done" ? String(md.subject || "") : "";
-    return !!sub && sub !== "me" && sub !== "none" && !sub.startsWith("me+") && !others.some(o => o.name.toLowerCase() === sub.toLowerCase());
+    if (md?.status !== "done" || md.kind !== "image") return false;
+    const sub = String(md.subject || ""), desc = String(md.description || "");
+    if (sub === "me" || sub.startsWith("me+")) return false;
+    if (sub && sub !== "none") return !others.some(o => o.name.toLowerCase() === sub.toLowerCase());
+    return /\b(woman|girl|lady|she|her|blonde|brunette|redhead|model|babe)\b/i.test(desc)
+      && !others.some(o => new RegExp(`\\b${o.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(desc));
   };
   const createSocial = async (md: Media) => {
     setErr("");
