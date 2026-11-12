@@ -22,13 +22,14 @@ function Avatar({ name, url, size = 34 }: { name: string; url: string | null; si
   return <span style={{ width: size, height: size, borderRadius: "50%", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: GRADS[0], color: "#fff", fontWeight: 800, fontSize: size * 0.42 }}>{name.slice(0, 1).toUpperCase()}</span>;
 }
 
-export default function Picagram({ name, onChat }: { name: string; onChat?: (characterId: string) => void }) {
+export default function Picagram({ name, onChat, openProfile, onProfileOpened }: { name: string; onChat?: (characterId: string) => void; openProfile?: string | null; onProfileOpened?: () => void }) {
   const [posts, setPosts] = useState<Post[] | null>(null);
   const [more, setMore] = useState(true);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [composing, setComposing] = useState(false);
-  const [profile, setProfile] = useState<string | null>(null);
+  const [profile, setProfile] = useState<string | null>(openProfile || null);
+  useEffect(() => { if (openProfile) { setProfile(openProfile); onProfileOpened?.(); } }, [openProfile]); // eslint-disable-line react-hooks/exhaustive-deps
   const [savedOpen, setSavedOpen] = useState(false);
   const [followingOpen, setFollowingOpen] = useState(false);
   const [note, setNote] = useState("");

@@ -436,3 +436,32 @@ export async function picaNew(userId: string): Promise<number> {
     where p.user_id = ${userId} and u.pica_looked_at is not null and p.created_at > u.pica_looked_at and p.created_at <= now() and (p.author_id is not null or p.account_id is not null)`;
   return Number(r?.n || 0);
 }
+
+/** ✨ "Create social" under a photo a character sent of someone (not a character, not on Picagram yet):
+ *  she gets a Picagram account with that photo as her picture — then she can be befriended like any account. */
+export async function picaFromPhoto(userId: string, mediaId: string): Promise<string> {
+  const [m] = await sql()`select m.id, m.subject, m.description, m.character_id, c.name as sender from velo_media m left join chat_characters c on c.id = m.character_id
+    where m.id = ${mediaId} and m.user_id = ${userId} and m.kind = 'image' and m.status = 'done'`;
+  const name = String(m?.subject || "");
+  if (!m || !name || name === "me" || name === "none" || name.startsWith("me+")) throw new PicaLimit("That photo isn't of someone new.");
+  const [isChar] = await sql()`select 1 from chat_characters where lower(name) = lower(${name}) and (owner_id is null or owner_id = ${userId}) limit 1`;
+  if (isChar) throw new PicaLimit(`${name} is already one of your characters.`);
+  const [had] = await sql()`select id from pica_accounts where user_id = ${userId} and lower(name) = lower(${name}) limit 1`;
+  if (had) return String(had.id);
+  const raw = await writeText("", `Make a Picagram (a social photo app like Instagram) profile for this woman, from the photo of her. Fictional details are fine. JSON only: {"handle":"lowercase_handle","bio":"short bio with emojis","look":"one detailed sentence for an image generator: age, face, hair, eyes, skin, build, usual style","followers":12000}`,
+    `NAME: ${name}\nTHE PHOTO: ${String(m.description || "").slice(0, 400)}${m.sender ? `\nSENT BY: ${m.sender} (who knows her)` : ""}`, 600).catch(() => "");
+  let a: { handle?: string; bio?: string; look?: string; followers?: number } = {};
+  try { a = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); } catch { /* defaults */ }
+  const taken = new Set((await sql()`select handle from pica_accounts where user_id = ${userId}`).map(r => String(r.handle)));
+  let handle = String(a.handle || name).toLowerCase().replace(/[^a-z0-9._]/g, "").slice(0, 24) || "new_friend";
+  while (taken.has(handle) || handle.length < 2) handle = `${handle.replace(/\d+$/, "")}${rand(1, 99)}`.slice(0, 28);
+  const [{ n }] = await sql()`select count(*)::int as n from pica_accounts where user_id = ${userId} and followed`;
+  const [acc] = await sql()`insert into pica_accounts (user_id, handle, name, bio, look, followers, followed, avatar_media_id)
+    values (${userId}, ${handle}, ${scrub(name).slice(0, 60)}, ${scrub(String(a.bio || "")).slice(0, 300)}, ${scrub(String(a.look || m.description || "")).slice(0, 600)}, ${Math.max(300, Math.min(900000, Number(a.followers) || rand(800, 30000)))}, ${n < MAX_FOLLOWING}, ${m.id}) returning id`;
+  // Her first post: the photo you liked.
+  const [post] = await sql()`insert into pica_posts (user_id, account_id, kind, caption, photo, media_id, likes_target, created_at)
+    values (${userId}, ${acc.id}, 'image', '✨', ${String(m.description || "").slice(0, 600)}, ${m.id}, ${rand(80, 900)}, now() - interval '3 hours') returning id`;
+  for (const s of randomComments(String(m.description || ""), "image", rand(2, 4)))
+    await sql()`insert into pica_comments (post_id, user_id, name, text, created_at) values (${post.id}, ${userId}, ${s.name}, ${s.text}, now() - interval '2 hours')`;
+  return String(acc.id);
+}

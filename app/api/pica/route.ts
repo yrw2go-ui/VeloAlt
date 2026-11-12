@@ -3,7 +3,7 @@ import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import { sql } from "../../lib/db";
 import { MediaError, mediaReady } from "../../lib/media";
-import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSavedList, picaFollowing, picaBefriend, picaCounts, picaDeletePost, picaNew, PicaLimit } from "../../lib/picagram";
+import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSavedList, picaFollowing, picaBefriend, picaCounts, picaDeletePost, picaNew, picaFromPhoto, PicaLimit } from "../../lib/picagram";
 
 // 📸 Picagram. POST { action, ... }:
 //   feed { before? } → { posts }   (a few at a time; today's and missed days' posts are made as needed)
@@ -36,6 +36,11 @@ export async function POST(req: NextRequest) {
       }
       case "counts": return NextResponse.json({ counts: await picaCounts(me, Array.isArray(b.ids) ? b.ids.map(String) : []) });
       case "delete": return UUID.test(id) && (await picaDeletePost(me, id)) ? NextResponse.json({ ok: true }) : bad("You can only delete your own posts.");
+      case "fromPhoto": {
+        if (!UUID.test(id)) return bad("Unknown photo.");
+        if (!allow(`pica-f:${me}`, [{ ms: 60_000, max: 3 }, { ms: 86_400_000, max: 20 }])) return bad("Slow down a little — try again in a bit.", 429);
+        return NextResponse.json({ accountId: await picaFromPhoto(me, id) });
+      }
       case "new": return NextResponse.json({ n: await picaNew(me) });
       case "following": return NextResponse.json({ accounts: await picaFollowing(me) });
       case "befriend": {

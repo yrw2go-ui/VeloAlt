@@ -40,7 +40,7 @@ const SUGGESTIONS = ["Plan my day", "Remind me to call Mom tomorrow at 6pm", "I 
 /** A message to drop into one chat (a call recap): cid null = Velo's chat. */
 export type ChatAdd = { msg: ChatMsg; cid: string | null };
 
-export default function Chat({ userId, name, onChanged, added, onAdded, character, adult = false, onAdult, onHistory, onNewCharacter, others = [], onGroup }: { others?: { id: string; name: string }[]; onGroup?: (g: { id: string; title: string; member_ids: string[]; updated_at: string; in_person_place?: string | null }) => void; userId: string; name: string; onChanged: () => void; added: ChatAdd | null; onAdded?: () => void; character?: ChatWith | null; adult?: boolean; onAdult?: () => void; onHistory?: (m: { role: "user" | "assistant"; content: string }[]) => void; onNewCharacter?: (c: { id: string; name: string; portrait_url: string | null }) => void }) {
+export default function Chat({ userId, name, onChanged, added, onAdded, character, adult = false, onAdult, onHistory, onNewCharacter, others = [], onGroup, onSocial }: { onSocial?: (accountId: string) => void; others?: { id: string; name: string }[]; onGroup?: (g: { id: string; title: string; member_ids: string[]; updated_at: string; in_person_place?: string | null }) => void; userId: string; name: string; onChanged: () => void; added: ChatAdd | null; onAdded?: () => void; character?: ChatWith | null; adult?: boolean; onAdult?: () => void; onHistory?: (m: { role: "user" | "assistant"; content: string }[]) => void; onNewCharacter?: (c: { id: string; name: string; portrait_url: string | null }) => void }) {
   const cid = character?.id || null;
   const thread = cid ? { characterId: cid } : {};
   const who = character?.name || "Velo";
@@ -379,6 +379,16 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   const [selected, setSelected] = useState<Set<string> | null>(null);
   // ＋ The chat's extras (🎬 scene, 🧍 together / 👁️ ICU, 📎 attach) live in one menu, so the typing box gets the room.
   const [moreOpen, setMoreOpen] = useState(false);
+  // ✨ A photo she sent of someone new (not a character): make her a Picagram account from it.
+  const socialOk = (md?: Media) => {
+    const sub = md?.status === "done" ? String(md.subject || "") : "";
+    return !!sub && sub !== "me" && sub !== "none" && !sub.startsWith("me+") && !others.some(o => o.name.toLowerCase() === sub.toLowerCase());
+  };
+  const createSocial = async (md: Media) => {
+    setErr("");
+    try { const r = await api<{ accountId: string }>("/api/pica", { action: "fromPhoto", id: md.id }); onSocial?.(r.accountId); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't make her account."); }
+  };
   const [pickGallery, setPickGallery] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const toggleSelect = (id: string) => setSelected(sel => {
@@ -538,7 +548,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       <div data-testid="chat-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
         {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : (
           <Selectable key={m.media?.id || m.id || i} id={m.id} selecting={selected} onStart={id => setSelected(new Set([id]))} onToggle={toggleSelect}>
-            <Bubble m={m} onReactMsg={reactMsg} face={face(28)} onMedia={mediaArrived} onFailed={reload} onReact={react} who={who} onAnswer={x => setMsgs(list => (list || []).map(y => (y.media?.id === x.id ? { ...y, content: mediaNote({ ...y.media!, ...x }), media: { ...y.media!, ...x } } : y)))} />
+            <Bubble m={m} social={character && onSocial && socialOk(m.media) ? createSocial : undefined} onReactMsg={reactMsg} face={face(28)} onMedia={mediaArrived} onFailed={reload} onReact={react} who={who} onAnswer={x => setMsgs(list => (list || []).map(y => (y.media?.id === x.id ? { ...y, content: mediaNote({ ...y.media!, ...x }), media: { ...y.media!, ...x } } : y)))} />
           </Selectable>
         ))}
         {character && msgs && !msgs.length && (
@@ -639,7 +649,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   );
 }
 
-function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg }: { m: ChatMsg; face: React.ReactNode; who: string; onMedia: (x: Media) => void; onFailed?: () => void; onReact: (id: string, r: string) => void; onAnswer: (x: Media) => void; onReactMsg: (id: string, r: string) => void }) {
+function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg, social }: { social?: (md: Media) => void; m: ChatMsg; face: React.ReactNode; who: string; onMedia: (x: Media) => void; onFailed?: () => void; onReact: (id: string, r: string) => void; onAnswer: (x: Media) => void; onReactMsg: (id: string, r: string) => void }) {
   const mine = m.role === "user";
   const [picking, setPicking] = useState(false);
   // A small badge on the bubble's corner, like a text-message reaction.
@@ -672,6 +682,7 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
       <div style={{ maxWidth: "min(80%, 380px)" }}>
         <MediaView media={m.media} onReady={onMedia} onFailed={onFailed} who={who} onAnswer={x => onAnswer(x)} />
         {m.media.status === "done" && <ReactionBar value={m.media.reaction} onPick={r => onReact(m.media!.id, r)} />}
+        {social && m.media.status === "done" && <SocialButton onGo={() => social(m.media!)} />}
       </div>
     </div>
   );
@@ -870,5 +881,13 @@ function GalleryPicker({ onClose, onPick }: { onClose: () => void; onPick: (f: C
         {items && more && <button className="ghost" onClick={() => load(items.at(-1)?.at || null)}>Show more</button>}
       </div>
     </div>
+  );
+}
+
+function SocialButton({ onGo }: { onGo: () => Promise<void> | void }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <button className="ghost" data-testid="create-social" disabled={busy} onClick={async () => { setBusy(true); await onGo(); setBusy(false); }}
+      style={{ marginTop: 6, padding: "4px 12px", fontSize: 13, borderColor: "#ec4899" }}>{busy ? "✨ Making her profile…" : "✨ Create social"}</button>
   );
 }

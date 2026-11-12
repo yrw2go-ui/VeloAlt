@@ -162,6 +162,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   // 🔴 Unread counts per chat ("velo" or character id). The open chat is marked read as it updates.
   const [unread, setUnread] = useState<Record<string, number>>({});
   const [picaNew, setPicaNew] = useState(0);
+  const [picaOpen, setPicaOpen] = useState<string | null>(null); // a Picagram profile to open
   useEffect(() => {
     const key = withId || "velo";
     const tick = async () => {
@@ -309,8 +310,8 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
         {inGroup && <GroupChat key={inGroup.id} group={inGroup} chars={chars} name={name} onDeleted={id => { setGroups(gs => gs.filter(g => g.id !== id)); setGroupId(null); }} />}
         {tab === "chat" && !inGroup && !(groupId && !groupsLoaded) && <Chat key={`${withChar?.id || "velo"}-${chatTick}`} userId={userId} name={name} onChanged={bump} added={chatAdd} onAdded={() => setChatAdd(null)} character={withChar} adult={!!profile?.adultConfirmed} onAdult={() => setProfileTick(t => t + 1)} onHistory={h => { chatHistory.current = h; setHistoryCount(h.length); }}
           onNewCharacter={() => api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => setChars(r.characters)).catch(() => {})}
-          others={chars.map(c => ({ id: c.id, name: c.name }))} onGroup={g => { setGroups(gs => [g, ...gs.filter(x => x.id !== g.id)]); setGroupId(g.id); }} />}
-        {tab === "pica" && <Picagram name={name} onChat={id => api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => { setChars(r.characters); setTab("chat"); pickChat(id); }).catch(() => {})} />}
+          others={chars.map(c => ({ id: c.id, name: c.name }))} onSocial={id => { setPicaOpen(id); setTab("pica"); }} onGroup={g => { setGroups(gs => [g, ...gs.filter(x => x.id !== g.id)]); setGroupId(g.id); }} />}
+        {tab === "pica" && <Picagram name={name} openProfile={picaOpen} onProfileOpened={() => setPicaOpen(null)} onChat={id => api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => { setChars(r.characters); setTab("chat"); pickChat(id); }).catch(() => {})} />}
         {tab === "today" && <Today refresh={refresh} />}
         {tab === "memory" && <Memory refresh={refresh} />}
         {tab === "settings" && <Settings name={name} setName={setName} onOut={onOut} profile={profile} onProfile={() => setProfileTick(t => t + 1)}
