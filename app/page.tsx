@@ -289,7 +289,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   };
 
   return (
-    <div style={{ height: "100dvh", display: "flex", flexDirection: "column", maxWidth: 720, margin: "0 auto" }}>
+    <div style={{ height: "100dvh", display: "flex", flexDirection: "column", maxWidth: 1080, margin: "0 auto" }}>
       {calling && callMini && <div aria-hidden style={{ height: "calc(max(8px, env(safe-area-inset-top)) + 50px)", flexShrink: 0 }} />}
       <header className="row" style={{ padding: "max(12px, env(safe-area-inset-top)) 16px 12px", borderBottom: "1px solid var(--border)" }}>
         <VeloLogo size={40} />
