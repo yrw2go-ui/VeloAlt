@@ -634,8 +634,8 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
       <div style={{ maxWidth: "min(92%, 420px)", display: "flex", flexDirection: "column", alignItems: mine ? "flex-end" : "flex-start" }}>
       {selectMode && m.id && <input type="checkbox" checked={!!selected} onChange={() => onToggle?.(m.id!)} style={{ marginRight: 4 }} />}
       <div onClick={() => { if (!mine && m.id) setPicking(p => !p); }} data-testid={mine ? "my-bubble" : "her-bubble"}
-        style={{ position: "relative", cursor: !mine && m.id ? "pointer" : undefined, padding: "10px 14px", borderRadius: 18, borderBottomLeftRadius: mine ? 18 : 4, borderBottomRightRadius: mine ? 4 : 18,
-        background: mine ? "linear-gradient(135deg, var(--accent), var(--accent2))" : "var(--surface2)", color: "var(--text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", lineHeight: 1.5, fontSize: 19, padding: "12px 16px" }}>
+        style={{ position: "relative", cursor: !mine && m.id ? "pointer" : undefined, padding: "12px 16px", borderRadius: 18, borderBottomLeftRadius: mine ? 18 : 4, borderBottomRightRadius: mine ? 4 : 18,
+        background: mine ? "linear-gradient(135deg, var(--accent), var(--accent2))" : "var(--surface2)", color: "var(--text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", lineHeight: 1.5, fontSize: 19 }}>
         {m.file && <div style={{ marginBottom: m.content && m.content !== "📎" ? 8 : 0 }}><FileThumb f={m.file} size={180} /></div>}
         {m.content !== "📎" && styled(m.content.replace(/\*\*(.+?)\*\*/g, "$1"))}
         {!mine && /sent.*(pic|photo|image|picture)|here.*(pic|photo)|sending you a/i.test(m.content) && !m.media && (
