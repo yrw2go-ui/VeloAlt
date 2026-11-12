@@ -3,12 +3,13 @@ import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import { sql } from "../../lib/db";
 import { MediaError, mediaReady } from "../../lib/media";
-import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSavedList } from "../../lib/picagram";
+import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSavedList, picaFollowing, picaBefriend, PicaLimit } from "../../lib/picagram";
 
 // 📸 Picagram. POST { action, ... }:
 //   feed { before? } → { posts }   (a few at a time; today's and missed days' posts are made as needed)
 //   comments { id } → { comments }   like { id, on }   seen { ids }   comment { id, text } → { added }
 //   follow { id, on }   profile { id } → { account, photos }   save { id: mediaId, on }   saved { before? } → { items }   (🔖 their Picagram gallery)
+//   following → { accounts } (up to 70)   befriend { id } → { characterId }   (🤝 she becomes a character)
 //   post { caption, photo?, useMyPhotos? } → { id }   (photo: a description; Atlas makes it)
 const bad = (error: string, status = 400) => NextResponse.json({ error }, { status });
 const UUID = /^[0-9a-f-]{36}$/i;
@@ -33,6 +34,12 @@ export async function POST(req: NextRequest) {
         }
         return NextResponse.json({ posts: await picaFeed(me, before, 6) });
       }
+      case "following": return NextResponse.json({ accounts: await picaFollowing(me) });
+      case "befriend": {
+        if (!UUID.test(id)) return bad("Unknown account.");
+        if (!allow(`pica-f:${me}`, [{ ms: 60_000, max: 3 }, { ms: 86_400_000, max: 20 }])) return bad("Slow down a little — try again in a bit.", 429);
+        return NextResponse.json({ characterId: await picaBefriend(me, id) });
+      }
       case "follow": return UUID.test(id) && (await picaFollow(me, id, b.on === true)) ? NextResponse.json({ ok: true }) : bad("Unknown account.");
       case "profile": { const p = UUID.test(id) ? await picaProfile(me, id) : null; return p ? NextResponse.json(p) : bad("Unknown account."); }
       case "save": return UUID.test(id) && (await picaSave(me, id, b.on === true)) ? NextResponse.json({ ok: true }) : bad("Unknown picture.");
@@ -53,6 +60,7 @@ export async function POST(req: NextRequest) {
       default: return bad("Unknown action.");
     }
   } catch (e) {
+    if (e instanceof PicaLimit) return bad(e.message);
     if (e instanceof MediaError) return bad(e.message.replace(/ Tell them.*$/, ""));
     console.error("pica", e instanceof Error ? e.message : e);
     return bad("Something went wrong.", 500);

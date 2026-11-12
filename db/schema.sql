@@ -619,3 +619,4 @@ create table if not exists pica_saved (
   created_at timestamptz not null default now(),
   primary key (user_id, media_id)
 );
+alter table pica_accounts add column if not exists character_id uuid references chat_characters(id) on delete set null;

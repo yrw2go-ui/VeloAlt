@@ -21,7 +21,7 @@ function Avatar({ name, url, size = 34 }: { name: string; url: string | null; si
   return <span style={{ width: size, height: size, borderRadius: "50%", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: GRADS[0], color: "#fff", fontWeight: 800, fontSize: size * 0.42 }}>{name.slice(0, 1).toUpperCase()}</span>;
 }
 
-export default function Picagram({ name }: { name: string }) {
+export default function Picagram({ name, onChat }: { name: string; onChat?: (characterId: string) => void }) {
   const [posts, setPosts] = useState<Post[] | null>(null);
   const [more, setMore] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -29,6 +29,9 @@ export default function Picagram({ name }: { name: string }) {
   const [composing, setComposing] = useState(false);
   const [profile, setProfile] = useState<string | null>(null);
   const [savedOpen, setSavedOpen] = useState(false);
+  const [followingOpen, setFollowingOpen] = useState(false);
+  const [note, setNote] = useState("");
+  const setFollowed = (acc: string, on: boolean) => setPosts(ps => (ps || []).map(x => (x.author.account?.id === acc ? { ...x, author: { ...x.author, account: { ...x.author.account!, followed: on } } } : x)));
   const sentinel = useRef<HTMLDivElement>(null);
   const loadingRef = useRef(false);
 
@@ -77,25 +80,27 @@ export default function Picagram({ name }: { name: string }) {
     <div data-testid="picagram" style={{ maxWidth: 560, width: "100%", margin: "0 auto", display: "flex", flexDirection: "column" }}>
       <div className="row" style={{ padding: "10px 14px", position: "sticky", top: 0, zIndex: 5, background: "var(--bg)", borderBottom: "1px solid var(--border)", gap: 8 }}>
         <div style={{ flex: 1, fontSize: 24, fontWeight: 900, fontStyle: "italic", letterSpacing: -0.5, background: "linear-gradient(90deg,#f59e0b,#ec4899,#8b5cf6)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>Picagram</div>
+        <button className="ghost" onClick={() => setFollowingOpen(true)} aria-label="Following" data-testid="pica-following-open" style={{ padding: "6px 10px" }}>👥</button>
         <button className="ghost" onClick={() => setSavedOpen(true)} aria-label="Saved pictures" data-testid="pica-saved-open" style={{ padding: "6px 10px" }}>🔖</button>
         <button className="ghost" onClick={() => load(true)} disabled={loading} aria-label="Refresh" style={{ padding: "6px 10px" }}>↻</button>
         <button className="btn" onClick={() => setComposing(true)} data-testid="pica-new" style={{ padding: "8px 14px" }}>＋ Post</button>
       </div>
       {posts && !posts.length && !loading && <div className="muted" style={{ textAlign: "center", padding: 32 }}>No posts yet — check back soon 📸</div>}
-      {(posts || []).map(p => <PostCard key={p.id} p={p} me={name} obs={seenObs.current} onChange={f => update(p.id, f)} onProfile={setProfile}
-        onFollow={(acc, on) => setPosts(ps => (ps || []).map(x => (x.author.account?.id === acc ? { ...x, author: { ...x.author, account: { ...x.author.account!, followed: on } } } : x)))} />)}
+      {note && <div data-testid="pica-note" onClick={() => setNote("")} style={{ margin: "8px 14px", padding: "10px 12px", borderRadius: 12, background: "rgba(245,158,11,.15)", border: "1px solid rgba(245,158,11,.4)", fontSize: 13 }}>⚠️ {note}</div>}
+      {(posts || []).map(p => <PostCard key={p.id} p={p} me={name} obs={seenObs.current} onChange={f => update(p.id, f)} onProfile={setProfile} onFollow={setFollowed} onNote={setNote} />)}
       <div ref={sentinel} style={{ height: 1 }} />
       {loading && <div className="muted" style={{ textAlign: "center", padding: 18 }} data-testid="pica-loading">Loading…</div>}
       {!more && posts && posts.length > 0 && <div className="muted" style={{ textAlign: "center", padding: 18, fontSize: 13 }}>You&apos;re all caught up ✨</div>}
       {err && <div style={{ color: "var(--bad)", padding: 14 }}>⚠️ {err}</div>}
-      {profile && <Profile id={profile} onClose={() => setProfile(null)} onFollow={(acc, on) => setPosts(ps => (ps || []).map(x => (x.author.account?.id === acc ? { ...x, author: { ...x.author, account: { ...x.author.account!, followed: on } } } : x)))} />}
+      {profile && <Profile id={profile} onClose={() => setProfile(null)} onFollow={setFollowed} onChat={onChat} />}
+      {followingOpen && <Following onClose={() => setFollowingOpen(false)} onUnfollow={acc => setFollowed(acc, false)} onOpen={id => { setFollowingOpen(false); setProfile(id); }} />}
       {savedOpen && <Saved onClose={() => setSavedOpen(false)} />}
       {composing && <Composer onClose={() => setComposing(false)} onPosted={() => { setComposing(false); load(true); }} />}
     </div>
   );
 }
 
-function PostCard({ p, me, obs, onChange, onProfile, onFollow }: { p: Post; me: string; obs: IntersectionObserver | null; onChange: (f: (p: Post) => Post) => void; onProfile: (id: string) => void; onFollow: (account: string, on: boolean) => void }) {
+function PostCard({ p, me, obs, onChange, onProfile, onFollow, onNote }: { p: Post; me: string; obs: IntersectionObserver | null; onChange: (f: (p: Post) => Post) => void; onProfile: (id: string) => void; onFollow: (account: string, on: boolean) => void; onNote: (t: string) => void }) {
   const ref = useRef<HTMLElement>(null);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -125,7 +130,7 @@ function PostCard({ p, me, obs, onChange, onProfile, onFollow }: { p: Post; me: 
   };
   const list = open && p.all ? p.all : p.preview;
   const acc = p.author.account;
-  const follow = async () => { if (!acc) return; const on = !acc.followed; onFollow(acc.id, on); await api("/api/pica", { action: "follow", id: acc.id, on }).catch(() => onFollow(acc.id, !on)); };
+  const follow = async () => { if (!acc) return; const on = !acc.followed; onFollow(acc.id, on); await api("/api/pica", { action: "follow", id: acc.id, on }).catch(e => { onFollow(acc.id, !on); onNote(e instanceof Error ? e.message : "Couldn't follow."); }); };
   const save = async () => { if (!p.media) return; const on = !p.saved; onChange(x => ({ ...x, saved: on })); await api("/api/pica", { action: "save", id: p.media.id, on }).catch(() => onChange(x => ({ ...x, saved: !on }))); };
   const likedBy = p.liked_by.filter(Boolean);
   return (
@@ -229,15 +234,24 @@ function Grid({ photos, onOpen }: { photos: Photo[]; onOpen: (p: Photo) => void 
 }
 
 /** 👤 Her profile: bio, followers, Follow, and all her photos. */
-function Profile({ id, onClose, onFollow }: { id: string; onClose: () => void; onFollow: (account: string, on: boolean) => void }) {
-  const [data, setData] = useState<{ account: { id: string; handle: string; name: string; bio: string; followers: number; followed: boolean; avatar: string | null }; photos: Photo[] } | null>(null);
+function Profile({ id, onClose, onFollow, onChat }: { id: string; onClose: () => void; onFollow: (account: string, on: boolean) => void; onChat?: (characterId: string) => void }) {
+  const [data, setData] = useState<{ account: { id: string; handle: string; name: string; bio: string; followers: number; followed: boolean; avatar: string | null; character_id: string | null }; photos: Photo[] } | null>(null);
+  const [err, setErr] = useState("");
+  const [befriending, setBefriending] = useState(false);
+  // 🤝 She becomes a character (filled in from her profile; her photos are her headshot and references).
+  const befriend = async () => {
+    setBefriending(true); setErr("");
+    try { const r = await api<{ characterId: string }>("/api/pica", { action: "befriend", id }); setData(d => (d ? { ...d, account: { ...d.account, character_id: r.characterId, followed: true } } : d)); onFollow(id, true); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't befriend her."); }
+    setBefriending(false);
+  };
   const [view, setView] = useState<Photo | null>(null);
   useEffect(() => { api<NonNullable<typeof data>>("/api/pica", { action: "profile", id }).then(setData).catch(() => onClose()); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
   const follow = async () => {
     if (!data) return;
     const on = !data.account.followed;
     setData(d => (d ? { ...d, account: { ...d.account, followed: on, followers: d.account.followers + (on ? 1 : -1) } } : d)); onFollow(id, on);
-    await api("/api/pica", { action: "follow", id, on }).catch(() => {});
+    await api("/api/pica", { action: "follow", id, on }).catch(e => { setData(d => (d ? { ...d, account: { ...d.account, followed: !on, followers: d.account.followers + (on ? -1 : 1) } } : d)); onFollow(id, !on); setErr(e instanceof Error ? e.message : "Couldn't follow."); });
   };
   return (
     <div role="dialog" aria-modal="true" data-testid="pica-profile" style={{ position: "fixed", inset: 0, background: "var(--bg)", zIndex: 2600, overflowY: "auto" }}>
@@ -255,7 +269,14 @@ function Profile({ id, onClose, onFollow }: { id: string; onClose: () => void; o
               <div style={{ fontSize: 13, marginTop: 4, whiteSpace: "pre-wrap" }}>{data.account.bio}</div>
             </div>
           </div>
-          <div style={{ padding: "0 16px 12px" }}><button className={data.account.followed ? "ghost" : "btn"} onClick={follow} data-testid="pica-profile-follow" style={{ width: "100%" }}>{data.account.followed ? "Following" : "Follow"}</button></div>
+          <div className="row" style={{ padding: "0 16px 12px", gap: 8 }}>
+            <button className={data.account.followed ? "ghost" : "btn"} onClick={follow} data-testid="pica-profile-follow" style={{ flex: 1 }}>{data.account.followed ? "Following" : "Follow"}</button>
+            {data.account.character_id
+              ? <button className="btn" onClick={() => onChat?.(data.account.character_id!)} data-testid="pica-chat" style={{ flex: 1 }}>💬 Chat</button>
+              : <button className="ghost" onClick={befriend} disabled={befriending} data-testid="pica-befriend" style={{ flex: 1 }}>{befriending ? "Making her profile…" : "🤝 Befriend"}</button>}
+          </div>
+          {data.account.character_id && <div className="muted" style={{ padding: "0 16px 10px", fontSize: 12 }}>🤝 You&apos;re friends — she&apos;s one of your characters now (edit her in her character card).</div>}
+          {err && <div style={{ color: "var(--bad)", padding: "0 16px 10px", fontSize: 13 }}>⚠️ {err}</div>}
           <Grid photos={data.photos} onOpen={setView} />
           {!data.photos.length && <div className="muted" style={{ textAlign: "center", padding: 24 }}>No photos yet</div>}
         </div>
@@ -281,6 +302,37 @@ function Saved({ onClose }: { onClose: () => void }) {
         {items && <Grid photos={items} onOpen={setView} />}
       </div>
       {view && <Viewer photo={view} onClose={() => setView(null)} onSaved={on => { if (!on) setItems(l => (l || []).filter(x => x.media_id !== view.media_id)); }} />}
+    </div>
+  );
+}
+
+/** 👥 Who you follow (up to 70) — unfollow some to make room for new ones. */
+function Following({ onClose, onUnfollow, onOpen }: { onClose: () => void; onUnfollow: (id: string) => void; onOpen: (id: string) => void }) {
+  const [list, setList] = useState<{ id: string; handle: string; name: string; avatar: string | null; friend: boolean }[] | null>(null);
+  useEffect(() => { api<{ accounts: NonNullable<typeof list> }>("/api/pica", { action: "following" }).then(r => setList(r.accounts)).catch(() => setList([])); }, []);
+  const unfollow = async (id: string) => {
+    setList(l => (l || []).filter(x => x.id !== id)); onUnfollow(id);
+    await api("/api/pica", { action: "follow", id, on: false }).catch(() => {});
+  };
+  return (
+    <div role="dialog" aria-modal="true" data-testid="pica-following" style={{ position: "fixed", inset: 0, background: "var(--bg)", zIndex: 2600, overflowY: "auto" }}>
+      <div className="row" style={{ padding: "10px 14px", gap: 8, position: "sticky", top: 0, background: "var(--bg)", borderBottom: "1px solid var(--border)" }}>
+        <button className="ghost" onClick={onClose} aria-label="Back" style={{ padding: "4px 10px" }}>←</button>
+        <b style={{ flex: 1 }}>👥 Following {list ? `(${list.length}/70)` : ""}</b>
+      </div>
+      <div style={{ maxWidth: 560, margin: "0 auto" }}>
+        {list && !list.length && <div className="muted" style={{ textAlign: "center", padding: 24 }}>You&apos;re not following anyone yet</div>}
+        {(list || []).map(a => (
+          <div key={a.id} className="row" data-testid="pica-following-row" style={{ gap: 10, padding: "10px 14px", borderBottom: "1px solid var(--border)" }}>
+            <span onClick={() => onOpen(a.id)} style={{ cursor: "pointer", display: "flex" }}><Avatar name={a.name} url={a.avatar} size={40} /></span>
+            <div style={{ flex: 1, minWidth: 0, cursor: "pointer" }} onClick={() => onOpen(a.id)}>
+              <div style={{ fontWeight: 800, fontSize: 14 }}>{a.handle}{a.friend ? " 🤝" : ""}</div>
+              <div className="muted" style={{ fontSize: 12 }}>{a.name}</div>
+            </div>
+            <button className="ghost" onClick={() => unfollow(a.id)} data-testid="pica-unfollow" style={{ padding: "4px 12px", fontSize: 13 }}>Unfollow</button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
