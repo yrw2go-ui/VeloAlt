@@ -263,7 +263,7 @@ function GroupPeekSheet({ group, members, name, onClose, onMade }: { group: Grou
     catch (e) { setErr(e instanceof Error ? e.message : "Couldn't peek right now."); }
     setLoading(false);
   };
-  useEffect(() => { draft(members.map(c => c.id)); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Start blank — rewrite generates the prompt.
   const toggle = (id: string) => setIds(p => (p.includes(id) ? p.filter(x => x !== id) : [...p, id]));
   const stale = !!desc && forIds !== ids.join();
   const go = async () => {
