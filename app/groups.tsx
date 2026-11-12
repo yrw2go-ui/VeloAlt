@@ -135,38 +135,38 @@ export function GroupChat({ group: initial, chars, name, onDeleted }: { group: G
         <button className="ghost" onClick={remove} aria-label="Delete group" data-testid="group-delete" style={{ padding: "4px 10px", color: "var(--bad)" }}>🗑</button>
       </div>
       {group.scene_title && (
-        <div data-testid="group-scene-banner" className="row" style={{ padding: "6px 12px", gap: 8, background: "rgba(124,140,255,0.12)", borderBottom: "1px solid var(--border)", fontSize: 13 }}>
+        <div data-testid="group-scene-banner" className="row" style={{ padding: "6px 12px", gap: 8, background: "rgba(124,140,255,0.12)", borderBottom: "1px solid var(--border)", fontSize: 15 }}>
           <span style={{ flex: 1 }}>🎬 <b>{group.scene_title}</b> <span className="muted">· say *peek* to see the moment</span></span>
-          <button className="ghost" onClick={endScene} data-testid="group-scene-end" style={{ padding: "2px 10px", fontSize: 12 }}>End</button>
+          <button className="ghost" onClick={endScene} data-testid="group-scene-end" style={{ padding: "2px 10px", fontSize: 14 }}>End</button>
         </div>
       )}
       {!group.scene_title && group.in_person_place != null && (
-        <div data-testid="group-inperson-banner" className="row" style={{ padding: "6px 12px", gap: 8, background: "linear-gradient(90deg, rgba(16,185,129,.16), rgba(124,140,255,.12))", borderBottom: "1px solid var(--border)", fontSize: 13 }}>
+        <div data-testid="group-inperson-banner" className="row" style={{ padding: "6px 12px", gap: 8, background: "linear-gradient(90deg, rgba(16,185,129,.16), rgba(124,140,255,.12))", borderBottom: "1px solid var(--border)", fontSize: 15 }}>
           <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>🧍 <b>Together in person</b>{group.in_person_place ? <span className="muted"> · {group.in_person_place}</span> : null}</span>
           <button type="button" className="ghost" onClick={() => setPeek(true)} aria-label="ICU" data-testid="group-icu-open" style={{ padding: "2px 10px", fontSize: 14 }}>👁️</button>
-          <button className="ghost" onClick={endTogether} data-testid="group-inperson-end" style={{ padding: "2px 10px", fontSize: 12 }}>Leave</button>
+          <button className="ghost" onClick={endTogether} data-testid="group-inperson-end" style={{ padding: "2px 10px", fontSize: 14 }}>Leave</button>
         </div>
       )}
-      <div ref={log} data-testid="group-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
-        {msgs && !msgs.length && <div className="muted" style={{ textAlign: "center", fontSize: 14, marginTop: 24 }}>Say hi to everyone 👋<br /><span style={{ fontSize: 12 }}>Mention someone by name to hear from her, or say &quot;you guys&quot; for everyone.</span></div>}
+      <div ref={log} data-testid="group-log" style={{ flex: 1, overflowY: "auto", padding: "12px 8px", display: "flex", flexDirection: "column", gap: 12 }}>
+        {msgs && !msgs.length && <div className="muted" style={{ textAlign: "center", fontSize: 14, marginTop: 24 }}>Say hi to everyone 👋<br /><span style={{ fontSize: 14 }}>Mention someone by name to hear from her, or say &quot;you guys&quot; for everyone.</span></div>}
         {(msgs || []).map(m => {
           const c = m.speaker_id ? byId.get(m.speaker_id) : null;
           if (m.peek && m.media) return (
-            <div key={m.id} data-testid="group-peek-media" style={{ alignSelf: "center", maxWidth: "85%", display: "flex", flexDirection: "column", gap: 4 }}>
+            <div key={m.id} data-testid="group-peek-media" style={{ alignSelf: "center", maxWidth: "min(92%, 420px)", display: "flex", flexDirection: "column", gap: 4 }}>
               <MediaView media={m.media} who={group.title} />
               <div className="muted" style={{ fontSize: 11, textAlign: "center" }}>👀 Peek · they don&apos;t know</div>
             </div>
           );
-          if (m.peek) return <div key={m.id} className="muted" style={{ alignSelf: "flex-end", fontSize: 12, padding: "4px 10px", borderRadius: 999, border: "1px dashed var(--border)" }}>👀 you peeked</div>;
-          if (!m.speaker_id && (m.content.startsWith("🎬") || m.content.startsWith("🧍"))) return <div key={m.id} data-testid="group-scene-note" className="muted" style={{ alignSelf: "center", maxWidth: "90%", textAlign: "center", fontSize: 12, padding: "6px 12px", borderRadius: 999, background: "var(--surface2)", border: "1px solid var(--border)" }}>{typeof m.content === "string" ? m.content : ""}</div>;
+          if (m.peek) return <div key={m.id} className="muted" style={{ alignSelf: "flex-end", fontSize: 14, padding: "4px 10px", borderRadius: 999, border: "1px dashed var(--border)" }}>👀 you peeked</div>;
+          if (!m.speaker_id && (m.content.startsWith("🎬") || m.content.startsWith("🧍"))) return <div key={m.id} data-testid="group-scene-note" className="muted" style={{ alignSelf: "center", maxWidth: "90%", textAlign: "center", fontSize: 14, padding: "6px 12px", borderRadius: 999, background: "var(--surface2)", border: "1px solid var(--border)" }}>{typeof m.content === "string" ? m.content : ""}</div>;
           if (!m.speaker_id) return (
-            <div key={m.id} style={{ alignSelf: "flex-end", maxWidth: "80%", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+            <div key={m.id} style={{ alignSelf: "flex-end", maxWidth: "min(92%, 420px)", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
               {m.private_to && <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)" }}>Private · @{byId.get(m.private_to)?.name || "someone"}</div>}
-              <div style={{ padding: "10px 14px", borderRadius: 18, background: m.private_to ? "var(--surface)" : "linear-gradient(135deg, var(--accent), var(--accent2))", border: m.private_to ? "1.5px dashed var(--accent)" : undefined, whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 15, opacity: m.pending ? 0.75 : 1 }}>{typeof m.content === "string" ? m.content : ""}</div>
+              <div style={{ padding: "12px 16px", borderRadius: 18, background: m.private_to ? "var(--surface)" : "linear-gradient(135deg, var(--accent), var(--accent2))", border: m.private_to ? "1.5px dashed var(--accent)" : undefined, whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 19, opacity: m.pending ? 0.75 : 1 }}>{typeof m.content === "string" ? m.content : ""}</div>
               {(() => { const tr = typeof m.their_reactions === "string" ? JSON.parse(m.their_reactions) : (m.their_reactions || {}); return Object.keys(tr).length > 0 && (
                 <div data-testid="group-their-reactions" style={{ display: "flex", gap: 4 }}>
                   {Object.entries(tr).map(([id, e]) => (
-                    <span key={id} title={`${byId.get(id)?.name || "Someone"} reacted`} style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 13, padding: "2px 6px", borderRadius: 999, background: "var(--surface)", border: "1px solid var(--border)" }}>
+                    <span key={id} title={`${byId.get(id)?.name || "Someone"} reacted`} style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 15, padding: "2px 6px", borderRadius: 999, background: "var(--surface)", border: "1px solid var(--border)" }}>
                       {typeof e === "string" ? e : ""}{byId.get(id) && <CharacterFace c={byId.get(id)!} size={14} />}
                     </span>
                   ))}
@@ -175,26 +175,26 @@ export function GroupChat({ group: initial, chars, name, onDeleted }: { group: G
             </div>
           );
           return (
-            <div key={m.id} data-testid="group-reply" className="row" style={{ alignItems: "flex-end", gap: 8, maxWidth: "85%" }}>
+            <div key={m.id} data-testid="group-reply" className="row" style={{ alignItems: "flex-end", gap: 8, maxWidth: "min(92%, 420px)" }}>
               {c ? <CharacterFace c={c} size={28} /> : <span style={{ width: 28 }} />}
               <div>
                 <div className="muted" style={{ fontSize: 11, fontWeight: 700, margin: "0 0 2px 6px" }}>{c?.name || "Someone"}{m.private_to ? <span> · Private, to you</span> : null}</div>
-                <div onClick={() => setPicking(p => (p === m.id ? null : m.id))} style={{ position: "relative", cursor: "pointer", padding: "10px 14px", borderRadius: 18, background: "var(--surface2)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 15, lineHeight: 1.45 }}>
+                <div onClick={() => setPicking(p => (p === m.id ? null : m.id))} style={{ position: "relative", cursor: "pointer", padding: "12px 16px", borderRadius: 18, background: "var(--surface2)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 19, lineHeight: 1.45 }}>
                   {typeof m.content === "string" ? m.content : ""}
-                  {typeof m.reaction === "string" && m.reaction && <span data-testid="group-reaction" style={{ position: "absolute", bottom: -12, right: -6, fontSize: 15, lineHeight: 1, padding: "3px 5px", borderRadius: 999, background: "var(--surface)", border: "1px solid var(--border)" }}>{m.reaction}</span>}
+                  {typeof m.reaction === "string" && m.reaction && <span data-testid="group-reaction" style={{ position: "absolute", bottom: -12, right: -6, fontSize: 19, lineHeight: 1, padding: "3px 5px", borderRadius: 999, background: "var(--surface)", border: "1px solid var(--border)" }}>{m.reaction}</span>}
                 </div>
                 {picking === m.id && <ReactionBar value={m.reaction} onPick={r => react(m.id, r)} />}
               </div>
             </div>
           );
         })}
-        {(busy || chatting) && <div className="muted" style={{ fontSize: 14 }} data-testid={chatting && !busy ? "group-banter-typing" : undefined}>💬 typing…{chatting && !busy ? <span style={{ fontSize: 12 }}> (they&apos;re chatting — jump in anytime)</span> : null}</div>}
+        {(busy || chatting) && <div className="muted" style={{ fontSize: 14 }} data-testid={chatting && !busy ? "group-banter-typing" : undefined}>💬 typing…{chatting && !busy ? <span style={{ fontSize: 14 }}> (they&apos;re chatting — jump in anytime)</span> : null}</div>}
         {err && <div style={{ color: "var(--bad)", fontSize: 14 }}>⚠️ {err}</div>}
       </div>
       <div style={{ display: "flex", gap: 6, padding: "6px 12px 0", flexWrap: "wrap" }}>
         {members.map(c => (
           <button key={c.id} type="button" onClick={() => setText(t => t.startsWith(`@${c.name}`) ? t : `@${c.name} `)}
-            style={{ fontSize: 13, padding: "5px 12px", borderRadius: 999, border: "1px solid var(--accent)", background: "var(--surface2)", color: "var(--text)", fontWeight: 600, cursor: "pointer" }}>
+            style={{ fontSize: 15, padding: "5px 12px", borderRadius: 999, border: "1px solid var(--accent)", background: "var(--surface2)", color: "var(--text)", fontWeight: 600, cursor: "pointer" }}>
             @{c.name.split(" ")[0]}
           </button>
         ))}
@@ -228,21 +228,21 @@ export function GroupMaker({ chars, name, onClose, onMade }: { chars: Character[
     <div role="dialog" aria-modal="true" data-testid="group-maker" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }} onClick={onClose}>
       <div className="card" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, maxHeight: "85vh", overflowY: "auto", borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 10 }}>
         <div className="row" style={{ justifyContent: "space-between" }}>
-          <div style={{ fontWeight: 800, fontSize: 17 }}>👥 New group chat</div>
+          <div style={{ fontWeight: 800, fontSize: 19 }}>👥 New group chat</div>
           <button className="ghost" onClick={onClose} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
         </div>
-        <div className="muted" style={{ fontSize: 12 }}>Pick 2–6 characters. Anyone who doesn&apos;t know each other yet meets here and starts as an acquaintance; the more you all chat, the closer they get.</div>
+        <div className="muted" style={{ fontSize: 14 }}>Pick 2–6 characters. Anyone who doesn&apos;t know each other yet meets here and starts as an acquaintance; the more you all chat, the closer they get.</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           {chars.map(c => (
             <button key={c.id} type="button" onClick={() => toggle(c.id)} aria-pressed={pick.includes(c.id)} data-testid={`group-pick-${c.name}`}
-              style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px 4px 4px", borderRadius: 999, cursor: "pointer", fontSize: 13, fontWeight: 700, color: "var(--text)",
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px 4px 4px", borderRadius: 999, cursor: "pointer", fontSize: 15, fontWeight: 700, color: "var(--text)",
                 border: `1px solid ${pick.includes(c.id) ? "var(--accent)" : "var(--border)"}`, background: pick.includes(c.id) ? "rgba(124,140,255,0.15)" : "var(--surface2)" }}>
               <CharacterFace c={c} size={26} /> {c.name}{pick.includes(c.id) ? " ✓" : ""}
             </button>
           ))}
         </div>
         <input value={title} onChange={e => setTitle(e.target.value)} maxLength={60} placeholder="Group name (optional)" aria-label="Group name" />
-        {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
+        {err && <div style={{ color: "var(--bad)", fontSize: 15 }}>⚠️ {err}</div>}
         <button className="btn" disabled={pick.length < 2 || busy} onClick={make} data-testid="group-create">{busy ? "Introducing everyone…" : `Start group${pick.length ? ` (${pick.length})` : ""}`}</button>
       </div>
     </div>
@@ -275,14 +275,14 @@ function GroupPeekSheet({ group, members, name, onClose, onMade }: { group: Grou
     <div role="dialog" aria-modal="true" data-testid="group-peek-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }} onClick={onClose}>
       <div className="card" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 10 }}>
         <div className="row" style={{ justifyContent: "space-between" }}>
-          <div style={{ fontWeight: 800, fontSize: 17 }}>👀 Peek</div>
+          <div style={{ fontWeight: 800, fontSize: 19 }}>👀 Peek</div>
           <button className="ghost" onClick={onClose} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
         </div>
-        <div className="muted" style={{ fontSize: 12 }}>Who&apos;s in the picture? Then fix anything that&apos;s off in the description. Nobody knows you peeked.</div>
+        <div className="muted" style={{ fontSize: 14 }}>Who&apos;s in the picture? Then fix anything that&apos;s off in the description. Nobody knows you peeked.</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           {members.map(c => (
             <button key={c.id} type="button" onClick={() => toggle(c.id)} aria-pressed={ids.includes(c.id)} data-testid={`peek-who-${c.name}`}
-              style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px 4px 4px", borderRadius: 999, cursor: "pointer", fontSize: 13, fontWeight: 700, color: "var(--text)",
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px 4px 4px", borderRadius: 999, cursor: "pointer", fontSize: 15, fontWeight: 700, color: "var(--text)",
                 border: `1px solid ${ids.includes(c.id) ? "var(--accent)" : "var(--border)"}`, background: ids.includes(c.id) ? "rgba(124,140,255,0.15)" : "var(--surface2)" }}>
               <CharacterFace c={c} size={24} /> {c.name}{ids.includes(c.id) ? " ✓" : ""}
             </button>
@@ -291,7 +291,7 @@ function GroupPeekSheet({ group, members, name, onClose, onMade }: { group: Grou
         <textarea value={desc} onChange={e => setDesc(e.target.value)} maxLength={1500} rows={5} aria-label="Peek description" disabled={loading && !desc}
           placeholder={loading ? "Writing what you'd see…" : "What you see right now"} style={{ resize: "vertical" }} />
         {stale && <button className="ghost" onClick={() => draft(ids)} disabled={loading || !ids.length} data-testid="peek-rewrite">✍️ Rewrite for {members.filter(c => ids.includes(c.id)).map(c => c.name).join(" & ") || "…"}</button>}
-        {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
+        {err && <div style={{ color: "var(--bad)", fontSize: 15 }}>⚠️ {err}</div>}
         <button className="btn" onClick={go} disabled={loading || !ids.length || desc.trim().length < 10} data-testid="peek-go">{loading ? "…" : "👀 Peek"}</button>
       </div>
     </div>

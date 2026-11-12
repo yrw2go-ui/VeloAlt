@@ -37,7 +37,7 @@ class GroupErrorBoundary extends React.Component<{ children: React.ReactNode; on
     if (this.state.err) return (
       <div style={{ padding: 24, textAlign: "center" }}>
         <div style={{ fontWeight: 800, marginBottom: 8 }}>This group could not load.</div>
-        <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>{this.state.msg}</div>
+        <div className="muted" style={{ fontSize: 14, marginBottom: 12 }}>{this.state.msg}</div>
         <button className="btn" onClick={() => { this.setState({ err: false, msg: "" }); this.props.onReset(); }}>Back to chat</button>
       </div>
     );
@@ -295,12 +295,12 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
         <VeloLogo size={40} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 800, fontSize: 18 }}>Velo 2</div>
-          <div className="muted" style={{ fontSize: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name ? `Here for you, ${name.split(" ")[0]}` : "Your assistant & companion"}</div>
+          <div className="muted" style={{ fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name ? `Here for you, ${name.split(" ")[0]}` : "Your assistant & companion"}</div>
         </div>
         {canCallVelo() && !calling && tab === "chat" && !inGroup && (
           <button className="ghost" onClick={continueCall} disabled={continuing || historyCount < CONTINUE_MIN} data-testid="continue-call"
             title={historyCount < CONTINUE_MIN ? `Chat a little more first (${historyCount}/${CONTINUE_MIN} messages)` : "Call and pick up where the chat left off"}
-            aria-label={`Continue the chat in a call with ${withChar ? withChar.name : "Velo"}`} style={{ borderRadius: 999, padding: "6px 9px", fontSize: 12, lineHeight: 1.1, whiteSpace: "nowrap", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
+            aria-label={`Continue the chat in a call with ${withChar ? withChar.name : "Velo"}`} style={{ borderRadius: 999, padding: "6px 9px", fontSize: 14, lineHeight: 1.1, whiteSpace: "nowrap", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
             {continuing ? "…" : <><span style={{ fontSize: 15 }}>📞↩</span><span>Continue</span></>}</button>
         )}
         {canCallVelo() && !calling && !inGroup && <button className="btn" onClick={startCall} aria-label={`Call ${tab === "chat" && withChar ? withChar.name : "Velo"}`} data-testid="call-velo" style={{ borderRadius: 999, padding: "10px 16px" }}>📞 Call</button>}
@@ -312,7 +312,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
           {due.map(r => (
             <div key={r.id} className="card row" style={{ padding: 12, borderColor: "var(--accent)" }}>
               <span style={{ fontSize: 22 }}>⏰</span>
-              <div style={{ flex: 1 }}><div className="muted" style={{ fontSize: 12 }}>Reminder</div><div style={{ fontWeight: 700 }}>{r.text}</div></div>
+              <div style={{ flex: 1 }}><div className="muted" style={{ fontSize: 14 }}>Reminder</div><div style={{ fontWeight: 700 }}>{r.text}</div></div>
               <button className="btn" onClick={() => doneDue(r.id)} style={{ padding: "8px 14px" }}>Done</button>
             </div>
           ))}
@@ -335,7 +335,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       <nav style={{ display: "flex", borderTop: "1px solid var(--border)", paddingBottom: "env(safe-area-inset-bottom)", background: "var(--surface)" }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} aria-current={tab === t.id ? "page" : undefined}
-            style={{ flex: 1, background: "none", border: "none", padding: "10px 0 12px", color: tab === t.id ? "var(--accent)" : "var(--muted)", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, fontSize: 12, fontWeight: 700 }}>
+            style={{ flex: 1, background: "none", border: "none", padding: "10px 0 12px", color: tab === t.id ? "var(--accent)" : "var(--muted)", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, fontSize: 14, fontWeight: 700 }}>
             <span style={{ fontSize: 20 }}>{t.icon}</span>{t.label}
           </button>
         ))}

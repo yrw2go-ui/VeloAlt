@@ -428,14 +428,14 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       {character?.romantic && !adult && !skipRomance && (
-        <div data-testid="romance-confirm" className="row" style={{ gap: 10, padding: "10px 14px", borderBottom: "1px solid var(--border)", background: "rgba(236,72,153,0.10)", fontSize: 13, flexWrap: "wrap" }}>
+        <div data-testid="romance-confirm" className="row" style={{ gap: 10, padding: "10px 14px", borderBottom: "1px solid var(--border)", background: "rgba(236,72,153,0.10)", fontSize: 15, flexWrap: "wrap" }}>
           <div style={{ flex: "1 1 200px" }}>💕 {character.name} is a romantic character. Confirm you&apos;re 18+ to unlock romance (PG-13) — until then {character.name} keeps it friendly.</div>
-          <button className="btn" onClick={confirmAdult} style={{ padding: "6px 12px", fontSize: 13 }}>I&apos;m 18+</button>
-          <button className="ghost" onClick={() => setSkipRomance(true)} aria-label="Keep it friendly" style={{ padding: "6px 10px", fontSize: 13 }}>Not now</button>
+          <button className="btn" onClick={confirmAdult} style={{ padding: "6px 12px", fontSize: 15 }}>I&apos;m 18+</button>
+          <button className="ghost" onClick={() => setSkipRomance(true)} aria-label="Keep it friendly" style={{ padding: "6px 10px", fontSize: 15 }}>Not now</button>
         </div>
       )}
       {character && trust !== null && (
-        <div data-testid="trust-meter" title="How much she trusts you — it grows with honesty and consistency" className="row" style={{ gap: 8, padding: "6px 14px", borderBottom: "1px solid var(--border)", fontSize: 12 }}>
+        <div data-testid="trust-meter" title="How much she trusts you — it grows with honesty and consistency" className="row" style={{ gap: 8, padding: "6px 14px", borderBottom: "1px solid var(--border)", fontSize: 14 }}>
           <span>🤝 {character.name}&apos;s trust</span>
           <div style={{ flex: 1, height: 6, borderRadius: 999, background: "var(--surface2)", overflow: "hidden" }}>
             <div style={{ width: `${trust}%`, height: "100%", borderRadius: 999, background: trust >= 70 ? "#10b981" : trust >= 40 ? "#f59e0b" : "#ef4444", transition: "width .4s" }} />
@@ -444,25 +444,25 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
         </div>
       )}
       {character && scene && (
-        <div data-testid="scene-banner" className="row" style={{ gap: 8, padding: "8px 14px", borderBottom: "1px solid var(--border)", background: "linear-gradient(90deg, rgba(124,140,255,.16), rgba(236,72,153,.12))", fontSize: 13 }}>
+        <div data-testid="scene-banner" className="row" style={{ gap: 8, padding: "8px 14px", borderBottom: "1px solid var(--border)", background: "linear-gradient(90deg, rgba(124,140,255,.16), rgba(236,72,153,.12))", fontSize: 15 }}>
           <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>🎬 <b>{scene.title}</b></span>
-          <button className="ghost" onClick={endScene} disabled={busy} data-testid="scene-end" style={{ padding: "4px 10px", fontSize: 12 }}>End scene</button>
+          <button className="ghost" onClick={endScene} disabled={busy} data-testid="scene-end" style={{ padding: "4px 10px", fontSize: 14 }}>End scene</button>
         </div>
       )}
       {character && !scene && inPerson && (
-        <div data-testid="inperson-banner" className="row" style={{ gap: 8, padding: "8px 14px", borderBottom: "1px solid var(--border)", background: "linear-gradient(90deg, rgba(16,185,129,.16), rgba(124,140,255,.12))", fontSize: 13 }}>
+        <div data-testid="inperson-banner" className="row" style={{ gap: 8, padding: "8px 14px", borderBottom: "1px solid var(--border)", background: "linear-gradient(90deg, rgba(16,185,129,.16), rgba(124,140,255,.12))", fontSize: 15 }}>
           <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>🧍 <b>Together in person</b>{inPerson.place ? <span className="muted"> · {inPerson.place}</span> : null}</span>
-          <button className="ghost" onClick={() => setMeetSheet({ ids: [], place: inPerson.place, busy: false })} disabled={busy} data-testid="meetup-open" style={{ padding: "4px 10px", fontSize: 12 }}>👥 Meet up</button>
-          <button className="ghost" onClick={endTogether} disabled={busy} data-testid="inperson-end" style={{ padding: "4px 10px", fontSize: 12 }}>Leave</button>
+          <button className="ghost" onClick={() => setMeetSheet({ ids: [], place: inPerson.place, busy: false })} disabled={busy} data-testid="meetup-open" style={{ padding: "4px 10px", fontSize: 14 }}>👥 Meet up</button>
+          <button className="ghost" onClick={endTogether} disabled={busy} data-testid="inperson-end" style={{ padding: "4px 10px", fontSize: 14 }}>Leave</button>
         </div>
       )}
       {character && !scene && plans[0] && (
         <div data-testid="plan-card" style={{ margin: "10px 14px 0", padding: "12px 14px", borderRadius: 14, border: "1px solid rgba(236,72,153,.4)", background: "linear-gradient(90deg, rgba(124,140,255,.16), rgba(236,72,153,.14))", display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ fontSize: 14 }}>📅 <b>{plans[0].day === todayYmd() ? "Today" : "You had plans"}:</b> {plans[0].title}{plans[0].details ? <span className="muted"> — {plans[0].details}</span> : null}</div>
-          <div className="muted" style={{ fontSize: 12 }}>Describe the scene — where you are, the vibe, what you&apos;re wearing — and play it out with {character.name}.</div>
+          <div className="muted" style={{ fontSize: 14 }}>Describe the scene — where you are, the vibe, what you&apos;re wearing — and play it out with {character.name}.</div>
           <div className="row" style={{ gap: 8 }}>
-            <button className="btn" data-testid="plan-start" disabled={busy || !msgs} onClick={() => { setFromPlan(plans[0]); setSceneSheet(true); }} style={{ padding: "8px 14px", fontSize: 13 }}>🎬 Set the scene</button>
-            <button className="ghost" data-testid="plan-skip" onClick={() => skipPlan(plans[0])} style={{ padding: "8px 12px", fontSize: 13 }}>Not today</button>
+            <button className="btn" data-testid="plan-start" disabled={busy || !msgs} onClick={() => { setFromPlan(plans[0]); setSceneSheet(true); }} style={{ padding: "8px 14px", fontSize: 15 }}>🎬 Set the scene</button>
+            <button className="ghost" data-testid="plan-skip" onClick={() => skipPlan(plans[0])} style={{ padding: "8px 12px", fontSize: 15 }}>Not today</button>
           </div>
         </div>
       )}
@@ -470,18 +470,18 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
         <div role="dialog" aria-modal="true" data-testid="meetup-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }} onClick={() => setMeetSheet(null)}>
           <form className="card" onClick={e => e.stopPropagation()} onSubmit={e => { e.preventDefault(); meetUp(); }} style={{ width: "100%", maxWidth: 560, maxHeight: "80dvh", overflowY: "auto", borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 10 }}>
             <div className="row" style={{ justifyContent: "space-between" }}>
-              <div style={{ fontWeight: 800, fontSize: 17 }}>👥 Meet up with {character.name} and…</div>
+              <div style={{ fontWeight: 800, fontSize: 19 }}>👥 Meet up with {character.name} and…</div>
               <button type="button" className="ghost" onClick={() => setMeetSheet(null)} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
             </div>
-            <div className="muted" style={{ fontSize: 12 }}>Moves you all into one group chat, together in person. Everyone picks up from their own recent chat with you — so if you told {character.name} you were bringing someone, she&apos;ll know who just walked in.</div>
+            <div className="muted" style={{ fontSize: 14 }}>Moves you all into one group chat, together in person. Everyone picks up from their own recent chat with you — so if you told {character.name} you were bringing someone, she&apos;ll know who just walked in.</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               {others.filter(o => o.id !== cid).map(o => {
                 const on = meetSheet.ids.includes(o.id);
-                return <button type="button" key={o.id} className={on ? "btn" : "ghost"} aria-pressed={on} data-testid="meetup-pick" onClick={() => setMeetSheet(m => (m ? { ...m, ids: on ? m.ids.filter(x => x !== o.id) : [...m.ids, o.id].slice(0, 5) } : m))} style={{ padding: "6px 12px", fontSize: 13 }}>{on ? "✓ " : ""}{o.name}</button>;
+                return <button type="button" key={o.id} className={on ? "btn" : "ghost"} aria-pressed={on} data-testid="meetup-pick" onClick={() => setMeetSheet(m => (m ? { ...m, ids: on ? m.ids.filter(x => x !== o.id) : [...m.ids, o.id].slice(0, 5) } : m))} style={{ padding: "6px 12px", fontSize: 15 }}>{on ? "✓ " : ""}{o.name}</button>;
               })}
             </div>
             <input value={meetSheet.place} onChange={e => setMeetSheet(m => (m ? { ...m, place: e.target.value } : m))} maxLength={120} aria-label="Where?" placeholder="Where? e.g. my place" data-testid="meetup-place" />
-            {meetSheet.error && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {meetSheet.error}</div>}
+            {meetSheet.error && <div style={{ color: "var(--bad)", fontSize: 15 }}>⚠️ {meetSheet.error}</div>}
             <button className="btn" disabled={meetSheet.busy || !meetSheet.ids.length} data-testid="meetup-go">{meetSheet.busy ? "…" : "👥 Meet up"}</button>
           </form>
         </div>
@@ -490,20 +490,20 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
         <div role="dialog" aria-modal="true" data-testid="inperson-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }} onClick={() => setTogetherSheet(null)}>
           <form className="card" onClick={e => e.stopPropagation()} onSubmit={e => { e.preventDefault(); startTogether(togetherSheet.place.trim()); }} style={{ width: "100%", maxWidth: 560, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 10 }}>
             <div className="row" style={{ justifyContent: "space-between" }}>
-              <div style={{ fontWeight: 800, fontSize: 17 }}>🧍 Together with {character.name}</div>
+              <div style={{ fontWeight: 800, fontSize: 19 }}>🧍 Together with {character.name}</div>
               <button type="button" className="ghost" onClick={() => setTogetherSheet(null)} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
             </div>
-            <div className="muted" style={{ fontSize: 12 }}>You&apos;re with her in person — she&apos;ll talk face to face instead of texting, and 👁️ ICU shows what you see. Not a planned outing (that&apos;s 🎬).</div>
+            <div className="muted" style={{ fontSize: 14 }}>You&apos;re with her in person — she&apos;ll talk face to face instead of texting, and 👁️ ICU shows what you see. Not a planned outing (that&apos;s 🎬).</div>
             <input value={togetherSheet.place} onChange={e => setTogetherSheet(t => (t ? { ...t, place: e.target.value } : t))} maxLength={120} autoFocus aria-label="Where are you?" placeholder="Where? (optional) e.g. on her couch, in my car" data-testid="inperson-place" />
-            {togetherSheet.error && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {togetherSheet.error}</div>}
+            {togetherSheet.error && <div style={{ color: "var(--bad)", fontSize: 15 }}>⚠️ {togetherSheet.error}</div>}
             <button className="btn" disabled={togetherSheet.busy} data-testid="inperson-go">{togetherSheet.busy ? "…" : "🧍 We're together"}</button>
           </form>
         </div>
       )}
       {peekSheet && character && <PeekSheet who={character.name} sheet={peekSheet} onChange={d => setPeekSheet(p => (p ? { ...p, description: d } : p))} onRewrite={rewritePeek} onSend={sendPeek} onClose={() => setPeekSheet(null)} />}
       {sceneSheet && character && <SceneSheet key={fromPlan?.id || "new"} who={character.name} plan={fromPlan} onClose={() => { setSceneSheet(false); setFromPlan(null); }} onStart={startScene} />}
-      <div data-testid="chat-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-        {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={m.media?.id || m.id || i} m={m} onReactMsg={reactMsg} selectMode={selectMode} selected={!!(m.id && selected.has(m.id))} onToggle={toggleSelect} face={face(28)} onMedia={mediaArrived} onFailed={reload} onReact={react} who={who} onResend={resendImage} resending={resendFor === m.id} onAnswer={x => setMsgs(list => (list || []).map(y => (y.media?.id === x.id ? { ...y, content: mediaNote({ ...y.media!, ...x }), media: { ...y.media!, ...x } } : y)))} />)}
+      <div data-testid="chat-log" style={{ flex: 1, overflowY: "auto", padding: "12px 8px", display: "flex", flexDirection: "column", gap: 14 }}>
+        {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : <Bubble key={m.media?.id || m.id || i} m={m} onReactMsg={reactMsg} selectMode={selectMode} selected={!!(m.id && selected.has(m.id))} onToggle={toggleSelect} face={face(36)} onMedia={mediaArrived} onFailed={reload} onReact={react} who={who} onResend={resendImage} resending={resendFor === m.id} onAnswer={x => setMsgs(list => (list || []).map(y => (y.media?.id === x.id ? { ...y, content: mediaNote({ ...y.media!, ...x }), media: { ...y.media!, ...x } } : y)))} />)}
         {character && msgs && !msgs.length && (
           <div className="muted" style={{ textAlign: "center", fontSize: 14, marginTop: 24, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
             {face(72)}<div>Say hi to {character.name} 👋</div>
@@ -518,9 +518,9 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
               ? <img src={intro.portrait_url} alt={intro.name} style={{ width: 84, height: 84, borderRadius: 12, objectFit: "cover", objectPosition: "top", flexShrink: 0 }} />
               : null}
             <div style={{ flex: 1, minWidth: 0, display: "grid", gap: 4 }}>
-              <div style={{ fontSize: 13 }} className="muted">👋 {intro.introducer} wants you to meet her {intro.kind}</div>
+              <div style={{ fontSize: 15 }} className="muted">👋 {intro.introducer} wants you to meet her {intro.kind}</div>
               <div style={{ fontWeight: 800, fontSize: 16 }}>{intro.name}{intro.age ? `, ${intro.age}` : ""}</div>
-              {intro.about && <div className="muted" style={{ fontSize: 12 }}>{intro.about}</div>}
+              {intro.about && <div className="muted" style={{ fontSize: 14 }}>{intro.about}</div>}
               <div className="row" style={{ gap: 8, marginTop: 4 }}>
                 <button onClick={() => answerIntro(true)} disabled={introBusy} data-testid="intro-yes">Meet her</button>
                 <button className="ghost" onClick={() => answerIntro(false)} disabled={introBusy} data-testid="intro-no">Not now</button>
@@ -544,14 +544,14 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       {attach && (
         <div className="row" data-testid="chat-attachment" style={{ padding: "8px 12px 0", gap: 8 }}>
           <FileThumb f={attach} size={44} />
-          <div style={{ flex: 1, minWidth: 0, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{attach.name}</div>
-          <button type="button" className="ghost" onClick={() => setAttach(null)} aria-label="Remove attachment" style={{ padding: "4px 10px", fontSize: 13 }}>✕</button>
+          <div style={{ flex: 1, minWidth: 0, fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{attach.name}</div>
+          <button type="button" className="ghost" onClick={() => setAttach(null)} aria-label="Remove attachment" style={{ padding: "4px 10px", fontSize: 15 }}>✕</button>
         </div>
       )}
       {selectMode && <div className="row" style={{ padding: "8px 12px", gap: 8, borderTop: "1px solid var(--border)", background: "var(--surface2)" }}>
-        <span style={{ flex: 1, fontSize: 13 }}>{selected.size} selected</span>
-        <button type="button" className="btn ghost" onClick={() => { setSelectMode(false); setSelected(new Set()); }} style={{ fontSize: 13 }}>Cancel</button>
-        <button type="button" className="btn" onClick={deleteSelected} disabled={!selected.size} style={{ fontSize: 13 }}>Delete</button>
+        <span style={{ flex: 1, fontSize: 15 }}>{selected.size} selected</span>
+        <button type="button" className="btn ghost" onClick={() => { setSelectMode(false); setSelected(new Set()); }} style={{ fontSize: 15 }}>Cancel</button>
+        <button type="button" className="btn" onClick={deleteSelected} disabled={!selected.size} style={{ fontSize: 15 }}>Delete</button>
       </div>}
       <form onSubmit={e => { e.preventDefault(); send(text); }} className="row" style={{ padding: "10px 12px", borderTop: "1px solid var(--border)" }}>
         <input ref={picker} type="file" accept={ACCEPT} hidden onChange={e => pick(e.target.files?.[0])} data-testid="chat-file-input" />
@@ -583,7 +583,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
         <button className="btn" disabled={(!text.trim() && !attach) || busy || uploading} aria-label="Send" style={{ borderRadius: 999, width: 46, height: 46, padding: 0, flexShrink: 0 }}>➤</button>
       </form>
       {(mic.listening || mic.error) && (
-        <div style={{ padding: "0 14px 8px", fontSize: 12, color: mic.error ? "var(--bad)" : "var(--muted)" }}>
+        <div style={{ padding: "0 14px 8px", fontSize: 14, color: mic.error ? "var(--bad)" : "var(--muted)" }}>
           {mic.error ? `⚠️ ${mic.error}` : "Listening… tap ⏹ when you're done, then Send."}
         </div>
       )}
@@ -598,14 +598,14 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
   // A small badge on the bubble's corner, like a text-message reaction.
   const badge = (r: string, who: string) => (
     <span data-testid={mine ? "their-reaction" : "my-reaction"} aria-label={`${who} reacted ${r}`}
-      style={{ position: "absolute", bottom: -12, [mine ? "left" : "right"]: -6, fontSize: 15, lineHeight: 1, padding: "3px 5px", borderRadius: 999, background: "var(--surface)", border: "1px solid var(--border)", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }}>{r}</span>
+      style={{ position: "absolute", bottom: -12, [mine ? "left" : "right"]: -6, fontSize: 17, lineHeight: 1, padding: "3px 5px", borderRadius: 999, background: "var(--surface)", border: "1px solid var(--border)", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }}>{r}</span>
   );
   // ⏰ / 👍: her brain was down / is back — just for them; she never sees these.
   if (m.peek && !m.media && (m.content === "⏰" || m.content === "👍")) return (
     <div data-testid="brain-marker" title={m.content === "⏰" ? `${who} is having trouble — still trying` : `${who} is back`} style={{ alignSelf: "center", fontSize: 18, lineHeight: 1, padding: "4px 10px", borderRadius: 999, border: "1px dashed var(--border)" }}>{m.content}</div>
   );
   if (m.peek && mine) return (
-    <div data-testid="peek-note" style={{ alignSelf: "flex-end", fontSize: 12, padding: "4px 10px", borderRadius: 999, border: "1px dashed var(--border)" }} className="muted">{m.content === "*ICU*" ? "👁️ you looked" : "👀 you peeked"}</div>
+    <div data-testid="peek-note" style={{ alignSelf: "flex-end", fontSize: 14, padding: "4px 10px", borderRadius: 999, border: "1px dashed var(--border)" }} className="muted">{m.content === "*ICU*" ? "👁️ you looked" : "👀 you peeked"}</div>
   );
   if (m.peek && m.media) return (
     <div data-testid="peek-media" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
@@ -617,12 +617,12 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
     </div>
   );
   if (m.content.startsWith("🎬 ") || m.content.startsWith("🧍 ")) return (
-    <div data-testid="scene-note" style={{ alignSelf: "center", maxWidth: "90%", textAlign: "center", fontSize: 12, padding: "6px 12px", borderRadius: 999, background: "var(--surface2)", border: "1px solid var(--border)" }} className="muted">{m.content}</div>
+    <div data-testid="scene-note" style={{ alignSelf: "center", maxWidth: "90%", textAlign: "center", fontSize: 14, padding: "6px 12px", borderRadius: 999, background: "var(--surface2)", border: "1px solid var(--border)" }} className="muted">{m.content}</div>
   );
   if (m.media) return (
     <div data-testid="chat-media" style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
       {face}
-      <div style={{ maxWidth: "min(80%, 380px)" }}>
+      <div style={{ maxWidth: "min(92%, 420px)" }}>
         <MediaView media={m.media} onReady={onMedia} onFailed={onFailed} who={who} onAnswer={x => onAnswer(x)} />
         {m.media.status === "done" && <ReactionBar value={m.media.reaction} onPick={r => onReact(m.media!.id, r)} />}
       </div>
@@ -631,16 +631,16 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
   return (
     <div style={{ display: "flex", gap: 8, alignItems: "flex-end", justifyContent: mine ? "flex-end" : "flex-start", marginBottom: (mine ? m.theirReaction : m.reaction) ? 10 : 0 }}>
       {!mine && face}
-      <div style={{ maxWidth: "80%", display: "flex", flexDirection: "column", alignItems: mine ? "flex-end" : "flex-start" }}>
+      <div style={{ maxWidth: "min(92%, 420px)", display: "flex", flexDirection: "column", alignItems: mine ? "flex-end" : "flex-start" }}>
       {selectMode && m.id && <input type="checkbox" checked={!!selected} onChange={() => onToggle?.(m.id!)} style={{ marginRight: 4 }} />}
       <div onClick={() => { if (!mine && m.id) setPicking(p => !p); }} data-testid={mine ? "my-bubble" : "her-bubble"}
         style={{ position: "relative", cursor: !mine && m.id ? "pointer" : undefined, padding: "10px 14px", borderRadius: 18, borderBottomLeftRadius: mine ? 18 : 4, borderBottomRightRadius: mine ? 4 : 18,
-        background: mine ? "linear-gradient(135deg, var(--accent), var(--accent2))" : "var(--surface2)", color: "var(--text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", lineHeight: 1.45, fontSize: 15 }}>
+        background: mine ? "linear-gradient(135deg, var(--accent), var(--accent2))" : "var(--surface2)", color: "var(--text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", lineHeight: 1.5, fontSize: 19, padding: "12px 16px" }}>
         {m.file && <div style={{ marginBottom: m.content && m.content !== "📎" ? 8 : 0 }}><FileThumb f={m.file} size={180} /></div>}
         {m.content !== "📎" && styled(m.content.replace(/\*\*(.+?)\*\*/g, "$1"))}
         {!mine && /sent.*(pic|photo|image|picture)|here.*(pic|photo)|sending you a/i.test(m.content) && !m.media && (
           <button type="button" onClick={e => { e.stopPropagation(); onResend?.(m.id || ""); }} disabled={resending}
-            style={{ marginTop: 6, fontSize: 12, padding: "4px 10px", borderRadius: 999, border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer" }}>
+            style={{ marginTop: 6, fontSize: 14, padding: "4px 10px", borderRadius: 999, border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer" }}>
             {resending ? "Resending…" : "↻ Resend image"}
           </button>
         )}
@@ -673,7 +673,7 @@ export function FileThumb({ f, size }: { f: { url: string; thumb?: string | null
       {isImage
         // eslint-disable-next-line @next/next/no-img-element
         ? <img src={f.thumb || f.url} alt={f.name} loading="lazy" style={{ display: "block", maxWidth: size, maxHeight: size, borderRadius: 10, objectFit: "cover" }} />
-        : <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: size < 60 ? "6px 8px" : "8px 12px", borderRadius: 10, background: "rgba(0,0,0,0.2)", fontSize: 13 }}>{f.type === "application/pdf" ? "📄" : "📝"} {size < 60 ? "" : f.name}</span>}
+        : <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: size < 60 ? "6px 8px" : "8px 12px", borderRadius: 10, background: "rgba(0,0,0,0.2)", fontSize: 15 }}>{f.type === "application/pdf" ? "📄" : "📝"} {size < 60 ? "" : f.name}</span>}
     </a>
   );
 }
@@ -685,14 +685,14 @@ function PeekSheet({ who, sheet, onChange, onRewrite, onSend, onClose }: { who: 
     <div role="dialog" aria-modal="true" data-testid="peek-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }} onClick={onClose}>
       <div className="card" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 10 }}>
         <div className="row" style={{ justifyContent: "space-between" }}>
-          <div style={{ fontWeight: 800, fontSize: 17 }}>{sheet.icu ? `👁️ I see you, ${who}` : `👀 Peek at ${who}`}</div>
+          <div style={{ fontWeight: 800, fontSize: 19 }}>{sheet.icu ? `👁️ I see you, ${who}` : `👀 Peek at ${who}`}</div>
           <button className="ghost" onClick={onClose} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
         </div>
-        <div className="muted" style={{ fontSize: 12 }}>This is the picture that will be made, using her reference pictures. Fix anything that&apos;s off — where you are, what she&apos;s wearing, her pose or look. She won&apos;t know.</div>
+        <div className="muted" style={{ fontSize: 14 }}>This is the picture that will be made, using her reference pictures. Fix anything that&apos;s off — where you are, what she&apos;s wearing, her pose or look. She won&apos;t know.</div>
         <textarea value={sheet.description} onChange={e => onChange(e.target.value)} maxLength={1500} rows={5} aria-label="Peek description" disabled={sheet.loading && !sheet.description}
           placeholder={sheet.loading ? "Writing what you'd see…" : "e.g. Her at a candlelit corner table in an emerald dress, laughing and glancing up at me"} style={{ resize: "vertical" }} />
         <div className="muted" style={{ fontSize: 11, textAlign: "right" }}>{sheet.description.length}/1500</div>
-        {sheet.error && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {sheet.error}</div>}
+        {sheet.error && <div style={{ color: "var(--bad)", fontSize: 15 }}>⚠️ {sheet.error}</div>}
         <div className="row" style={{ gap: 8 }}>
           <button className="ghost" onClick={onRewrite} disabled={sheet.loading} data-testid="peek-rewrite" style={{ flexShrink: 0 }}>↻ Rewrite</button>
           <button className="btn" onClick={() => onSend(sheet.description)} disabled={sheet.loading || sheet.description.trim().length < 10} data-testid="peek-go" style={{ flex: 1 }}>{sheet.loading ? "…" : sheet.icu ? "👁️ Look" : "👀 Peek"}</button>
@@ -730,26 +730,26 @@ export function SceneSheet({ who, plan, onClose, onStart }: { who: string; plan?
     setBusy(true); setErr("");
     try { await onStart(kind, title.trim(), details.trim(), { clock: clock === "set" && time ? "set" : "now", time }); } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't start it."); setBusy(false); }
   };
-  const tab = (on: boolean) => ({ flex: 1, padding: "8px 10px", borderRadius: 999, fontWeight: 700, fontSize: 13, cursor: "pointer", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, background: on ? "rgba(124,140,255,0.15)" : "transparent", color: "var(--text)" } as const);
+  const tab = (on: boolean) => ({ flex: 1, padding: "8px 10px", borderRadius: 999, fontWeight: 700, fontSize: 15, cursor: "pointer", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, background: on ? "rgba(124,140,255,0.15)" : "transparent", color: "var(--text)" } as const);
   return (
     <div role="dialog" aria-modal="true" data-testid="scene-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }} onClick={() => { stopMics(); onClose(); }}>
       <div className="card" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 12 }}>
         <div className="row" style={{ justifyContent: "space-between" }}>
-          <div style={{ fontWeight: 800, fontSize: 17 }}>🎬 {plan ? `Your plans with ${who}` : `A scene with ${who}`}</div>
+          <div style={{ fontWeight: 800, fontSize: 19 }}>🎬 {plan ? `Your plans with ${who}` : `A scene with ${who}`}</div>
           <button className="ghost" onClick={() => { stopMics(); onClose(); }} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
         </div>
         <div className="row" style={{ gap: 8 }}>
           <button type="button" style={tab(kind === "live")} onClick={() => setKind("live")} data-testid="scene-live">Play it out</button>
           <button type="button" style={tab(kind === "past")} onClick={() => setKind("past")} data-testid="scene-past">It already happened</button>
         </div>
-        <div className="muted" style={{ fontSize: 12 }}>{kind === "live" ? `You two act it out here — ${who} sets the scene, you join in. *Actions in asterisks* show in italics. End it when you're done; it becomes a memory you both have.` : `Tell ${who} what you did together — she'll remember it as a real shared memory and talk about it.`}</div>
-        <label style={{ fontSize: 13, fontWeight: 700 }}>{kind === "live" ? "What's the plan?" : "What did you do?"}
+        <div className="muted" style={{ fontSize: 14 }}>{kind === "live" ? `You two act it out here — ${who} sets the scene, you join in. *Actions in asterisks* show in italics. End it when you're done; it becomes a memory you both have.` : `Tell ${who} what you did together — she'll remember it as a real shared memory and talk about it.`}</div>
+        <label style={{ fontSize: 15, fontWeight: 700 }}>{kind === "live" ? "What's the plan?" : "What did you do?"}
           <span className="row" style={{ gap: 8, marginTop: 4, alignItems: "flex-start" }}>
             <input value={title} onChange={e => setTitle(e.target.value)} maxLength={120} aria-label="Scene" placeholder={kind === "live" ? "e.g. Dinner date at Luigi's" : "e.g. Went bowling downtown"} style={{ flex: 1, minWidth: 0 }} />
             {micBtn({ m: titleMic, other: detailsMic, value: title, label: "Say the plan", id: "scene-title-mic" })}
           </span>
         </label>
-        <label style={{ fontSize: 13, fontWeight: 700 }}>{plan ? "Describe the scene" : "Details"} <span className="muted" style={{ fontWeight: 500 }}>· {plan ? "the more you write, the better" : "optional"}</span>
+        <label style={{ fontSize: 15, fontWeight: 700 }}>{plan ? "Describe the scene" : "Details"} <span className="muted" style={{ fontWeight: 500 }}>· {plan ? "the more you write, the better" : "optional"}</span>
           <span className="row" style={{ gap: 8, marginTop: 4, alignItems: "flex-start" }}>
             <textarea value={details} onChange={e => setDetails(e.target.value)} maxLength={1000} rows={3} aria-label="Scene details" style={{ flex: 1, minWidth: 0, resize: "vertical" }}
               placeholder={kind === "live" ? "Where, when, the vibe — e.g. Friday night, candlelit Italian place, she's wearing the red dress" : "What happened — e.g. you beat me twice, I threw a gutter ball, then we got ice cream"} />
@@ -758,20 +758,20 @@ export function SceneSheet({ who, plan, onClose, onStart }: { who: string; plan?
         </label>
         {kind === "live" && (
           <div data-testid="scene-clock" style={{ display: "grid", gap: 6 }}>
-            <div style={{ fontSize: 13, fontWeight: 700 }}>🕒 When is it happening?</div>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>🕒 When is it happening?</div>
             <div className="row" style={{ gap: 8 }}>
               <button type="button" style={tab(clock === "now")} onClick={() => setClock("now")} data-testid="scene-clock-now">Now (real time)</button>
               <button type="button" style={tab(clock === "set")} onClick={() => setClock("set")} data-testid="scene-clock-set">Scheduled time</button>
             </div>
             {clock === "set" && <input type="time" value={time} onChange={e => setTime(e.target.value)} aria-label="Scene time" data-testid="scene-time" />}
-            <span className="muted" style={{ fontSize: 12 }}>{clock === "now"
+            <span className="muted" style={{ fontSize: 14 }}>{clock === "now"
               ? `It happens right now — the light and time of day are real.${plan?.time ? ` ${who} will know it got moved from the planned time (no big deal, unless it keeps happening).` : ""}`
               : `The scene keeps its own clock, starting at ${time || "the time you pick"} and moving on as you play. ${who} won't know it's out of sync with real time.`}</span>
           </div>
         )}
-        {(titleMic.listening || detailsMic.listening) && <div className="muted" style={{ fontSize: 12 }} data-testid="scene-listening">🎙️ Listening… tap ⏹️ when you&apos;re done.</div>}
-        {(titleMic.error || detailsMic.error) && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {titleMic.error || detailsMic.error}</div>}
-        {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
+        {(titleMic.listening || detailsMic.listening) && <div className="muted" style={{ fontSize: 14 }} data-testid="scene-listening">🎙️ Listening… tap ⏹️ when you&apos;re done.</div>}
+        {(titleMic.error || detailsMic.error) && <div style={{ color: "var(--bad)", fontSize: 15 }}>⚠️ {titleMic.error || detailsMic.error}</div>}
+        {err && <div style={{ color: "var(--bad)", fontSize: 15 }}>⚠️ {err}</div>}
         <button className="btn" disabled={busy || !title.trim()} onClick={go} data-testid="scene-go">{busy ? "…" : kind === "live" ? "Start the scene" : `Tell ${who}`}</button>
       </div>
     </div>
