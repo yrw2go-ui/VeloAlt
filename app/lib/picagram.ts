@@ -6,7 +6,7 @@ import { sql } from "./db";
 import { writeText } from "./llm";
 import { scrub } from "./secrets";
 import { listCharacters, referenceUrls, type Character } from "./characters";
-import { startMedia, MediaError, type Media } from "./media";
+import { startMedia, deleteMedia, MediaError, type Media } from "./media";
 import { allowsSuggestive, mediaMood } from "./traits";
 import { isValidTimeZone, localDate, zonedParts, zonedToUtc } from "./localTime";
 import { randomComments } from "./picaComments";
@@ -417,4 +417,15 @@ export async function picaCounts(userId: string, ids: string[]) {
     const liked_by = likersNow((r.liked_by || []) as string[], (r.liker_secs || []) as number[], String(r.at));
     return { id: String(r.id), likes: Math.max(ramp(Number(r.likes_target), String(r.at), String(r.id)), liked_by.length) + (r.liked ? 1 : 0), liked_by, comments: Number(r.n) };
   });
+}
+
+/** 🗑 Delete one of their own posts: its comments and photo go too, and the people who saw it forget it. */
+export async function picaDeletePost(userId: string, postId: string): Promise<boolean> {
+  const [p] = await sql()`delete from pica_posts where id = ${postId} and user_id = ${userId} and author_id is null and account_id is null returning caption, photo, media_id`;
+  if (!p) return false;
+  if (p.media_id) await deleteMedia(userId, String(p.media_id)).catch(() => false);
+  const cap = String(p.caption || ""), desc = String(p.photo || "");
+  const needle = cap ? `posted on Picagram: "${cap.slice(0, 160)}"` : desc ? `(a photo: ${desc.slice(0, 160)})` : "";
+  if (needle) await sql()`delete from velo_memories where user_id = ${userId} and position(${needle} in text) > 0`;
+  return true;
 }

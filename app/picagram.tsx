@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./lib/api";
 import { hideSecrets } from "./lib/secrets";
 import { MediaView, type Media } from "./media";
+import { confirmAsk } from "./lib/dialog";
 
 type Comment = { id: string; who: string; me: boolean; known: boolean; text: string; created_at: string };
 type Post = { id: string; saved: boolean; author: { id: string | null; name: string; portrait: string | null; away: string | null; account?: { id: string; handle: string; followed: boolean } }; kind: "image" | "text"; caption: string; media: Media | null; likes: number; liked: boolean; liked_by: string[]; comments: number; preview: Comment[]; created_at: string; all?: Comment[] };
@@ -87,7 +88,7 @@ export default function Picagram({ name, onChat }: { name: string; onChat?: (cha
       </div>
       {posts && !posts.length && !loading && <div className="muted" style={{ textAlign: "center", padding: 32 }}>No posts yet — check back soon 📸</div>}
       {note && <div data-testid="pica-note" onClick={() => setNote("")} style={{ margin: "8px 14px", padding: "10px 12px", borderRadius: 12, background: "rgba(245,158,11,.15)", border: "1px solid rgba(245,158,11,.4)", fontSize: 13 }}>⚠️ {note}</div>}
-      {(posts || []).map(p => <PostCard key={p.id} p={p} me={name} obs={seenObs.current} onChange={f => update(p.id, f)} onProfile={setProfile} onFollow={setFollowed} onNote={setNote} />)}
+      {(posts || []).map(p => <PostCard key={p.id} p={p} me={name} obs={seenObs.current} onChange={f => update(p.id, f)} onProfile={setProfile} onFollow={setFollowed} onNote={setNote} onRemoved={id => setPosts(ps => (ps || []).filter(x => x.id !== id))} />)}
       <div ref={sentinel} style={{ height: 1 }} />
       {loading && <div className="muted" style={{ textAlign: "center", padding: 18 }} data-testid="pica-loading">Loading…</div>}
       {!more && posts && posts.length > 0 && <div className="muted" style={{ textAlign: "center", padding: 18, fontSize: 13 }}>You&apos;re all caught up ✨</div>}
@@ -100,7 +101,7 @@ export default function Picagram({ name, onChat }: { name: string; onChat?: (cha
   );
 }
 
-function PostCard({ p, me, obs, onChange, onProfile, onFollow, onNote }: { p: Post; me: string; obs: IntersectionObserver | null; onChange: (f: (p: Post) => Post) => void; onProfile: (id: string) => void; onFollow: (account: string, on: boolean) => void; onNote: (t: string) => void }) {
+function PostCard({ p, me, obs, onChange, onProfile, onFollow, onNote, onRemoved }: { p: Post; me: string; obs: IntersectionObserver | null; onChange: (f: (p: Post) => Post) => void; onProfile: (id: string) => void; onFollow: (account: string, on: boolean) => void; onNote: (t: string) => void; onRemoved: (id: string) => void }) {
   const ref = useRef<HTMLElement>(null);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -140,6 +141,11 @@ function PostCard({ p, me, obs, onChange, onProfile, onFollow, onNote }: { p: Po
     setBusy(false);
   };
   const list = open && p.all ? p.all : p.preview;
+  // 🗑 Your own post: delete it (asks first).
+  const remove = async () => {
+    if (!(await confirmAsk("Delete this post? Are you sure? Its likes and comments go too.", { yes: "Delete", danger: true }))) return;
+    try { await api("/api/pica", { action: "delete", id: p.id }); onRemoved(p.id); } catch { /* still there */ }
+  };
   const acc = p.author.account;
   const follow = async () => { if (!acc) return; const on = !acc.followed; onFollow(acc.id, on); await api("/api/pica", { action: "follow", id: acc.id, on }).catch(e => { onFollow(acc.id, !on); onNote(e instanceof Error ? e.message : "Couldn't follow."); }); };
   const save = async () => { if (!p.media) return; const on = !p.saved; onChange(x => ({ ...x, saved: on })); await api("/api/pica", { action: "save", id: p.media.id, on }).catch(() => onChange(x => ({ ...x, saved: !on }))); };
@@ -155,6 +161,7 @@ function PostCard({ p, me, obs, onChange, onProfile, onFollow, onNote }: { p: Po
         </div>
         {acc && <button className={acc.followed ? "ghost" : "btn"} onClick={follow} data-testid="pica-follow" style={{ padding: "4px 12px", fontSize: 13 }}>{acc.followed ? "Following" : "Follow"}</button>}
         <span className="muted" style={{ fontSize: 12 }}>{ago(p.created_at)}</span>
+        {!p.author.id && !acc && <button onClick={remove} aria-label="Delete post" data-testid="pica-delete" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16, padding: "0 2px", color: "var(--muted)" }}>🗑</button>}
       </div>
       {p.media ? (
         <div onDoubleClick={() => { if (!p.liked) like(); }} style={{ display: "flex", justifyContent: "center", background: "#000" }}><MediaView media={p.media} big who={p.author.name} /></div>
