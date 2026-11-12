@@ -78,11 +78,11 @@ export async function POST(req: NextRequest) {
       await sql()`update users set look = 'custom', updated_at = now() where id = ${c.userId}`;
     }
     if (purpose === "bio") {
-      // 👤 Their photo for "About you": described once in words (visible features only), old one removed.
+      // 👤 Their photos for "About you": each described once in words (visible features only). Up to 6 — the newest is the main one.
       const note = await describePhoto(body, type).catch(e => { console.error("files: describe photo", e instanceof Error ? e.message : e); return null; });
-      await sql()`update users set bio_photo_file_id = ${row.id}, bio_photo_note = ${note}, updated_at = now() where id = ${c.userId}`;
-      const old = await sql()`select id from velo_files where user_id = ${c.userId} and kind = 'bio' and id <> ${row.id}`;
-      for (const o of old) await deleteFile(c.userId, String(o.id));
+      await sql()`update users set bio_photo_file_id = ${row.id}, bio_photo_note = ${note}, bio_photo_notes = bio_photo_notes || ${JSON.stringify({ [String(row.id)]: note || "" })}::jsonb, updated_at = now() where id = ${c.userId}`;
+      const extra = await sql()`select id from velo_files where user_id = ${c.userId} and kind = 'bio' order by created_at desc offset 6`;
+      for (const o of extra) await deleteFile(c.userId, String(o.id));
       return NextResponse.json({ file: row, note });
     }
     return NextResponse.json({ file: row });

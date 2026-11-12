@@ -244,16 +244,15 @@ export async function picaComment(userId: string, postId: string, text: string):
 }
 
 /** 📝 Their own post: text, and/or a photo of them made from a description (their own pictures as reference, if they want). */
-export async function picaPost(userId: string, caption: string, photo: string, useMyPhotos: boolean): Promise<string> {
+export async function picaPost(userId: string, caption: string, photo: string, useMyPhotos: boolean, raw = false): Promise<string> {
   const u = await userInfo(userId);
   const cap = scrub(caption).trim().slice(0, 2000), desc = scrub(photo).replace(/\s+/g, " ").trim().slice(0, 600);
   if (!cap && !desc) throw new MediaError("Write something or describe a photo.");
   let media: Media | null = null;
   if (desc) {
-    const refs = useMyPhotos ? (await sql()`select f.url from users u join velo_files f on f.id = u.bio_photo_file_id where u.id = ${userId}
-      union all (select f.url from pica_posts p join velo_media m on m.id = p.media_id join velo_files f on f.id = m.file_id where p.user_id = ${userId} and p.author_id is null and m.status = 'done' order by p.created_at desc limit 3)`).map(r => String(r.url)).filter(x => /^https?:\/\//.test(x)).slice(0, 4) : [];
+    const refs = useMyPhotos ? await myRefs(userId) : [];
     media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: desc },
-      { characterId: null, who: u.name, appearance: u.look, refs, romantic: u.adult, offer: false, other: null, pica: true });
+      { characterId: null, who: u.name, appearance: u.look, refs, romantic: u.adult, offer: false, other: null, pica: true, ...(raw && refs.length ? { raw: true } : {}) });
   }
   const now = Date.now();
   const [post] = await sql()`insert into pica_posts (user_id, author_id, kind, caption, photo, media_id, likes_target, seen_at) values (${userId}, null, ${media ? "image" : "text"}, ${cap}, ${media ? desc : ""}, ${media?.id || null}, ${rand(10, 300)}, now()) returning id`;
@@ -528,4 +527,41 @@ export async function picaRenamed(userId: string, characterId: string, from: str
 export async function picaHandleNote(userId: string, ch: { id: string; name: string }): Promise<string> {
   const [a] = await sql()`select handle from pica_accounts where user_id = ${userId} and character_id = ${ch.id}`;
   return a ? `📸 YOUR PICAGRAM: your name is ${ch.name}; on Picagram your handle is @${a.handle} (just your account name — people who know you call you ${ch.name.split(/\s+/)[0]}). That's how they found you; your posts and DMs there are yours, so talk about them naturally.` : "";
+}
+
+// 📸 Pictures of YOU: your "About you" photos (up to 4) are the references, and a peek-style
+// description you can read and fix before anything is made.
+export async function myPhotos(userId: string) {
+  const [u] = await sql()`select bio_photo_file_id, bio_photo_notes from users where id = ${userId}`;
+  const notes = (u?.bio_photo_notes && typeof u.bio_photo_notes === "object" ? u.bio_photo_notes : {}) as Record<string, string>;
+  const rows = await sql()`select id, url, thumb_url from velo_files where user_id = ${userId} and kind = 'bio' order by created_at desc limit 6`;
+  return rows.map(r => ({ id: String(r.id), url: String(r.thumb_url || r.url), note: String(notes[String(r.id)] || ""), main: String(r.id) === String(u?.bio_photo_file_id || "") }));
+}
+export async function myRefs(userId: string): Promise<string[]> {
+  const rows = await sql()`select url from velo_files where user_id = ${userId} and kind = 'bio' order by created_at desc limit 4`;
+  const refs = rows.map(r => String(r.url)).filter(x => /^https?:\/\//.test(x));
+  if (refs.length) return refs;
+  // No "About you" photos yet: fall back to your own recent Picagram photos.
+  return (await sql()`select f.url from pica_posts p join velo_media m on m.id = p.media_id join velo_files f on f.id = m.file_id
+    where p.user_id = ${userId} and p.author_id is null and p.account_id is null and m.status = 'done' order by p.created_at desc limit 3`)
+    .map(r => String(r.url)).filter(x => /^https?:\/\//.test(x));
+}
+/** ✍️ Step 1: the picture's description, written for you to check and tweak (like a peek). */
+export async function myPhotoDraft(userId: string, about: string, context: string): Promise<string> {
+  const u = await userInfo(userId);
+  const [row] = await sql()`select bio, bio_photo_note, bio_photo_notes from users where id = ${userId}`;
+  const notes = (row?.bio_photo_notes && typeof row.bio_photo_notes === "object" ? row.bio_photo_notes : {}) as Record<string, string>;
+  const look = [String(row?.bio_photo_note || ""), ...Object.values(notes)].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(" / ").slice(0, 600);
+  const raw = await writeText("", `You write the description for ONE photo of ${u.name} for an image generator — a photo they're about to share. Describe exactly what the picture shows: who's in it (them), where they are, what they're wearing, their pose and expression, the light. Match what they asked for. Use their look only for things a photo would show. ${u.adult ? "Tasteful and PG-13: flattering is fine; never nudity, lingerie or anything explicit." : "Family-friendly, fully clothed."} One or two sentences, under 300 characters, no names of real people, output only the description.`,
+    `THEY WANT A PHOTO OF: ${about || "them, right now"}\nWHAT THEY LOOK LIKE: ${look || row?.bio || "(no photo described yet)"}\n${context ? `WHERE IT'S GOING: ${context}` : ""}`, 300).catch(() => "");
+  const text = raw.replace(/\s+/g, " ").trim();
+  return text.slice(0, 380) || `${about || "A photo of me"}${look ? ` — ${look.slice(0, 160)}` : ""}, natural light, candid`;
+}
+/** 📸 Step 2: exactly that description, straight to the picture service, with your photos as reference. */
+export async function myPhotoMake(userId: string, description: string): Promise<Media> {
+  const u = await userInfo(userId);
+  const desc = scrub(description.replace(/\s+/g, " ").trim()).slice(0, 1500);
+  if (desc.length < 5) throw new PicaLimit("Describe the photo in a few words first.");
+  return startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: desc },
+    { characterId: null, who: u.name, appearance: u.look, refs: await myRefs(userId), romantic: u.adult, offer: false, other: null, pica: true, raw: true });
 }

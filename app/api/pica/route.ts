@@ -3,8 +3,8 @@ import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import { sql } from "../../lib/db";
 import { MediaError, mediaReady } from "../../lib/media";
-import { dmThreads, dmUnread, dmOpen, dmSend, dmSendPhoto, dmBrain, DmError } from "../../lib/picaDm";
-import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSavedList, picaFollowing, picaBefriend, picaCounts, picaDeletePost, picaNew, picaFromPhoto, PicaLimit } from "../../lib/picagram";
+import { dmThreads, dmUnread, dmOpen, dmSend, dmSendPhoto, dmBrain, dmMyPhotoDraft, dmMyPhoto, DmError } from "../../lib/picaDm";
+import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSavedList, picaFollowing, picaBefriend, picaCounts, picaDeletePost, picaNew, picaFromPhoto, myPhotoDraft, PicaLimit } from "../../lib/picagram";
 
 // 📸 Picagram. POST { action, ... }:
 //   feed { before? } → { posts }   (a few at a time; today's and missed days' posts are made as needed)
@@ -45,6 +45,15 @@ export async function POST(req: NextRequest) {
       // ✉️ DMs with accounts (characters chat in the normal chat).
       case "dm.threads": return NextResponse.json({ threads: await dmThreads(me) });
       case "dm.open": return UUID.test(id) ? NextResponse.json(await dmOpen(me, id)) : bad("Unknown account.");
+      // 📸 A photo of you: the description to check (step 1), then exactly that (step 2).
+      case "me.draft": return NextResponse.json({ description: await myPhotoDraft(me, String(b.about || ""), String(b.context || "")) });
+      case "dm.me.draft": return UUID.test(id) ? NextResponse.json({ description: await dmMyPhotoDraft(me, id, String(b.about || "")) }) : bad("Unknown account.");
+      case "dm.me.photo": {
+        if (!UUID.test(id)) return bad("Unknown account.");
+        if (!mediaReady()) return bad("Photos aren't set up yet.");
+        if (!allow(`pica-dm:${me}`, [{ ms: 60_000, max: 15 }, { ms: 86_400_000, max: 600 }])) return bad("Slow down a little — try again in a bit.", 429);
+        return NextResponse.json(await dmMyPhoto(me, id, String(b.description || "")));
+      }
       case "dm.brain": return UUID.test(id) && (await dmBrain(me, id, String(b.brain ?? ""))) ? NextResponse.json({ ok: true }) : bad("Unknown account.");
       case "dm.send":
       case "dm.photo": {
@@ -79,7 +88,7 @@ export async function POST(req: NextRequest) {
       case "post": {
         if (!allow(`pica-p:${me}`, [{ ms: 60_000, max: 3 }, { ms: 86_400_000, max: 30 }])) return bad("That's a lot of posts — try again in a bit.", 429);
         if (String(b.photo || "").trim() && !mediaReady()) return bad("Photos aren't set up yet.");
-        return NextResponse.json({ id: await picaPost(me, String(b.caption || ""), String(b.photo || ""), b.useMyPhotos === true) });
+        return NextResponse.json({ id: await picaPost(me, String(b.caption || ""), String(b.photo || ""), b.useMyPhotos === true, b.drafted === true) });
       }
       default: return bad("Unknown action.");
     }

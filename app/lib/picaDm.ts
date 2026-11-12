@@ -5,6 +5,7 @@ import { writeText } from "./llm";
 import { scrub } from "./secrets";
 import { startMedia, MediaError, type Media } from "./media";
 import { availableBrains } from "./models";
+import { myPhotoDraft, myPhotoMake } from "./picagram";
 import { BRAIN_OPTIONS } from "./brainOptions";
 import { isValidTimeZone, zonedParts, formatClock } from "./localTime";
 import { partOfDay } from "./calendar";
@@ -160,4 +161,27 @@ async function remember(userId: string, a: Record<string, unknown>, list: Dm[], 
     // 📅 Each note carries the day it was made ("Nov 12, 2026: Sam told me…").
     if (t.length >= 6 && !known.some(k => undated(k) === undated(t))) await sql()`insert into pica_memories (user_id, account_id, text) values (${userId}, ${a.id}, ${`${today}: ${undated(t)}`.slice(0, 600)})`;
   }
+}
+
+/** 📸 A photo of YOU in her DMs: the same two steps as a peek — a description to check, then exactly that. */
+export async function dmMyPhotoDraft(userId: string, accountId: string, about: string): Promise<string> {
+  const a = await account(userId, accountId);
+  const u = await userInfo(userId);
+  const history = await messages(userId, accountId, 12);
+  return myPhotoDraft(userId, about, `a DM to ${a.name} (@${a.handle}). Recent messages:\n${transcript(history, String(a.name), u.name)}`);
+}
+export async function dmMyPhoto(userId: string, accountId: string, description: string): Promise<{ added: Dm[]; note?: string }> {
+  const a = await account(userId, accountId);
+  const u = await userInfo(userId);
+  const m = await myPhotoMake(userId, description);
+  const mine = { ...(await addDm(userId, accountId, "user", "", m.id)), media: m };
+  // She sees it and says something back.
+  const history = await messages(userId, accountId, 40);
+  const raw = await write(brainOf(a, u.chatModel), `You are ${a.name} (@${a.handle}) on Picagram. ${u.name} just sent you a photo of themselves in your DMs. React in your own voice — short (1–2 sentences), warm${u.adult ? ", flirty if it fits (PG-13)" : ""}. Never say you're an AI. Reply with only your message.`,
+    `${u.now}\n\nTHE PHOTO THEY SENT: ${scrub(description).slice(0, 400)}\n\nTHE CONVERSATION:\n${transcript(history, String(a.name), u.name)}`, 400);
+  const reply = scrub(raw.replace(/^```(json)?|```$/g, "").replace(/\s+/g, " ").trim()).slice(0, 2000);
+  const added: Dm[] = [mine];
+  if (reply) added.push(await addDm(userId, accountId, "assistant", reply));
+  await sql()`update pica_dms set read_at = now() where user_id = ${userId} and account_id = ${accountId} and read_at is null`;
+  return { added };
 }

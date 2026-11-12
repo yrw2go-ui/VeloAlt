@@ -219,11 +219,13 @@ function Composer({ onClose, onPosted }: { onClose: () => void; onPosted: () => 
   const [caption, setCaption] = useState("");
   const [photo, setPhoto] = useState("");
   const [mine, setMine] = useState(true);
+  const [sheet, setSheet] = useState(false);
+  const [drafted, setDrafted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const post = async () => {
     setBusy(true); setErr("");
-    try { await api("/api/pica", { action: "post", caption: hideSecrets(caption).text, photo: hideSecrets(photo).text, useMyPhotos: mine }); onPosted(); }
+    try { await api("/api/pica", { action: "post", caption: hideSecrets(caption).text, photo: hideSecrets(photo).text, useMyPhotos: mine, drafted }); onPosted(); }
     catch (e) { setErr(e instanceof Error ? e.message : "Couldn't post."); setBusy(false); }
   };
   return (
@@ -234,7 +236,12 @@ function Composer({ onClose, onPosted }: { onClose: () => void; onPosted: () => 
           <button className="ghost" onClick={onClose} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
         </div>
         <textarea value={caption} onChange={e => setCaption(e.target.value)} rows={3} maxLength={2000} placeholder="Write a caption (or a text post)…" aria-label="Caption" />
-        <textarea value={photo} onChange={e => setPhoto(e.target.value)} rows={2} maxLength={600} placeholder="Photo (optional): describe it — e.g. me at the gym after leg day, mirror selfie" aria-label="Photo description" />
+        <div className="row" style={{ gap: 8, alignItems: "flex-start" }}>
+          <textarea value={photo} onChange={e => { setPhoto(e.target.value); setDrafted(false); }} rows={2} maxLength={1500} placeholder="Photo (optional): describe it, or tap 📸 to have it written for you" aria-label="Photo description" />
+          <button type="button" className="ghost" onClick={() => setSheet(true)} data-testid="post-my-photo" style={{ flexShrink: 0, padding: "8px 10px", fontSize: 18 }}>📸</button>
+        </div>
+        {sheet && <MyPhotoSheet title="Photo of me" draft={a => api<{ description: string }>("/api/pica", { action: "me.draft", about: a, context: caption ? `a Picagram post with the caption: ${caption}` : "a Picagram post" }).then(r => r.description)}
+          onMake={async d => { setPhoto(d); setDrafted(true); setSheet(false); }} onClose={() => setSheet(false)} />}
         {photo.trim() && (
           <label className="row" style={{ gap: 10, fontSize: 13 }}>
             <input type="checkbox" checked={mine} onChange={e => setMine(e.target.checked)} data-testid="pica-mine" style={{ width: 20, height: 20, flexShrink: 0 }} />
@@ -422,6 +429,7 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [mySheet, setMySheet] = useState(false);
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => { api<{ account: DmAccount; messages: DmMsg[]; brains?: { id: string; label: string }[] }>("/api/pica", { action: "dm.open", id }).then(r => { setAcc(r.account); setMsgs(r.messages); setBrains(r.brains || []); }).catch(e => setErr(e instanceof Error ? e.message : "Couldn't open it.")); }, [id]);
   useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [msgs, busy]);
@@ -475,11 +483,49 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
         {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
         <div ref={end} />
       </div>
+      {mySheet && <MyPhotoSheet title={`Send ${acc?.name || "her"} a photo of you`} draft={a => api<{ description: string }>("/api/pica", { action: "dm.me.draft", id, about: a }).then(r => r.description)}
+        onMake={async d => { const r = await api<{ added: DmMsg[] }>("/api/pica", { action: "dm.me.photo", id, description: d }); setMsgs(m => [...(m || []), ...r.added]); setMySheet(false); }} onClose={() => setMySheet(false)} />}
       {pendingPic && <div style={{ padding: "0 12px 6px" }}><button className="ghost" onClick={sendPic} data-testid="dm-send-pic" style={{ padding: "6px 12px", fontSize: 13, borderColor: "#ec4899" }}>📸 {acc?.name || "She"} didn&apos;t send it — send the pic</button></div>}
       <form onSubmit={e => { e.preventDefault(); send(); }} className="row" style={{ padding: "10px 12px", gap: 8, borderTop: "1px solid var(--border)" }}>
+        <button type="button" className="ghost" onClick={() => setMySheet(true)} aria-label="Send a photo of you" data-testid="dm-my-photo" style={{ flexShrink: 0, padding: "8px 10px", fontSize: 18 }}>📸</button>
         <input value={text} onChange={e => setText(e.target.value)} placeholder={`Message ${acc?.name || ""}…`} aria-label="Message" maxLength={2000} disabled={!msgs} style={{ borderRadius: 999 }} />
         <button className="btn" disabled={!text.trim() || busy || !msgs} style={{ borderRadius: 999, padding: "10px 16px" }}>Send</button>
       </form>
+    </div>
+  );
+}
+
+/** 📸 A photo of you: the description first (like a peek), then exactly that — with your photos as reference. */
+function MyPhotoSheet({ title, draft, onMake, onClose }: { title: string; draft: (about: string) => Promise<string>; onMake: (d: string) => Promise<void>; onClose: () => void }) {
+  const [about, setAbout] = useState("");
+  const [desc, setDesc] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const write = async () => {
+    setBusy(true); setErr("");
+    try { setDesc(await draft(about)); } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't write it."); }
+    setBusy(false);
+  };
+  const make = async () => {
+    setBusy(true); setErr("");
+    try { await onMake(desc); } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't make it."); setBusy(false); }
+  };
+  return (
+    <div role="dialog" aria-modal="true" data-testid="my-photo-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2700 }} onClick={onClose}>
+      <div className="card" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          <div style={{ fontWeight: 800, fontSize: 17 }}>📸 {title}</div>
+          <button className="ghost" onClick={onClose} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
+        </div>
+        <div className="muted" style={{ fontSize: 12 }}>Say what you want a photo of. You&apos;ll see the description first and can fix anything before it&apos;s made — your &quot;About you&quot; photos keep it looking like you.</div>
+        <div className="row" style={{ gap: 8 }}>
+          <input value={about} onChange={e => setAbout(e.target.value)} maxLength={300} aria-label="What photo" data-testid="my-photo-about" placeholder="e.g. me at the gym after leg day" onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); write(); } }} />
+          <button className="ghost" onClick={write} disabled={busy} data-testid="my-photo-write" style={{ flexShrink: 0 }}>{busy && !desc ? "…" : "✍️ Write it"}</button>
+        </div>
+        {desc && <textarea value={desc} onChange={e => setDesc(e.target.value)} rows={4} maxLength={1500} aria-label="Photo description" data-testid="my-photo-desc" style={{ resize: "vertical" }} />}
+        {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
+        {desc && <button className="btn" onClick={make} disabled={busy || desc.trim().length < 5} data-testid="my-photo-go">{busy ? "Making it…" : "📸 Make this photo"}</button>}
+      </div>
     </div>
   );
 }

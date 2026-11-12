@@ -645,3 +645,4 @@ create table if not exists pica_memories (
   created_at timestamptz not null default now()
 );
 create index if not exists pica_memories_acc on pica_memories (user_id, account_id, created_at);
+alter table users add column if not exists bio_photo_notes jsonb not null default '{}'::jsonb;

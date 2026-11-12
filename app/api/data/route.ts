@@ -3,7 +3,7 @@ import { duePlans, setPlanStatus } from "../../lib/plans";
 import { readyIntros, acceptIntro, declineIntro, IntroError } from "../../lib/intros";
 import { peekAt, draftPeek, draftIcu } from "../../lib/peek";
 import { inPersonFor, startInPerson, endInPerson } from "../../lib/inPerson";
-import { awayFor, awayText } from "../../lib/picagram";
+import { awayFor, awayText, myPhotos } from "../../lib/picagram";
 import { cleanTags } from "../../lib/text";
 import { deleteMessages } from "../../lib/forget";
 import { sql } from "../../lib/db";
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
           phone: u?.phone ? showPhone(String(u.phone)) : "", phoneVerified: !!u?.phone_verified_at, veloNumber: veloNumber(),
           chatModel: availableModels().includes(u?.chat_model) ? u?.chat_model : "claude",
           models: availableModels().map(id => ({ id, ...MODEL_INFO[id] })),
-          bio: { text: u?.bio || "", birthday: u?.birthday || "", age: u?.age || null, state: u?.home_state || "", photo: u?.bio_thumb || u?.bio_photo || "", photoNote: u?.bio_photo_note || "", more: u?.bio_more && typeof u.bio_more === "object" ? u.bio_more : {} },
+          bio: { text: u?.bio || "", birthday: u?.birthday || "", age: u?.age || null, state: u?.home_state || "", photo: u?.bio_thumb || u?.bio_photo || "", photoNote: u?.bio_photo_note || "", photos: await myPhotos(me), more: u?.bio_more && typeof u.bio_more === "object" ? u.bio_more : {} },
           checkins: u?.checkins || "sometimes",
           videoModel: VIDEO_MODELS.some(m => m.id === u?.video_model) ? u?.video_model : DEFAULT_VIDEO_MODEL,
           videoModels: VIDEO_MODELS.map(m => ({ id: m.id, label: m.label })),
@@ -169,7 +169,18 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true, note });
       }
       case "bio.photoRemove": {
-        await db`update users set bio_photo_file_id = null, bio_photo_note = null where id = ${me}`;
+        // One photo (by id), or all of them.
+        if (UUID.test(id)) {
+          await deleteFile(me, id);
+          const [next] = await db`select id from velo_files where user_id = ${me} and kind = 'bio' order by created_at desc limit 1`;
+          const [u2] = await db`select bio_photo_notes from users where id = ${me}`;
+          const notes = (u2?.bio_photo_notes && typeof u2.bio_photo_notes === "object" ? u2.bio_photo_notes : {}) as Record<string, string>;
+          delete notes[id];
+          await db`update users set bio_photo_file_id = ${next?.id || null}, bio_photo_note = ${next ? notes[String(next.id)] || null : null}, bio_photo_notes = ${JSON.stringify(notes)}::jsonb, updated_at = now() where id = ${me}`;
+          return NextResponse.json({ ok: true });
+        }
+        for (const f of await db`select id from velo_files where user_id = ${me} and kind = 'bio'`) await deleteFile(me, String(f.id));
+        await db`update users set bio_photo_file_id = null, bio_photo_note = null, bio_photo_notes = '{}'::jsonb where id = ${me}`;
         const old = await db`select id from velo_files where user_id = ${me} and kind = 'bio'`;
         for (const o of old) await deleteFile(me, String(o.id));
         return NextResponse.json({ ok: true });
