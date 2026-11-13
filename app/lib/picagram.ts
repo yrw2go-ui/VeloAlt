@@ -11,6 +11,7 @@ import { allowsSuggestive, mediaMood } from "./traits";
 import { isValidTimeZone, localDate, zonedParts, zonedToUtc } from "./localTime";
 import { randomComments } from "./picaComments";
 import { makeCharacter } from "./makeCharacter";
+import { homeOf, homeText, livesNote, FAR_CHANCE } from "./where";
 
 const rand = (a: number, b: number) => a + Math.floor(Math.random() * (b - a + 1));
 const shuffle = <T,>(a: T[]) => [...a].sort(() => Math.random() - 0.5);
@@ -336,19 +337,26 @@ async function newAccount(userId: string): Promise<Record<string, unknown> | nul
   const chars = (await sql()`select name from chat_characters where owner_id is null or owner_id = ${userId}`).map(r => ({ handle: "", name: String(r.name) }));
   const taken = [...accounts, ...chars];
   const names = taken.map(t => (t.handle ? `${t.handle} (${t.name})` : t.name));
+  // 🏠 Most of them live near the person (so they could actually meet); about one in seven is far away.
+  const home = await homeOf(userId);
+  const far = Math.random() < FAR_CHANCE;
+  const where = !home ? "" : far
+    ? ` She lives far from ${homeText(home)} — her own city in another state entirely; say which in "lives".`
+    : ` She lives about twenty minutes from ${homeText(home)} — a nearby suburb or town in the same area; say which in "lives", and let her haunts be local.`;
   // Three goes at someone genuinely new, telling her what's already taken each time.
   let clash = "";
   for (let go = 0; go < 3; go++) {
-    const raw = await writeText("", `Invent ONE woman who posts on Picagram (a social photo app like Instagram): beautiful, aged 21–35, with her own look, background and vibe (fitness, travel, fashion, beach life, cooking, nightlife, yoga, cars, art, music…). She must be clearly NOT one of the people listed as taken: a different first name, a different surname and a different handle from every one of them — not a variation on one (no "chloehart" when "Chloe Hart" is taken, no adding numbers). Fictional, never a real person. JSON only: {"name":"First Last","handle":"lowercase_handle","bio":"short bio with emojis","look":"one detailed sentence for an image generator: age, face, hair, eyes, skin, build, usual style","followers":12000}`,
+    const raw = await writeText("", `Invent ONE woman who posts on Picagram (a social photo app like Instagram): beautiful, aged 21–35, with her own look, background and vibe (fitness, travel, fashion, beach life, cooking, nightlife, yoga, cars, art, music…). She must be clearly NOT one of the people listed as taken: a different first name, a different surname and a different handle from every one of them — not a variation on one (no "chloehart" when "Chloe Hart" is taken, no adding numbers). Fictional, never a real person.${where} JSON only: {"name":"First Last","handle":"lowercase_handle","bio":"short bio with emojis","look":"one detailed sentence for an image generator: age, face, hair, eyes, skin, build, usual style","lives":"City, State","followers":12000}`,
       `${names.length ? `ALREADY TAKEN — avoid these names, surnames and handles entirely:\n${names.slice(-60).join(", ")}` : "(nobody yet)"}${clash ? `\n\nYour last try clashed with ${clash} — pick a completely different name.` : ""}`, 600).catch(() => "");
-    let a: { name?: string; handle?: string; bio?: string; look?: string; followers?: number } = {};
+    let a: { name?: string; handle?: string; bio?: string; look?: string; lives?: string; followers?: number } = {};
     try { a = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); } catch { continue; }
     const handle = String(a.handle || a.name || "").toLowerCase().replace(/[^a-z0-9._]/g, "").slice(0, 28);
     const name = scrub(String(a.name || "")).replace(/\s+/g, " ").trim().slice(0, 60);
     if (handle.length < 2 || !name) continue;
     clash = tooClose(handle, name, taken);
     if (clash) { console.warn(`pica: ${name} (@${handle}) is too close to ${clash} — trying again`); continue; }
-    const [row] = await sql()`insert into pica_accounts (user_id, handle, name, bio, look, followers) values (${userId}, ${handle}, ${name}, ${scrub(String(a.bio || "")).slice(0, 300)}, ${scrub(String(a.look || "")).slice(0, 600)}, ${Math.max(2000, Math.min(900000, Number(a.followers) || rand(5000, 200000)))}) returning *`;
+    const lives = scrub(String(a.lives || (home && !far ? homeText(home) : ""))).replace(/\s+/g, " ").trim().slice(0, 120);
+    const [row] = await sql()`insert into pica_accounts (user_id, handle, name, bio, look, lives, followers) values (${userId}, ${handle}, ${name}, ${scrub(String(a.bio || "")).slice(0, 300)}, ${scrub(String(a.look || "")).slice(0, 600)}, ${lives || null}, ${Math.max(2000, Math.min(900000, Number(a.followers) || rand(5000, 200000)))}) returning *`;
     return row || null;
   }
   return null;
@@ -474,7 +482,7 @@ export async function picaBefriend(userId: string, accountId: string): Promise<s
   const [av] = a.avatar_media_id ? await sql()`select file_id from velo_media where id = ${a.avatar_media_id} and status = 'done'` : [];
   const names = (await sql()`select name from chat_characters where owner_id is null or owner_id = ${userId}`).map(r => String(r.name));
   const first = String(a.name).split(/\s+/)[0];
-  const d = await makeCharacter({ name: names.includes(first) ? String(a.name) : first, vibe: `She posts on Picagram as @${a.handle}: "${a.bio}". Looks: ${a.look}. You two just became friends after you followed her on Picagram.`, romantic: u.adult, male: false, avoidNames: [] });
+  const d = await makeCharacter({ name: names.includes(first) ? String(a.name) : first, vibe: `She posts on Picagram as @${a.handle}: "${a.bio}". Looks: ${a.look}. You two just became friends after you followed her on Picagram.`, romantic: u.adult, male: false, avoidNames: [], lives: a.lives ? `WHERE SHE LIVES: ${a.lives} — keep it exactly.` : livesNote(await homeOf(userId)) });
   const [c] = await sql()`insert into chat_characters (created_by, owner_id, intro_status, name, personality, backstory, relation, appearance, job, casual_wear, hobbies, voice, voice_name, voice_kind, romantic, romance_arc, traits, birthday, time_zone, work_attire, work_days, work_start, work_end, part_time, portrait_file_id, reference_ids)
     values (${userId}, ${userId}, 'accepted', ${d.name}, ${d.personality}, ${d.backstory}, ${scrub(`Someone you met on Picagram (@${a.handle}) — you followed her and became friends`)}, ${scrub(String(a.look || d.appearance)).slice(0, 600)}, ${d.job}, ${d.casual_wear}, ${d.hobbies}, ${d.voice}, ${d.voice_name}, ${d.voice_kind}, ${d.romantic}, ${d.romance_arc}, ${JSON.stringify(d.traits)}::jsonb, ${d.birthday}, '',
       ${d.work_attire}, ${d.work_days}::int[], ${d.work_start}, ${d.work_end}, ${d.part_time}, ${av?.file_id || photos[0]?.file_id || null}, ${photos.map(p => String(p.id))}::uuid[]) returning id`;

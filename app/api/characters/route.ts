@@ -11,6 +11,7 @@ import { makeCharacter } from "../../lib/makeCharacter";
 import { listLinks, setLink, removeLink, writeStory, linkSuggestions } from "../../lib/friends";
 import { MAX_CHARACTERS, DAILY_PORTRAITS, isAdmin, listCharacters, getCharacter, screenCharacter, startPortrait, checkPortrait, deleteCharacter, portraitsReady, chooseVoice, VoiceError } from "../../lib/characters";
 import { picaRenamed } from "../../lib/picagram";
+import { homeOf, livesNote } from "../../lib/where";
 
 // 🎭 Characters. Everyone can list them and chat; only admins create and edit. POST { action, ... }:
 //   list                     → { characters, portraits, admin }
@@ -117,7 +118,7 @@ export async function POST(req: NextRequest) {
       // ✨ A whole new character from a few hints — only a draft for the editor (nothing is saved).
       case "generate": {
         if (!allow(`chargen:${me}`, [{ ms: 60_000, max: 6 }, { ms: 86_400_000, max: 100 }])) return bad("That's a lot of new characters — give it a minute.", 429);
-        try { return NextResponse.json({ draft: await makeCharacter({ name: String(b.name || ""), vibe: String(b.vibe || ""), job: String(b.job || ""), romantic: b.romantic === true, male: b.male === true }) }); }
+        try { return NextResponse.json({ draft: await makeCharacter({ name: String(b.name || ""), vibe: String(b.vibe || ""), job: String(b.job || ""), romantic: b.romantic === true, male: b.male === true, lives: livesNote(await homeOf(me)) }) }); }
         catch (e) { return bad(e instanceof Error ? e.message : "Couldn't come up with one — try again.", 502); }
       }
       // Make one of her gallery pictures the main headshot.

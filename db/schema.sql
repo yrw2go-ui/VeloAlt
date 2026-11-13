@@ -676,3 +676,6 @@ create table if not exists chat_turndowns (
   at timestamptz not null default now(),
   primary key (user_id, character_id, ask)
 );
+-- 🏠 The town or city they live in (with the state): new characters and Picagram women mostly live near it.
+alter table users add column if not exists home_town text check (home_town is null or char_length(home_town) <= 80);
+alter table pica_accounts add column if not exists lives text check (lives is null or char_length(lives) <= 120);

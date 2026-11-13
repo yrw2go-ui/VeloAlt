@@ -11,13 +11,14 @@ import type { Profile } from "./pro";
 import { BIO_SECTIONS, BIO_MAX, type BioMore } from "./lib/bioSections";
 
 export type MyPhoto = { id: string; url: string; note: string; main: boolean };
-export type Bio = { text: string; birthday: string; age: number | null; state: string; photo: string; photoNote: string; photos?: MyPhoto[]; more?: BioMore };
+export type Bio = { text: string; birthday: string; age: number | null; town?: string; state: string; photo: string; photoNote: string; photos?: MyPhoto[]; more?: BioMore };
 
 export default function AboutCard({ profile, onChange }: { profile: Profile; onChange: () => void }) {
-  const bio: Bio = profile.bio || { text: "", birthday: "", age: null, state: "", photo: "", photoNote: "" };
+  const bio: Bio = profile.bio || { text: "", birthday: "", age: null, town: "", state: "", photo: "", photoNote: "" };
   const [text, setText] = useState(bio.text);
   const [birthday, setBirthday] = useState(bio.birthday);
   const [age, setAge] = useState(bio.age ? String(bio.age) : "");
+  const [town, setTown] = useState(bio.town || "");
   const [state, setState] = useState(bio.state);
   const moreJson = JSON.stringify(bio.more || {});
   const [more, setMore] = useState<BioMore>(bio.more || {});
@@ -26,16 +27,16 @@ export default function AboutCard({ profile, onChange }: { profile: Profile; onC
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState("");
   const input = useRef<HTMLInputElement>(null);
-  useEffect(() => { setText(bio.text); setBirthday(bio.birthday); setAge(bio.age ? String(bio.age) : ""); setState(bio.state); setMore(JSON.parse(moreJson)); }, [bio.text, bio.birthday, bio.age, bio.state, moreJson]);
+  useEffect(() => { setText(bio.text); setBirthday(bio.birthday); setAge(bio.age ? String(bio.age) : ""); setTown(bio.town || ""); setState(bio.state); setMore(JSON.parse(moreJson)); }, [bio.text, bio.birthday, bio.age, bio.town, bio.state, moreJson]);
   const clean = (m: BioMore) => JSON.stringify(Object.fromEntries(BIO_SECTIONS.map(s => [s.key, (m[s.key] || "").trim()]).filter(([, v]) => v)));
-  const dirty = text !== bio.text || birthday !== bio.birthday || (birthday ? false : age !== (bio.age ? String(bio.age) : "")) || state !== bio.state || clean(more) !== clean(bio.more || {});
+  const dirty = text !== bio.text || birthday !== bio.birthday || (birthday ? false : age !== (bio.age ? String(bio.age) : "")) || town !== (bio.town || "") || state !== bio.state || clean(more) !== clean(bio.more || {});
   const ageNum = Number(age);
   const ageBad = !birthday && age !== "" && !(Number.isInteger(ageNum) && ageNum >= 13 && ageNum <= 120);
 
   const save = async () => {
     if (ageBad) { setErr("Age should be a number between 13 and 120."); return; }
     setBusy(true); setErr("");
-    try { await data("profile.update", { bio: { text, birthday, age: birthday ? null : age ? ageNum : null, state, more } }); setSaved(true); setTimeout(() => setSaved(false), 1500); onChange(); }
+    try { await data("profile.update", { bio: { text, birthday, age: birthday ? null : age ? ageNum : null, town, state, more } }); setSaved(true); setTimeout(() => setSaved(false), 1500); onChange(); }
     catch (e) { setErr(e instanceof Error ? e.message : "Couldn't save."); }
     finally { setBusy(false); }
   };
@@ -100,6 +101,9 @@ export default function AboutCard({ profile, onChange }: { profile: Profile; onC
             placeholder={birthday ? "from birthday" : "e.g. 40"} style={{ marginTop: 4 }} />
         </label>
       </div>
+      <label style={lab}>Hometown <span className="muted" style={{ fontWeight: 500, fontSize: 12 }}>· the city you live in — most new characters and Picagram women live near it</span>
+        <input value={town} onChange={e => setTown(e.target.value)} maxLength={80} aria-label="Hometown" data-testid="about-town" placeholder="e.g. Valparaiso" style={{ marginTop: 4 }} />
+      </label>
       <label style={lab}>State you live in
         <select value={state} onChange={e => setState(e.target.value)} aria-label="State you live in" style={{ marginTop: 4, display: "block", width: "100%" }}>
           <option value="">— Not set —</option>

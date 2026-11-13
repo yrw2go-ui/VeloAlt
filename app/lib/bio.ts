@@ -24,11 +24,12 @@ function daysUntilBirthday(birthday: string, today: string): number {
 
 /** The "about them" part of the instructions (empty if they haven't filled anything in). */
 export async function aboutThem(userId: string, today: string): Promise<string> {
-  const [u] = await sql()`select bio, bio_photo_note, birthday::text, age, home_state, bio_more from users where id = ${userId}`;
+  const [u] = await sql()`select bio, bio_photo_note, birthday::text, age, home_town, home_state, bio_more from users where id = ${userId}`;
   if (!u) return "";
   const lines: string[] = [];
-  if (u.home_state && u.home_state !== "Outside the US") lines.push(`They live in ${u.home_state}.`);
-  if (u.home_state === "Outside the US") lines.push("They live outside the US.");
+  const where = [u.home_town, u.home_state && u.home_state !== "Outside the US" ? u.home_state : ""].filter(Boolean).join(", ");
+  if (where) lines.push(`They live in ${where}.`);
+  if (!u.home_town && u.home_state === "Outside the US") lines.push("They live outside the US.");
   if (u.birthday) {
     const b = String(u.birthday), d = daysUntilBirthday(b, today), [, m, day] = b.split("-").map(Number);
     lines.push(`They're ${ageOn(b, today)} (birthday ${MONTHS[m - 1]} ${day}${d === 0 ? " — that's TODAY! Wish them a happy birthday once, early on — not in every message" : d <= 7 ? ` — in ${d} day${d === 1 ? "" : "s"}` : ""}).`);
