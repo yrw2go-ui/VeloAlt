@@ -15,7 +15,7 @@ import { sql } from "./db";
 import { scrub } from "./secrets";
 import { sendPush } from "./push";
 
-export type Media = { id: string; kind: "image" | "video"; status: "offered" | "declined" | "working" | "done" | "failed"; url: string | null; thumb?: string | null; caption?: string | null; description?: string | null; subject?: string | null };
+export type Media = { id: string; kind: "image" | "video"; status: "offered" | "declined" | "working" | "done" | "failed"; url: string | null; thumb?: string | null; caption?: string | null; description?: string | null; subject?: string | null; created_at?: string | null };
 
 /** How a photo/video reads in the chat history the AI sees. */
 export const mediaNote = (kind: "image" | "video", status: Media["status"], description?: string | null, reaction?: string | null, subject?: string | null) => {
@@ -247,7 +247,7 @@ export async function tasteNote(userId: string, characterId: string | null): Pro
 }
 
 type Row = { id: string; user_id: string; character_id: string | null; kind: "image" | "video"; prompt: string; model: string; job_id: string | null; status: Media["status"]; attempts: number; created_at: string; url: string | null; thumb: string | null; poster_url: string | null; caption: string | null; description: string | null; refs: string[] | null; retried?: boolean; retries?: number; resent?: boolean; peek?: boolean; subject?: string | null };
-const view = (r: Row): Media => ({ id: r.id, kind: r.kind, status: r.status, url: r.status === "done" ? r.url : null, thumb: r.thumb || r.poster_url || null, caption: r.caption, description: r.description, subject: r.subject || null });
+const view = (r: Row): Media => ({ id: r.id, kind: r.kind, status: r.status, url: r.status === "done" ? r.url : null, thumb: r.thumb || r.poster_url || null, caption: r.caption, description: r.description, subject: r.subject || null, created_at: r.created_at ? String(r.created_at) : null });
 
 export async function getMedia(userId: string, id: string): Promise<Row | null> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;

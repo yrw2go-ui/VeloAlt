@@ -9,6 +9,7 @@ import { VeloAvatar } from "./avatar";
 import DraftCard, { type Draft } from "./drafts";
 import { hideSecrets } from "./lib/secrets";
 import { timeZone } from "./lib/tz";
+import { stamp } from "./lib/when";
 import { confirmAsk } from "./lib/dialog";
 import { useDictation } from "./dictate";
 import { CharacterFace, LinkBackForm } from "./characters";
@@ -154,7 +155,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       return;
     }
     const opener: ChatMsg[] = msgs.length || cid ? [] : [{ role: "assistant", content: openingLine }];
-    const mine: ChatMsg = { role: "user", content: t || "📎", ...(file ? { file } : {}) };
+    const mine: ChatMsg = { at: new Date().toISOString(), role: "user", content: t || "📎", ...(file ? { file } : {}) };
     const next = [...msgs, ...opener, mine];
     setMsgs(next); setText(""); setAttach(null); setBusy(true); setErr("");
     unsaved.current++;
@@ -221,7 +222,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       if (r.brainDown) {
         setBusy(false);
         if (!retry && r.reply) {
-          const hold: ChatMsg = { role: "assistant", content: r.reply };
+          const hold: ChatMsg = { at: new Date().toISOString(), role: "assistant", content: r.reply };
           setMsgs(m => [...(m || []), hold]);
           data("messages.add", { ...thread, messages: [{ role: "assistant", content: r.reply }] }).catch(() => {});
         }
@@ -238,8 +239,8 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       }
       if (r.react) setMsgs(list => (list || []).map(x => (x.id && x.id === myId ? { ...x, theirReaction: r.react } : x)));
       // 🎨 Photos/videos being made show up right under the reply and fill in when ready.
-      const sent: ChatMsg[] = (r.media || []).filter(x => x.status !== "failed").map(media => ({ role: "assistant", content: mediaNote(media), media }));
-      const replyMsg: ChatMsg = { role: "assistant", content: r.reply, ...(r.replyId ? { id: r.replyId } : {}) };
+      const sent: ChatMsg[] = (r.media || []).filter(x => x.status !== "failed").map(media => ({ at: new Date().toISOString(), role: "assistant", content: mediaNote(media), media }));
+      const replyMsg: ChatMsg = { at: new Date().toISOString(), role: "assistant", content: r.reply, ...(r.replyId ? { id: r.replyId } : {}) };
       setMsgs(m => [...(m || []), replyMsg, ...sent, ...(r.drafts || []).map(draft => ({ role: "assistant" as const, content: "", draft }))]);
       // Free the box as soon as her reply shows; saving it can finish in the background.
       setBusy(false);
@@ -310,7 +311,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       const icu = !!peekSheet?.icu;
       const r = await data<{ media: Media; userMsgId: string; mediaMsgId: string }>(icu ? "icu" : "scene.peek", { characterId: cid, description });
       setPeekSheet(null);
-      setMsgs(list => [...(list || []), { id: r.userMsgId, role: "user", content: icu ? "*ICU*" : "*peek*", peek: true }, { id: r.mediaMsgId, role: "assistant", content: "(peek)", media: r.media, peek: true }]);
+      setMsgs(list => [...(list || []), { id: r.userMsgId, at: new Date().toISOString(), role: "user", content: icu ? "*ICU*" : "*peek*", peek: true }, { id: r.mediaMsgId, at: new Date().toISOString(), role: "assistant", content: "(peek)", media: r.media, peek: true }]);
     } catch (e) { setPeekSheet(p => (p ? { ...p, loading: false, error: e instanceof Error ? e.message : "Couldn't peek right now." } : p)); }
   };
   // 📅 A hangout/date you two planned for today: set the scene for it.
@@ -686,6 +687,12 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   );
 }
 
+/** 🕒 When it was sent — small and quiet under the bubble. */
+const When = ({ at, align }: { at?: string; align?: "left" | "right" | "center" }) => {
+  const t = stamp(at);
+  return t ? <div data-testid="when" style={{ fontSize: 10, lineHeight: 1.6, opacity: 0.55, color: "var(--text)", padding: "2px 4px 0", textAlign: align || "left", alignSelf: align === "right" ? "flex-end" : align === "center" ? "center" : "flex-start" }}>{t}</div> : null;
+};
+
 function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg, social }: { social?: (md: Media) => void; m: ChatMsg; face: React.ReactNode; who: string; onMedia: (x: Media) => void; onFailed?: () => void; onReact: (id: string, r: string) => void; onAnswer: (x: Media) => void; onReactMsg: (id: string, r: string) => void }) {
   const mine = m.role === "user";
   const [picking, setPicking] = useState(false);
@@ -707,6 +714,7 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
       <div style={{ maxWidth: "min(86%, 400px)" }}>
         <MediaView media={m.media} onReady={onMedia} onFailed={onFailed} who={who} onAnswer={x => onAnswer(x)} />
         {m.media.status === "done" && <ReactionBar value={m.media.reaction} onPick={r => onReact(m.media!.id, r)} />}
+        <When at={m.at} align="center" />
       </div>
     </div>
   );
@@ -720,6 +728,7 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
         <MediaView media={m.media} onReady={onMedia} onFailed={onFailed} who={who} onAnswer={x => onAnswer(x)} />
         {m.media.status === "done" && <ReactionBar value={m.media.reaction} onPick={r => onReact(m.media!.id, r)} />}
         {social && m.media.status === "done" && <SocialButton done={!!m.media.social} onGo={() => social(m.media!)} />}
+        <When at={m.at} align={mine ? "right" : "left"} />
       </div>
     </div>
   );
@@ -736,6 +745,7 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
         {!mine && m.reaction && badge(m.reaction, "You")}
       </div>
       {picking && m.id && <ReactionBar value={m.reaction} onPick={r => { onReactMsg(m.id!, r); setPicking(false); }} />}
+      <When at={m.at} align={mine ? "right" : "left"} />
       </div>
     </div>
   );

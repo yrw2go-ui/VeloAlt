@@ -4,10 +4,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./lib/api";
 import { hideSecrets } from "./lib/secrets";
 import { MediaView, type Media } from "./media";
+import { stamp } from "./lib/when";
 import { confirmAsk } from "./lib/dialog";
 
 type Comment = { id: string; who: string; me: boolean; known: boolean; text: string; created_at: string };
 type Post = { id: string; saved: boolean; author: { id: string | null; name: string; portrait: string | null; away: string | null; account?: { id: string; handle: string; followed: boolean } }; kind: "image" | "text"; caption: string; media: Media | null; likes: number; liked: boolean; liked_by: string[]; comments: number; preview: Comment[]; created_at: string; all?: Comment[] };
+
+/** 🕒 When it went up / was sent — small and quiet. */
+const When = ({ at, align }: { at?: string; align?: "left" | "right" | "center" }) => {
+  const t = stamp(at);
+  return t ? <div data-testid="when" style={{ fontSize: 10, lineHeight: 1.6, opacity: 0.55, color: "var(--text)", padding: "2px 2px 0", textAlign: align || "left" }}>{t}</div> : null;
+};
 
 const ago = (at: string) => {
   const m = Math.max(0, Math.round((Date.now() - Date.parse(at)) / 60_000));
@@ -186,7 +193,7 @@ function PostCard({ p, me, obs, onChange, onProfile, onFollow, onNote, onRemoved
           {p.author.away && <div className="muted" style={{ fontSize: 11 }} data-testid="pica-away">{p.author.away}</div>}
         </div>
         {acc && <button className={acc.followed ? "ghost" : "btn"} onClick={follow} data-testid="pica-follow" style={{ padding: "4px 12px", fontSize: 13 }}>{acc.followed ? "Following" : "Follow"}</button>}
-        <span className="muted" style={{ fontSize: 12 }}>{ago(p.created_at)}</span>
+        <span className="muted" style={{ fontSize: 12 }} title={stamp(p.created_at)}>{ago(p.created_at)}</span>
         {!p.author.id && !acc && <button onClick={remove} aria-label="Delete post" data-testid="pica-delete" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16, padding: "0 2px", color: "var(--muted)" }}>🗑</button>}
       </div>
       {p.media ? (
@@ -203,6 +210,7 @@ function PostCard({ p, me, obs, onChange, onProfile, onFollow, onNote, onRemoved
         {likedBy.length ? <>Liked by {likedBy.slice(0, 2).join(", ")}{p.likes > likedBy.length ? <> and {fmt(p.likes - Math.min(2, likedBy.length))} others</> : null}</> : <>{fmt(p.likes)} likes</>}
       </div>
       {p.media && p.caption && <div style={{ padding: "4px 14px", fontSize: 14, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}><b>{acc ? acc.handle : p.author.id ? p.author.name : me}</b> {p.caption}</div>}
+      <div style={{ padding: "2px 14px 0" }}><When at={p.created_at} /></div>
       {p.comments > list.length && !open && <button onClick={showAll} className="muted" data-testid="pica-all" style={{ background: "none", border: "none", padding: "2px 14px", fontSize: 13, cursor: "pointer" }}>View all {p.comments} comments</button>}
       <div style={{ padding: "2px 14px", display: "grid", gap: 3 }}>
         {list.map(c => <div key={c.id} data-testid="pica-comment" style={{ fontSize: 13.5, overflowWrap: "anywhere" }}><b style={{ color: c.known ? "var(--text)" : "var(--muted)" }}>{c.me ? me : c.who}</b> {c.text}</div>)}
@@ -255,7 +263,7 @@ function Composer({ onClose, onPosted }: { onClose: () => void; onPosted: () => 
   );
 }
 
-type Photo = { media_id: string; url: string; thumb: string | null; caption?: string; saved: boolean };
+type Photo = { media_id: string; url: string; thumb: string | null; caption?: string; saved: boolean; at?: string };
 
 /** 🖼️ A picture, full screen, with Save. */
 function Viewer({ photo, onClose, onSaved }: { photo: Photo; onClose: () => void; onSaved: (on: boolean) => void }) {
@@ -265,6 +273,7 @@ function Viewer({ photo, onClose, onSaved }: { photo: Photo; onClose: () => void
     <div role="dialog" aria-modal="true" data-testid="pica-viewer" onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.95)", zIndex: 2700, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 12 }}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={photo.url} alt={photo.caption || "Photo"} onClick={e => e.stopPropagation()} style={{ maxWidth: "100%", maxHeight: "80dvh", objectFit: "contain", borderRadius: 12 }} />
+      <When at={photo.at} align="center" />
       <div className="row" style={{ gap: 10 }} onClick={e => e.stopPropagation()}>
         <button className={saved ? "ghost" : "btn"} onClick={toggle} data-testid="pica-viewer-save">{saved ? "🔖 Saved" : "📑 Save"}</button>
         <button className="ghost" onClick={onClose}>Close</button>
@@ -490,6 +499,7 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
             {m.media ? <MediaView media={m.media} who={acc?.name || ""} /> : (
               <div style={{ padding: "9px 13px", borderRadius: 18, background: m.role === "user" ? "linear-gradient(135deg,#8b5cf6,#ec4899)" : "var(--surface2)", color: m.role === "user" ? "#fff" : "var(--text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 15 }}>{m.content}</div>
             )}
+            <When at={m.created_at} align={m.role === "user" ? "right" : "left"} />
           </div>
         ))}
         {busy && <div className="muted" style={{ fontSize: 13 }}>{acc?.name || "She"} is typing…</div>}

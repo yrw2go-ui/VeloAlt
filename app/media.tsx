@@ -4,9 +4,10 @@
 // Once ready the chat shows a small thumbnail (fast, light on data) that fits on
 // screen; the full photo or the video loads only when tapped (full screen).
 import { useEffect, useState } from "react";
+import { stamp } from "./lib/when";
 import { data } from "./lib/api";
 
-export type Media = { id: string; kind: "image" | "video"; status: "offered" | "declined" | "working" | "done" | "failed"; url: string | null; thumb?: string | null; caption?: string | null; reaction?: string | null; description?: string | null; kept?: boolean; subject?: string | null; social?: boolean };
+export type Media = { id: string; kind: "image" | "video"; status: "offered" | "declined" | "working" | "done" | "failed"; url: string | null; thumb?: string | null; caption?: string | null; reaction?: string | null; description?: string | null; kept?: boolean; subject?: string | null; social?: boolean; created_at?: string | null };
 
 // ❤️ Reactions they can leave on a photo/video.
 import { REACTIONS } from "./lib/reactions";
@@ -125,7 +126,7 @@ export function VideoTile({ poster, fill }: { poster: string | null; fill?: bool
 }
 
 /** Full screen: centered, the whole picture visible, no scrolling. Loads the full photo / the video now. */
-export function Viewer({ m, onClose, children }: { m: { kind: "image" | "video"; url: string | null }; onClose: () => void; children?: React.ReactNode }) {
+export function Viewer({ m, onClose, children }: { m: { kind: "image" | "video"; url: string | null; created_at?: string | null }; onClose: () => void; children?: React.ReactNode }) {
   useEffect(() => {
     const k = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", k);
@@ -137,6 +138,7 @@ export function Viewer({ m, onClose, children }: { m: { kind: "image" | "video";
       style={{ position: "fixed", inset: 0, zIndex: 4000, background: "rgba(0,0,0,.92)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, padding: 16 }}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       {m.kind === "image" ? <img src={m.url!} alt="Photo" data-testid="viewer-full" style={style} onClick={e => e.stopPropagation()} /> : <video src={m.url!} data-testid="viewer-video" style={style} controls playsInline autoPlay loop onClick={e => e.stopPropagation()} />}
+      {stamp(m.created_at) && <div data-testid="when" style={{ fontSize: 11, opacity: 0.6, color: "#fff" }} onClick={e => e.stopPropagation()}>{stamp(m.created_at)}</div>}
       {children && <div className="row" style={{ gap: 10 }} onClick={e => e.stopPropagation()}>{children}</div>}
       <button aria-label="Close" onClick={onClose} style={{ position: "fixed", top: "max(14px, env(safe-area-inset-top))", right: 14, width: 40, height: 40, borderRadius: 999, border: "none", background: "rgba(255,255,255,.15)", color: "#fff", fontSize: 18, cursor: "pointer" }}>✕</button>
     </div>

@@ -7,6 +7,7 @@ import { hideSecrets } from "./lib/secrets";
 import { timeZone } from "./lib/tz";
 import { confirmAsk } from "./lib/dialog";
 import { CharacterFace, type Character } from "./characters";
+import { stamp } from "./lib/when";
 import { BRAIN_OPTIONS } from "./lib/brainOptions";
 import { SceneSheet, Selectable, type SceneClockChoice } from "./chat";
 import { MediaView, ReactionBar, type Media } from "./media";
@@ -20,6 +21,12 @@ export function GroupFaces({ g, chars, size }: { g: Group; chars: Character[]; s
   const list = g.member_ids.map(id => chars.find(c => c.id === id)).filter((c): c is Character => !!c).slice(0, 3);
   return <span style={{ display: "flex" }}>{list.map((c, i) => <span key={c.id} style={{ marginLeft: i ? -size * 0.4 : 0, borderRadius: "50%", border: "2px solid var(--surface2)" }}><CharacterFace c={c} size={size} /></span>)}</span>;
 }
+
+/** 🕒 When it was said — small and quiet under the bubble. */
+const When = ({ at, align }: { at?: string; align?: "left" | "right" | "center" }) => {
+  const t = stamp(at);
+  return t ? <div data-testid="when" style={{ fontSize: 10, lineHeight: 1.6, opacity: 0.55, color: "var(--text)", padding: "2px 2px 0", textAlign: align || "left" }}>{t}</div> : null;
+};
 
 export function GroupChat({ group: initial, chars, name, brains = [], onDeleted }: { group: Group; chars: Character[]; name: string; brains?: string[]; onDeleted: (id: string) => void }) {
   const [group, setGroup] = useState(initial);
@@ -178,6 +185,7 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
             <div key={m.id} data-testid="group-peek-media" style={{ alignSelf: "center", maxWidth: "85%", display: "flex", flexDirection: "column", gap: 4 }}>
               <MediaView media={m.media} who={group.title} />
               <div className="muted" style={{ fontSize: 11, textAlign: "center" }}>👀 Peek · they don&apos;t know</div>
+              <When at={m.created_at} align="center" />
             </div>
           );
           if (m.peek) return <div key={m.id} className="muted" style={{ alignSelf: "flex-end", fontSize: 12, padding: "4px 10px", borderRadius: 999, border: "1px dashed var(--border)" }}>👀 you peeked</div>;
@@ -195,6 +203,7 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
                   ))}
                 </div>
               )}
+              <When at={m.created_at} align="right" />
             </div>
           );
           return (
@@ -207,6 +216,7 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
                   {m.reaction && <span data-testid="group-reaction" style={{ position: "absolute", bottom: -12, right: -6, fontSize: 15, lineHeight: 1, padding: "3px 5px", borderRadius: 999, background: "var(--surface)", border: "1px solid var(--border)" }}>{m.reaction}</span>}
                 </div>
                 {picking === m.id && <ReactionBar value={m.reaction} onPick={r => react(m.id, r)} />}
+                <When at={m.created_at} />
               </div>
             </div>
           );
