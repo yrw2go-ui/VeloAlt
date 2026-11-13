@@ -666,3 +666,5 @@ alter table chat_relationships add column if not exists happy integer check (hap
 -- 💗 How much a romantic character loves them (0–100): it starts from her nature and grows or
 -- cools over time, with everything that happens between them.
 alter table chat_relationships add column if not exists love integer check (love is null or love between 0 and 100);
+-- 🤒 chat_away also covers being off colour: 'trip' (away, the default) or 'sick' (at home, run down).
+alter table chat_away add column if not exists kind text not null default 'trip' check (kind in ('trip', 'sick'));

@@ -264,7 +264,9 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   const startTogether = async (place: string) => {
     setTogetherSheet(t => (t ? { ...t, busy: true, error: undefined } : t));
     try {
-      const r = await data<{ inPerson: InPerson; marker: ChatMsg }>("inperson.start", { characterId: cid, place });
+      const r = await data<{ inPerson: InPerson; marker: ChatMsg; no?: string }>("inperson.start", { characterId: cid, place, timeZone: timeZone() });
+      // 🙋‍♀️ She can't right now (work, class, or just not tonight): her text lands in the chat.
+      if (r.no) { setTogetherSheet(null); setMsgs(list => [...(list || []), r.marker]); return; }
       setTogetherSheet(null); setInPerson(r.inPerson);
       unsaved.current++;
       const next = [...msgsRef.current, r.marker];
@@ -327,7 +329,9 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     await data("plans.skip", { planId: p.id }).catch(() => {});
   };
   const startScene = async (kind: "live" | "past", title: string, details: string, clock?: SceneClockChoice) => {
-    const r = await data<{ scene?: { id: string; title: string; details: string }; marker: ChatMsg }>(kind === "live" ? "scene.start" : "scene.past", { characterId: cid, title, details, ...(fromPlan ? { planId: fromPlan.id } : {}), ...(clock ? clock : {}) });
+    const r = await data<{ scene?: { id: string; title: string; details: string }; marker: ChatMsg; no?: string }>(kind === "live" ? "scene.start" : "scene.past", { characterId: cid, title, details, timeZone: timeZone(), ...(fromPlan ? { planId: fromPlan.id } : {}), ...(clock ? clock : {}) });
+    // 🙋‍♀️ She'd rather another time: her text lands in the chat and nothing starts.
+    if (r.no) { setSceneSheet(false); setFromPlan(null); setMsgs(list => [...(list || []), r.marker]); return; }
     if (fromPlan) setPlans(ps => ps.filter(x => x.id !== fromPlan.id));
     setFromPlan(null);
     setSceneSheet(false);
@@ -338,7 +342,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     await respond(next);
   };
   const endScene = async () => {
-    if (!(await confirmAsk(`End the scene "${scene?.title}"? It'll become a memory you both have.`, { yes: "End scene" }))) return;
+    if (!(await confirmAsk(`End the video chat "${scene?.title}"? It'll become a memory you both have.`, { yes: "Hang up" }))) return;
     try {
       const r = await data<{ marker: ChatMsg }>("scene.end", { characterId: cid });
       setScene(null);
@@ -520,8 +524,8 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       )}
       {character && scene && (
         <div data-testid="scene-banner" className="row" style={{ gap: 8, padding: "8px 14px", borderBottom: "1px solid var(--border)", background: "linear-gradient(90deg, rgba(124,140,255,.16), rgba(236,72,153,.12))", fontSize: 13 }}>
-          <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>🎬 <b>{scene.title}</b></span>
-          <button className="ghost" onClick={endScene} disabled={busy} data-testid="scene-end" style={{ padding: "4px 10px", fontSize: 12 }}>End scene</button>
+          <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>🎥 <b>{scene.title}</b></span>
+          <button className="ghost" onClick={endScene} disabled={busy} data-testid="scene-end" style={{ padding: "4px 10px", fontSize: 12 }}>End video chat</button>
         </div>
       )}
       {character && !scene && inPerson && (
@@ -536,7 +540,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
           <div style={{ fontSize: 14 }}>📅 <b>{plans[0].day === todayYmd() ? "Today" : "You had plans"}:</b> {plans[0].title}{plans[0].details ? <span className="muted"> — {plans[0].details}</span> : null}</div>
           <div className="muted" style={{ fontSize: 12 }}>Describe the scene — where you are, the vibe, what you&apos;re wearing — and play it out with {character.name}.</div>
           <div className="row" style={{ gap: 8 }}>
-            <button className="btn" data-testid="plan-start" disabled={busy || !msgs} onClick={() => { setFromPlan(plans[0]); setSceneSheet(true); }} style={{ padding: "8px 14px", fontSize: 13 }}>🎬 Set the scene</button>
+            <button className="btn" data-testid="plan-start" disabled={busy || !msgs} onClick={() => { setFromPlan(plans[0]); setSceneSheet(true); }} style={{ padding: "8px 14px", fontSize: 13 }}>🎥 Video chat</button>
             <button className="ghost" data-testid="plan-skip" onClick={() => skipPlan(plans[0])} style={{ padding: "8px 12px", fontSize: 13 }}>Not today</button>
           </div>
         </div>
@@ -569,7 +573,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
               <div style={{ fontWeight: 800, fontSize: 17 }}>🧍 Together with {character.name}</div>
               <button type="button" className="ghost" onClick={() => setTogetherSheet(null)} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
             </div>
-            <div className="muted" style={{ fontSize: 12 }}>You&apos;re with her in person — she&apos;ll talk face to face instead of texting, and 👁️ ICU shows what you see. Not a planned outing (that&apos;s 🎬).</div>
+            <div className="muted" style={{ fontSize: 12 }}>You&apos;re with her in person — she&apos;ll talk face to face instead of texting, and 👁️ ICU shows what you see. Not a video chat (that&apos;s 🎥).</div>
             <input value={togetherSheet.place} onChange={e => setTogetherSheet(t => (t ? { ...t, place: e.target.value } : t))} maxLength={120} autoFocus aria-label="Where are you?" placeholder="Where? (optional) e.g. on her couch, in my car" data-testid="inperson-place" />
             {togetherSheet.error && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {togetherSheet.error}</div>}
             <button className="btn" disabled={togetherSheet.busy} data-testid="inperson-go">{togetherSheet.busy ? "…" : "🧍 We're together"}</button>
@@ -643,13 +647,13 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       <form onSubmit={e => { e.preventDefault(); send(text); }} className="row" style={{ padding: "10px 12px", borderTop: "1px solid var(--border)", ...(selected ? { display: "none" } : {}) }}>
         <input ref={picker} type="file" accept={ACCEPT} hidden onChange={e => pick(e.target.files?.[0])} data-testid="chat-file-input" />
         <div style={{ position: "relative", flexShrink: 0 }}>
-          <button type="button" onClick={() => setMoreOpen(o => !o)} disabled={!msgs || busy} aria-label={moreOpen ? "Close menu" : "More: scene, together, attach"} aria-expanded={moreOpen} data-testid="chat-more"
+          <button type="button" onClick={() => setMoreOpen(o => !o)} disabled={!msgs || busy} aria-label={moreOpen ? "Close menu" : "More: video chat, together, attach"} aria-expanded={moreOpen} data-testid="chat-more"
             style={{ position: "relative", zIndex: 42, borderRadius: 999, width: 40, height: 46, padding: 0, cursor: "pointer", fontSize: 24, lineHeight: 1, border: "none", background: "transparent", color: "var(--muted)", transform: moreOpen ? "rotate(45deg)" : undefined, transition: "transform .15s" }}>{uploading ? "⏳" : "＋"}</button>
           {moreOpen && (
             <>
               <div onClick={() => setMoreOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
               <div role="menu" data-testid="chat-more-menu" className="card" style={{ position: "absolute", bottom: 52, left: 0, zIndex: 41, minWidth: 220, padding: 6, display: "flex", flexDirection: "column", gap: 2, boxShadow: "0 8px 24px rgba(0,0,0,.45)" }}>
-                {cid && !scene && <button type="button" role="menuitem" data-testid="scene-open" onClick={() => { setMoreOpen(false); setSceneSheet(true); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", fontSize: 15, cursor: "pointer" }}><span style={{ fontSize: 19 }}>🎬</span> Start a scene</button>}
+                {cid && !scene && <button type="button" role="menuitem" data-testid="scene-open" onClick={() => { setMoreOpen(false); setSceneSheet(true); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", fontSize: 15, cursor: "pointer" }}><span style={{ fontSize: 19 }}>🎥</span> Start a video chat</button>}
                 {cid && !scene && !inPerson && <button type="button" role="menuitem" data-testid="inperson-open" onClick={() => { setMoreOpen(false); setTogetherSheet({ place: "", busy: false }); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", fontSize: 15, cursor: "pointer" }}><span style={{ fontSize: 19 }}>🧍</span> Together in person</button>}
                 {cid && !scene && inPerson && <button type="button" role="menuitem" data-testid="icu-open" disabled={!!peekSheet} onClick={() => { setMoreOpen(false); openPeek(true); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", fontSize: 15, cursor: "pointer" }}><span style={{ fontSize: 19 }}>👁️</span> ICU — see {who} right now</button>}
                 <button type="button" role="menuitem" data-testid="chat-from-gallery" onClick={() => { setMoreOpen(false); setPickGallery(true); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", fontSize: 15, cursor: "pointer" }}><span style={{ fontSize: 19 }}>🖼️</span> From my gallery</button>
@@ -706,7 +710,7 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
       </div>
     </div>
   );
-  if (m.content.startsWith("🎬 ") || m.content.startsWith("🧍 ")) return (
+  if (m.content.startsWith("🎬 ") || m.content.startsWith("🎥 ") || m.content.startsWith("🧍 ")) return (
     <div data-testid="scene-note" style={{ alignSelf: "center", maxWidth: "90%", textAlign: "center", fontSize: 12, padding: "6px 12px", borderRadius: 999, background: "var(--surface2)", border: "1px solid var(--border)" }} className="muted">{m.content}</div>
   );
   if (m.media) return (
@@ -830,24 +834,24 @@ export function SceneSheet({ who, plan, onClose, onStart }: { who: string; plan?
     <div role="dialog" aria-modal="true" data-testid="scene-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }} onClick={() => { stopMics(); onClose(); }}>
       <div className="card" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 12 }}>
         <div className="row" style={{ justifyContent: "space-between" }}>
-          <div style={{ fontWeight: 800, fontSize: 17 }}>🎬 {plan ? `Your plans with ${who}` : `A scene with ${who}`}</div>
+          <div style={{ fontWeight: 800, fontSize: 17 }}>🎥 {plan ? `Your plans with ${who}` : `A video chat with ${who}`}</div>
           <button className="ghost" onClick={() => { stopMics(); onClose(); }} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
         </div>
         <div className="row" style={{ gap: 8 }}>
           <button type="button" style={tab(kind === "live")} onClick={() => setKind("live")} data-testid="scene-live">Play it out</button>
           <button type="button" style={tab(kind === "past")} onClick={() => setKind("past")} data-testid="scene-past">It already happened</button>
         </div>
-        <div className="muted" style={{ fontSize: 12 }}>{kind === "live" ? `You two act it out here — ${who} sets the scene, you join in. *Actions in asterisks* show in italics. End it when you're done; it becomes a memory you both have.` : `Tell ${who} what you did together — she'll remember it as a real shared memory and talk about it.`}</div>
+        <div className="muted" style={{ fontSize: 12 }}>{kind === "live" ? `You two are on video together — each of you where you are. ${who} plays her side; *actions in asterisks* show in italics. End it when you're done; it becomes a memory you both have.` : `Tell ${who} what you did together — she'll remember it as a real shared memory and talk about it.`}</div>
         <label style={{ fontSize: 13, fontWeight: 700 }}>{kind === "live" ? "What's the plan?" : "What did you do?"}
           <span className="row" style={{ gap: 8, marginTop: 4, alignItems: "flex-start" }}>
-            <input value={title} onChange={e => setTitle(e.target.value)} maxLength={120} aria-label="Scene" placeholder={kind === "live" ? "e.g. Dinner date at Luigi's" : "e.g. Went bowling downtown"} style={{ flex: 1, minWidth: 0 }} />
+            <input value={title} onChange={e => setTitle(e.target.value)} maxLength={120} aria-label="Scene" placeholder={kind === "live" ? "e.g. Dinner together on video" : "e.g. Went bowling downtown"} style={{ flex: 1, minWidth: 0 }} />
             {micBtn({ m: titleMic, other: detailsMic, value: title, label: "Say the plan", id: "scene-title-mic" })}
           </span>
         </label>
         <label style={{ fontSize: 13, fontWeight: 700 }}>{plan ? "Describe the scene" : "Details"} <span className="muted" style={{ fontWeight: 500 }}>· {plan ? "the more you write, the better" : "optional"}</span>
           <span className="row" style={{ gap: 8, marginTop: 4, alignItems: "flex-start" }}>
             <textarea value={details} onChange={e => setDetails(e.target.value)} maxLength={1000} rows={3} aria-label="Scene details" style={{ flex: 1, minWidth: 0, resize: "vertical" }}
-              placeholder={kind === "live" ? "Where, when, the vibe — e.g. Friday night, candlelit Italian place, she's wearing the red dress" : "What happened — e.g. you beat me twice, I threw a gutter ball, then we got ice cream"} />
+              placeholder={kind === "live" ? "What you're doing and where she is — e.g. Friday night, she's cooking at hers, I'm on the sofa" : "What happened — e.g. you beat me twice, I threw a gutter ball, then we got ice cream"} />
             {micBtn({ m: detailsMic, other: titleMic, value: details, label: "Describe it out loud", id: "scene-details-mic" })}
           </span>
         </label>

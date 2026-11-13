@@ -9,6 +9,7 @@
 //   "errandsum" — a short report to the owner after that call
 import { cleanReply, isMeta } from "./text";
 import { secretKnowers, standingNote, standingOf } from "./standing";
+import { sickFor, lifeNote, WANTS } from "./life";
 import Anthropic from "@anthropic-ai/sdk";
 import type { Caller } from "./caller";
 import { sql } from "./db";
@@ -25,7 +26,7 @@ import { friendsOf, friendsNote, sapphicWith } from "./friends";
 import { workNow } from "./work";
 import { sceneClockNote } from "./sceneClock";
 import { inPersonFor, inPersonNote } from "./inPerson";
-import { picaNote, picaHandleNote } from "./picagram";
+import { picaNote, picaHandleNote, awayFor } from "./picagram";
 /** How many recent scenes (2 weeks) with her got pushed from their planned time. */
 async function pushedLately(userId: string, sceneId: string): Promise<number> {
   const [r] = await sql()`select count(*)::int as n from chat_scenes s where s.user_id = ${userId} and s.pushed
@@ -71,7 +72,7 @@ function groupNote(me: string, them: string, others: string[], wrapUp: boolean, 
   const person = them || "the person";
   const all = [person, ...others].join(", ");
   const love = romance ? `\nROMANCE IN THE GROUP: ${person} may be close with, flirt with or date more than one of you. React the way YOU would, from your personality, backstory, feelings and your romance arc: ${poly ? `jealous, curious or competitive at first — but you're OPEN to sharing ${person} in a polyamorous relationship. It's possible, never guaranteed: it grows slowly and believably, especially if ${person} keeps gently nudging that way.` : `you're not into sharing ${person} — jealous, hurt or competitive in your own way.`}${sapphic.length ? ` 🌈 With ${sapphic.join(" and ")} (a little curious too), something could slowly develop — flirting, a crush — PG-13 and never forced; men stay your main attraction.` : ""} Whatever you feel, never be cruel, controlling or threatening. Any romance stays PG-13.` : "";
-  const sc = scene ? `\n🎬 YOU'RE ALL IN A SCENE TOGETHER RIGHT NOW (role-play ${person} set up): "${scene.title}"${scene.details ? ` — ${scene.details}` : ""}. Everyone in the group is there. Play it out as if it's really happening: present tense, your actions in *italics*, your words in plain text, small details of the place, react to what ${person} and the others do — never decide their actions for them. 1–4 sentences per turn. Keep it within PG-13. If someone steps out of the scene (brackets or "OOC"), answer normally, then go back in.${scene.time ? ` ${scene.time}` : ""}` : "";
+  const sc = scene ? `\n🎥 YOU'RE ALL ON A GROUP VIDEO CHAT RIGHT NOW: "${scene.title}"${scene.details ? ` — ${scene.details}` : ""}. Everyone's on the call, each from their own place — you are NOT in the same room. Play it out as if it's happening: present tense, what you're doing on your end in *italics*, your words in plain text, small details of where you are, react to what ${person} and the others do on their screens — never decide their actions for them. Nothing physical happens between you; the screen is between you (and you can use it: freezing, bad signal, holding something up, turning the camera round). 1–4 sentences per turn. Keep it within PG-13. If someone steps out of it (brackets or "OOC"), answer normally, then go back in.${scene.time ? ` ${scene.time}` : ""}` : "";
   // 🧍 Hanging out in person (not a scene), and what this character was just doing one-on-one before they joined up.
   const ip = inPerson !== null && !scene ? `\n🧍 YOU'RE ALL TOGETHER IN PERSON RIGHT NOW${inPerson ? ` (${inPerson})` : ""} — not a group text: you're physically hanging out with ${all}. Talk face to face: present tense, a quick action in *italics* now and then, react to what ${person} and the others say and do right there, notice each other. Don't talk like you're apart (no "wish you were here", no texting talk, no selfies — everyone can see you). Never decide what ${person} or the others do. 1–3 sentences per turn. Keep it within PG-13. Lines starting with 🧍 mark when people arrived or left.` : "";
   const cu = catchUp && !wrapUp ? `\nRIGHT BEFORE THIS (just you and ${person}, one-on-one — pick up naturally from it; e.g. if ${person} said they were bringing someone, that's who just showed up):\n${catchUp}` : "";
@@ -167,6 +168,9 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
   const trust = ch ? await trustFor(caller.userId, ch).catch(() => null) : null;
   // 😊 How happy she is with them right now — another thing that colours how she takes news.
   const happy = ch && !errand ? await happyFor(caller.userId, ch).catch(() => null) : null;
+  // 🤒✈️ Off colour, or away on a trip: it changes what she's up for and where her photos come from.
+  const unwell = ch && !errand ? await sickFor(caller.userId, ch.id).catch(() => null) : null;
+  const trip = ch && !errand ? await awayFor(caller.userId, ch.id).catch(() => null) : null;
   // 💗 And where her heart is, for a romantic character (it grows and cools over time).
   const love = ch && !errand ? await loveFor(caller.userId, ch, arc).catch(() => null) : null;
   // 🎬 A scene (date/outing) being played out right now with this character.
@@ -215,7 +219,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
         ch && mode !== "remember" && mode !== "memo" && !group ? await plansNote(caller.userId, ch.id, today.date).catch(() => "") : "",
         ch && mode !== "remember" && mode !== "memo" && !opts.promise ? await promisesNote(caller.userId, ch.id, today.tz).catch(() => "") : "",
         opts.promise ? `WHAT YOU PROMISED: ${opts.promise}` : "",
-        ch ? "SCENES: lines starting with 🎬 are dates or outings you two did together (played out, or that they told you happened). Treat them as real shared memories — bring them up, tease about them, look back on them." : "",
+        ch ? "YOUR HISTORY TOGETHER: lines starting with 🎬 are things you two actually did together, 🎥 are video chats you spent together, and 🧍 mark when you were together in person. All of them are real shared memories — bring them up, tease about them, look back on them." : "",
         mode === "chat" ? REACT_HINT : "",
         photoMoment && !introKind ? PHOTO_MOMENT : "",
         introKind ? introNote(introKind) : "",
@@ -225,6 +229,8 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
         trust !== null && mode !== "remember" && mode !== "memo" ? trustNote(trust, arc) : "",
         happy !== null && mode !== "remember" && mode !== "memo" ? happyNote(happy, arc) : "",
         love !== null && mode !== "remember" && mode !== "memo" ? loveNote(love) : "",
+        ch && mode !== "remember" && mode !== "memo" ? lifeNote(unwell, trip) : "",
+        ch && mode !== "remember" && mode !== "memo" ? WANTS : "",
         love !== null && (mode === "remember" || mode === "memo") ? `HOW MUCH YOU LOVE THEM: ${love}/100. ${LOVE_REMEMBER}` : "",
         happy !== null && (mode === "remember" || mode === "memo") ? `HOW HAPPY YOU ARE WITH THEM: ${happy}/100. ${HAPPY_REMEMBER}` : "",
         trust !== null && (mode === "remember" || mode === "memo") ? `YOUR TRUST IN THEM: ${trust}/100. ${TRUST_REMEMBER(arc)}` : "",

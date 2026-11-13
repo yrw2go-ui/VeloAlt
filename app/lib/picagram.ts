@@ -25,7 +25,7 @@ async function userInfo(userId: string) {
 
 // ✈️ Out of town: until the date (inclusive), no meet-ups in person.
 export async function awayFor(userId: string, characterId: string): Promise<{ place: string; until: string } | null> {
-  const [r] = await sql()`select place, until::text from chat_away where user_id = ${userId} and character_id = ${characterId} and until >= current_date - 1`;
+  const [r] = await sql()`select place, until::text from chat_away where user_id = ${userId} and character_id = ${characterId} and kind = 'trip' and until >= current_date - 1`;
   if (!r) return null;
   const { tz } = await userInfo(userId);
   return String(r.until) >= localDate(Date.now(), tz) ? { place: String(r.place), until: String(r.until) } : null;
@@ -131,8 +131,8 @@ async function generateDay(userId: string, day: string, isToday: boolean): Promi
     if (p.vacation?.place && !vacationUsed && !(await awayFor(userId, c.id))) {
       vacationUsed = true;
       const until = addDays(day, Math.max(2, Math.min(7, Number(p.vacation.days) || 3)));
-      await sql()`insert into chat_away (user_id, character_id, place, until) values (${userId}, ${c.id}, ${scrub(String(p.vacation.place)).slice(0, 80)}, ${until})
-        on conflict (user_id, character_id) do update set place = excluded.place, until = excluded.until`;
+      await sql()`insert into chat_away (user_id, character_id, place, until, kind) values (${userId}, ${c.id}, ${scrub(String(p.vacation.place)).slice(0, 80)}, ${until}, 'trip')
+        on conflict (user_id, character_id) do update set place = excluded.place, until = excluded.until, kind = 'trip'`;
     }
   }
   return true;
@@ -163,7 +163,7 @@ export async function picaFeed(userId: string, before: string | null, limit = 6,
       (select count(*)::int from pica_comments k where k.post_id = p.id and k.created_at <= now()) as n_comments
     from pica_posts p left join chat_characters c on c.id = p.author_id left join velo_files pf on pf.id = c.portrait_file_id
       left join velo_media m on m.id = p.media_id left join velo_files mf on mf.id = m.file_id left join velo_files mt on mt.id = m.thumb_file_id
-      left join chat_away a on a.user_id = p.user_id and a.character_id = p.author_id and a.until >= current_date
+      left join chat_away a on a.user_id = p.user_id and a.character_id = p.author_id and a.kind = 'trip' and a.until >= current_date
       left join pica_accounts ac on ac.id = p.account_id left join velo_media am on am.id = ac.avatar_media_id left join velo_files af on af.id = am.file_id
     where p.user_id = ${userId} and p.created_at <= now() and (${before}::timestamptz is null or p.created_at < ${before}::timestamptz)
       and (${after}::timestamptz is null or p.created_at > ${after}::timestamptz)

@@ -3,6 +3,9 @@ import { duePlans, setPlanStatus } from "../../lib/plans";
 import { readyIntros, acceptIntro, declineIntro, IntroError } from "../../lib/intros";
 import { peekAt, draftPeek, draftIcu } from "../../lib/peek";
 import { inPersonFor, startInPerson, endInPerson } from "../../lib/inPerson";
+import { canShe, sickFor, type Answer } from "../../lib/life";
+// 🎲 In tests the coin is pinned (set in the test environment only); in the app it's a real coin.
+const luckOf = (b: Record<string, unknown>): "yes" | "no" | undefined => (process.env.VELO_TEST_LUCK === "1" ? (b.luck === "no" ? "no" : "yes") : undefined);
 import { awayFor, awayText, myPhotos } from "../../lib/picagram";
 import { cleanTags } from "../../lib/text";
 import { deleteMessages } from "../../lib/forget";
@@ -212,6 +215,11 @@ export async function POST(req: NextRequest) {
         const cur = await activeScene(me, ch.id);
         if (action === "scene.active") return NextResponse.json({ scene: cur });
         const day = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+        // What she said when she turned it down goes into the chat as her own message.
+        const said = async (content: string) => {
+          const [row] = await db`insert into velo_messages (user_id, role, content, character_id) values (${me}, 'assistant', ${content}, ${ch.id}) returning id`;
+          return { id: String(row.id), role: "assistant", content };
+        };
         const marker = async (content: string, sceneId: string | null) => {
           const [row] = await db`insert into velo_messages (user_id, role, content, character_id, scene_id) values (${me}, 'user', ${content}, ${ch.id}, ${sceneId}) returning id`;
           return { id: String(row.id), role: "user", content };
@@ -221,10 +229,11 @@ export async function POST(req: NextRequest) {
           await db`update chat_scenes set status = 'ended', ended_at = now() where id = ${cur.id}`;
           // A lasting memory for her (the play-by-play summary comes from the chat itself).
           await db`insert into velo_memories (user_id, character_id, kind, text) values (${me}, ${ch.id}, 'fact', ${`We did this together (${day}): ${cur.title}`.slice(0, 300)})`;
-          return NextResponse.json({ ok: true, marker: await marker(`🎬 Scene ended: ${cur.title}`, null) });
+          return NextResponse.json({ ok: true, marker: await marker(`🎥 Video chat ended: ${cur.title}`, null) });
         }
+        let extra = "";
         const title = scrub(clean(b.title, 120)), details = scrub(String(b.details ?? "").replace(/\s+/g, " ").trim().slice(0, 1000));
-        if (!title) return bad("Say what the scene is (e.g. a dinner date at Luigi's).");
+        if (!title) return bad("Say what you're doing together (e.g. dinner on video).");
         if (cur) await db`update chat_scenes set status = 'ended', ended_at = now() where id = ${cur.id}`;
         // 🕒 Its clock: real time ("now"), or its own scheduled time ("set"). A plan's time is kept, so she knows if it got pushed back.
         const [plan] = b.planId ? await db`select at_time from chat_plans where id = ${String(b.planId)} and user_id = ${me}` : [];
@@ -238,10 +247,18 @@ export async function POST(req: NextRequest) {
         if (b.planId) await setPlanStatus(me, String(b.planId), "done");
         if (action === "scene.start") {
           const gone = await awayFor(me, ch.id);
-          if (gone) return bad(awayText(ch.name, gone));
+          if (gone && b.anyway !== true) return bad(awayText(ch.name, gone));
+          // 🙋‍♀️ She has her own evening: now and then she'd rather do it another time, and says so.
+          if (b.anyway !== true) {
+            const [who] = await db`select adult_confirmed_at from users where id = ${me}`;
+            const her: Answer = await canShe(me, ch, "scene", b.timeZone, !!who?.adult_confirmed_at, luckOf(b)).catch(() => ({ ok: true }));
+            if (!her.ok) return NextResponse.json({ no: her.say, marker: await said(her.say) });
+            // 🙈 Sneaking it in from work: she carries that into the video chat.
+            if (her.note) extra = her.note;
+          }
           await endInPerson(me, ch.id); // a scene takes over from just hanging out
-          const [s] = await db`insert into chat_scenes (user_id, character_id, kind, title, details, clock, set_time, planned_time, pushed) values (${me}, ${ch.id}, 'live', ${title}, ${details}, ${clock}, ${setTime}, ${plannedTime}, ${pushed}) returning id, kind, title, details, status, started_at::text, clock, set_time, planned_time`;
-          return NextResponse.json({ scene: s, marker: await marker(`🎬 Scene: ${title}${details ? ` — ${details}` : ""}`, String(s.id)) });
+          const [s] = await db`insert into chat_scenes (user_id, character_id, kind, title, details, clock, set_time, planned_time, pushed) values (${me}, ${ch.id}, 'live', ${title}, ${[details, extra].filter(Boolean).join(" ")}, ${clock}, ${setTime}, ${plannedTime}, ${pushed}) returning id, kind, title, details, status, started_at::text, clock, set_time, planned_time`;
+          return NextResponse.json({ scene: s, marker: await marker(`🎥 Video chat: ${title}${details ? ` — ${details}` : ""}`, String(s.id)) });
         }
         const [s] = await db`insert into chat_scenes (user_id, character_id, kind, title, details, status, ended_at) values (${me}, ${ch.id}, 'past', ${title}, ${details}, 'ended', now()) returning id`;
         await db`insert into velo_memories (user_id, character_id, kind, text) values (${me}, ${ch.id}, 'fact', ${`We did this together (${day}): ${title}${details ? ` — ${details}` : ""}`.slice(0, 300)})`;
@@ -296,6 +313,17 @@ export async function POST(req: NextRequest) {
           return bad(e instanceof MediaError ? "Couldn't peek right now — try again in a moment." : "Couldn't peek right now.");
         }
       }
+      // 📞 Calling her: she doesn't always pick up — she's at work, in class, or can't talk — and
+      // then she texts back instead of the phone just ringing out.
+      case "call.try": {
+        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
+        if (!ch) return bad("That character wasn't found.");
+        const [who] = await db`select adult_confirmed_at from users where id = ${me}`;
+        const her: Answer = await canShe(me, ch, "call", b.timeZone, !!who?.adult_confirmed_at, luckOf(b)).catch(() => ({ ok: true }));
+        if (her.ok) return NextResponse.json({ ok: true });
+        const [row] = await db`insert into velo_messages (user_id, role, content, character_id) values (${me}, 'assistant', ${her.say}, ${ch.id}) returning id`;
+        return NextResponse.json({ ok: false, say: her.say, message: { id: String(row.id), role: "assistant", content: her.say } });
+      }
       // 🧍 Together in person (not a scene): she talks face to face, and 👁️ ICU works.
       case "inperson.get":
       case "inperson.start":
@@ -311,9 +339,21 @@ export async function POST(req: NextRequest) {
           if (!(await endInPerson(me, ch.id))) return bad("You two aren't together right now.");
           return NextResponse.json({ ok: true, marker: await note(`🧍 We went our separate ways`) });
         }
-        if (await activeScene(me, ch.id)) return bad("End the scene first.");
+        if (await activeScene(me, ch.id)) return bad("End the video chat first.");
         const gone = await awayFor(me, ch.id);
         if (gone) return bad(awayText(ch.name, gone));
+        // 🙋‍♀️ She has to be free (and up for it): at work or in class she usually can't, though she
+        // does sometimes slip out, call off or skip a class for them.
+        const hers = async (content: string) => {
+          const [row] = await db`insert into velo_messages (user_id, role, content, character_id) values (${me}, 'assistant', ${content}, ${ch.id}) returning id`;
+          return { id: String(row.id), role: "assistant", content };
+        };
+        if (b.anyway !== true) {
+          const [who] = await db`select adult_confirmed_at from users where id = ${me}`;
+          const her: Answer = await canShe(me, ch, "person", b.timeZone, !!who?.adult_confirmed_at, luckOf(b)).catch(() => ({ ok: true }));
+          if (!her.ok) return NextResponse.json({ no: her.say, marker: await hers(her.say) });
+          if (her.note) await db`insert into velo_messages (user_id, role, content, character_id) values (${me}, 'user', ${`🧍 (she slipped away from work to see me)`}, ${ch.id})`;
+        }
         const place = scrub(clean(b.place, 120)).replace(/\n/g, " ");
         const p = await startInPerson(me, ch.id, place);
         return NextResponse.json({ inPerson: p, marker: await note(`🧍 Together in person${place ? ` — ${place}` : ""}`) });

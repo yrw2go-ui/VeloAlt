@@ -227,7 +227,22 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   const [callMini, setCallMini] = useState(false);
   // 🎨 Photos/videos sent during the call: shown on the call screen, and saved to that chat.
   const [callMedia, setCallMedia] = useState<Media[]>([]);
-  const startCall = () => { primeSpeech(); setCallOpener(null); setCallWith(tab === "chat" ? withChar : null); setCallMedia([]); setCallMini(false); setCallBrain(null); setCalling(true); };
+  // 📞 She doesn't always pick up: at work, in class, or she just can't talk — then she texts back
+  // instead, and the call never starts. (Velo always answers.)
+  const [ringing, setRinging] = useState(false);
+  const startCall = async () => {
+    const who = tab === "chat" ? withChar : null;
+    primeSpeech();
+    if (who) {
+      setRinging(true);
+      try {
+        const r = await data<{ ok: boolean; say?: string }>("call.try", { characterId: who.id, timeZone: timeZone() });
+        if (!r.ok) { setRinging(false); setChatTick(t => t + 1); await confirmAsk(`${who.name} didn't pick up.\n\n"${r.say}"`, { yes: "OK" }); return; }
+      } catch { /* if the check itself fails, let the call through */ }
+      setRinging(false);
+    }
+    setCallOpener(null); setCallWith(who); setCallMedia([]); setCallMini(false); setCallBrain(null); setCalling(true);
+  };
   // 📞↩ Continue in call: the call picks up the chat — her first line follows on from the last 12 messages.
   const chatHistory = useRef<{ role: "user" | "assistant"; content: string }[]>([]);
   const [historyCount, setHistoryCount] = useState(0);
@@ -288,7 +303,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
             aria-label={`Continue the chat in a call with ${withChar ? withChar.name : "Velo"}`} style={{ borderRadius: 999, padding: "6px 9px", fontSize: 12, lineHeight: 1.1, whiteSpace: "nowrap", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
             {continuing ? "…" : <><span style={{ fontSize: 15 }}>📞↩</span><span>Continue</span></>}</button>
         )}
-        {canCallVelo() && !calling && !inGroup && <button className="btn" onClick={startCall} aria-label={`Call ${tab === "chat" && withChar ? withChar.name : "Velo"}`} data-testid="call-velo" style={{ borderRadius: 999, padding: "10px 16px" }}>📞 Call</button>}
+        {canCallVelo() && !calling && !inGroup && <button className="btn" onClick={startCall} disabled={ringing} aria-label={`Call ${tab === "chat" && withChar ? withChar.name : "Velo"}`} data-testid="call-velo" style={{ borderRadius: 999, padding: "10px 16px" }}>{ringing ? "📞 …" : "📞 Call"}</button>}
       </header>
 
       <UpdateBanner />

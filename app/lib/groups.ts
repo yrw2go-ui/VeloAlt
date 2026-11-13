@@ -239,7 +239,7 @@ export async function deleteGroup(userId: string, id: string): Promise<boolean> 
 export async function startGroupScene(userId: string, g: Group, kind: "live" | "past", title: string, details: string, setTime = ""): Promise<GroupMsg> {
   const t = scrub(title).trim().slice(0, 120), d = scrub(details).trim().slice(0, 1000);
   if (!t) throw new GroupError("Give the scene a title.");
-  const marker = kind === "live" ? `🎬 Scene: ${t}${d ? ` — ${d}` : ""}` : `🎬 Scene (already happened, all of us together): ${t}${d ? ` — ${d}` : ""}`;
+  const marker = kind === "live" ? `🎥 Group video chat: ${t}${d ? ` — ${d}` : ""}` : `🎬 Something we all did together: ${t}${d ? ` — ${d}` : ""}`;
   const at = HHMM.test(setTime) ? setTime : "";
   if (kind === "live") await sql()`update chat_groups set in_person_place = null, catch_up = '{}'::jsonb, scene_title = ${t}, scene_details = ${d}, scene_clock = ${at ? "set" : "now"}, scene_set_time = ${at}, scene_started_at = now(), updated_at = now() where id = ${g.id} and user_id = ${userId}`;
   const [m] = await sql()`insert into chat_group_messages (group_id, user_id, content) values (${g.id}, ${userId}, ${marker}) returning id, speaker_id, content, created_at`;
@@ -248,7 +248,7 @@ export async function startGroupScene(userId: string, g: Group, kind: "live" | "
 export async function endGroupScene(userId: string, g: Group): Promise<GroupMsg | null> {
   if (!g.scene_title) return null;
   await sql()`update chat_groups set scene_title = null, scene_details = null where id = ${g.id} and user_id = ${userId}`;
-  const [m] = await sql()`insert into chat_group_messages (group_id, user_id, content) values (${g.id}, ${userId}, ${`🎬 Scene ended: ${g.scene_title}`}) returning id, speaker_id, content, created_at`;
+  const [m] = await sql()`insert into chat_group_messages (group_id, user_id, content) values (${g.id}, ${userId}, ${`🎥 Video chat ended: ${g.scene_title}`}) returning id, speaker_id, content, created_at`;
   return { ...(m as GroupMsg), speaker_id: null };
 }
 
@@ -272,7 +272,7 @@ export async function draftGroupPeek(userId: string, g0: Group, ids: string[], a
   const transcript = rows.filter((r, i) => (!r.peek || i === lastIdx) && !r.private_to).map(r => (r.peek ? "— (your last peek was here) —" : `${r.speaker_id ? names.get(r.speaker_id) || "Someone" : personName || "Them"}: ${r.content}`)).join("\n");
   const who = chars.map(c => c.name).join(" and ");
   const romantic = chars.every(c => romanticFor(c, adult));
-  const raw = await writeText(writer ?? chars[0].brain, `You write the description for ONE photo for an image generator. The person is out with a group (the scene below) and is quietly looking at ${who} right now — the photo is exactly what they see: they are behind the camera and NOT in the picture. Show ONLY ${who}${chars.length < all.length ? ` (not ${all.filter(c => !chars.some(x => x.id === c.id)).map(c => c.name).join(" or ")})` : ""}. Describe the place (time of day, lighting), what each of them is wearing, what each is doing, their poses and expressions — candid and unaware, or glancing at the camera.
+  const raw = await writeText(writer ?? chars[0].brain, `You write the description for ONE photo for an image generator. The person is on a group VIDEO CHAT (below) and this is what they see of ${who} on their screen right now — wherever each of them is: the person is not in the picture. Show ONLY ${who}${chars.length < all.length ? ` (not ${all.filter(c => !chars.some(x => x.id === c.id)).map(c => c.name).join(" or ")})` : ""}. Describe the place (time of day, lighting), what each of them is wearing, what each is doing, their poses and expressions — candid and unaware, or glancing at the camera.
 OUTFIT CONTINUITY: each of them wears ONE outfit for the whole scene. ${lastPeek ? "Start from what they wore in THE LAST PEEK" : "Start from the outfits in the scene's details or what they said they're wearing (else what fits the outing and their usual style)"}, then apply only the changes that actually happened, in order (a jacket taken off stays off until it's put back on, and so on). Keep every other detail identical. The same goes for the place.
 ${romantic ? "Tasteful and PG-13: flattering and flirty is fine; they're dressed (or in swimwear at the beach or pool)." : "Family-friendly, fully clothed."} Two or three sentences, under 380 characters, no names of real people, output only the description.`, `SCENE: ${g.scene_title}${g.scene_details ? ` — ${g.scene_details}` : ""}\nTIME IN THE SCENE: ${sceneTime(groupClock(g), await userTz(userId)).label} (match the light and sky to it)\n${chars.map(c => `${c.name.toUpperCase()}'S LOOK: ${c.appearance || "(see reference pictures)"}${c.casual_wear ? `; usual style: ${c.casual_wear}` : ""}`).join("\n")}${lastPeek ? `\nTHE LAST PEEK: ${lastPeek}` : ""}\n\nTHE SCENE SO FAR:\n${(transcript.length > 12000 ? "…" + transcript.slice(-12000) : transcript) || "(it just started)"}`, 350);
   const text = raw.replace(/\s+/g, " ").trim();
@@ -348,7 +348,7 @@ export async function deleteGroupMessages(caller: Caller, g: Group, ids: string[
   const rows = seen(await groupMessages(caller.userId, g.id, 5));
   const last = rows[rows.length - 1];
   let replies: GroupMsg[] = [];
-  if (last && !last.speaker_id && !last.content.startsWith("🎬") && !last.content.startsWith("🧍") && chars.length >= 2) {
+  if (last && !last.speaker_id && !last.content.startsWith("🎬") && !last.content.startsWith("🎥") && !last.content.startsWith("🧍") && chars.length >= 2) {
     const to = last.private_to ? chars.find(c => c.id === last.private_to) : null;
     replies = (to ? await sendPrivate(caller, g, chars, to, last.content, timeZone, personName, last.id) : await answerGroup(caller, g, chars, last.content, last.id, timeZone, personName)).replies;
   }

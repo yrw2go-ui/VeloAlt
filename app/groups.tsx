@@ -159,7 +159,7 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
       </div>
       {group.scene_title && (
         <div data-testid="group-scene-banner" className="row" style={{ padding: "6px 12px", gap: 8, background: "rgba(124,140,255,0.12)", borderBottom: "1px solid var(--border)", fontSize: 13 }}>
-          <span style={{ flex: 1 }}>🎬 <b>{group.scene_title}</b> <span className="muted">· say *peek* to see the moment</span></span>
+          <span style={{ flex: 1 }}>🎥 <b>{group.scene_title}</b> <span className="muted">· say *peek* to see them on screen</span></span>
           <button className="ghost" onClick={endScene} data-testid="group-scene-end" style={{ padding: "2px 10px", fontSize: 12 }}>End</button>
         </div>
       )}
@@ -181,7 +181,7 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
             </div>
           );
           if (m.peek) return <div key={m.id} className="muted" style={{ alignSelf: "flex-end", fontSize: 12, padding: "4px 10px", borderRadius: 999, border: "1px dashed var(--border)" }}>👀 you peeked</div>;
-          if (!m.speaker_id && (m.content.startsWith("🎬") || m.content.startsWith("🧍"))) return <div key={m.id} data-testid="group-scene-note" className="muted" style={{ alignSelf: "center", maxWidth: "90%", textAlign: "center", fontSize: 12, padding: "6px 12px", borderRadius: 999, background: "var(--surface2)", border: "1px solid var(--border)" }}>{m.content}</div>;
+          if (!m.speaker_id && (m.content.startsWith("🎬") || m.content.startsWith("🎥") || m.content.startsWith("🧍"))) return <div key={m.id} data-testid="group-scene-note" className="muted" style={{ alignSelf: "center", maxWidth: "90%", textAlign: "center", fontSize: 12, padding: "6px 12px", borderRadius: 999, background: "var(--surface2)", border: "1px solid var(--border)" }}>{m.content}</div>;
           if (!m.speaker_id) return (
             <div key={m.id} style={{ alignSelf: "flex-end", maxWidth: "80%", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
               {m.private_to && <div data-testid="group-private-label" style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)" }}>🔒 Private · @{byId.get(m.private_to)?.name || "someone"}</div>}
@@ -230,8 +230,8 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
         </div>
       )}
       <form onSubmit={e => { e.preventDefault(); send(); }} className="row" style={{ padding: "10px 12px", borderTop: "1px solid var(--border)", ...(selected ? { display: "none" } : {}) }}>
-        {!group.scene_title && <button type="button" onClick={() => setSceneSheet(true)} disabled={!msgs || busy} aria-label="Start a scene" data-testid="group-scene-open"
-          style={{ borderRadius: 999, width: 36, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 19, border: "none", background: "transparent", color: "var(--muted)" }}>🎬</button>}
+        {!group.scene_title && <button type="button" onClick={() => setSceneSheet(true)} disabled={!msgs || busy} aria-label="Start a video chat" data-testid="group-scene-open"
+          style={{ borderRadius: 999, width: 36, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 19, border: "none", background: "transparent", color: "var(--muted)" }}>🎥</button>}
         <textarea rows={1} value={text} onChange={e => setText(e.target.value)} placeholder={msgs ? `Message ${group.title}…` : "Loading…"} aria-label="Message the group" disabled={!msgs}
           onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }} style={{ resize: "none", maxHeight: 140, borderRadius: 20 }} />
         <button className="btn" disabled={!text.trim() || busy || !msgs} style={{ borderRadius: 999, padding: "10px 16px" }}>Send</button>
