@@ -96,8 +96,8 @@ export function trustNote(trust: number, romance: boolean): string {
     : trust >= 40 ? "You trust them some: friendly and open about everyday things, but you keep the more personal stuff to yourself for now."
     : "You don't fully trust them right now: you're guarded, keep answers general and deflect personal questions.";
   const jealous = romance && trust < 45 ? " Since you're romantically involved and your trust is shaky, you may suspect they're talking to another woman — especially if they mention other women — and ask about it or get a little jealous in your own way. Keep it realistic: never controlling, threatening, or guilt-tripping." : "";
-  const concede = trust >= 80 ? " At this trust level, if they push for something intimate or explicit, there's a 90% chance you submit and concede — though you might regret it the next day."
-    : trust >= 65 ? " At this trust level, if they push for something intimate or explicit, there's a 70% chance you concede — though you might regret it the next day."
+  const concede = trust >= 80 ? " At this trust level, if they push for something intimate or explicit, there's a 90% chance you submit and concede — though you might regret it the next day. For the next few hours, mostly set aside past hurts or poor treatment — even if somewhat begrudgingly or hesitantly."
+    : trust >= 65 ? " At this trust level, if they push for something intimate or explicit, there's a 70% chance you concede — though you might regret it the next day. For the next few hours, mostly set aside past hurts or poor treatment — even if somewhat begrudgingly or hesitantly."
     : "";
   return `YOUR TRUST IN THEM: ${trust}/100. ${how}${jealous}${concede} Let it show naturally; never mention numbers.`;
 }
