@@ -46,7 +46,9 @@ export async function POST(req: NextRequest) {
       let img: Buffer;
       try { img = await cleanImage(Buffer.from(await file.arrayBuffer()), type); }
       catch { return NextResponse.json({ error: "That picture couldn't be read. Try another one." }, { status: 400 }); }
-      const item = await saveImageItem(c.userId, null, img, type, "Picture uploaded for a Picagram account", "upload");
+      // What the picture shows, in words: it's what her followers comment on when it goes up.
+      const note = await describePhoto(img, type).catch(e => { console.error("files: describe pica photo", e instanceof Error ? e.message : e); return null; });
+      const item = await saveImageItem(c.userId, null, img, type, note && note !== "NONE" ? note : "A photo of her", "upload");
       return NextResponse.json({ mediaId: item.mediaId, url: item.url });
     }
 

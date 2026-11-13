@@ -436,10 +436,37 @@ export async function picaCreateAccount(userId: string, spec: { name: string; ha
   const [row] = await sql()`insert into pica_accounts (user_id, handle, name, bio, look, lives, followers, followed, mine, avatar_media_id, ref_media_ids)
     values (${userId}, ${handle}, ${name}, ${scrub(String(spec.bio || "")).slice(0, 300)}, ${scrub(String(spec.look || "")).slice(0, 600)}, ${lives || null},
       ${Math.max(100, Math.min(900000, Number(spec.followers) || rand(5000, 200000)))}, ${spec.follow === true}, true, ${mine[0]}, ${mine}::uuid[]) returning *`;
-  // A first post straight away, built from the pictures you gave her.
-  const posted = await postFor(userId, row, await userInfo(userId), Date.now() - rand(2, 20) * 60_000)
+  // 🖼️ The pictures you gave her go up as her first posts — they're hers, so they're on her page.
+  const u = await userInfo(userId);
+  await putUpUploads(userId, row, mine, u).catch(e => console.error("pica: her own pictures", e instanceof Error ? e.message : e));
+  // Then one she takes herself, so she's live from the moment you make her.
+  const posted = await postFor(userId, row, u, Date.now() - rand(2, 20) * 60_000)
     .catch(e => { console.error("pica: made her post", e instanceof Error ? e.message : e); return false; });
   return { id: String(row.id), posted };
+}
+
+/** 🖼️ Put the pictures you uploaded up as posts of hers, with captions in her voice. */
+export async function putUpUploads(userId: string, a: Record<string, unknown>, mediaIds: string[], u: U): Promise<number> {
+  const rows = await sql()`select m.id, m.prompt, m.created_at from velo_media m where m.user_id = ${userId} and m.status = 'done' and m.id = any(${mediaIds}::uuid[])
+    and not exists (select 1 from pica_posts p where p.user_id = ${userId} and p.media_id = m.id)`;
+  if (!rows.length) return 0;
+  const order = mediaIds.map(id => rows.find(r => String(r.id) === id)).filter((r): r is NonNullable<typeof r> => !!r);
+  // One go at captions for all of them, in her voice.
+  const raw = await writeText("", `Write a short Picagram caption for each numbered photo below, in the voice of @${a.handle} (${a.name}): ${a.bio}. Natural and brief, emojis and hashtags fine, no quotes around them. JSON only: {"captions":[{"n":1,"caption":"..."}]}`,
+    order.map((r, i) => `${i + 1}. ${String(r.prompt || "a photo of her")}`).join("\n"), 600).catch(() => "");
+  let caps: { n?: number; caption?: string }[] = [];
+  try { caps = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]).captions || []; } catch { /* "✨" will do */ }
+  for (const [i, r] of order.entries()) {
+    const photo = String(r.prompt || "");
+    const caption = scrub(String(caps.find(c => Number(c.n) === i + 1)?.caption || "✨")).slice(0, 600) || "✨";
+    const at = new Date(r.created_at as string).getTime();
+    const likes = Math.max(150, Math.min(25000, Math.round(Number(a.followers) * (0.005 + Math.random() * 0.03))));
+    const [post] = await sql()`insert into pica_posts (user_id, account_id, kind, caption, photo, media_id, likes_target, created_at)
+      values (${userId}, ${a.id}, 'image', ${caption}, ${photo}, ${r.id}, ${likes}, ${new Date(at).toISOString()}) returning id`;
+    for (const c of randomComments(`${caption} ${photo}`, "image", rand(3, 5)))
+      await sql()`insert into pica_comments (post_id, user_id, name, text, created_at) values (${post.id}, ${userId}, ${c.name}, ${c.text}, ${new Date(at + rand(2, 300) * 60_000).toISOString()})`;
+  }
+  return order.length;
 }
 
 /** ✨ New women, posting right now: invent each one and put a first photo of her up straight away. */
@@ -494,10 +521,13 @@ export async function picaFollow(userId: string, accountId: string, on: boolean)
 
 /** 👤 Someone's profile: who she is and her photos. */
 export async function picaProfile(userId: string, accountId: string) {
-  const [a] = await sql()`select a.id, a.handle, a.name, a.bio, a.followers, a.followed, a.character_id, a.lives, f.url as avatar, coalesce(ch.pica_hidden, false) as hidden
+  const [a] = await sql()`select a.id, a.handle, a.name, a.bio, a.followers, a.followed, a.character_id, a.lives, a.mine, a.ref_media_ids, f.url as avatar, coalesce(ch.pica_hidden, false) as hidden
     from pica_accounts a left join velo_media m on m.id = a.avatar_media_id left join velo_files f on f.id = m.file_id left join chat_characters ch on ch.id = a.character_id
     where a.id = ${accountId} and a.user_id = ${userId}`;
   if (!a) return null;
+  // 🖼️ One you made yourself: make sure the pictures you gave her are up as posts (older ones weren't).
+  if (a.mine && Array.isArray(a.ref_media_ids) && a.ref_media_ids.length)
+    await putUpUploads(userId, a, (a.ref_media_ids as string[]).map(String), await userInfo(userId)).catch(e => console.error("pica: catch up her pictures", e instanceof Error ? e.message : e));
   const posts = await sql()`select p.id, p.caption, p.created_at::text as at, m.id as media_id, f.url, t.url as thumb, exists(select 1 from pica_saved s where s.user_id = p.user_id and s.media_id = m.id) as saved
     from pica_posts p join velo_media m on m.id = p.media_id join velo_files f on f.id = m.file_id left join velo_files t on t.id = m.thumb_file_id
     where p.user_id = ${userId} and p.account_id = ${accountId} and p.created_at <= now() and m.status = 'done' order by p.created_at desc limit 60`;
