@@ -668,3 +668,11 @@ alter table chat_relationships add column if not exists happy integer check (hap
 alter table chat_relationships add column if not exists love integer check (love is null or love between 0 and 100);
 -- 🤒 chat_away also covers being off colour: 'trip' (away, the default) or 'sick' (at home, run down).
 alter table chat_away add column if not exists kind text not null default 'trip' check (kind in ('trip', 'sick'));
+-- 🙅‍♀️💬 What she last turned down, so that asking again (sweetly) can win her round.
+create table if not exists chat_turndowns (
+  user_id uuid not null references users(id) on delete cascade,
+  character_id uuid not null references chat_characters(id) on delete cascade,
+  ask text not null check (ask in ('scene', 'person', 'call')),
+  at timestamptz not null default now(),
+  primary key (user_id, character_id, ask)
+);

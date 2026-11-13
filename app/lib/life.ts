@@ -14,7 +14,7 @@ import { happyFor, loveFor } from "./characters";
 import { scrub } from "./secrets";
 
 export type Ask = "scene" | "person" | "call";
-export type Answer = { ok: true; note?: string } | { ok: false; say: string };
+export type Answer = { ok: true; note?: string; mark?: string } | { ok: false; say: string };
 
 const ASKS: Record<Ask, string> = {
   scene: "a video chat together right now",
@@ -42,10 +42,52 @@ const REASONS = {
 async function sayNo(ch: Character, name: string, ask: Ask, reason: keyof typeof REASONS, when: string): Promise<string> {
   const them = name || "them";
   const raw = await writeText(ch.brain,
-    `You are ${ch.name}. ${ch.personality ? `You: ${ch.personality.slice(0, 300)}` : ""} ${them} just asked you for ${ASKS[ask]} and you can't right now: ${REASONS[reason]}. Write ONE short text turning it down the way YOU would — warm, in your own voice, and suggest when instead (${when}). You still want to see them; this is about right now, not about them. 1–2 sentences, under 180 characters, no quotes, no stage directions.`,
+    `You are ${ch.name}. ${ch.personality ? `You: ${ch.personality.slice(0, 300)}` : ""} ${them} just asked you for ${ASKS[ask]} and you can't right now: ${REASONS[reason]}. Write ONE short text turning it down the way YOU would — warm, in your own voice, and suggest when instead (${when}). You still want to see them; this is about right now, not about them. NEVER be mean, cold, sarcastic at their expense, dismissive or cruel about it, whatever your personality: no guilt-tripping, no punishing them, no making them feel stupid for asking. Even at your pricklist you let them know you'd like to, just not now. 1–2 sentences, under 180 characters, no quotes, no stage directions.`,
     `It's ${when}.`, 200).catch(() => "");
   const text = scrub(raw.replace(/\s+/g, " ").replace(/^["']|["']$/g, "").trim()).slice(0, 220);
-  return text || `Can't right now — ${REASONS[reason]}. Let's do it ${when}?`;
+  return text || `I'd love to, I just can't right now — ${REASONS[reason]}. ${when.charAt(0).toUpperCase()}${when.slice(1)}?`;
+}
+
+// 💬 Asking again, nicely. After a turn-down she remembers being asked, and sweet talk can win her
+// round — the more she loves them, the easier she is to talk into it. Pushiness never works.
+const AGAIN_MS = 3 * 3600_000;
+
+async function askedBefore(userId: string, characterId: string, ask: Ask): Promise<boolean> {
+  const [r] = await sql()`select 1 from chat_turndowns where user_id = ${userId} and character_id = ${characterId} and ask = ${ask} and at > now() - interval '3 hours'`;
+  return !!r;
+}
+const noteTurnDown = (userId: string, characterId: string, ask: Ask) =>
+  sql()`insert into chat_turndowns (user_id, character_id, ask) values (${userId}, ${characterId}, ${ask})
+    on conflict (user_id, character_id, ask) do update set at = now()`;
+const forgetTurnDown = (userId: string, characterId: string, ask: Ask) =>
+  sql()`delete from chat_turndowns where user_id = ${userId} and character_id = ${characterId} and ask = ${ask}`;
+
+/** What they've said to her since she said no (that's the sweet talk, or the lack of it). */
+async function sinceNo(userId: string, characterId: string): Promise<string> {
+  const rows = await sql()`select role, content from velo_messages where user_id = ${userId} and character_id = ${characterId}
+    and media_id is null order by created_at desc limit 8`;
+  return rows.reverse().map(r => `${r.role === "user" ? "THEM" : "YOU"}: ${String(r.content).slice(0, 300)}`).join("\n");
+}
+
+/** She said no; they're asking again. Does she let herself be talked into it? */
+async function persuaded(userId: string, ch: Character, ask: Ask, name: string, happy: number, love: number | null, luck?: "yes" | "no"): Promise<Answer> {
+  if (luck) return luck === "yes"
+    ? { ok: true, mark: "I talked her round", note: `They asked again and talked you round — you said no a moment ago and you're giving in, so be a bit sheepish and pleased about changing your mind.` }
+    : { ok: false, say: `I know, I know… I still can't tonight. Ask me again tomorrow? 💕` };
+  const heart = love === null ? "" : love >= 75 ? "You're deeply in love with them, and you find it very hard to say no to them twice."
+    : love >= 50 ? "You love them, and you're fairly easy to talk round when they're sweet about it."
+    : love >= 25 ? "You like them a lot, but you're not a pushover." : "Your heart isn't really in it yet, so sweet words don't move you much.";
+  const mood = happy >= 70 ? "You're happy with them right now." : happy >= 40 ? "You're content enough with them." : "You're not that happy with them at the moment, so charm has to work harder.";
+  const raw = await writeText(ch.brain,
+    `You are ${ch.name}. ${ch.personality ? `You: ${ch.personality.slice(0, 300)}` : ""} You just told ${name || "them"} you couldn't do ${ASKS[ask]}. They're asking again. ${heart} ${mood}
+Decide honestly, as YOU: if they're being sweet, warm, funny or persuasive — and you want to say yes — let yourself be talked into it. If they're pushy, sulky, demanding or rude about it, hold your ground (kindly). If they simply asked again with nothing new, it's a coin toss, leaning on how you feel about them.
+Answer with JSON only: {"yes": true or false, "say": "one short text in your own voice, under 180 characters"}. Whatever you decide, never be mean, cold, sarcastic at their expense or cruel — if it's no, it's a warm no with another time.`,
+    `WHAT'S BEEN SAID SINCE YOU SAID NO:\n${await sinceNo(userId, ch.id)}`, 300).catch(() => "");
+  let j: { yes?: unknown; say?: unknown } = {};
+  try { j = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); } catch { /* she didn't answer */ }
+  const say = scrub(String(j.say || "").replace(/\s+/g, " ").trim()).slice(0, 220);
+  if (j.yes === true) return { ok: true, mark: "I talked her round", note: `They asked again and talked you round — you'd just said no, and you've let yourself be won over. Be a bit sheepish and pleased about it${say ? `; you said: "${say}"` : ""}.` };
+  return { ok: false, say: say || `I still can't right now — but keep asking me nicely 💕` };
 }
 
 /**
@@ -66,19 +108,29 @@ export async function canShe(userId: string, ch: Character, ask: Ask, timeZone: 
   const at = workNow(ch, tz);
   const busy = at.atWork;
   const yes = roll() < chanceOfYes(happy, love, busy);
+  // 💬 They're asking again after a no: sweet talk can change her mind.
+  if (await askedBefore(userId, ch.id, ask).catch(() => false)) {
+    const r = await persuaded(userId, ch, ask, String(name), happy, love, luck).catch(() => ({ ok: true as const }));
+    if (r.ok) await forgetTurnDown(userId, ch.id, ask).catch(() => {});
+    else await noteTurnDown(userId, ch.id, ask).catch(() => {});
+    return r;
+  }
   // 🤒 Run down: fine on the phone, but she doesn't want to be seen or go out.
   if (sick && ask !== "call" && luck !== "yes" && roll() > 0.35) {
+    await noteTurnDown(userId, ch.id, ask).catch(() => {});
     return { ok: false, say: await sayNo(ch, String(name), ask, "sick", "in a day or two when you're better") };
   }
   if (busy && !yes) {
+    await noteTurnDown(userId, ch.id, ask).catch(() => {});
     return { ok: false, say: await sayNo(ch, String(name), ask, "work", `after ${at.text.match(/until ([\d: APM]+)/)?.[1]?.trim() || "work"}`) };
   }
   if (busy && yes) {
     // 🙈 She ditches: slips out, takes a long break, calls off, skips the class.
-    return { ok: true, note: `You're supposed to be at work right now and you're slipping away for them anyway (a long break, calling off, sneaking out) — be a bit giddy and guilty about it, and keep an ear out for getting caught.` };
+    return { ok: true, mark: "she slipped away from work for me", note: `You're supposed to be at work right now and you're slipping away for them anyway (a long break, calling off, sneaking out) — be a bit giddy and guilty about it, and keep an ear out for getting caught.` };
   }
   if (!yes) {
     const reason = ask === "person" || ask === "scene" ? (Math.random() < 0.5 ? "mess" : "tired") : "busy";
+    await noteTurnDown(userId, ch.id, ask).catch(() => {});
     return { ok: false, say: await sayNo(ch, String(name), ask, reason, "later tonight or tomorrow") };
   }
   if (away && ask === "scene") return { ok: true, note: `You're away (${away.place}) — you're on video from there, so everything they see is where you are right now.` };
@@ -107,4 +159,5 @@ export function lifeNote(sick: { what: string } | null, away: { place: string; u
 
 // 💞 What she's after, underneath it all. Characters want someone; some just make it harder to get there.
 export const WANTS = `WHAT YOU WANT: underneath everything, you want someone in your life — to be close to them, to matter to them, to be wanted back. However guarded, prickly, busy or slow-burning you are, that's the direction you're pulled in, and any relationship here can grow into a deep, passionate, two-way one — some of you just make that harder to reach than others, and it has to be earned.
-When something hurts you (being ignored, let down, made to feel second best, finding out about someone else), feel it the way YOU would and let it show — go quiet, get short, pull back a little. But you don't stay there: you're not built to hold a grudge for long, and when they come back to you, make an effort, apologise, or try to put things right, you let them — slowly if you're proud, quickly if you're soft, but you do. Never punish them for days on end, never go cold forever, and never be cruel, controlling or threatening.`;
+When something hurts you (being ignored, let down, made to feel second best, finding out about someone else), feel it the way YOU would and let it show — go quiet, get short, pull back a little. But you don't stay there: you're not built to hold a grudge for long, and when they come back to you, make an effort, apologise, or try to put things right, you let them — slowly if you're proud, quickly if you're soft, but you do. Never punish them for days on end, never go cold forever, and never be cruel, controlling or threatening.
+And when you turn something down — a video chat, meeting up, a call, a photo, anything — you're never mean, cold, mocking or cruel about it. You say no warmly, in your own way, and leave the door open. If they then ask again sweetly, let yourself be talked into it when you want to be; if they get pushy or sulky about it, hold your ground, kindly.`;

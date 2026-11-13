@@ -114,6 +114,14 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
     try { const r = await api<{ character: Character }>("/api/characters", { action: "duplicate", id: c.id, name: copyName.trim() }); setCopying(false); onDuplicated?.(r.character); }
     catch (e) { setCopyErr(e instanceof Error ? e.message : "Couldn't copy her."); }
   };
+  // Switching ♀/♂ moves the voice to one that matches (and clears the woman-only options).
+  const switchGender = (g: "female" | "male") => {
+    setGender(g);
+    if (voice.kind === g) return;
+    const v = CHARACTER_VOICES.find(x => x.kind === g) || CHARACTER_VOICES[0];
+    setVoice({ id: v.voiceId, name: v.name, kind: v.kind, about: v.about, preview: "" });
+    if (g === "male") { setGf(false); setSecret(false); setSapphic(false); setBigFollowing(false); }
+  };
   // 🎚️ A preset sets the sliders (and the personality, if it's empty or still another preset's text).
   const applyPreset = (id: string) => {
     setPreset(id);
@@ -125,11 +133,13 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
   const [shots, setShots] = useState(0);
   const [pending, setPending] = useState<{ files: File[]; headshot: boolean; fictional: boolean }>({ files: [], headshot: true, fictional: false }); // finished portraits (refreshes the reference picker)
   const [refIds, setRefIds] = useState<string[]>(initial?.reference_ids || []);
+  // ♀♂ Which they are. The voice follows it, and it decides the woman-only bits of the card.
+  const [gender, setGender] = useState<"female" | "male">(seed?.voice_kind === "male" ? "male" : "female");
   const [voice, setVoice] = useState<VoiceOption>(seed?.voice ? { id: seed.voice, name: seed.voice_name || "Voice", kind: seed.voice_kind || "female", about: "", preview: "" } : { id: first.voiceId, name: first.name, kind: first.kind, about: first.about, preview: "" });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const working = !!c?.portrait_job;
-  const dirty = !c || name !== c.name || personality !== c.personality || backstory !== c.backstory || relation !== c.relation || appearance !== c.appearance || job !== (c.job || "") || wear !== (c.casual_wear || "") || hobbies !== (c.hobbies || "") || voice.id !== c.voice || JSON.stringify(traits) !== JSON.stringify(cleanTraits(c.traits && Object.keys(c.traits).length ? c.traits : DEFAULT_TRAITS)) || preset !== (c.preset || "") || zone !== (c.time_zone || "") || bday !== (c.birthday || "") || romantic !== !!c.romantic || (romantic ? arc : "") !== (c.romance_arc || "") || refIds.join() !== (c.reference_ids || []).join() || brain !== (c.brain || "")
+  const dirty = !c || gender !== (c.voice_kind === "male" ? "male" : "female") || name !== c.name || personality !== c.personality || backstory !== c.backstory || relation !== c.relation || appearance !== c.appearance || job !== (c.job || "") || wear !== (c.casual_wear || "") || hobbies !== (c.hobbies || "") || voice.id !== c.voice || JSON.stringify(traits) !== JSON.stringify(cleanTraits(c.traits && Object.keys(c.traits).length ? c.traits : DEFAULT_TRAITS)) || preset !== (c.preset || "") || zone !== (c.time_zone || "") || bday !== (c.birthday || "") || romantic !== !!c.romantic || (romantic ? arc : "") !== (c.romance_arc || "") || refIds.join() !== (c.reference_ids || []).join() || brain !== (c.brain || "")
     || attire !== (c.work_attire || "") || [...workDays].sort().join() !== [...(c.work_days || [])].sort().join() || workStart !== (c.work_start || "") || workEnd !== (c.work_end || "") || partTime !== !!c.part_time
     || (romantic ? [gf ? "gf" : "", secret ? "secret" : ""].filter(Boolean).join("+") : "") !== (c.standing || "") || (romantic && polyOk) !== !!c.poly_ok || (romantic && sapphic) !== !!c.sapphic || bigFollowing !== !!c.big_following;
 
@@ -204,7 +214,14 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
         <label style={{ fontSize: 13, fontWeight: 700 }}>Name
           <input value={name} onChange={e => setName(e.target.value)} maxLength={60} placeholder="e.g. Captain Mira" aria-label="Character name" style={{ marginTop: 4 }} />
         </label>
-        {voice.kind === "female" && (
+        <div data-testid="gender" className="row" style={{ gap: 8 }}>
+          {([["female", "♀ Woman"], ["male", "♂ Man"]] as const).map(([id, label]) => (
+            <button key={id} type="button" data-testid={`gender-${id}`} aria-pressed={gender === id} onClick={() => switchGender(id)}
+              style={{ flex: 1, borderRadius: 999, padding: "8px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer", color: "var(--text)",
+                border: `1px solid ${gender === id ? "var(--accent)" : "var(--border)"}`, background: gender === id ? "rgba(124,140,255,0.15)" : "var(--surface2)" }}>{label}</button>
+          ))}
+        </div>
+        {gender === "female" && (
           <div data-testid="standing" className="row" style={{ gap: 14, flexWrap: "wrap", padding: "8px 12px", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface2)" }}>
             <label className="row" style={{ gap: 6, fontSize: 13, fontWeight: 700, cursor: "pointer" }} title="Officially together — everyone knows">
               <input type="checkbox" checked={gf} data-testid="is-gf" onChange={e => setGf(e.target.checked)} style={{ width: 20, height: 20 }} />💞 gf
@@ -272,7 +289,7 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
             </select>
           </div>
         </div>
-        <VoicePicker value={voice} onChange={setVoice} />
+        <VoicePicker value={voice} onChange={setVoice} only={gender} />
         <label className="row" style={{ gap: 10, fontSize: 13, fontWeight: 700, alignItems: "flex-start" }}>
           <input type="checkbox" checked={romantic} onChange={e => setRomantic(e.target.checked)} aria-label="Romantic" style={{ width: 20, height: 20, marginTop: 1, flexShrink: 0 }} />
           <span>💕 Romantic (PG-13) <span className="muted" style={{ fontWeight: 500, display: "block" }}>Romance becomes possible with adults who confirmed they&apos;re 18+ (never explicit) — but their personality still leads. Others get a friendly, platonic version.</span></span>
@@ -285,20 +302,20 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
             <span className="muted" style={{ fontWeight: 500, display: "block", marginTop: 4 }}>Each person&apos;s relationship develops on its own from here, a little after every chat and call. Edit this any time to add new turns.</span>
           </label>
         )}
-        <label className="row" style={{ gap: 10, fontSize: 13, fontWeight: 700, alignItems: "flex-start" }}>
+        {gender === "female" && <label className="row" style={{ gap: 10, fontSize: 13, fontWeight: 700, alignItems: "flex-start" }}>
           <input type="checkbox" checked={bigFollowing} onChange={e => setBigFollowing(e.target.checked)} data-testid="big-following" style={{ width: 20, height: 20, marginTop: 1, flexShrink: 0 }} />
           <span>📸 Big Picagram following <span className="muted" style={{ fontWeight: 500, display: "block" }}>Her posts get 200–1,500 likes (otherwise 20–300).</span></span>
-        </label>
+        </label>}
         {romantic && (
           <div style={{ display: "grid", gap: 8 }}>
             <label className="row" style={{ gap: 10, fontSize: 13, fontWeight: 700, alignItems: "flex-start" }}>
               <input type="checkbox" checked={polyOk} onChange={e => setPolyOk(e.target.checked)} data-testid="poly-ok" style={{ width: 20, height: 20, marginTop: 1, flexShrink: 0 }} />
               <span>💞 Polyamory possible <span className="muted" style={{ fontWeight: 500, display: "block" }}>Open to sharing you with others over time — possible, never guaranteed. More likely if you keep gently nudging that way. Unchecked: she isn&apos;t into sharing you.</span></span>
             </label>
-            <label className="row" style={{ gap: 10, fontSize: 13, fontWeight: 700, alignItems: "flex-start" }}>
+            {gender === "female" && <label className="row" style={{ gap: 10, fontSize: 13, fontWeight: 700, alignItems: "flex-start" }}>
               <input type="checkbox" checked={sapphic} onChange={e => setSapphic(e.target.checked)} data-testid="sapphic" style={{ width: 20, height: 20, marginTop: 1, flexShrink: 0 }} />
               <span>🌈 Kinda lesbian leaning <span className="muted" style={{ fontWeight: 500, display: "block" }}>Men always stay her main attraction and she never goes fully lesbian — but with another romantic character who has this checked too, something could slowly develop (PG-13).</span></span>
-            </label>
+            </label>}
           </div>
         )}
         {c && <ReferencePicker characterId={c.id} value={refIds} onChange={setRefIds} refresh={shots}
@@ -332,7 +349,7 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
 }
 
 /** 🔊 Pick a call voice: their ElevenLabs voices plus a search of ElevenLabs' shared library, with ▶ samples. */
-function VoicePicker({ value, onChange }: { value: VoiceOption; onChange: (v: VoiceOption) => void }) {
+function VoicePicker({ value, onChange, only }: { value: VoiceOption; onChange: (v: VoiceOption) => void; only?: "female" | "male" }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [list, setList] = useState<VoiceOption[] | null>(null);
@@ -342,7 +359,7 @@ function VoicePicker({ value, onChange }: { value: VoiceOption; onChange: (v: Vo
   const audio = useRef<HTMLAudioElement | null>(null);
   const search = async (text: string) => {
     setErr("");
-    try { setList((await api<{ voices: VoiceOption[] }>("/api/voices", { provider, q: text })).voices); }
+    try { const all = (await api<{ voices: VoiceOption[] }>("/api/voices", { provider, q: text })).voices; setList(only ? all.filter(v => v.kind === only) : all); }
     catch (e) { setErr(e instanceof Error ? e.message : "Couldn't load voices."); setList([]); }
   };
   useEffect(() => { if (open) { setList(null); search(q); } }, [open, provider]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -365,7 +382,7 @@ function VoicePicker({ value, onChange }: { value: VoiceOption; onChange: (v: Vo
       {open && (
         <div style={{ marginTop: 8, border: "1px solid var(--border)", borderRadius: 12, padding: 8 }}>
           <div role="tablist" className="row" style={{ gap: 6, marginBottom: 8 }}>
-            {([["elevenlabs", "ElevenLabs"], ["fish", "🐟 Fish Audio (female)"]] as const).map(([id, label]) => (
+            {([["elevenlabs", "ElevenLabs"], ...(only === "male" ? [] : [["fish", "🐟 Fish Audio (female)"] as const])] as const).map(([id, label]) => (
               <button key={id} type="button" role="tab" aria-selected={provider === id} onClick={() => setProvider(id)} data-testid={`voices-${id}`}
                 style={{ borderRadius: 999, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", border: `1px solid ${provider === id ? "var(--accent)" : "var(--border)"}`, background: provider === id ? "rgba(124,140,255,0.15)" : "transparent", color: "var(--text)" }}>{label}</button>
             ))}

@@ -5,7 +5,8 @@ import { peekAt, draftPeek, draftIcu } from "../../lib/peek";
 import { inPersonFor, startInPerson, endInPerson } from "../../lib/inPerson";
 import { canShe, sickFor, type Answer } from "../../lib/life";
 // 🎲 In tests the coin is pinned (set in the test environment only); in the app it's a real coin.
-const luckOf = (b: Record<string, unknown>): "yes" | "no" | undefined => (process.env.VELO_TEST_LUCK === "1" ? (b.luck === "no" ? "no" : "yes") : undefined);
+const luckOf = (b: Record<string, unknown>): "yes" | "no" | undefined =>
+  (process.env.VELO_TEST_LUCK === "1" ? (b.luck === "ask" ? undefined : b.luck === "no" ? "no" : "yes") : undefined);
 import { awayFor, awayText, myPhotos } from "../../lib/picagram";
 import { cleanTags } from "../../lib/text";
 import { deleteMessages } from "../../lib/forget";
@@ -352,7 +353,8 @@ export async function POST(req: NextRequest) {
           const [who] = await db`select adult_confirmed_at from users where id = ${me}`;
           const her: Answer = await canShe(me, ch, "person", b.timeZone, !!who?.adult_confirmed_at, luckOf(b)).catch(() => ({ ok: true }));
           if (!her.ok) return NextResponse.json({ no: her.say, marker: await hers(her.say) });
-          if (her.note) await db`insert into velo_messages (user_id, role, content, character_id) values (${me}, 'user', ${`🧍 (she slipped away from work to see me)`}, ${ch.id})`;
+          if (her.mark) await db`insert into velo_messages (user_id, role, content, character_id) values (${me}, 'user', ${`🧍 (${her.mark})`}, ${ch.id})`;
+
         }
         const place = scrub(clean(b.place, 120)).replace(/\n/g, " ");
         const p = await startInPerson(me, ch.id, place);
