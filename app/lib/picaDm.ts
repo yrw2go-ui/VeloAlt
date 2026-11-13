@@ -1,5 +1,6 @@
 // ✉️ Picagram DMs: private chats with Picagram accounts (people who aren't characters). They answer in
 // their own voice and can send photos of themselves. Characters never DM here — they chat in the normal chat.
+import { dropMeta } from "./text";
 import { sql } from "./db";
 import { writeText } from "./llm";
 import { scrub } from "./secrets";
@@ -115,7 +116,8 @@ export async function dmSend(userId: string, accountId: string, text: string): P
   try { j = obj ? JSON.parse(obj[0]) : { reply: raw }; } catch { j = { reply: raw.replace(/\{[\s\S]*\}/, "").trim() || raw }; }
   if (typeof j.reply !== "string" && !obj) j.reply = raw;
   j.reply = String(j.reply || "").replace(/^```(json)?|```$/g, "").trim();
-  const reply = scrub(String(j.reply || "").replace(/\s+/g, " ").trim()).slice(0, 2000);
+  // 🙈 Stage directions about the app ("…the system is waiting for their reply") are dropped, not sent.
+  const reply = scrub(dropMeta(String(j.reply || "")).replace(/\s+/g, " ").trim()).slice(0, 2000);
   // Her brain didn't answer: say so (no fake 😊), and they can send again or pick another brain.
   if (!reply) return { added: [mine], note: `${a.name} didn't answer — her brain didn't respond. Try again, or pick another brain (🧠 at the top).` };
   const added: Dm[] = [mine, await addDm(userId, accountId, "assistant", reply)];

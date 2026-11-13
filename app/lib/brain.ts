@@ -7,7 +7,7 @@
 //   "remember" / "memo" — after a call / chat: save a summary, goals and facts to memory
 //   "errand"    — a turn on a call Velo is making FOR the owner to someone else
 //   "errandsum" — a short report to the owner after that call
-import { cleanTags } from "./text";
+import { cleanTags, dropMeta, isMeta } from "./text";
 import Anthropic from "@anthropic-ai/sdk";
 import type { Caller } from "./caller";
 import { sql } from "./db";
@@ -386,6 +386,8 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
         }
         if (round === 5) reply = "";
       }
+      // 🙈 Narrating the app ("…the system is waiting for their reply") isn't an answer: try the next brain.
+      if (isMeta(reply)) { console.warn(`velo: ${brainNow.model} answered with a stage direction`); reply = ""; }
       if (!reply) answered = false;
     } catch (e) {
       console.error(`velo: ${brainNow.model ? "her brain" : chosen} failed${tryOrder.indexOf(brainNow) < tryOrder.length - 1 ? ", trying the next one" : ", using Claude"}`, e instanceof ProviderError ? e.message : e);
@@ -410,6 +412,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
     if (res.stop_reason === "refusal") { reply = errand ? "I'm sorry, I can't help with that. Thanks for your time, goodbye. [[END]]" : "I'd rather not go there — but I'm here for anything else. What's on your mind?"; break; }
     const texts = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text");
     reply = texts.map(b => b.text).join("").trim();
+    if (isMeta(reply) && res.stop_reason !== "tool_use") { console.warn("velo: stage-direction reply, asking again"); reply = ""; continue; }
     for (const t of texts) for (const c of t.citations || []) if (c.type === "web_search_result_location" && /^https:\/\//.test(c.url)) sources.set(c.url, c.title || new URL(c.url).hostname);
     // A long web search can pause; send the turn back as is and the server picks it up.
     if (res.stop_reason === "pause_turn") { messages.push({ role: "assistant", content: res.content }); continue; }
@@ -460,7 +463,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
   // Their reaction tag (chat only) becomes a badge on the person's message; it's never shown or spoken.
   let react: string | undefined;
   reply = reply.replace(REACT_TAG, (_, e: string) => { if (!react && REACTIONS.includes(e)) react = e; return ""; });
-  reply = cleanTags(reply);
+  reply = dropMeta(cleanTags(reply));
   if (!reply && media?.length) reply = media.some(m => m.kind === "video") ? "Here you go 😊" : "Here you go — what do you think? 😊";
   return { reply: reply || (errand ? "Sorry, could you say that again?" : "Sorry, I lost my train of thought — could you say that again?"), changed, drafts, media, ...(mode === "chat" && react ? { react } : {}), by: answeredByAlt ? "alt" : "claude" };
 }
