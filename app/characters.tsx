@@ -190,10 +190,13 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
     } catch (e) { setMsg(e instanceof Error ? e.message : "Couldn't save."); return null; }
     finally { setBusy(false); }
   };
-  // 💾 Autosave: a few seconds after you stop changing things, an existing character saves itself.
+  // 💾 Autosave: three seconds after you stop changing things, an existing character saves itself.
+  // Every change restarts the clock — typing a sentence saves once, at the end, not halfway through.
   // (A new one still needs Create — it has to pass the safety check and be given a name first.)
   const [saved, setSaved] = useState(false);
   const saving = useRef(false);
+  const edited = JSON.stringify([gender, name, personality, backstory, relation, appearance, job, wear, hobbies, voice.id, traits, preset, zone, bday, romantic, arc, refIds, brain,
+    attire, workDays, workStart, workEnd, partTime, school, classDays, classStart, classEnd, gf, secret, polyOk, sapphic, bigFollowing]);
   useEffect(() => {
     if (!c || !dirty || busy || working || !name.trim()) return;
     const t = setTimeout(async () => {
@@ -202,9 +205,9 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
       const r = await save();
       saving.current = false;
       if (r) { setSaved(true); setTimeout(() => setSaved(false), 2000); }
-    }, 2500);
+    }, 3000);
     return () => clearTimeout(t);
-  }, [dirty, busy, working, name, c?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [edited, dirty, busy, working, c?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const portrait = async () => {
     const saved = dirty ? await save() : c;
