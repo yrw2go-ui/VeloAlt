@@ -261,7 +261,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   // Tools: none on wrap-ups or errands; Pro adds contacts, drafts, Amazon carts and 🔎 web search
   // (Anthropic runs the searches; results come back in the same response).
   const search = !!proTools && (mode === "chat" || mode === "sms" || mode === "talk");
-  const tools: Anthropic.ToolUnion[] | undefined = wrapUp || errand ? undefined : ch && group ? [...MEMORY_TOOLS] : ch ? [...MEMORY_TOOLS, ...(canSend ? [SEND_MEDIA_TOOL(ch.name, romantic)] : []), ...(mode === "chat" || mode === "talk" || mode === "sms" ? [PLAN_TOOL, PROMISE_TOOL] : [])] : [
+  const tools: Anthropic.ToolUnion[] | undefined = wrapUp || errand ? undefined : ch && group ? [...MEMORY_TOOLS] : ch ? [...MEMORY_TOOLS, ...(canSend ? [SEND_MEDIA_TOOL(ch.name, romantic, !!ch.explicit_ok)] : []), ...(mode === "chat" || mode === "talk" || mode === "sms" ? [PLAN_TOOL, PROMISE_TOOL] : [])] : [
     ...(canSend ? [SEND_MEDIA_TOOL("Velo", romantic)] : []),
     ...MEMORY_TOOLS, ...REMINDER_TOOLS, ...(proTools?.tools || []),
     ...(search ? [{ type: "web_search_20260209" as const, name: "web_search" as const, max_uses: 5, user_location: { type: "approximate" as const, timezone: today.tz } }] : []),
@@ -282,7 +282,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
           const who = (input as { of_person?: unknown })?.of_person;
           const other = typeof who === "string" && who.trim() ? await pictureOf(caller.userId, cid, who) : null;
           if (typeof other === "string") throw new MediaError(other);
-          const m = await startMedia(caller.userId, input, { characterId: cid, who: ch?.name || "Velo", appearance: ch?.appearance || "", refs, romantic, mood: ch ? mediaMood(ch.traits) : "", offer: !asked, other });
+          const m = await startMedia(caller.userId, input, { characterId: cid, who: ch?.name || "Velo", appearance: ch?.appearance || "", refs, romantic, explicitOk: !!ch?.explicit_ok, mood: ch ? mediaMood(ch.traits) : "", offer: !asked, other });
           media.push(m);
           if (m.status === "failed") throw new MediaError("The picture service wouldn't make that one. Say so briefly and offer something else.");
           if (m.status === "offered") return { ok: true, offered: true, tell_them: "Offered — they'll see an Accept / No thanks button. Ask casually if they'd like it (don't say it's sent or on its way), then keep talking." };
