@@ -455,15 +455,10 @@ export async function POST(req: NextRequest) {
       case "trust.boost": {
         const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
         if (!ch) return bad("That character wasn't found.");
-        const today = new Date().toISOString().slice(0, 10);
-        const [row] = await db`select taps from chat_heart_taps where user_id = ${me} and character_id = ${ch.id} and day = ${today}`;
-        const taps = (row?.taps || 0) + 1;
-        if (taps > 55) return bad("Max taps for today.");
-        await db`insert into chat_heart_taps (user_id, character_id, day, taps) values (${me}, ${ch.id}, ${today}, ${taps}) on conflict (user_id, character_id, day) do update set taps = ${taps}`;
         const [rel] = await db`select trust from chat_relationships where user_id = ${me} and character_id = ${ch.id}`;
         const newTrust = Math.min(100, (rel?.trust || 50) + 1);
         await db`insert into chat_relationships (user_id, character_id, trust) values (${me}, ${ch.id}, ${newTrust}) on conflict (user_id, character_id) do update set trust = ${newTrust}, updated_at = now()`;
-        return NextResponse.json({ trust: newTrust, taps });
+        return NextResponse.json({ trust: newTrust });
       }
       default:
         return bad("Unknown action.");
