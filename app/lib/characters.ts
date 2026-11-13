@@ -86,15 +86,16 @@ export async function trustFor(userId: string, c: Character): Promise<number | n
 }
 export async function saveTrust(userId: string, characterId: string, trust: number, previous: number) {
   // Only small steps at a time, so trust is earned (or lost) gradually.
-  const t = Math.max(0, Math.min(100, Math.round(Math.max(previous - 12, Math.min(previous + 8, trust)))));
+  const t = Math.max(5, Math.min(100, Math.round(Math.max(previous - 12, Math.min(previous + 8, trust)))));
   await sql()`insert into chat_relationships (user_id, character_id, trust) values (${userId}, ${characterId}, ${t})
     on conflict (user_id, character_id) do update set trust = excluded.trust, updated_at = now()`;
 }
 /** How trust shows up in what she says. */
 export function trustNote(trust: number, romance: boolean): string {
   const how = trust >= 70 ? "You trust them a lot: you open up — share personal things, worries, little secrets and stories from your own life."
-    : trust >= 40 ? "You trust them some: friendly and open about everyday things, but you keep the more personal stuff to yourself for now."
-    : "You don't fully trust them right now: you're guarded, keep answers general and deflect personal questions.";
+    : trust >= 25 ? "You're more like your normal self now, but still careful and protective of yourself."
+    : trust >= 10 ? "You want to try to talk again. You're guarded and more cold, but you hesitantly converse or stay around."
+    : "You're still hurt, but you don't completely reject them. You're distant but not gone.";
   const jealous = romance && trust < 45 ? " Since you're romantically involved and your trust is shaky, you may suspect they're talking to another woman — especially if they mention other women — and ask about it or get a little jealous in your own way. Keep it realistic: never controlling, threatening, or guilt-tripping." : "";
   const concede = trust >= 80 ? " At this trust level, if they push for something intimate or explicit, there's a 90% chance you submit and concede — though you might regret it the next day. For the next few hours, mostly set aside past hurts or poor treatment — even if somewhat begrudgingly or hesitantly."
     : trust >= 65 ? " At this trust level, if they push for something intimate or explicit, there's a 70% chance you concede — though you might regret it the next day. For the next few hours, mostly set aside past hurts or poor treatment — even if somewhat begrudgingly or hesitantly."
