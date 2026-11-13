@@ -33,6 +33,9 @@ export async function awayFor(userId: string, characterId: string): Promise<{ pl
 export const awayText = (name: string, a: { place: string; until: string }) =>
   `${name} is out of town${a.place ? ` (${a.place})` : ""} until ${new Date(`${a.until}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })} — no meeting up in person till then.`;
 
+// 📅 How many posts from other people land in the feed on a day (their own posts are on top of this).
+export const DAY_POSTS: [number, number] = [4, 9];
+
 /** Make sure each day (today, and a few missed ones) has its posts. Returns how many days were made. */
 export async function ensurePicaDays(userId: string, backfill = 2, scheduled = false): Promise<number> {
   // ⏸️ Not looked at Picagram for 4 days: nobody posts until they look again.
@@ -69,10 +72,14 @@ type Planned = { author: string; kind: "image" | "text"; caption: string; photo:
 async function generateDay(userId: string, day: string, isToday: boolean): Promise<boolean> {
   const chars = (await listCharacters(userId)).filter(c => !c.owner_id || c.owner_id === userId);
   const u = await userInfo(userId);
-  // 💃 Other accounts (people they follow, plus someone new to discover).
-  await accountPosts(userId, day, isToday, u).catch(e => console.error("pica: accounts", e instanceof Error ? e.message : e));
-  if (!chars.length) return true;
-  const authors = shuffle(chars).slice(0, Math.min(rand(3, 5), chars.length));
+  // 📅 How much lands in the feed today, from everyone else (their own posts don't count):
+  // 4–9, split between their characters and the women they follow (plus the new face of the day).
+  const total = rand(DAY_POSTS[0], DAY_POSTS[1]);
+  const charN = chars.length ? Math.min(chars.length, Math.max(1, Math.round(total * (0.4 + Math.random() * 0.3)))) : 0;
+  // 💃 Other accounts (people they follow, plus someone new to discover) make up the rest.
+  await accountPosts(userId, day, isToday, u, total - charN).catch(e => console.error("pica: accounts", e instanceof Error ? e.message : e));
+  if (!charN) return true;
+  const authors = shuffle(chars).slice(0, charN);
   const links = new Map<string, { knows: string[]; knownBy: string[] }>();
   const info = await Promise.all(authors.map(async c => {
     // Only characters linked in their character cards: who she knows (could be in her photo), and who knows her (could comment).
@@ -315,28 +322,31 @@ async function newAccount(userId: string): Promise<Record<string, unknown> | nul
   return row || null;
 }
 
-async function accountPosts(userId: string, day: string, isToday: boolean, u: U): Promise<void> {
+async function accountPosts(userId: string, day: string, isToday: boolean, u: U, want: number): Promise<void> {
+  if (want <= 0) return;
   // Accounts they follow (not ones they've befriended — those are characters now), plus today's one new face.
-  const followed = shuffle(await sql()`select * from pica_accounts where user_id = ${userId} and followed and character_id is null`).slice(0, rand(1, 2));
   const fresh = await newAccount(userId);
-  const who = [...followed, ...(fresh ? [fresh] : [])];
+  const pool = shuffle(await sql()`select * from pica_accounts where user_id = ${userId} and followed and character_id is null`);
+  const who: Record<string, unknown>[] = fresh ? [fresh] : [];
+  // Spread the day over different women; with only a few followed, some of them post more than once.
+  for (let i = 0; pool.length && who.length < want; i++) who.push(pool[i % pool.length]);
   if (!who.length) return;
   const when = new Date(`${day}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
-  const raw = await writeText("", `Today is ${when}: fit the day of the week, the season and any holiday (weekend brunch, a weekday at work, summer at the beach, winter cozy…). Write one Picagram post for each of these women: a photo of her in her everyday life or her niche — gym, beach, pool, brunch, travel, a night out, at home, an outfit — with a short caption (emojis/hashtags okay). ${u.adult ? "Flattering, flirty and confident is fine (PG-13): swimwear at the beach or pool is okay, and now and then (about one post in four) a closer, flattering shot with some cleavage showing — a low-cut top, a close-up selfie from a little above — confident and tasteful, not overt; never nudity, lingerie or anything sexual." : "Keep it family-friendly, fully clothed."} "photo" describes exactly what the picture shows (where, outfit, pose, light) in 1–2 sentences. JSON only: {"posts":[{"handle":"...","caption":"...","photo":"..."}]}`,
-    who.map(a => `- @${a.handle} (${a.name}): ${a.bio} — looks: ${a.look}`).join("\n"), 1500).catch(() => "");
-  let plan: { handle?: string; caption?: string; photo?: string }[] = [];
+  const raw = await writeText("", `Today is ${when}: fit the day of the week, the season and any holiday (weekend brunch, a weekday at work, summer at the beach, winter cozy…). Write one Picagram post for each numbered line below (the same woman can appear twice — then make her two posts clearly different: a different time of day, place and outfit): a photo of her in her everyday life or her niche — gym, beach, pool, brunch, travel, a night out, at home, an outfit — with a short caption (emojis/hashtags okay). ${u.adult ? "Flattering, flirty and confident is fine (PG-13): swimwear at the beach or pool is okay, and now and then (about one post in four) a closer, flattering shot with some cleavage showing — a low-cut top, a close-up selfie from a little above — confident and tasteful, not overt; never nudity, lingerie or anything sexual." : "Keep it family-friendly, fully clothed."} "photo" describes exactly what the picture shows (where, outfit, pose, light) in 1–2 sentences. JSON only: {"posts":[{"n":1,"caption":"...","photo":"..."}]}`,
+    who.map((a, i) => `${i + 1}. @${a.handle} (${a.name}): ${a.bio} — looks: ${a.look}`).join("\n"), 2500).catch(() => "");
+  let plan: { n?: number; handle?: string; caption?: string; photo?: string }[] = [];
   try { plan = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]).posts || []; } catch { /* skip today */ }
   const now = Date.now();
   const start = isToday ? now : zonedToUtc(`${day}T09:00`, u.tz) || now, end = isToday ? Math.max(now + 2 * 3600_000, zonedToUtc(`${day}T22:00`, u.tz) || now) : zonedToUtc(`${day}T21:30`, u.tz) || now;
-  for (const a of who) {
-    const p = plan.find(x => String(x.handle || "").replace(/^@/, "").toLowerCase() === String(a.handle)) || null;
+  for (const [i, a] of who.entries()) {
+    const p = plan.find(x => Number(x.n) === i + 1) || plan.find(x => String(x.handle || "").replace(/^@/, "").toLowerCase() === String(a.handle)) || null;
     const photo = scrub(String(p?.photo || `${a.name} candid lifestyle photo, natural light`)).slice(0, 600), caption = scrub(String(p?.caption || "✨")).slice(0, 600);
     const [av] = a.avatar_media_id ? await sql()`select f.url from velo_media m join velo_files f on f.id = m.file_id where m.id = ${a.avatar_media_id} and m.status = 'done'` : [];
     const media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: photo },
       { characterId: null, who: String(a.name), appearance: String(a.look), refs: av ? [String(av.url)] : [], romantic: u.adult, offer: false, other: null, pica: true }).catch(() => null);
     if (!media) continue;
     if (!a.avatar_media_id) await sql()`update pica_accounts set avatar_media_id = ${media.id} where id = ${a.id}`;
-    const at = isToday && a === who[0] ? now - rand(5, 40) * 60_000 : start + Math.random() * (end - start);
+    const at = isToday && i === 0 ? now - rand(5, 40) * 60_000 : start + Math.random() * (end - start);
     const likes = Math.max(150, Math.min(25000, Math.round(Number(a.followers) * (0.005 + Math.random() * 0.03))));
     const [post] = await sql()`insert into pica_posts (user_id, account_id, kind, caption, photo, media_id, likes_target, created_at) values (${userId}, ${a.id}, 'image', ${caption}, ${photo}, ${media.id}, ${likes}, ${new Date(at).toISOString()}) returning id`;
     for (const s of randomComments(`${caption} ${photo}`, "image", rand(3, 5)))
