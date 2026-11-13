@@ -20,10 +20,39 @@ const GYM = ["Gym goals 💪", "Those gains tho", "Okay fitness queen", "Motivat
   "Where's the workout plan", "Put the rest of us to shame", "Consistency pays off!", "Beast mode", "Fit check approved ✅", "Inspo for my next workout"];
 const FOOD = ["That looks delicious 🤤", "Recipe please!!", "Now I'm hungry", "Save me a plate", "Yum!", "Okay chef 👩‍🍳", "Need this right now", "Foodie goals"];
 const PET = ["OMG the baby 😭", "Cutest little buddy", "I need to pet them", "Who's a good baby", "Stop the cuteness 🐾", "That face!! 😍", "Best friend goals"];
-const BEACH = ["Beach day goals 🌊", "Take me there!!", "That water tho", "Summer vibes ☀️", "Jealous of this view", "Sun-kissed ✨", "Paradise 🏝️"];
+const BEACH = ["Beach day goals 🌊", "Take me there!!", "That water tho", "Summer vibes ☀️", "Jealous of this view", "Sun-kissed ✨", "Paradise 🏝️",
+  "Wish I was on the beach too!", "Okay I need a beach day", "Save me a spot on the sand"];
+const POOL = ["Pool day!! 🏊", "Wish I was in that water", "Okay this is the life", "Taking me with you next time", "That's the summer I want"];
 const TRAVEL = ["Have fun on your trip!", "Bring me back a souvenir", "Living the dream ✈️", "Travel goals", "Enjoy every second!", "Wish I was there 😩", "Postcard worthy"];
 const FRIENDS = ["Besties!! 💕", "You two are the cutest", "Squad goals", "Love this duo", "Friendship goals", "Double trouble 😂", "The best pair"];
 const HOME = ["Cozy vibes 🏡", "Love your place", "Lazy day mood", "Comfy goals", "Such a cozy spot", "Self care day ✨"];
+const NIGHT = ["Have the best night!! 🍸", "Okay going OUT out 👀", "Save me a drink", "Who's the lucky bar", "This is the night out energy", "Dance floor is in trouble"];
+const WORK = ["Working hard 👏", "Even the work days look good", "Hope the shift flies by", "Boss energy", "Counting down to 5 with you"];
+const COFFEE = ["Coffee is life ☕", "Need one of those", "Same order please", "That latte art tho", "Caffeine twins ☕"];
+const OUTSIDE = ["That view 😍", "Fresh air goals", "Need to get outside like this", "Gorgeous spot", "Taking this hike next weekend"];
+const CAR = ["That car tho 🚗", "Road trip!!", "Where you headed?", "Take me with you", "Drive safe!! "];
+const SUNSET = ["That sky 😍", "Golden hour never misses", "Prettiest light", "Sunset chaser ✨"];
+const DANCE = ["The moves!! 🔥", "Okay go off 💃", "Teach me that", "This is so fun to watch"];
+
+// 👗 What she's wearing: comments that actually name the thing, like a real follower would.
+const WEAR: [RegExp, string][] = [
+  [/crop ?top/, "crop top"], [/bikini/, "bikini"], [/swimsuit|one ?piece|swimwear/, "swimsuit"], [/sundress/, "sundress"],
+  [/\bdress\b/, "dress"], [/\bgown\b/, "gown"], [/\bskirt\b/, "skirt"], [/\bjeans\b/, "jeans"], [/\bdenim\b/, "denim"],
+  [/leggings|yoga pants/, "leggings"], [/sports bra/, "sports bra"], [/\bhoodie\b/, "hoodie"], [/sweater|jumper|knit/, "sweater"],
+  [/\bcardigan\b/, "cardigan"], [/leather jacket/, "leather jacket"], [/\bjacket\b/, "jacket"], [/\bcoat\b/, "coat"],
+  [/\bblazer\b/, "blazer"], [/\bromper\b|\bjumpsuit\b/, "jumpsuit"], [/\bshorts\b/, "shorts"], [/\bboots\b/, "boots"],
+  [/\bheels\b|stilettos/, "heels"], [/sneakers|trainers/, "sneakers"], [/\bhat\b|\bcap\b|beanie/, "hat"],
+  [/sunglasses|shades/, "sunglasses"], [/\bscarf\b/, "scarf"], [/\bnecklace\b/, "necklace"], [/\bearrings\b/, "earrings"],
+  [/\bbag\b|\bpurse\b|handbag/, "bag"], [/\btank top\b/, "tank top"], [/\bt-?shirt\b|\btee\b/, "tee"],
+  [/\bblouse\b/, "blouse"], [/\boveralls\b/, "overalls"], [/\bapron\b/, "apron"], [/\bscrubs\b/, "scrubs"],
+  [/\buniform\b/, "uniform"], [/\bkimono\b/, "kimono"], [/\bnails\b|manicure/, "nails"], [/\bhair\b/, "hair"],
+  [/\bmakeup\b|\bliner\b|\blipstick\b/, "makeup"], [/\bglasses\b/, "glasses"], [/\bwatch\b/, "watch"],
+];
+const ABOUT_WEAR = (item: string) => [
+  `Love the ${item}`, `That ${item} 😍`, `Okay the ${item} is everything`, `Need that ${item}`, `Where's the ${item} from??`,
+  `The ${item} 🔥`, `Obsessed with the ${item}`, `${item.charAt(0).toUpperCase() + item.slice(1)} looks so good on you`, `That ${item} though 👌`,
+];
+
 const TEXT = ["So true 😂", "Felt this", "Literally me", "Same!!", "Mood", "Relatable af", "Hahaha yes", "Big agree", "Couldn't have said it better",
   "Needed to hear this", "Facts", "Preach 🙌", "This is so real", "Lmao 😂", "Okay but why is this so accurate", "Story of my life", "100%",
   "I feel seen", "Bestie this is me", "No lies detected", "Say it louder", "Hahaha I love you", "Spill the tea ☕", "Tell me more!!"];
@@ -41,23 +70,43 @@ export function randomUser(): string {
   return `${pick(FIRST)}${pick(TAIL)}${n}`.slice(0, 24);
 }
 
-/** A few random strangers' comments for a post (some emoji-only), fitted loosely to what it's about. */
+/** A few random strangers' comments for a post (some emoji-only).
+ *  They're told what the picture shows — what she's doing and what she's wearing — so the
+ *  comments land on it ("love the crop top", "wish I was on the beach too!"), not just "Love this!". */
 export function randomComments(text: string, kind: "image" | "text", n: number): { name: string; text: string }[] {
   const t = text.toLowerCase();
   const themed = [
-    /gym|workout|lift|run|yoga|fit|sweat/.test(t) ? GYM : [],
-    /food|dinner|lunch|brunch|cook|bake|pizza|coffee|eat/.test(t) ? FOOD : [],
-    /dog|cat|pup|kitten|pet/.test(t) ? PET : [],
-    /beach|pool|ocean|lake|waterpark|bikini|swim/.test(t) ? BEACH : [],
-    /vacation|trip|travel|flight|hotel|resort|airport/.test(t) ? TRAVEL : [],
-    /friend|bestie|sister|brother|mom|dad|with /.test(t) ? FRIENDS : [],
-    /home|couch|bed|cozy|lazy|blanket/.test(t) ? HOME : [],
+    /gym|workout|lift|weights|run|jog|yoga|pilates|fit|sweat|treadmill|squat/.test(t) ? GYM : [],
+    /food|dinner|lunch|brunch|breakfast|cook|bake|pizza|taco|pasta|eat|meal|plate/.test(t) ? FOOD : [],
+    /coffee|latte|espresso|cappuccino|café|cafe/.test(t) ? COFFEE : [],
+    /dog|cat|pup|puppy|kitten|pet|horse/.test(t) ? PET : [],
+    /beach|ocean|sand|surf|shore|seaside/.test(t) ? BEACH : [],
+    /pool|hot tub|jacuzzi|lake|waterpark|swim/.test(t) ? POOL : [],
+    /vacation|trip|travel|flight|hotel|resort|airport|abroad/.test(t) ? TRAVEL : [],
+    /friend|bestie|sister|brother|mom|dad|girls|with her/.test(t) ? FRIENDS : [],
+    /home|couch|bed|cozy|lazy|blanket|kitchen|living room/.test(t) ? HOME : [],
+    /club|bar|night out|cocktail|drinks|party|rooftop|concert/.test(t) ? NIGHT : [],
+    /work|office|shift|desk|hospital|classroom|studio/.test(t) ? WORK : [],
+    /hike|trail|mountain|park|forest|garden|walk|picnic/.test(t) ? OUTSIDE : [],
+    /car|driving|road trip|motorcycle|truck/.test(t) ? CAR : [],
+    /sunset|sunrise|golden hour|skyline|dusk/.test(t) ? SUNSET : [],
+    /danc|club floor|choreo/.test(t) ? DANCE : [],
   ].flat();
+  // 👗 Anything she's actually wearing, named.
+  const wearing = kind === "image" ? WEAR.filter(([re]) => re.test(t)).slice(0, 3).flatMap(([, item]) => ABOUT_WEAR(item)) : [];
+  // Comments that are about THIS picture — what she's doing and what she has on.
+  const about = [...themed, ...wearing];
   const out: { name: string; text: string }[] = [];
   const used = new Set<string>();
-  for (let i = 0; i < n * 3 && out.length < n; i++) {
+  // At least one lands on the picture itself when there's something to land on.
+  if (about.length && n > 0) { const c = pick(about); used.add(c); out.push({ name: randomUser(), text: c }); }
+  for (let i = 0; i < n * 4 && out.length < n; i++) {
     const r = Math.random();
-    const c = r < 0.35 ? pick(EMOJI) : kind === "text" ? (r < 0.8 ? pick(TEXT) : pick(GENERAL)) : themed.length && r < 0.6 ? pick(themed) : pick(GENERAL);
+    const c = r < 0.3 ? pick(EMOJI)
+      : kind === "text" ? (r < 0.8 ? pick(TEXT) : pick(GENERAL))
+      : wearing.length && r < 0.45 ? pick(wearing)
+      : about.length && r < 0.72 ? pick(about)
+      : pick(GENERAL);
     if (used.has(c)) continue;
     used.add(c);
     out.push({ name: randomUser(), text: c });
