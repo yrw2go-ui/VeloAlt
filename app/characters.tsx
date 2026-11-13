@@ -182,6 +182,22 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
     } catch (e) { setMsg(e instanceof Error ? e.message : "Couldn't save."); return null; }
     finally { setBusy(false); }
   };
+  // 💾 Autosave: a few seconds after you stop changing things, an existing character saves itself.
+  // (A new one still needs Create — it has to pass the safety check and be given a name first.)
+  const [saved, setSaved] = useState(false);
+  const saving = useRef(false);
+  useEffect(() => {
+    if (!c || !dirty || busy || working || !name.trim()) return;
+    const t = setTimeout(async () => {
+      if (saving.current) return;
+      saving.current = true;
+      const r = await save();
+      saving.current = false;
+      if (r) { setSaved(true); setTimeout(() => setSaved(false), 2000); }
+    }, 2500);
+    return () => clearTimeout(t);
+  }, [dirty, busy, working, name, c?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const portrait = async () => {
     const saved = dirty ? await save() : c;
     if (!saved) return;
@@ -327,7 +343,8 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
         <div className="muted" style={{ fontSize: 12 }}>Everyone can chat with and call this character. Each person gets their own chats and memories with them. Characters are fictional: no real people and nothing explicit — romantic characters can be PG-13 (flirty, suggestive, never explicit). A quick safety check runs when you save.</div>
         {msg && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {msg}</div>}
         <div className="row" style={{ flexWrap: "wrap" }}>
-          <button className="btn" disabled={busy || !name.trim() || (!dirty && !!c)} onClick={save}>{busy ? "…" : c ? "Save" : "Create"}</button>
+          <button className="btn" disabled={busy || !name.trim() || (!dirty && !!c)} onClick={save} data-testid="character-save">{busy ? "…" : c ? "Save" : "Create"}</button>
+          {c && <span data-testid="autosave" className="muted" style={{ fontSize: 12, alignSelf: "center" }}>{busy ? "Saving…" : saved ? "✓ Saved" : dirty ? "Saves on its own…" : ""}</span>}
           {portraits && <button className="ghost" disabled={busy || working || !name.trim() || !appearance.trim()} onClick={portrait} data-testid="character-portrait">{c?.portrait_url ? "🎨 New portrait" : "🎨 Generate portrait"}</button>}
           {c && onDuplicated && <button className="ghost" disabled={busy || dirty} onClick={() => { setCopyName(`${c.name} 2`); setCopying(true); }} data-testid="duplicate-open" title={dirty ? "Save first" : "Make a copy under a new name"}>📄 Duplicate</button>}
           {c && <button className="ghost" disabled={busy} onClick={remove} style={{ marginLeft: "auto", color: "var(--bad)" }}>Delete</button>}
