@@ -3,6 +3,7 @@
 // follows them across devices). When they leave the app after chatting, Velo
 // files a short summary and any new goals/facts in her memory ("memo").
 import { useCallback, useEffect, useRef, useState } from "react";
+import { BRAIN_OPTIONS } from "./lib/brainOptions";
 import { api, data, uploadFile } from "./lib/api";
 import { VeloAvatar } from "./avatar";
 import DraftCard, { type Draft } from "./drafts";
@@ -40,7 +41,7 @@ const SUGGESTIONS = ["Plan my day", "Remind me to call Mom tomorrow at 6pm", "I 
 /** A message to drop into one chat (a call recap): cid null = Velo's chat. */
 export type ChatAdd = { msg: ChatMsg; cid: string | null };
 
-export default function Chat({ userId, name, onChanged, added, onAdded, character, adult = false, onAdult, onHistory, onNewCharacter, others = [], onGroup, onSocial }: { onSocial?: (accountId: string) => void; others?: { id: string; name: string }[]; onGroup?: (g: { id: string; title: string; member_ids: string[]; updated_at: string; in_person_place?: string | null }) => void; userId: string; name: string; onChanged: () => void; added: ChatAdd | null; onAdded?: () => void; character?: ChatWith | null; adult?: boolean; onAdult?: () => void; onHistory?: (m: { role: "user" | "assistant"; content: string }[]) => void; onNewCharacter?: (c: { id: string; name: string; portrait_url: string | null }) => void }) {
+export default function Chat({ userId, name, onChanged, added, onAdded, character, adult = false, onAdult, onHistory, onNewCharacter, others = [], onGroup, onSocial, brains = [] }: { brains?: string[]; onSocial?: (accountId: string) => void; others?: { id: string; name: string }[]; onGroup?: (g: { id: string; title: string; member_ids: string[]; updated_at: string; in_person_place?: string | null }) => void; userId: string; name: string; onChanged: () => void; added: ChatAdd | null; onAdded?: () => void; character?: ChatWith | null; adult?: boolean; onAdult?: () => void; onHistory?: (m: { role: "user" | "assistant"; content: string }[]) => void; onNewCharacter?: (c: { id: string; name: string; portrait_url: string | null }) => void }) {
   const cid = character?.id || null;
   const thread = cid ? { characterId: cid } : {};
   const who = character?.name || "Velo";
@@ -290,17 +291,16 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     } catch (e) { setErr(e instanceof Error ? e.message : "Try again."); }
   };
   // 👀 The peek being set up: its description (editable) before the picture is made.
-  const [peekSheet, setPeekSheet] = useState<{ description: string; loading: boolean; error?: string; icu?: boolean } | null>(null);
-  const openPeek = async (icu: boolean) => {
-    setErr(""); setPeekSheet({ description: "", loading: true, icu });
-    try { setPeekSheet({ description: (await data<{ description: string }>(icu ? "icu.draft" : "scene.peek.draft", { characterId: cid })).description, loading: false, icu }); }
-    catch (e) { setPeekSheet(null); setErr(e instanceof Error ? e.message : "Couldn't peek right now."); }
+  const [peekSheet, setPeekSheet] = useState<{ description: string; loading: boolean; error?: string; icu?: boolean; writer: string } | null>(null);
+  // It opens empty: nothing is written until they tap ↻ Write (and ↻ again to redo it).
+  const openPeek = (icu: boolean) => {
+    setErr(""); setPeekSheet({ description: "", loading: false, icu, writer: character?.brain === "claude" ? "" : character?.brain || "" });
   };
   const rewritePeek = async () => {
-    const icu = !!peekSheet?.icu;
+    const icu = !!peekSheet?.icu, writer = peekSheet?.writer || "";
     setPeekSheet(p => (p ? { ...p, loading: true, error: undefined } : p));
-    try { const r = await data<{ description: string }>(icu ? "icu.draft" : "scene.peek.draft", { characterId: cid }); setPeekSheet({ description: r.description, loading: false, icu }); }
-    catch (e) { setPeekSheet(p => (p ? { ...p, loading: false, error: e instanceof Error ? e.message : "Couldn't rewrite it." } : p)); }
+    try { const r = await data<{ description: string }>(icu ? "icu.draft" : "scene.peek.draft", { characterId: cid, writer }); setPeekSheet({ description: r.description, loading: false, icu, writer }); }
+    catch (e) { setPeekSheet(p => (p ? { ...p, loading: false, error: e instanceof Error ? e.message : "Couldn't write it." } : p)); }
   };
   const sendPeek = async (description: string) => {
     setPeekSheet(p => (p ? { ...p, loading: true, error: undefined } : p));
@@ -553,7 +553,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
           </form>
         </div>
       )}
-      {peekSheet && character && <PeekSheet who={character.name} sheet={peekSheet} onChange={d => setPeekSheet(p => (p ? { ...p, description: d } : p))} onRewrite={rewritePeek} onSend={sendPeek} onClose={() => setPeekSheet(null)} />}
+      {peekSheet && character && <PeekSheet who={character.name} sheet={peekSheet} brains={brains} theirs={character.brain === "claude" ? "" : character.brain || ""} onChange={d => setPeekSheet(p => (p ? { ...p, description: d } : p))} onWriter={w => setPeekSheet(p => (p ? { ...p, writer: w } : p))} onRewrite={rewritePeek} onSend={sendPeek} onClose={() => setPeekSheet(null)} />}
       {sceneSheet && character && <SceneSheet key={fromPlan?.id || "new"} who={character.name} plan={fromPlan} onClose={() => { setSceneSheet(false); setFromPlan(null); }} onStart={startScene} />}
       <div data-testid="chat-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
         {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : (
@@ -740,8 +740,11 @@ export function FileThumb({ f, size }: { f: { url: string; thumb?: string | null
 }
 
 /** 🎬 Set up a scene: play it out now, or say it already happened. */
-/** 👀 The peek, before it's made: the picture's description to check, tweak or rewrite. */
-function PeekSheet({ who, sheet, onChange, onRewrite, onSend, onClose }: { who: string; sheet: { description: string; loading: boolean; error?: string; icu?: boolean }; onChange: (d: string) => void; onRewrite: () => void; onSend: (d: string) => void; onClose: () => void }) {
+/** 👀 The peek, before it's made: it opens empty — ↻ Write has an AI (hers by default) write what
+ *  you'd see, ↻ again rewrites it — and you can type or fix anything yourself before it's made. */
+function PeekSheet({ who, sheet, brains, theirs, onChange, onWriter, onRewrite, onSend, onClose }: { who: string; sheet: { description: string; loading: boolean; error?: string; icu?: boolean; writer: string }; brains: string[]; theirs: string; onChange: (d: string) => void; onWriter: (w: string) => void; onRewrite: () => void; onSend: (d: string) => void; onClose: () => void }) {
+  // Who can write it: Claude, plus the Atlas brains this server has set up. Hers is the default.
+  const options = [{ id: "", label: "Claude (same as Velo)" }, ...BRAIN_OPTIONS.filter(o => o.atlas && (brains.includes(o.id) || o.id === theirs)).map(o => ({ id: o.id as string, label: o.label as string }))];
   return (
     <div role="dialog" aria-modal="true" data-testid="peek-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }} onClick={onClose}>
       <div className="card" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -749,13 +752,21 @@ function PeekSheet({ who, sheet, onChange, onRewrite, onSend, onClose }: { who: 
           <div style={{ fontWeight: 800, fontSize: 17 }}>{sheet.icu ? `👁️ I see you, ${who}` : `👀 Peek at ${who}`}</div>
           <button className="ghost" onClick={onClose} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
         </div>
-        <div className="muted" style={{ fontSize: 12 }}>This is the picture that will be made, using her reference pictures. Fix anything that&apos;s off — where you are, what she&apos;s wearing, her pose or look. She won&apos;t know.</div>
-        <textarea value={sheet.description} onChange={e => onChange(e.target.value)} maxLength={1500} rows={5} aria-label="Peek description" disabled={sheet.loading && !sheet.description}
+        <div className="muted" style={{ fontSize: 12 }}>This is the picture that will be made, using her reference pictures. Write it yourself, or tap ↻ to have it written — then fix anything that&apos;s off. She won&apos;t know.</div>
+        <textarea value={sheet.description} onChange={e => onChange(e.target.value)} maxLength={1500} rows={5} aria-label="Peek description" disabled={sheet.loading}
           placeholder={sheet.loading ? "Writing what you'd see…" : "e.g. Her at a candlelit corner table in an emerald dress, laughing and glancing up at me"} style={{ resize: "vertical" }} />
-        <div className="muted" style={{ fontSize: 11, textAlign: "right" }}>{sheet.description.length}/1500</div>
+        <div className="row" style={{ justifyContent: "space-between", gap: 8 }}>
+          <label className="row muted" style={{ gap: 4, fontSize: 12 }} title="Who writes it">🧠
+            <select value={sheet.writer} aria-label="Who writes it" data-testid="peek-writer" disabled={sheet.loading} onChange={e => onWriter(e.target.value)}
+              style={{ padding: "4px 6px", fontSize: 12, width: "auto", borderRadius: 8 }}>
+              {options.map(o => <option key={o.id || "same"} value={o.id}>{o.label}{o.id === theirs ? " — hers" : ""}</option>)}
+            </select>
+          </label>
+          <span className="muted" style={{ fontSize: 11 }}>{sheet.description.length}/1500</span>
+        </div>
         {sheet.error && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {sheet.error}</div>}
         <div className="row" style={{ gap: 8 }}>
-          <button className="ghost" onClick={onRewrite} disabled={sheet.loading} data-testid="peek-rewrite" style={{ flexShrink: 0 }}>↻ Rewrite</button>
+          <button className="ghost" onClick={onRewrite} disabled={sheet.loading} data-testid="peek-rewrite" style={{ flexShrink: 0 }}>{sheet.loading ? "…" : sheet.description.trim() ? "↻ Rewrite" : "↻ Write"}</button>
           <button className="btn" onClick={() => onSend(sheet.description)} disabled={sheet.loading || sheet.description.trim().length < 10} data-testid="peek-go" style={{ flex: 1 }}>{sheet.loading ? "…" : sheet.icu ? "👁️ Look" : "👀 Peek"}</button>
         </div>
       </div>

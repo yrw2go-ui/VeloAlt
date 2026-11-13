@@ -7,6 +7,7 @@ import { hideSecrets } from "./lib/secrets";
 import { timeZone } from "./lib/tz";
 import { confirmAsk } from "./lib/dialog";
 import { CharacterFace, type Character } from "./characters";
+import { BRAIN_OPTIONS } from "./lib/brainOptions";
 import { SceneSheet, Selectable, type SceneClockChoice } from "./chat";
 import { MediaView, ReactionBar, type Media } from "./media";
 
@@ -20,7 +21,7 @@ export function GroupFaces({ g, chars, size }: { g: Group; chars: Character[]; s
   return <span style={{ display: "flex" }}>{list.map((c, i) => <span key={c.id} style={{ marginLeft: i ? -size * 0.4 : 0, borderRadius: "50%", border: "2px solid var(--surface2)" }}><CharacterFace c={c} size={size} /></span>)}</span>;
 }
 
-export function GroupChat({ group: initial, chars, name, onDeleted }: { group: Group; chars: Character[]; name: string; onDeleted: (id: string) => void }) {
+export function GroupChat({ group: initial, chars, name, brains = [], onDeleted }: { group: Group; chars: Character[]; name: string; brains?: string[]; onDeleted: (id: string) => void }) {
   const [group, setGroup] = useState(initial);
   const [sceneSheet, setSceneSheet] = useState(false);
   const [peek, setPeek] = useState(false);
@@ -236,7 +237,7 @@ export function GroupChat({ group: initial, chars, name, onDeleted }: { group: G
         <button className="btn" disabled={!text.trim() || busy || !msgs} style={{ borderRadius: 999, padding: "10px 16px" }}>Send</button>
       </form>
       {sceneSheet && <SceneSheet who={members.map(c => c.name).join(" & ")} onClose={() => setSceneSheet(false)} onStart={startScene} />}
-      {peek && <GroupPeekSheet group={group} members={members} name={name} onClose={() => setPeek(false)} onMade={added => { setMsgs(m => [...(m || []), ...added]); setPeek(false); }} />}
+      {peek && <GroupPeekSheet group={group} members={members} name={name} brains={brains} onClose={() => setPeek(false)} onMade={added => { setMsgs(m => [...(m || []), ...added]); setPeek(false); }} />}
     </div>
   );
 }
@@ -279,20 +280,22 @@ export function GroupMaker({ chars, name, onClose, onMade }: { chars: Character[
 }
 
 /** 👀 Peek in a group scene: pick who's in the picture (one or more), check the description, then it's made. */
-function GroupPeekSheet({ group, members, name, onClose, onMade }: { group: Group; members: Character[]; name: string; onClose: () => void; onMade: (added: Msg[]) => void }) {
+function GroupPeekSheet({ group, members, name, brains, onClose, onMade }: { group: Group; members: Character[]; name: string; brains: string[]; onClose: () => void; onMade: (added: Msg[]) => void }) {
   const [ids, setIds] = useState<string[]>(members.map(c => c.id));
   const [desc, setDesc] = useState("");
   const [forIds, setForIds] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
+  // Who writes it: Claude, or one of the Atlas brains this server has — the first picked character's by default.
+  const [writer, setWriter] = useState(() => { const b = members[0]?.brain; return b && b !== "claude" ? b : ""; });
   const draft = async (pick: string[]) => {
     if (!pick.length) return;
     setLoading(true); setErr("");
-    try { setDesc((await api<{ description: string }>("/api/groups", { action: "peek.draft", id: group.id, ids: pick, name })).description); setForIds(pick.join()); }
+    try { setDesc((await api<{ description: string }>("/api/groups", { action: "peek.draft", id: group.id, ids: pick, name, writer })).description); setForIds(pick.join()); }
     catch (e) { setErr(e instanceof Error ? e.message : "Couldn't peek right now."); }
     setLoading(false);
   };
-  useEffect(() => { draft(members.map(c => c.id)); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Nothing is written until they tap ✍️ Write (and again to redo it).
   const toggle = (id: string) => setIds(p => (p.includes(id) ? p.filter(x => x !== id) : [...p, id]));
   const stale = !!desc && forIds !== ids.join();
   const go = async () => {
@@ -319,7 +322,15 @@ function GroupPeekSheet({ group, members, name, onClose, onMade }: { group: Grou
         </div>
         <textarea value={desc} onChange={e => setDesc(e.target.value)} maxLength={1500} rows={5} aria-label="Peek description" disabled={loading && !desc}
           placeholder={loading ? "Writing what you'd see…" : "What you see right now"} style={{ resize: "vertical" }} />
-        {stale && <button className="ghost" onClick={() => draft(ids)} disabled={loading || !ids.length} data-testid="peek-rewrite">✍️ Rewrite for {members.filter(c => ids.includes(c.id)).map(c => c.name).join(" & ") || "…"}</button>}
+        <div className="row" style={{ justifyContent: "space-between", gap: 8 }}>
+          <label className="row muted" style={{ gap: 4, fontSize: 12 }} title="Who writes it">🧠
+            <select value={writer} aria-label="Who writes it" data-testid="peek-writer" disabled={loading} onChange={e => setWriter(e.target.value)} style={{ padding: "4px 6px", fontSize: 12, width: "auto", borderRadius: 8 }}>
+              {[{ id: "", label: "Claude (same as Velo)" }, ...BRAIN_OPTIONS.filter(o => o.atlas && (brains.includes(o.id) || o.id === writer)).map(o => ({ id: o.id as string, label: o.label as string }))]
+                .map(o => <option key={o.id || "same"} value={o.id}>{o.label}</option>)}
+            </select>
+          </label>
+          <button className="ghost" onClick={() => draft(ids)} disabled={loading || !ids.length} data-testid="peek-rewrite" style={{ flexShrink: 0 }}>{loading ? "…" : desc.trim() && !stale ? "✍️ Rewrite" : `✍️ Write for ${members.filter(c => ids.includes(c.id)).map(c => c.name).join(" & ") || "…"}`}</button>
+        </div>
         {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
         <button className="btn" onClick={go} disabled={loading || !ids.length || desc.trim().length < 10} data-testid="peek-go">{loading ? "…" : "👀 Peek"}</button>
       </div>

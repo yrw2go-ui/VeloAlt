@@ -4,6 +4,7 @@ import { allow } from "../../lib/rateLimit";
 import { aiReady, aiError } from "../../lib/brain";
 import { listGroups, getGroup, createGroup, deleteGroup, groupMessages, sendToGroup, rememberGroup, startGroupScene, endGroupScene, banterNext, reactInGroup, draftGroupPeek, groupPeekAt, bringTogether, endGroupInPerson, deleteGroupMessages, GroupError } from "../../lib/groups";
 import { MediaError } from "../../lib/media";
+import { availableBrains } from "../../lib/models";
 import { sql } from "../../lib/db";
 import { getCharacterFor } from "../../lib/characters";
 import { awayFor, awayText } from "../../lib/picagram";
@@ -20,6 +21,12 @@ import { isReaction } from "../../lib/reactions";
 //   bring { fromId, ids, place } → { group }   (🧍 bring characters together in person; their 1:1s carry over)   inperson.end { id } → { marker }
 //   peek.draft { id, ids } → { description }   peek { id, ids, description } → { added }   (👀 nobody in the group knows)
 const bad = (error: string, status = 400) => NextResponse.json({ error }, { status });
+
+// 🧠 Who writes a peek description: the brain picked in the dropdown ('' or 'claude' = Claude).
+const writerBrain = (picked: unknown): string => {
+  const p = typeof picked === "string" ? picked : "";
+  return availableBrains().includes(p) ? p : "";
+};
 
 export async function POST(req: NextRequest) {
   try {
@@ -77,7 +84,7 @@ export async function POST(req: NextRequest) {
         if (!allow(`peek:${c.userId}`, [{ ms: 60_000, max: 6 }])) return bad("That's a lot of peeks — give it a minute.", 429);
         const [u] = await sql()`select adult_confirmed_at from users where id = ${c.userId}`;
         const ids = Array.isArray(b.ids) ? b.ids.map(String) : [];
-        if (action === "peek.draft") return NextResponse.json({ description: await draftGroupPeek(c.userId, g, ids, !!u?.adult_confirmed_at, name) });
+        if (action === "peek.draft") return NextResponse.json({ description: await draftGroupPeek(c.userId, g, ids, !!u?.adult_confirmed_at, name, writerBrain(b.writer)) });
         return NextResponse.json({ added: await groupPeekAt(c.userId, g, ids, !!u?.adult_confirmed_at, String(b.description || "")) });
       }
       case "memo": {

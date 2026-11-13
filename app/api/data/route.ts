@@ -15,7 +15,7 @@ import { toE164, showPhone, twilioReady, veloNumber } from "../../lib/twilio";
 import { PHONE_MSG } from "../../lib/contact";
 import { scrub } from "../../lib/secrets";
 import { BIO_SECTIONS, BIO_MAX } from "../../lib/bioSections";
-import { availableModels, CHAT_MODELS, MODEL_INFO, type ChatModel } from "../../lib/models";
+import { availableModels, availableBrains, CHAT_MODELS, MODEL_INFO, type ChatModel } from "../../lib/models";
 import { PERSONALITIES } from "../../lib/persona";
 import { deleteFile, ownFile } from "../../lib/files";
 import { getCharacterFor, trustFor, activeScene } from "../../lib/characters";
@@ -30,6 +30,13 @@ const REACTIONS: string[] = [...REACTION_LIST];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const clean = (v: unknown, n: number) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, n);
 const bad = (error: string) => NextResponse.json({ error }, { status: 400 });
+
+// 🧠 Who writes a peek / ICU description: the brain they picked in the dropdown ('' or 'claude' = Claude),
+// defaulting to hers. An unknown or unavailable brain falls back to hers, never to a stranger's model.
+function writerBrain(picked: unknown, theirs: string): string {
+  const p = typeof picked === "string" ? picked : "";
+  return p === "claude" || p === "" || availableBrains().includes(p) ? p : theirs;
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -278,7 +285,7 @@ export async function POST(req: NextRequest) {
         if (!allow(`peek:${me}`, [{ ms: 60_000, max: 10 }, { ms: 86_400_000, max: 300 }])) return NextResponse.json({ error: "That's a lot of peeks — try again in a bit." }, { status: 429 });
         const [u] = await db`select adult_confirmed_at from users where id = ${me}`;
         try {
-          if (b.action === "scene.peek.draft") return NextResponse.json({ description: await draftPeek(me, ch, cur, !!u?.adult_confirmed_at) });
+          if (b.action === "scene.peek.draft") return NextResponse.json({ description: await draftPeek(me, ch, cur, !!u?.adult_confirmed_at, writerBrain(b.writer, ch.brain)) });
           const description = String(b.description || "").trim();
           if (description.length < 10) return bad("Describe the moment in a few words first.");
           const p = await peekAt(me, ch, cur, !!u?.adult_confirmed_at, description);
@@ -321,7 +328,7 @@ export async function POST(req: NextRequest) {
         if (!allow(`peek:${me}`, [{ ms: 60_000, max: 10 }, { ms: 86_400_000, max: 300 }])) return NextResponse.json({ error: "That's a lot of peeks — try again in a bit." }, { status: 429 });
         const [u] = await db`select adult_confirmed_at from users where id = ${me}`;
         try {
-          if (b.action === "icu.draft") return NextResponse.json({ description: await draftIcu(me, ch, !!u?.adult_confirmed_at) });
+          if (b.action === "icu.draft") return NextResponse.json({ description: await draftIcu(me, ch, !!u?.adult_confirmed_at, writerBrain(b.writer, ch.brain)) });
           const description = String(b.description || "").trim();
           if (description.length < 10) return bad("Describe what you see in a few words first.");
           const p = await peekAt(me, ch, null, !!u?.adult_confirmed_at, description);
