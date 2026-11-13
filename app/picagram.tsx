@@ -363,6 +363,17 @@ function Saved({ onClose }: { onClose: () => void }) {
 /** 👥 Who you follow (up to 70) — unfollow some to make room for new ones. */
 function Following({ onClose, onUnfollow, onOpen }: { onClose: () => void; onUnfollow: (id: string) => void; onOpen: (id: string) => void }) {
   const [list, setList] = useState<{ id: string; handle: string; name: string; avatar: string | null; friend: boolean }[] | null>(null);
+  // ✨ Bring new women in right now, instead of waiting for the one who turns up each day.
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState("");
+  const newFaces = async () => {
+    setBusy(true); setSaid("");
+    try {
+      const r = await api<{ made: number; names: string[] }>("/api/pica", { action: "newfaces", count: 3 });
+      setSaid(`✨ ${r.names.join(", ")} just posted — pull down the feed to see them.`);
+    } catch (e) { setSaid(e instanceof Error ? e.message : "Couldn't bring anyone new in."); }
+    setBusy(false);
+  };
   useEffect(() => { api<{ accounts: NonNullable<typeof list> }>("/api/pica", { action: "following" }).then(r => setList(r.accounts)).catch(() => setList([])); }, []);
   const unfollow = async (id: string) => {
     setList(l => (l || []).filter(x => x.id !== id)); onUnfollow(id);
@@ -373,8 +384,10 @@ function Following({ onClose, onUnfollow, onOpen }: { onClose: () => void; onUnf
       <div className="row" style={{ padding: "10px 14px", gap: 8, position: "sticky", top: 0, background: "var(--bg)", borderBottom: "1px solid var(--border)" }}>
         <button className="ghost" onClick={onClose} aria-label="Back" style={{ padding: "4px 10px" }}>←</button>
         <b style={{ flex: 1 }}>👥 Following {list ? `(${list.length}/70)` : ""}</b>
+        <button className="ghost" onClick={newFaces} disabled={busy} data-testid="pica-new-faces" style={{ padding: "4px 10px", fontSize: 13 }}>{busy ? "…" : "✨ 3 new faces"}</button>
       </div>
       <div style={{ maxWidth: 560, margin: "0 auto" }}>
+        {said && <div data-testid="pica-new-faces-said" className="muted" style={{ padding: "10px 14px", fontSize: 13 }}>{said}</div>}
         {list && !list.length && <div className="muted" style={{ textAlign: "center", padding: 24 }}>You&apos;re not following anyone yet</div>}
         {(list || []).map(a => (
           <div key={a.id} className="row" data-testid="pica-following-row" style={{ gap: 10, padding: "10px 14px", borderBottom: "1px solid var(--border)" }}>

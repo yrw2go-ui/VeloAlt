@@ -4,7 +4,7 @@ import { allow } from "../../lib/rateLimit";
 import { sql } from "../../lib/db";
 import { MediaError, mediaReady } from "../../lib/media";
 import { dmThreads, dmUnread, dmOpen, dmSend, dmSendPhoto, dmBrain, dmMyPhotoDraft, dmMyPhoto, DmError } from "../../lib/picaDm";
-import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSavedList, picaFollowing, picaBefriend, picaCounts, picaDeletePost, picaNew, picaFromPhoto, myPhotoDraft, PicaLimit } from "../../lib/picagram";
+import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSavedList, picaFollowing, picaBefriend, picaCounts, picaDeletePost, picaNew, picaFromPhoto, myPhotoDraft, newFaces, PicaLimit } from "../../lib/picagram";
 
 // 📸 Picagram. POST { action, ... }:
 //   feed { before? } → { posts }   (a few at a time; today's and missed days' posts are made as needed)
@@ -62,6 +62,13 @@ export async function POST(req: NextRequest) {
         return NextResponse.json(b.action === "dm.photo" ? await dmSendPhoto(me, id) : await dmSend(me, id, String(b.text || "")));
       }
       case "new": return NextResponse.json({ n: await picaNew(me), dms: await dmUnread(me) });
+      // ✨ New women, posting right now (on top of the ones who show up on their own each day).
+      case "newfaces": {
+        if (!allow(`pica-new:${me}`, [{ ms: 60_000, max: 2 }, { ms: 86_400_000, max: 10 }])) return bad("That's a lot of new faces — try again in a bit.", 429);
+        const want = Math.max(1, Math.min(5, Number(b.count) || 3));
+        const r = await newFaces(me, want);
+        return r.made ? NextResponse.json(r) : bad("Couldn't bring anyone new in right now — try again in a moment.");
+      }
       case "following": return NextResponse.json({ accounts: await picaFollowing(me) });
       case "befriend": {
         if (!UUID.test(id)) return bad("Unknown account.");

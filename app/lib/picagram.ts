@@ -354,6 +354,42 @@ async function accountPosts(userId: string, day: string, isToday: boolean, u: U,
   }
 }
 
+/** ✨ New women, posting right now: invent each one and put a first photo of her up straight away. */
+export async function newFaces(userId: string, n: number): Promise<{ made: number; names: string[] }> {
+  const u = await userInfo(userId);
+  const names: string[] = [];
+  for (let i = 0; i < Math.max(1, Math.min(5, n)); i++) {
+    const a = await newAccount(userId).catch(e => { console.error("pica: new face", e instanceof Error ? e.message : e); return null; });
+    if (!a) break;
+    const posted = await postFor(userId, a, u, Date.now() - (n - i) * rand(2, 12) * 60_000).catch(e => { console.error("pica: new face post", e instanceof Error ? e.message : e); return false; });
+    if (posted) names.push(String(a.name));
+  }
+  return { made: names.length, names };
+}
+
+/** One post from one account, with its photo, at the given moment. */
+async function postFor(userId: string, a: Record<string, unknown>, u: U, at: number, plan?: { caption?: string; photo?: string }): Promise<boolean> {
+  const when = new Date(at).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: u.tz });
+  let caption = scrub(String(plan?.caption || "")).slice(0, 600), photo = scrub(String(plan?.photo || "")).slice(0, 600);
+  if (!photo) {
+    const raw = await writeText("", `Today is ${when}. Write ONE Picagram post for @${a.handle} (${a.name}): ${a.bio} — a photo of her in her everyday life or her niche, with a short caption (emojis/hashtags okay). ${u.adult ? "Flattering, flirty and confident is fine (PG-13); never nudity, lingerie or anything sexual." : "Family-friendly, fully clothed."} "photo" describes exactly what the picture shows (where, outfit, pose, light) in 1–2 sentences. JSON only: {"caption":"...","photo":"..."}`,
+      `She looks like: ${a.look}`, 600).catch(() => "");
+    try { const j = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); caption = scrub(String(j.caption || "✨")).slice(0, 600); photo = scrub(String(j.photo || "")).slice(0, 600); } catch { /* fall back below */ }
+  }
+  if (!photo) photo = `${a.name} candid lifestyle photo, natural light`;
+  const [av] = a.avatar_media_id ? await sql()`select f.url from velo_media m join velo_files f on f.id = m.file_id where m.id = ${a.avatar_media_id} and m.status = 'done'` : [];
+  const media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: photo },
+    { characterId: null, who: String(a.name), appearance: String(a.look), refs: av ? [String(av.url)] : [], romantic: u.adult, offer: false, other: null, pica: true }).catch(() => null);
+  if (!media) return false;
+  if (!a.avatar_media_id) await sql()`update pica_accounts set avatar_media_id = ${media.id} where id = ${a.id}`;
+  const likes = Math.max(150, Math.min(25000, Math.round(Number(a.followers) * (0.005 + Math.random() * 0.03))));
+  const [post] = await sql()`insert into pica_posts (user_id, account_id, kind, caption, photo, media_id, likes_target, created_at)
+    values (${userId}, ${a.id}, 'image', ${caption || "✨"}, ${photo}, ${media.id}, ${likes}, ${new Date(at).toISOString()}) returning id`;
+  for (const c of randomComments(`${caption} ${photo}`, "image", rand(3, 5)))
+    await sql()`insert into pica_comments (post_id, user_id, name, text, created_at) values (${post.id}, ${userId}, ${c.name}, ${c.text}, ${new Date(at + rand(2, 300) * 60_000).toISOString()})`;
+  return true;
+}
+
 export class PicaLimit extends Error {}
 export async function picaFollow(userId: string, accountId: string, on: boolean): Promise<boolean> {
   if (on) {
