@@ -694,3 +694,7 @@ alter table chat_characters add column if not exists school text not null defaul
 -- 🏡 Time off at home (a staycation) alongside a trip away or a sick spell.
 alter table chat_away drop constraint if exists chat_away_kind_check;
 alter table chat_away add constraint chat_away_kind_check check (kind in ('trip', 'sick', 'stay'));
+-- 👩 Accounts you made yourself: your specs, your pictures. Her new photos are built from those
+-- references (a headshot and a full shot) instead of the first picture the app happened to make.
+alter table pica_accounts add column if not exists mine boolean not null default false;
+alter table pica_accounts add column if not exists ref_media_ids uuid[] not null default '{}';

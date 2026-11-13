@@ -1,7 +1,7 @@
 "use client";
 // 📸 Picagram: everyone's posts, newest first, a few at a time as you scroll. Like, comment, and post your own.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "./lib/api";
+import { api, uploadPicaPicture } from "./lib/api";
 import { hideSecrets } from "./lib/secrets";
 import { MediaView, type Media } from "./media";
 import { stamp } from "./lib/when";
@@ -38,6 +38,7 @@ export default function Picagram({ name, onChat, openProfile, onProfileOpened }:
   const [profile, setProfile] = useState<string | null>(openProfile || null);
   useEffect(() => { if (openProfile) { setProfile(openProfile); onProfileOpened?.(); } }, [openProfile]); // eslint-disable-line react-hooks/exhaustive-deps
   const [savedOpen, setSavedOpen] = useState(false);
+  const [making, setMaking] = useState(false);
   const [followingOpen, setFollowingOpen] = useState(false);
   // ✉️ DMs with accounts (characters chat in the normal chat).
   const [inbox, setInbox] = useState(false);
@@ -113,6 +114,7 @@ export default function Picagram({ name, onChat, openProfile, onProfileOpened }:
           {dmUnread > 0 && <span data-testid="pica-dm-badge" style={{ position: "absolute", top: -4, right: -4, minWidth: 16, height: 16, padding: "0 4px", borderRadius: 999, background: "#ef4444", color: "#fff", fontSize: 10, fontWeight: 800, lineHeight: "16px" }}>{dmUnread}</span>}
         </button>
         <button className="ghost" onClick={() => setFollowingOpen(true)} aria-label="Following" data-testid="pica-following-open" style={{ padding: "6px 10px" }}>👥</button>
+        <button className="ghost" onClick={() => setMaking(true)} aria-label="Make someone" data-testid="pica-make-open" style={{ padding: "6px 10px" }}>👩</button>
         <button className="ghost" onClick={() => setSavedOpen(true)} aria-label="Saved pictures" data-testid="pica-saved-open" style={{ padding: "6px 10px" }}>🔖</button>
         <button className="ghost" onClick={() => load(true)} disabled={loading} aria-label="Refresh" style={{ padding: "6px 10px" }}>↻</button>
         <button className="btn" onClick={() => setComposing(true)} data-testid="pica-new" style={{ padding: "8px 14px" }}>＋ Post</button>
@@ -130,6 +132,7 @@ export default function Picagram({ name, onChat, openProfile, onProfileOpened }:
       {followingOpen && <Following onClose={() => setFollowingOpen(false)} onUnfollow={acc => setFollowed(acc, false)} onOpen={id => { setFollowingOpen(false); setProfile(id); }} />}
       {savedOpen && <Saved onClose={() => setSavedOpen(false)} />}
       {composing && <Composer onClose={() => setComposing(false)} onPosted={() => { setComposing(false); load(true); }} />}
+      {making && <MakeHer onClose={() => setMaking(false)} onMade={id => { setMaking(false); load(true); setProfile(id); }} />}
     </div>
   );
 }
@@ -302,7 +305,10 @@ function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: 
   // 🗑 Gone for good: her, her posts, your messages with her and her pictures.
   const remove = async () => {
     const who = data?.account.name || "her";
-    if (!(await confirmAsk(`Delete ${who}? Her posts, your messages with her and her pictures go too. Anything you saved to your gallery stays.`, { yes: "Delete", danger: true }))) return;
+    const ask = data?.account.character_id
+      ? `Delete ${who}'s Picagram account? Her posts and your Picagram messages with her go. She stays one of your characters — delete her from her character card if you want her gone for good.`
+      : `Delete ${who}? Her posts, your messages with her and her pictures go too. Anything you saved to your gallery stays.`;
+    if (!(await confirmAsk(ask, { yes: "Delete", danger: true }))) return;
     setErr("");
     try { await api("/api/pica", { action: "account.delete", id }); onDeleted?.(id); onClose(); }
     catch (e) { setErr(e instanceof Error ? e.message : "Couldn't delete her."); }
@@ -346,12 +352,10 @@ function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: 
                   <button className="ghost" onClick={befriend} disabled={befriending} data-testid="pica-befriend" style={{ flex: 1 }}>{befriending ? "Making her profile…" : "🤝 Befriend"}</button>
                 </>}
           </div>
-          {!data.account.character_id && (
-            <div style={{ padding: "0 16px 10px" }}>
-              <button className="ghost" onClick={remove} data-testid="pica-profile-delete" style={{ padding: "4px 12px", fontSize: 13, color: "var(--bad)" }}>🗑 Delete this account</button>
-            </div>
-          )}
-          {data.account.character_id && <div className="muted" style={{ padding: "0 16px 10px", fontSize: 12 }}>🤝 You&apos;re friends — she&apos;s one of your characters now (edit her in her character card).</div>}
+          <div style={{ padding: "0 16px 10px" }}>
+            <button className="ghost" onClick={remove} data-testid="pica-profile-delete" style={{ padding: "4px 12px", fontSize: 13, color: "var(--bad)" }}>🗑 Delete this account</button>
+          </div>
+          {data.account.character_id && <div className="muted" style={{ padding: "0 16px 10px", fontSize: 12 }}>🤝 You&apos;re friends — she&apos;s one of your characters now (edit her in her character card). Deleting here removes only her Picagram account.</div>}
           {err && <div style={{ color: "var(--bad)", padding: "0 16px 10px", fontSize: 13 }}>⚠️ {err}</div>}
           <Grid photos={data.photos} onOpen={setView} />
           {!data.photos.length && <div className="muted" style={{ textAlign: "center", padding: 24 }}>No photos yet</div>}
@@ -402,8 +406,11 @@ function Following({ onClose, onUnfollow, onOpen }: { onClose: () => void; onUnf
     await api("/api/pica", { action: "follow", id, on: false }).catch(() => {});
   };
   // 🗑 Gone for good: her, her posts, her DMs and her pictures (anything you saved stays).
-  const remove = async (id: string, who: string) => {
-    if (!(await confirmAsk(`Delete ${who}? Her posts, your messages with her and her pictures go too. Anything you saved to your gallery stays.`, { yes: "Delete", danger: true }))) return;
+  const remove = async (id: string, who: string, friend: boolean) => {
+    const ask = friend
+      ? `Delete ${who}'s Picagram account? Her posts and your Picagram messages with her go. She stays one of your characters — delete her from her character card if you want her gone for good.`
+      : `Delete ${who}? Her posts, your messages with her and her pictures go too. Anything you saved to your gallery stays.`;
+    if (!(await confirmAsk(ask, { yes: "Delete", danger: true }))) return;
     setSaid("");
     try { await api("/api/pica", { action: "account.delete", id }); setList(l => (l || []).filter(x => x.id !== id)); onUnfollow(id); }
     catch (e) { setSaid(e instanceof Error ? e.message : "Couldn't delete her."); }
@@ -426,7 +433,7 @@ function Following({ onClose, onUnfollow, onOpen }: { onClose: () => void; onUnf
               <div className="muted" style={{ fontSize: 12 }}>{a.name}</div>
             </div>
             <button className="ghost" onClick={() => unfollow(a.id)} data-testid="pica-unfollow" style={{ padding: "4px 12px", fontSize: 13 }}>Unfollow</button>
-            {!a.friend && <button className="ghost" onClick={() => remove(a.id, a.name)} aria-label={`Delete ${a.name}`} data-testid="pica-account-delete" style={{ padding: "4px 10px", fontSize: 15, color: "var(--bad)" }}>🗑</button>}
+            <button className="ghost" onClick={() => remove(a.id, a.name, a.friend)} aria-label={`Delete ${a.name}`} data-testid="pica-account-delete" style={{ padding: "4px 10px", fontSize: 15, color: "var(--bad)" }}>🗑</button>
           </div>
         ))}
       </div>
@@ -569,6 +576,90 @@ function MyPhotoSheet({ title, draft, onMake, onClose }: { title: string; draft:
         {desc && <textarea value={desc} onChange={e => setDesc(e.target.value)} rows={4} maxLength={1500} aria-label="Photo description" data-testid="my-photo-desc" style={{ resize: "vertical" }} />}
         {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
         {desc && <button className="btn" onClick={make} disabled={busy || desc.trim().length < 5} data-testid="my-photo-go">{busy ? "Making it…" : "📸 Make this photo"}</button>}
+      </div>
+    </div>
+  );
+}
+
+/** 👩 Make someone yourself: your specs, your bio, your two pictures. She posts from those. */
+function MakeHer({ onClose, onMade }: { onClose: () => void; onMade: (id: string) => void }) {
+  const [name, setName] = useState("");
+  const [handle, setHandle] = useState("");
+  const [bio, setBio] = useState("");
+  const [look, setLook] = useState("");
+  const [lives, setLives] = useState("");
+  const [followers, setFollowers] = useState("");
+  const [follow, setFollow] = useState(true);
+  const [head, setHead] = useState<{ mediaId: string; url: string } | null>(null);
+  const [shot, setShot] = useState<{ mediaId: string; url: string } | null>(null);
+  const [busy, setBusy] = useState("");
+  const [err, setErr] = useState("");
+  const headIn = useRef<HTMLInputElement>(null);
+  const shotIn = useRef<HTMLInputElement>(null);
+
+  const pick = async (f: File | undefined, which: "head" | "shot") => {
+    if (!f) return;
+    setErr(""); setBusy(which === "head" ? "Uploading her headshot…" : "Uploading her photo…");
+    try {
+      const r = await uploadPicaPicture(f);
+      if (which === "head") setHead(r); else setShot(r);
+    } catch (e) { setErr(e instanceof Error ? e.message : "That picture didn't upload."); }
+    setBusy("");
+  };
+
+  const make = async () => {
+    setErr(""); setBusy("Putting her up…");
+    try {
+      const r = await api<{ id: string; posted: boolean }>("/api/pica", {
+        action: "account.create", name, handle, bio: hideSecrets(bio).text, look: hideSecrets(look).text, lives,
+        followers: Number(followers.replace(/[^0-9]/g, "")) || 0, follow,
+        headshotMediaId: head?.mediaId || "", shotMediaId: shot?.mediaId || "",
+      });
+      onMade(r.id);
+    } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't make her."); setBusy(""); }
+  };
+
+  const field = { width: "100%", padding: "8px 10px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--card)", color: "var(--text)", fontSize: 14 } as const;
+  const label = { fontSize: 12, fontWeight: 700, opacity: 0.75, display: "block", marginBottom: 4 } as const;
+  const shown = (p: { url: string } | null, alt: string) =>
+    // eslint-disable-next-line @next/next/no-img-element
+    p ? <img src={p.url} alt={alt} style={{ width: 72, height: 72, borderRadius: 12, objectFit: "cover", objectPosition: "top" }} /> : <span style={{ width: 72, height: 72, borderRadius: 12, border: "1px dashed var(--border)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 22, opacity: 0.5 }}>🖼️</span>;
+
+  return (
+    <div role="dialog" aria-modal="true" data-testid="pica-make" style={{ position: "fixed", inset: 0, background: "var(--bg)", zIndex: 2700, overflowY: "auto" }}>
+      <div className="row" style={{ padding: "10px 14px", gap: 8, position: "sticky", top: 0, background: "var(--bg)", borderBottom: "1px solid var(--border)" }}>
+        <button className="ghost" onClick={onClose} aria-label="Back" style={{ padding: "4px 10px" }}>←</button>
+        <b style={{ flex: 1 }}>👩 Make someone</b>
+        <button className="btn" onClick={make} disabled={!!busy || !name.trim() || !handle.trim() || !head} data-testid="pica-make-save" style={{ padding: "6px 14px" }}>{busy ? "…" : "Put her up"}</button>
+      </div>
+      <div style={{ maxWidth: 560, margin: "0 auto", padding: "12px 14px 40px", display: "flex", flexDirection: "column", gap: 12 }}>
+        <div className="muted" style={{ fontSize: 13 }}>Her pictures are what she looks like: every photo she posts is built from them. Use AI-made or fictional pictures — not photos of a real person.</div>
+        <div className="row" style={{ gap: 14, alignItems: "flex-start" }}>
+          <div style={{ textAlign: "center" }}>
+            {shown(head, "Her headshot")}
+            <button type="button" className="ghost" onClick={() => headIn.current?.click()} disabled={!!busy} data-testid="pica-make-head-btn" style={{ display: "block", marginTop: 6, padding: "4px 10px", fontSize: 12 }}>{head ? "Change" : "Headshot *"}</button>
+            <input ref={headIn} type="file" accept="image/jpeg,image/png,image/webp" hidden data-testid="pica-make-head" onChange={e => pick(e.target.files?.[0], "head")} />
+          </div>
+          <div style={{ textAlign: "center" }}>
+            {shown(shot, "A photo of her")}
+            <button type="button" className="ghost" onClick={() => shotIn.current?.click()} disabled={!!busy} data-testid="pica-make-shot-btn" style={{ display: "block", marginTop: 6, padding: "4px 10px", fontSize: 12 }}>{shot ? "Change" : "Post photo"}</button>
+            <input ref={shotIn} type="file" accept="image/jpeg,image/png,image/webp" hidden data-testid="pica-make-shot" onChange={e => pick(e.target.files?.[0], "shot")} />
+          </div>
+        </div>
+        <div><label style={label} htmlFor="mk-name">Name *</label><input id="mk-name" style={field} value={name} onChange={e => setName(e.target.value)} placeholder="Ava Lane" data-testid="pica-make-name" maxLength={60} /></div>
+        <div><label style={label} htmlFor="mk-handle">Handle *</label><input id="mk-handle" style={field} value={handle} onChange={e => setHandle(e.target.value.toLowerCase().replace(/[^a-z0-9._]/g, ""))} placeholder="avalane" data-testid="pica-make-handle" maxLength={28} /></div>
+        <div><label style={label} htmlFor="mk-bio">Bio</label><textarea id="mk-bio" style={{ ...field, minHeight: 60, resize: "vertical" }} value={bio} onChange={e => setBio(e.target.value)} placeholder="☕ coffee &amp; long runs · 📍 Chicago" data-testid="pica-make-bio" maxLength={300} /></div>
+        <div><label style={label} htmlFor="mk-look">What she looks like</label><textarea id="mk-look" style={{ ...field, minHeight: 70, resize: "vertical" }} value={look} onChange={e => setLook(e.target.value)} placeholder="28, long dark hair, green eyes, athletic, usually in jeans and a crop top" data-testid="pica-make-look" maxLength={600} /></div>
+        <div className="row" style={{ gap: 10 }}>
+          <div style={{ flex: 1 }}><label style={label} htmlFor="mk-lives">Lives</label><input id="mk-lives" style={field} value={lives} onChange={e => setLives(e.target.value)} placeholder="Valparaiso, IN" data-testid="pica-make-lives" maxLength={120} /></div>
+          <div style={{ width: 120 }}><label style={label} htmlFor="mk-foll">Followers</label><input id="mk-foll" style={field} value={followers} onChange={e => setFollowers(e.target.value)} inputMode="numeric" placeholder="24000" data-testid="pica-make-followers" /></div>
+        </div>
+        <label className="row" style={{ gap: 8, fontSize: 14, cursor: "pointer" }}>
+          <input type="checkbox" checked={follow} onChange={e => setFollow(e.target.checked)} data-testid="pica-make-follow" />
+          Follow her (she posts in your feed; befriend her later from her profile)
+        </label>
+        {busy && <div className="muted" style={{ fontSize: 13 }}>{busy}</div>}
+        {err && <div style={{ color: "var(--bad)", fontSize: 13 }} data-testid="pica-make-err">⚠️ {err}</div>}
       </div>
     </div>
   );

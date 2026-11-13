@@ -6,7 +6,7 @@ import { writeText } from "./llm";
 import { scrub } from "./secrets";
 import { startMedia, MediaError, type Media } from "./media";
 import { availableBrains } from "./models";
-import { myPhotoDraft, myPhotoMake } from "./picagram";
+import { refsOf, myPhotoDraft, myPhotoMake } from "./picagram";
 import { BRAIN_OPTIONS } from "./brainOptions";
 import { isValidTimeZone, zonedParts, formatClock } from "./localTime";
 import { partOfDay } from "./calendar";
@@ -90,7 +90,7 @@ export async function dmOpen(userId: string, accountId: string) {
 
 async function sendPhotoOf(userId: string, a: Record<string, unknown>, description: string, adult: boolean): Promise<Media> {
   return startMedia(userId, { kind: "image", with_me: true, they_asked: true, description },
-    { characterId: null, who: String(a.name), appearance: String(a.look || ""), refs: a.avatar ? [String(a.avatar)] : [], romantic: adult, offer: false, other: null, pica: true });
+    { characterId: null, who: String(a.name), appearance: String(a.look || ""), refs: await refsOf(a), romantic: adult, offer: false, other: null, pica: true });
 }
 async function addDm(userId: string, accountId: string, role: "user" | "assistant", content: string, mediaId: string | null = null, delayMs = 0): Promise<Dm> {
   const [r] = await sql()`insert into pica_dms (user_id, account_id, role, content, media_id, created_at, read_at)

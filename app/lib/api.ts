@@ -40,6 +40,19 @@ export async function uploadFile(file: File, purpose: "chat" | "face" | "bio"): 
   return out.file as SavedFile;
 }
 
+/** 👩 A picture for a Picagram account you're making (her headshot, or a full shot to post from). */
+export async function uploadPicaPicture(file: File): Promise<{ mediaId: string; url: string }> {
+  const form = new FormData();
+  form.set("file", await shrink(file));
+  form.set("purpose", "pica");
+  form.set("fictional", "yes");
+  const res = await fetch("/api/files", { method: "POST", body: form });
+  const out = await res.json().catch(() => ({}));
+  if (res.status === 401) window.dispatchEvent(new Event("velo:signed-out"));
+  if (!res.ok) throw new Error(out.error || "Upload didn't go through.");
+  return out;
+}
+
 /** 🎭 Admin: add a picture of a character (e.g. made in Atlas Cloud) to her gallery; optionally her headshot. */
 export async function uploadCharacterPicture(file: File, characterId: string, portrait: boolean): Promise<{ mediaId: string; url: string }> {
   const form = new FormData();

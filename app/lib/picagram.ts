@@ -371,6 +371,18 @@ async function newAccount(userId: string): Promise<Record<string, unknown> | nul
   return null;
 }
 
+/** 🖼️ The pictures a new photo of her is built from: the ones you uploaded, else her first photo. */
+export async function refsOf(a: Record<string, unknown>): Promise<string[]> {
+  const ids = ((a.ref_media_ids || []) as string[]).filter(Boolean);
+  if (ids.length) {
+    const rows = await sql()`select f.url from velo_media m join velo_files f on f.id = m.file_id where m.id = any(${ids}::uuid[]) and m.status = 'done'`;
+    if (rows.length) return rows.map(r => String(r.url));
+  }
+  if (!a.avatar_media_id) return [];
+  const [av] = await sql()`select f.url from velo_media m join velo_files f on f.id = m.file_id where m.id = ${a.avatar_media_id} and m.status = 'done'`;
+  return av ? [String(av.url)] : [];
+}
+
 async function accountPosts(userId: string, day: string, isToday: boolean, u: U, want: number): Promise<void> {
   if (want <= 0) return;
   // Accounts they follow (not ones they've befriended — those are characters now), plus today's one new face.
@@ -390,9 +402,8 @@ async function accountPosts(userId: string, day: string, isToday: boolean, u: U,
   for (const [i, a] of who.entries()) {
     const p = plan.find(x => Number(x.n) === i + 1) || plan.find(x => String(x.handle || "").replace(/^@/, "").toLowerCase() === String(a.handle)) || null;
     const photo = scrub(String(p?.photo || `${a.name} candid lifestyle photo, natural light`)).slice(0, 600), caption = scrub(String(p?.caption || "✨")).slice(0, 600);
-    const [av] = a.avatar_media_id ? await sql()`select f.url from velo_media m join velo_files f on f.id = m.file_id where m.id = ${a.avatar_media_id} and m.status = 'done'` : [];
     const media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: photo },
-      { characterId: null, who: String(a.name), appearance: String(a.look), refs: av ? [String(av.url)] : [], romantic: u.adult, offer: false, other: null, pica: true }).catch(() => null);
+      { characterId: null, who: String(a.name), appearance: String(a.look), refs: await refsOf(a), romantic: u.adult, offer: false, other: null, pica: true }).catch(() => null);
     if (!media) continue;
     if (!a.avatar_media_id) await sql()`update pica_accounts set avatar_media_id = ${media.id} where id = ${a.id}`;
     const at = isToday && i === 0 ? now - rand(5, 40) * 60_000 : start + Math.random() * (end - start);
@@ -401,6 +412,32 @@ async function accountPosts(userId: string, day: string, isToday: boolean, u: U,
     for (const s of randomComments(`${caption} ${photo}`, "image", rand(3, 5)))
       await sql()`insert into pica_comments (post_id, user_id, name, text, created_at) values (${post.id}, ${userId}, ${s.name}, ${s.text}, ${new Date(at + rand(2, 300) * 60_000).toISOString()})`;
   }
+}
+
+/** 👩 Make an account yourself: your specs, your bio, your two pictures. She goes up with a first post. */
+export async function picaCreateAccount(userId: string, spec: { name: string; handle: string; bio: string; look: string; lives: string; followers: number; follow: boolean; headshotMediaId: string; shotMediaId: string }): Promise<{ id: string; posted: boolean }> {
+  const [{ all }] = await sql()`select count(*)::int as all from pica_accounts where user_id = ${userId}`;
+  if (all >= MAX_ACCOUNTS) throw new PicaLimit(`You have ${MAX_ACCOUNTS} Picagram people — delete some first.`);
+  const handle = String(spec.handle || "").toLowerCase().replace(/[^a-z0-9._]/g, "").slice(0, 28);
+  const name = scrub(String(spec.name || "")).replace(/\s+/g, " ").trim().slice(0, 60);
+  if (handle.length < 2) throw new PicaLimit("Give her a handle (letters, numbers, dots or underscores).");
+  if (!name) throw new PicaLimit("Give her a name.");
+  const [clash] = await sql()`select 1 from pica_accounts where user_id = ${userId} and lower(handle) = ${handle} limit 1`;
+  if (clash) throw new PicaLimit(`@${handle} is taken — pick another handle.`);
+  // Her pictures must be hers: ones you just uploaded, not someone else's.
+  const refs = [spec.headshotMediaId, spec.shotMediaId].filter(x => /^[0-9a-f-]{36}$/i.test(String(x || "")));
+  const owned = refs.length ? await sql()`select id from velo_media where user_id = ${userId} and status = 'done' and id = any(${refs}::uuid[])` : [];
+  const mine = refs.filter(r => owned.some(o => String(o.id) === r));
+  if (!mine.length) throw new PicaLimit("Add a headshot of her first.");
+  const home = await homeOf(userId);
+  const lives = scrub(String(spec.lives || (home ? homeText(home) : ""))).replace(/\s+/g, " ").trim().slice(0, 120);
+  const [row] = await sql()`insert into pica_accounts (user_id, handle, name, bio, look, lives, followers, followed, mine, avatar_media_id, ref_media_ids)
+    values (${userId}, ${handle}, ${name}, ${scrub(String(spec.bio || "")).slice(0, 300)}, ${scrub(String(spec.look || "")).slice(0, 600)}, ${lives || null},
+      ${Math.max(100, Math.min(900000, Number(spec.followers) || rand(5000, 200000)))}, ${spec.follow === true}, true, ${mine[0]}, ${mine}::uuid[]) returning *`;
+  // A first post straight away, built from the pictures you gave her.
+  const posted = await postFor(userId, row, await userInfo(userId), Date.now() - rand(2, 20) * 60_000)
+    .catch(e => { console.error("pica: made her post", e instanceof Error ? e.message : e); return false; });
+  return { id: String(row.id), posted };
 }
 
 /** ✨ New women, posting right now: invent each one and put a first photo of her up straight away. */
@@ -426,9 +463,8 @@ async function postFor(userId: string, a: Record<string, unknown>, u: U, at: num
     try { const j = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); caption = scrub(String(j.caption || "✨")).slice(0, 600); photo = scrub(String(j.photo || "")).slice(0, 600); } catch { /* fall back below */ }
   }
   if (!photo) photo = `${a.name} candid lifestyle photo, natural light`;
-  const [av] = a.avatar_media_id ? await sql()`select f.url from velo_media m join velo_files f on f.id = m.file_id where m.id = ${a.avatar_media_id} and m.status = 'done'` : [];
   const media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: photo },
-    { characterId: null, who: String(a.name), appearance: String(a.look), refs: av ? [String(av.url)] : [], romantic: u.adult, offer: false, other: null, pica: true }).catch(() => null);
+    { characterId: null, who: String(a.name), appearance: String(a.look), refs: await refsOf(a), romantic: u.adult, offer: false, other: null, pica: true }).catch(() => null);
   if (!media) return false;
   if (!a.avatar_media_id) await sql()`update pica_accounts set avatar_media_id = ${media.id} where id = ${a.id}`;
   const likes = Math.max(150, Math.min(25000, Math.round(Number(a.followers) * (0.005 + Math.random() * 0.03))));
@@ -535,24 +571,23 @@ export async function picaDeletePost(userId: string, postId: string): Promise<bo
   return true;
 }
 
-/** 🗑 Delete a Picagram account you don't like: her, her posts, her DMs and her pictures.
- *  Anything you saved to your own gallery stays. Someone you've befriended is a character now —
- *  she's deleted from her character card, not here. */
-export async function picaDeleteAccount(userId: string, accountId: string): Promise<"gone" | "character" | "unknown"> {
+/** 🗑 Delete any Picagram account: her, her posts, her DMs and her pictures.
+ *  Anything you saved to your own gallery stays. If you've befriended her, only the Picagram side
+ *  goes — she stays a character, with her gallery, and you delete her from her card if you want to. */
+export async function picaDeleteAccount(userId: string, accountId: string): Promise<"gone" | "friend" | "unknown"> {
   const [a] = await sql()`select character_id from pica_accounts where id = ${accountId} and user_id = ${userId}`;
   if (!a) return "unknown";
-  if (a.character_id) return "character";
-  // Her pictures, except the ones they saved (those are theirs now).
+  // Her pictures, except the ones they saved (those are theirs now) and any that belong to her as a character.
   const mine = await sql()`select distinct m.id from velo_media m
     left join pica_posts p on p.media_id = m.id
-    where m.user_id = ${userId} and (p.account_id = ${accountId} or m.id = (select avatar_media_id from pica_accounts where id = ${accountId}))
+    where m.user_id = ${userId} and m.character_id is null and (p.account_id = ${accountId} or m.id = (select avatar_media_id from pica_accounts where id = ${accountId}))
       and not exists (select 1 from pica_saved s where s.user_id = ${userId} and s.media_id = m.id)`;
   // Her DM photos too.
   const dms = await sql()`select d.media_id as id from pica_dms d where d.user_id = ${userId} and d.account_id = ${accountId} and d.media_id is not null
     and not exists (select 1 from pica_saved s where s.user_id = ${userId} and s.media_id = d.media_id)`;
   await sql()`delete from pica_accounts where id = ${accountId} and user_id = ${userId}`;
   for (const m of [...mine, ...dms]) await deleteMedia(userId, String(m.id)).catch(() => false);
-  return "gone";
+  return a.character_id ? "friend" : "gone";
 }
 
 /** 🔴 New posts since they last looked at Picagram (not their own). */

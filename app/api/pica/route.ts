@@ -4,7 +4,7 @@ import { allow } from "../../lib/rateLimit";
 import { sql } from "../../lib/db";
 import { MediaError, mediaReady } from "../../lib/media";
 import { dmThreads, dmUnread, dmOpen, dmSend, dmSendPhoto, dmBrain, dmMyPhotoDraft, dmMyPhoto, DmError } from "../../lib/picaDm";
-import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSavedList, picaFollowing, picaBefriend, picaCounts, picaDeletePost, picaNew, picaFromPhoto, myPhotoDraft, newFaces, picaDeleteAccount, PicaLimit } from "../../lib/picagram";
+import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSavedList, picaFollowing, picaBefriend, picaCounts, picaDeletePost, picaCreateAccount, picaNew, picaFromPhoto, myPhotoDraft, newFaces, picaDeleteAccount, PicaLimit } from "../../lib/picagram";
 
 // 📸 Picagram. POST { action, ... }:
 //   feed { before? } → { posts }   (a few at a time; today's and missed days' posts are made as needed)
@@ -69,6 +69,16 @@ export async function POST(req: NextRequest) {
         const r = await newFaces(me, want);
         return r.made ? NextResponse.json(r) : bad("Couldn't bring anyone new in right now — try again in a moment.");
       }
+      // 👩 Make one yourself: your specs, your bio, your pictures.
+      case "account.create": {
+        if (!allow(`pica-mk:${me}`, [{ ms: 60_000, max: 3 }, { ms: 86_400_000, max: 20 }])) return bad("Slow down a little — try again in a bit.", 429);
+        const r = await picaCreateAccount(me, {
+          name: String(b.name || ""), handle: String(b.handle || ""), bio: String(b.bio || ""), look: String(b.look || ""),
+          lives: String(b.lives || ""), followers: Number(b.followers) || 0, follow: b.follow === true,
+          headshotMediaId: String(b.headshotMediaId || ""), shotMediaId: String(b.shotMediaId || ""),
+        });
+        return NextResponse.json(r);
+      }
       case "following": return NextResponse.json({ accounts: await picaFollowing(me) });
       case "befriend": {
         if (!UUID.test(id)) return bad("Unknown account.");
@@ -79,8 +89,9 @@ export async function POST(req: NextRequest) {
       case "account.delete": {
         if (!UUID.test(id)) return bad("Unknown account.");
         const r = await picaDeleteAccount(me, id);
-        if (r === "character") return bad("She's one of your characters now — delete her from her character card instead.");
-        return r === "gone" ? NextResponse.json({ ok: true }) : bad("Unknown account.");
+        if (r === "unknown") return bad("Unknown account.");
+        // She's a character too: her Picagram side is gone, she isn't.
+        return NextResponse.json({ ok: true, friend: r === "friend" });
       }
       case "follow": return UUID.test(id) && (await picaFollow(me, id, b.on === true)) ? NextResponse.json({ ok: true }) : bad("Unknown account.");
       case "profile": { const p = UUID.test(id) ? await picaProfile(me, id) : null; return p ? NextResponse.json(p) : bad("Unknown account."); }
