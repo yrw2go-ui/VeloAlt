@@ -349,6 +349,21 @@ export async function POST(req: NextRequest) {
       case "relationship.get": {
         const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
         if (!ch) return bad("That character wasn't found.");
+        let [rel] = await db`select trust, updated_at from chat_relationships where user_id = ${me} and character_id = ${ch.id}`;
+        if (!rel) { await db`insert into chat_relationships (user_id, character_id, trust) values (${me}, ${ch.id}, 50) on conflict do nothing`; rel = { trust: 50, updated_at: new Date() }; }
+        if (rel && rel.trust < 100) {
+          const days = Math.floor((Date.now() - new Date(rel.updated_at).getTime()) / 86400000);
+          if (days > 0) {
+            const refill = Math.min(100, rel.trust + days * 3);
+            await db`update chat_relationships set trust = ${refill}, updated_at = now() where user_id = ${me} and character_id = ${ch.id}`;
+            return NextResponse.json({ trust: refill });
+          }
+        }
+        return NextResponse.json({ trust: rel?.trust ?? null });
+      }
+      case "relationship.get_old": {
+        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
+        if (!ch) return bad("That character wasn't found.");
         return NextResponse.json({ trust: await trustFor(me, ch) });
       }
       case "media.check": {
