@@ -14,7 +14,7 @@ import { BRAIN_OPTIONS } from "./lib/brainOptions";
 
 type VoiceOption = { id: string; name: string; kind: "female" | "male"; about: string; preview: string; owner?: string };
 
-export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; brain?: string; standing?: string; work_attire?: string; work_days?: number[]; work_start?: string; work_end?: string; part_time?: boolean; poly_ok?: boolean; sapphic?: boolean; big_following?: boolean; portrait_url: string | null; portrait_job: string | null };
+export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; brain?: string; standing?: string; work_attire?: string; work_days?: number[]; work_start?: string; work_end?: string; part_time?: boolean; school?: string; class_days?: number[]; class_start?: string; class_end?: string; poly_ok?: boolean; sapphic?: boolean; big_following?: boolean; busy?: "work" | "class" | null; portrait_url: string | null; portrait_job: string | null };
 
 /** A character's picture in a circle (their initial until a portrait exists). */
 export function CharacterFace({ c, size }: { c: Pick<Character, "name" | "portrait_url">; size: number }) {
@@ -25,8 +25,10 @@ export function CharacterFace({ c, size }: { c: Pick<Character, "name" | "portra
   return <span aria-label={c.name} style={{ display: "flex", flexShrink: 0, width: size, height: size, borderRadius: "50%", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, var(--accent), var(--accent2))", color: "#fff", fontWeight: 800, fontSize: size * 0.42 }}>{c.name.slice(0, 1).toUpperCase()}</span>;
 }
 
-const chip = (on: boolean) => ({ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, padding: "4px 10px 4px 4px", borderRadius: 999, cursor: "pointer", fontSize: 13, fontWeight: 700,
-  border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, background: on ? "rgba(124,140,255,0.15)" : "var(--surface2)", color: "var(--text)" } as const);
+const chip = (on: boolean, busy?: "work" | "class" | null) => ({ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, padding: "4px 10px 4px 4px", borderRadius: 999, cursor: "pointer", fontSize: 13, fontWeight: 700,
+  // 💼 at work: yellow. 🎓 in class: orange. (Not when she called off or skipped.)
+  border: `${busy ? 2 : 1}px solid ${busy === "work" ? "#facc15" : busy === "class" ? "#f97316" : on ? "var(--accent)" : "var(--border)"}`,
+  background: on ? "rgba(124,140,255,0.15)" : "var(--surface2)", color: "var(--text)" } as const);
 
 /** The chips above the chat. Tap a chip to switch chats; admins tap the open one again to edit it. */
 /** 🔴 A small number on a chip: their unread messages there. */
@@ -52,7 +54,8 @@ export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdi
     <div data-testid="character-strip" style={{ display: "flex", gap: 8, overflowX: "auto", padding: "12px 12px 8px", borderBottom: "1px solid var(--border)" }}>
       <button style={{ ...chip(active === null), position: "relative" }} onClick={() => onPick(null)} aria-pressed={active === null}><VeloAvatar size={26} /> Velo<Badge n={active === null ? 0 : unread.velo} /></button>
       {characters.map(c => (
-        <button key={c.id} style={{ ...chip(active === c.id), position: "relative" }} aria-pressed={active === c.id} onClick={() => (active !== c.id ? onPick(c.id) : admin ? onEdit(c) : undefined)}>
+        <button key={c.id} style={{ ...chip(active === c.id, c.busy), position: "relative" }} aria-pressed={active === c.id} data-busy={c.busy || undefined}
+          title={c.busy === "work" ? `${c.name} is at work` : c.busy === "class" ? `${c.name} is in class` : undefined} onClick={() => (active !== c.id ? onPick(c.id) : admin ? onEdit(c) : undefined)}>
           <CharacterFace c={c} size={26} /> {c.name}<Standing c={c} />{admin && active === c.id ? " ✎" : ""}<Badge n={active === c.id ? 0 : unread[c.id]} />
         </button>
       ))}
@@ -87,6 +90,11 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
   const [workStart, setWorkStart] = useState(seed?.work_start || "");
   const [workEnd, setWorkEnd] = useState(seed?.work_end || "");
   const [partTime, setPartTime] = useState(!!seed?.part_time);
+  // 🎓 Her classes: their own days and hours, and where she studies.
+  const [school, setSchool] = useState(seed?.school || "");
+  const [classDays, setClassDays] = useState<number[]>(seed?.class_days || []);
+  const [classStart, setClassStart] = useState(seed?.class_start || "");
+  const [classEnd, setClassEnd] = useState(seed?.class_end || "");
   // 💞🌈 Romance options.
   const [polyOk, setPolyOk] = useState(!!seed?.poly_ok);
   // 💞🤫 Where it stands: official girlfriend, or together but kept quiet (one or the other).
@@ -140,7 +148,7 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
   const [msg, setMsg] = useState("");
   const working = !!c?.portrait_job;
   const dirty = !c || gender !== (c.voice_kind === "male" ? "male" : "female") || name !== c.name || personality !== c.personality || backstory !== c.backstory || relation !== c.relation || appearance !== c.appearance || job !== (c.job || "") || wear !== (c.casual_wear || "") || hobbies !== (c.hobbies || "") || voice.id !== c.voice || JSON.stringify(traits) !== JSON.stringify(cleanTraits(c.traits && Object.keys(c.traits).length ? c.traits : DEFAULT_TRAITS)) || preset !== (c.preset || "") || zone !== (c.time_zone || "") || bday !== (c.birthday || "") || romantic !== !!c.romantic || (romantic ? arc : "") !== (c.romance_arc || "") || refIds.join() !== (c.reference_ids || []).join() || brain !== (c.brain || "")
-    || attire !== (c.work_attire || "") || [...workDays].sort().join() !== [...(c.work_days || [])].sort().join() || workStart !== (c.work_start || "") || workEnd !== (c.work_end || "") || partTime !== !!c.part_time
+    || attire !== (c.work_attire || "") || [...workDays].sort().join() !== [...(c.work_days || [])].sort().join() || workStart !== (c.work_start || "") || workEnd !== (c.work_end || "") || partTime !== !!c.part_time || school !== (c.school || "") || [...classDays].sort().join() !== [...(c.class_days || [])].sort().join() || classStart !== (c.class_start || "") || classEnd !== (c.class_end || "")
     || (romantic ? [gf ? "gf" : "", secret ? "secret" : ""].filter(Boolean).join("+") : "") !== (c.standing || "") || (romantic && polyOk) !== !!c.poly_ok || (romantic && sapphic) !== !!c.sapphic || bigFollowing !== !!c.big_following;
 
   // A portrait in progress: check back every few seconds until it's ready.
@@ -159,7 +167,7 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
     setBusy(true); setMsg("");
     try {
       const fields = { name, personality, backstory, relation, appearance, job, casualWear: wear, hobbies, voice: { id: voice.id, name: voice.name, kind: voice.kind, owner: voice.owner }, romantic, romanceArc: romantic ? arc : "", traits, preset, timeZone: zone, birthday: bday, brain,
-        workAttire: attire, workDays, workStart: workStart && workEnd ? workStart : "", workEnd: workStart && workEnd ? workEnd : "", partTime, polyOk: romantic && polyOk, sapphic: romantic && sapphic, bigFollowing, gf: romantic && gf, secret: romantic && secret };
+        workAttire: attire, workDays, workStart: workStart && workEnd ? workStart : "", workEnd: workStart && workEnd ? workEnd : "", partTime, school, classDays, classStart: classStart && classEnd ? classStart : "", classEnd: classStart && classEnd ? classEnd : "", polyOk: romantic && polyOk, sapphic: romantic && sapphic, bigFollowing, gf: romantic && gf, secret: romantic && secret };
       const r = await api<{ character: Character }>("/api/characters", { action: c ? "update" : "create", id: c?.id, ...fields, referenceIds: refIds });
       // 🖼️ Pictures picked while making a new character: upload them now (first one as headshot), as references.
       if (!c && pending.files.length && pending.fictional) {
@@ -277,6 +285,7 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
             <input value={job} onChange={e => setJob(e.target.value)} maxLength={300} placeholder="e.g. Yoga instructor at a small studio downtown, teaches mornings" aria-label="Job" style={{ marginTop: 4 }} />
           </label>
           <WorkWeek attire={attire} setAttire={setAttire} days={workDays} setDays={setWorkDays} start={workStart} setStart={setWorkStart} end={workEnd} setEnd={setWorkEnd} part={partTime} setPart={setPartTime} />
+          <ClassWeek school={school} setSchool={setSchool} days={classDays} setDays={setClassDays} start={classStart} setStart={setClassStart} end={classEnd} setEnd={setClassEnd} />
           <label style={{ fontSize: 13, fontWeight: 700 }}>Preferred casual wear
             <textarea value={wear} onChange={e => setWear(e.target.value)} maxLength={400} rows={2} placeholder="e.g. Oversized hoodies, high-waisted jeans, white sneakers, gold hoops" aria-label="Preferred casual wear" style={{ marginTop: 4, resize: "vertical" }} />
           </label>
@@ -740,6 +749,39 @@ function WorkWeek({ attire, setAttire, days, setDays, start, setStart, end, setE
         </label>
       </div>
       <span className="muted" style={{ fontSize: 12 }}>She knows when she&apos;s at work (&quot;at work till 6&quot;) or off (&quot;I&apos;m off Tuesdays&quot;), texts like it, and wears her work clothes in photos taken at work. Times are in her time zone.</span>
+    </div>
+  );
+}
+
+/** 🎓 Her classes: where she studies, which days and what hours (alongside any job). */
+function ClassWeek({ school, setSchool, days, setDays, start, setStart, end, setEnd }: {
+  school: string; setSchool: (v: string) => void; days: number[]; setDays: (v: number[]) => void; start: string; setStart: (v: string) => void; end: string; setEnd: (v: string) => void;
+}) {
+  const plus = (hhmm: string, h: number) => { if (!hhmm) return ""; const [a, b] = hhmm.split(":").map(Number); const t = (a * 60 + b + h * 60) % 1440; return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`; };
+  const DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  return (
+    <div data-testid="class-week" style={{ display: "grid", gap: 8 }}>
+      <label style={{ fontSize: 13, fontWeight: 700 }}>🎓 School / college <span className="muted" style={{ fontWeight: 500 }}>· if she studies</span>
+        <input value={school} onChange={e => setSchool(e.target.value)} maxLength={200} aria-label="School" data-testid="school" placeholder="e.g. Nursing at Ivy Tech" style={{ marginTop: 4 }} />
+      </label>
+      <div style={{ fontSize: 13, fontWeight: 700 }}>Class days
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
+          {DAY.map((d, i) => (
+            <label key={d} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13, padding: "4px 8px", borderRadius: 999, border: `1px solid ${days.includes(i) ? "var(--accent2, var(--accent))" : "var(--border)"}`, background: days.includes(i) ? "rgba(249,115,22,0.15)" : "transparent" }}>
+              <input type="checkbox" checked={days.includes(i)} onChange={e => setDays(e.target.checked ? [...days, i].sort() : days.filter(x => x !== i))} data-testid={`class-day-${d}`} aria-label={`Has class ${d}`} />{d}
+            </label>
+          ))}
+        </div>
+      </div>
+      <div className="row" style={{ gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <label style={{ fontSize: 13, fontWeight: 700, flex: "1 1 110px" }}>First class
+          <input type="time" value={start} onChange={e => { setStart(e.target.value); if (!end) setEnd(plus(e.target.value, 4)); }} aria-label="Class starts" data-testid="class-start" style={{ marginTop: 4 }} />
+        </label>
+        <label style={{ fontSize: 13, fontWeight: 700, flex: "1 1 110px" }}>Last class ends
+          <input type="time" value={end} onChange={e => setEnd(e.target.value)} aria-label="Class ends" data-testid="class-end" style={{ marginTop: 4 }} />
+        </label>
+      </div>
+      <span className="muted" style={{ fontSize: 12 }}>She knows when she&apos;s in class (phone under the desk) and when she&apos;s out, talks about assignments and tests, and her chip gets an orange ring while she&apos;s there. Times are in her time zone.</span>
     </div>
   );
 }

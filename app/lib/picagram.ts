@@ -31,6 +31,14 @@ export async function awayFor(userId: string, characterId: string): Promise<{ pl
   const { tz } = await userInfo(userId);
   return String(r.until) >= localDate(Date.now(), tz) ? { place: String(r.place), until: String(r.until) } : null;
 }
+// 🏡 A staycation: days off spent at home — she's around, just not working.
+export async function stayFor(userId: string, characterId: string): Promise<{ until: string } | null> {
+  const [r] = await sql()`select until::text from chat_away where user_id = ${userId} and character_id = ${characterId} and kind = 'stay' and until >= current_date - 1`;
+  if (!r) return null;
+  const { tz } = await userInfo(userId);
+  return String(r.until) >= localDate(Date.now(), tz) ? { until: String(r.until) } : null;
+}
+
 export const awayText = (name: string, a: { place: string; until: string }) =>
   `${name} is out of town${a.place ? ` (${a.place})` : ""} until ${new Date(`${a.until}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })} — no meeting up in person till then.`;
 
@@ -68,7 +76,7 @@ export async function picaLooked(userId: string): Promise<boolean> {
   return !!u?.active;
 }
 
-type Planned = { author: string; kind: "image" | "text"; caption: string; photo: string; with: string; vacation: { place: string; days: number } | null; friend_comments: { from: string; text: string }[] };
+type Planned = { author: string; kind: "image" | "text"; caption: string; photo: string; with: string; vacation: { place: string; days: number; home?: boolean } | null; friend_comments: { from: string; text: string }[] };
 
 async function generateDay(userId: string, day: string, isToday: boolean): Promise<boolean> {
   const chars = (await listCharacters(userId)).filter(c => !c.owner_id || c.owner_id === userId);
@@ -92,7 +100,7 @@ async function generateDay(userId: string, day: string, isToday: boolean): Promi
     return `- ${c.name}: ${c.job || "no job listed"}; hobbies: ${c.hobbies || "—"}; style: ${c.casual_wear || "—"}${c.work_attire ? `; at work: ${c.work_attire}` : ""}; about: ${(c.backstory || c.personality || "").slice(0, 300)}${friends.length ? `; friends (could be in her photo): ${friends.join(", ")}` : ""}${links.get(c.id)?.knownBy.length ? `; people who know her (could comment): ${links.get(c.id)!.knownBy.join(", ")}` : "; nobody she knows comments"}${romanticFor(c, u.adult) ? "; romantic/flirty allowed (PG-13)" : "; keep family-friendly"}${away ? `; ✈️ CURRENTLY OUT OF TOWN at ${away.place} until ${away.until} — post from there` : ""}`;
   }));
   const weekday = new Date(`${day}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" });
-  const raw = await writeText("", `You plan one day of posts on Picagram (a social photo app like Instagram) for these characters. ${weekday}. Write ${authors.length} posts, one per character listed, in their own voice: everyday life — at the gym (a confident or sensual gym selfie is fine, PG-13), at home in whatever they're wearing, at work, with their pet if they have one, with a friend or a parent, food, a walk, the beach, a pool or waterpark, a night out, a hobby. At least ${Math.min(authors.length, rand(2, 3))} must be photos ("image"); the rest can be text posts (thoughts, jokes, little updates). A vacation should be RARE (most days none, never more than one): only then add "vacation" with the place and how many days they'll be away (2–7). For photos, "photo" describes exactly what the picture shows (who, where, outfit, pose, light) in 1–2 sentences — the character is in it unless it's clearly a picture of something else; "with" names ONE friend from their list who's in the photo, or "". Captions are short and natural (emojis/hashtags okay). Now and then (not every post) add ONE "friend_comments" entry from someone in "people who know her"; never anyone else — if that list is empty, leave it empty. Everything PG-13 at most: flattering and flirty is fine, never nudity, lingerie or anything sexual; family-friendly characters stay fully clothed. For characters marked "romantic/flirty allowed", now and then (roughly one photo in four) make it a closer, flattering shot with some cleavage showing — a low-cut top, a close-up selfie from a little above, a sports bra at the gym — confident and tasteful, not overt. Reply with JSON only: {"posts":[{"author":"Name","kind":"image"|"text","caption":"...","photo":"...","with":"","vacation":null|{"place":"...","days":3},"friend_comments":[{"from":"Name","text":"..."}]}]}`,
+  const raw = await writeText("", `You plan one day of posts on Picagram (a social photo app like Instagram) for these characters. ${weekday}. Write ${authors.length} posts, one per character listed, in their own voice: everyday life — at the gym (a confident or sensual gym selfie is fine, PG-13), at home in whatever they're wearing, at work, with their pet if they have one, with a friend or a parent, food, a walk, the beach, a pool or waterpark, a night out, a hobby. At least ${Math.min(authors.length, rand(2, 3))} must be photos ("image"); the rest can be text posts (thoughts, jokes, little updates). Time off should be RARE (most days none, never more than one): only then add "vacation" with how many days it lasts (1–7) and either a place she's travelling to, or "home": true for a staycation — a week off spent at home having fun locally (the lake, day trips, the pool, friends, finally sorting the garden) or just resting. For photos, "photo" describes exactly what the picture shows (who, where, outfit, pose, light) in 1–2 sentences — the character is in it unless it's clearly a picture of something else; "with" names ONE friend from their list who's in the photo, or "". Captions are short and natural (emojis/hashtags okay). Now and then (not every post) add ONE "friend_comments" entry from someone in "people who know her"; never anyone else — if that list is empty, leave it empty. Everything PG-13 at most: flattering and flirty is fine, never nudity, lingerie or anything sexual; family-friendly characters stay fully clothed. For characters marked "romantic/flirty allowed", now and then (roughly one photo in four) make it a closer, flattering shot with some cleavage showing — a low-cut top, a close-up selfie from a little above, a sports bra at the gym — confident and tasteful, not overt. Reply with JSON only: {"posts":[{"author":"Name","kind":"image"|"text","caption":"...","photo":"...","with":"","vacation":null|{"place":"...","days":3}|{"home":true,"days":5},"friend_comments":[{"from":"Name","text":"..."}]}]}`,
     `CHARACTERS:\n${info.join("\n")}`, 2500).catch(() => "");
   let plan: Planned[] = [];
   try { plan = (JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]).posts || []) as Planned[]; } catch { /* fall back below */ }
@@ -135,12 +143,13 @@ async function generateDay(userId: string, day: string, isToday: boolean): Promi
     // Her followers comment: more with a big following (up to 5 comments in all, counting a friend's).
     for (const s of randomComments(`${caption} ${photo}`, media ? "image" : "text", Math.max(0, (big ? rand(3, 5) : rand(1, 3)) - fc.length)))
       await sql()`insert into pica_comments (post_id, user_id, name, text, created_at) values (${post.id}, ${userId}, ${s.name}, ${s.text}, ${new Date(times[i] + rand(2, 360) * 60_000).toISOString()})`;
-    // ✈️ A (rare) vacation: they're out of town for a few days.
-    if (p.vacation?.place && !vacationUsed && !(await awayFor(userId, c.id))) {
+    // ✈️🏡 A (rare) stretch of time off: away somewhere, or a staycation at home.
+    const vac = p.vacation, home = !!vac?.home || (!!vac && !String(vac.place || "").trim());
+    if (vac && (home || String(vac.place).trim()) && !vacationUsed && !(await awayFor(userId, c.id)) && !(await stayFor(userId, c.id))) {
       vacationUsed = true;
-      const until = addDays(day, Math.max(2, Math.min(7, Number(p.vacation.days) || 3)));
-      await sql()`insert into chat_away (user_id, character_id, place, until, kind) values (${userId}, ${c.id}, ${scrub(String(p.vacation.place)).slice(0, 80)}, ${until}, 'trip')
-        on conflict (user_id, character_id) do update set place = excluded.place, until = excluded.until, kind = 'trip'`;
+      const until = addDays(day, Math.max(1, Math.min(7, Number(vac.days) || 3)));
+      await sql()`insert into chat_away (user_id, character_id, place, until, kind) values (${userId}, ${c.id}, ${home ? "" : scrub(String(vac.place)).slice(0, 80)}, ${until}, ${home ? "stay" : "trip"})
+        on conflict (user_id, character_id) do update set place = excluded.place, until = excluded.until, kind = excluded.kind`;
     }
   }
   return true;

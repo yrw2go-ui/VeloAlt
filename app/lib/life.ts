@@ -8,6 +8,7 @@ import { sql } from "./db";
 import type { Character } from "./characters";
 import { writeText } from "./llm";
 import { workNow } from "./work";
+import { localDate } from "./localTime";
 import { awayFor } from "./picagram";
 import { isValidTimeZone } from "./localTime";
 import { happyFor, loveFor } from "./characters";
@@ -105,7 +106,7 @@ export async function canShe(userId: string, ch: Character, ask: Ask, timeZone: 
   // ✈️ Away: the callers already handle a trip for meet-ups; here it only matters for a video chat.
   const away = await awayFor(userId, ch.id).catch(() => null);
   const sick = await sickFor(userId, ch.id).catch(() => null);
-  const at = workNow(ch, tz);
+  const at = workNow(ch, tz, Date.now(), await offToday(userId, ch.id, tz).catch(() => false), ch.id);
   const busy = at.atWork;
   const yes = roll() < chanceOfYes(happy, love, busy);
   // 💬 They're asking again after a no: sweet talk can change her mind.
@@ -126,6 +127,7 @@ export async function canShe(userId: string, ch: Character, ask: Ask, timeZone: 
   }
   if (busy && yes) {
     // 🙈 She ditches: slips out, takes a long break, calls off, skips the class.
+    await callOff(userId, ch.id, tz).catch(() => {});
     return { ok: true, mark: "she slipped away from work for me", note: `You're supposed to be at work right now and you're slipping away for them anyway (a long break, calling off, sneaking out) — be a bit giddy and guilty about it, and keep an ear out for getting caught.` };
   }
   if (!yes) {
@@ -136,6 +138,14 @@ export async function canShe(userId: string, ch: Character, ask: Ask, timeZone: 
   if (away && ask === "scene") return { ok: true, note: `You're away (${away.place}) — you're on video from there, so everything they see is where you are right now.` };
   return { ok: true };
 }
+
+// 🙈 A day she called off work or skipped class for them: nothing in the app says she's there.
+export async function offToday(userId: string, characterId: string, tz: string): Promise<boolean> {
+  const [r] = await sql()`select 1 from chat_off where user_id = ${userId} and character_id = ${characterId} and day = ${localDate(Date.now(), tz)}`;
+  return !!r;
+}
+export const callOff = (userId: string, characterId: string, tz: string) =>
+  sql()`insert into chat_off (user_id, character_id, day) values (${userId}, ${characterId}, ${localDate(Date.now(), tz)}) on conflict do nothing`;
 
 // 🤒 Off colour for a few days: she still texts and calls, she just doesn't want to be seen or go out.
 export async function sickFor(userId: string, characterId: string): Promise<{ what: string; until: string } | null> {
@@ -148,11 +158,12 @@ export async function makeSick(userId: string, characterId: string, what: string
     on conflict (user_id, character_id) do update set place = excluded.place, until = excluded.until, kind = 'sick'`;
 }
 
-/** What she's going through right now, for her system prompt (away or ill). */
-export function lifeNote(sick: { what: string } | null, away: { place: string; until: string } | null): string {
+/** What she's going through right now, for her system prompt (away, ill, or off at home). */
+export function lifeNote(sick: { what: string } | null, away: { place: string; until: string } | null, stay: { until: string } | null = null): string {
   const bits = [
     sick ? `🤒 YOU'RE NOT WELL RIGHT NOW (${sick.what}): low energy, in comfy clothes at home, maybe a bit sorry for yourself. You still text and take calls. You'd rather not be seen or go out — any photo of you right now is at home looking exactly like that (blanket, tea, no makeup), not out and about.` : "",
     away ? `✈️ YOU'RE AWAY RIGHT NOW (${away.place}) until ${away.until}: you're living your trip. Any photo of you is from there — the place, the light, the clothes you packed — never from home, and you can't meet up in person until you're back. Talk about the trip naturally.` : "",
+    stay && !away ? `🏡 YOU'RE OFF ALL WEEK (a staycation until ${stay.until}): no work, but you're home, not away — local days out, the lake, the pool, a day trip, friends, the gym, finally sorting the house, or just resting in your own space. You're around if they want to see you, and happy to.` : "",
   ].filter(Boolean);
   return bits.join("\n");
 }

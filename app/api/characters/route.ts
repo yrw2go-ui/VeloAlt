@@ -5,13 +5,14 @@ import { allow } from "../../lib/rateLimit";
 import { scrub } from "../../lib/secrets";
 import { listGallery } from "../../lib/media";
 import { cleanTraits, PRESETS } from "../../lib/traits";
-import { isValidTimeZone } from "../../lib/localTime";
+import { isValidTimeZone, localDate } from "../../lib/localTime";
 import { availableBrains, brainList } from "../../lib/models";
 import { makeCharacter } from "../../lib/makeCharacter";
 import { listLinks, setLink, removeLink, writeStory, linkSuggestions } from "../../lib/friends";
 import { MAX_CHARACTERS, DAILY_PORTRAITS, isAdmin, listCharacters, getCharacter, screenCharacter, startPortrait, checkPortrait, deleteCharacter, portraitsReady, chooseVoice, VoiceError } from "../../lib/characters";
 import { picaRenamed } from "../../lib/picagram";
 import { homeOf, livesNote } from "../../lib/where";
+import { workNow, inClass } from "../../lib/work";
 
 // 🎭 Characters. Everyone can list them and chat; only admins create and edit. POST { action, ... }:
 //   list                     → { characters, portraits, admin }
@@ -38,7 +39,18 @@ export async function POST(req: NextRequest) {
     const action = String(b.action || "");
     const admin = await isAdmin(me);
 
-    if (action === "list") return NextResponse.json({ characters: await listCharacters(me), portraits: portraitsReady(), admin, brains: admin ? availableBrains() : [], brainModels: admin ? brainList() : [] });
+    if (action === "list") {
+      const list = await listCharacters(me);
+      // 💼🎓 Where each one is right now, for the chips: at work, in class, or nowhere she's due.
+      // Her own day, not the server's: "today" for someone two zones over isn't today here.
+      const off = new Set((await sql()`select character_id, day::text as day from chat_off where user_id = ${me} and day >= current_date - 1`).map(r => `${r.character_id}:${r.day}`));
+      const characters = list.map(c => {
+        const zone = isValidTimeZone(c.time_zone) ? c.time_zone : "America/Chicago";
+        const at = workNow(c, zone, Date.now(), off.has(`${c.id}:${localDate(Date.now(), zone)}`), c.id);
+        return { ...c, busy: at.atWork ? (at.kind || (inClass(c) ? "class" : "work")) : null };
+      });
+      return NextResponse.json({ characters, portraits: portraitsReady(), admin, brains: admin ? availableBrains() : [], brainModels: admin ? brainList() : [] });
+    }
     if (action === "link.suggest") {
       const ch = admin ? await getCharacter(id) : null;
       return NextResponse.json({ suggest: ch ? await linkSuggestions(ch, clean(b.text, 2000), me).catch(() => []) : [] });
@@ -65,6 +77,12 @@ export async function POST(req: NextRequest) {
         const brain = b.brain === "claude" || availableBrains().includes(b.brain) ? String(b.brain) : "";
         // 💼 Her work week, and 💞🌈 romance options (only with romance on).
         const hhmm = (v: unknown) => (typeof v === "string" && /^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(v) ? v : "");
+        const klass = {
+          school: clean(b.school, 200),
+          days: [...new Set((Array.isArray(b.classDays) ? b.classDays : []).map(Number).filter((d: number) => Number.isInteger(d) && d >= 0 && d <= 6))] as number[],
+          start: hhmm(b.classStart), end: hhmm(b.classEnd),
+        };
+        if (!klass.start || !klass.end) { klass.start = ""; klass.end = ""; }
         const work = { attire: clean(b.workAttire, 400), days: [...new Set((Array.isArray(b.workDays) ? b.workDays : []).map(Number).filter((d: number) => Number.isInteger(d) && d >= 0 && d <= 6))] as number[], start: hhmm(b.workStart), end: hhmm(b.workEnd), part: b.partTime === true };
         if (!work.start || !work.end) { work.start = ""; work.end = ""; }
         const polyOk = romantic && b.polyOk === true, sapphic = romantic && b.sapphic === true, bigFollowing = b.bigFollowing === true;
@@ -83,8 +101,8 @@ export async function POST(req: NextRequest) {
         // Same voice as before: keep it (no trip to ElevenLabs).
         const v = prev && (b.voice?.id ?? b.voice) === prev.voice ? { id: prev.voice, name: prev.voice_name, kind: prev.voice_kind } : await chooseVoice(b.voice);
         const [row] = action === "create"
-          ? await sql()`insert into chat_characters (created_by, name, personality, backstory, relation, appearance, job, casual_wear, hobbies, voice, voice_name, voice_kind, romantic, romance_arc, traits, preset, time_zone, birthday, brain, work_attire, work_days, work_start, work_end, part_time, poly_ok, sapphic, big_following, standing) values (${me}, ${f.name}, ${f.personality}, ${f.backstory}, ${f.relation}, ${f.appearance}, ${f.job}, ${f.casual_wear}, ${f.hobbies}, ${v.id}, ${v.name}, ${v.kind}, ${romantic}, ${arc}, ${JSON.stringify(traits)}::jsonb, ${presetId}, ${zone}, ${bday}, ${brain}, ${work.attire}, ${work.days}::int[], ${work.start}, ${work.end}, ${work.part}, ${polyOk}, ${sapphic}, ${bigFollowing}, ${standing}) returning id`
-          : await sql()`update chat_characters set name = ${f.name}, personality = ${f.personality}, backstory = ${f.backstory}, relation = ${f.relation}, appearance = ${f.appearance}, job = ${f.job}, casual_wear = ${f.casual_wear}, hobbies = ${f.hobbies}, voice = ${v.id}, voice_name = ${v.name}, voice_kind = ${v.kind}, romantic = ${romantic}, romance_arc = ${arc}, traits = ${JSON.stringify(traits)}::jsonb, preset = ${presetId}, time_zone = ${zone}, birthday = ${bday}, brain = ${brain}, work_attire = ${work.attire}, work_days = ${work.days}::int[], work_start = ${work.start}, work_end = ${work.end}, part_time = ${work.part}, poly_ok = ${polyOk}, sapphic = ${sapphic}, big_following = ${bigFollowing}, standing = ${standing}, reference_ids = ${want.filter((x: string) => refs.includes(x))}::uuid[], updated_at = now() where id = ${id} returning id`;
+          ? await sql()`insert into chat_characters (created_by, name, personality, backstory, relation, appearance, job, casual_wear, hobbies, voice, voice_name, voice_kind, romantic, romance_arc, traits, preset, time_zone, birthday, brain, work_attire, work_days, work_start, work_end, part_time, poly_ok, sapphic, big_following, standing, school, class_days, class_start, class_end) values (${me}, ${f.name}, ${f.personality}, ${f.backstory}, ${f.relation}, ${f.appearance}, ${f.job}, ${f.casual_wear}, ${f.hobbies}, ${v.id}, ${v.name}, ${v.kind}, ${romantic}, ${arc}, ${JSON.stringify(traits)}::jsonb, ${presetId}, ${zone}, ${bday}, ${brain}, ${work.attire}, ${work.days}::int[], ${work.start}, ${work.end}, ${work.part}, ${polyOk}, ${sapphic}, ${bigFollowing}, ${standing}, ${klass.school}, ${klass.days}::int[], ${klass.start}, ${klass.end}) returning id`
+          : await sql()`update chat_characters set name = ${f.name}, personality = ${f.personality}, backstory = ${f.backstory}, relation = ${f.relation}, appearance = ${f.appearance}, job = ${f.job}, casual_wear = ${f.casual_wear}, hobbies = ${f.hobbies}, voice = ${v.id}, voice_name = ${v.name}, voice_kind = ${v.kind}, romantic = ${romantic}, romance_arc = ${arc}, traits = ${JSON.stringify(traits)}::jsonb, preset = ${presetId}, time_zone = ${zone}, birthday = ${bday}, brain = ${brain}, work_attire = ${work.attire}, work_days = ${work.days}::int[], work_start = ${work.start}, work_end = ${work.end}, part_time = ${work.part}, poly_ok = ${polyOk}, sapphic = ${sapphic}, big_following = ${bigFollowing}, standing = ${standing}, school = ${klass.school}, class_days = ${klass.days}::int[], class_start = ${klass.start}, class_end = ${klass.end}, reference_ids = ${want.filter((x: string) => refs.includes(x))}::uuid[], updated_at = now() where id = ${id} returning id`;
         // ✍️ Renamed: her Picagram account and everyone's memories of her follow the new name.
         if (renamedFrom) await picaRenamed(me, id, renamedFrom, f.name).catch(e => console.error("characters: rename", e instanceof Error ? e.message : e));
         return NextResponse.json({ character: await getCharacter(String(row.id)) });
@@ -102,8 +120,8 @@ export async function POST(req: NextRequest) {
           const [{ n }] = await sql()`select count(*)::int as n from chat_characters where owner_id is null`;
           if (n >= MAX_CHARACTERS) return bad(`There can be up to ${MAX_CHARACTERS} characters — delete one first.`);
         }
-        const [row] = await sql()`insert into chat_characters (created_by, owner_id, intro_status, name, personality, backstory, relation, appearance, job, casual_wear, hobbies, voice, voice_name, voice_kind, romantic, romance_arc, traits, preset, time_zone, birthday, brain, work_attire, work_days, work_start, work_end, part_time, poly_ok, sapphic, big_following, standing)
-          select ${me}, owner_id, intro_status, ${name}, personality, backstory, relation, appearance, job, casual_wear, hobbies, voice, voice_name, voice_kind, romantic, romance_arc, traits, preset, time_zone, birthday, brain, work_attire, work_days, work_start, work_end, part_time, poly_ok, sapphic, big_following, standing
+        const [row] = await sql()`insert into chat_characters (created_by, owner_id, intro_status, name, personality, backstory, relation, appearance, job, casual_wear, hobbies, voice, voice_name, voice_kind, romantic, romance_arc, traits, preset, time_zone, birthday, brain, work_attire, work_days, work_start, work_end, part_time, poly_ok, sapphic, big_following, standing, school, class_days, class_start, class_end)
+          select ${me}, owner_id, intro_status, ${name}, personality, backstory, relation, appearance, job, casual_wear, hobbies, voice, voice_name, voice_kind, romantic, romance_arc, traits, preset, time_zone, birthday, brain, work_attire, work_days, work_start, work_end, part_time, poly_ok, sapphic, big_following, standing, school, class_days, class_start, class_end
           from chat_characters where id = ${id} returning id`;
         return NextResponse.json({ character: await getCharacter(String(row.id)) });
       }

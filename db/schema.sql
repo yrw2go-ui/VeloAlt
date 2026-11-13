@@ -679,3 +679,18 @@ create table if not exists chat_turndowns (
 -- 🏠 The town or city they live in (with the state): new characters and Picagram women mostly live near it.
 alter table users add column if not exists home_town text check (home_town is null or char_length(home_town) <= 80);
 alter table pica_accounts add column if not exists lives text check (lives is null or char_length(lives) <= 120);
+-- 🙈 A day she called off work or skipped class (so the app doesn't say she's there).
+create table if not exists chat_off (
+  user_id uuid not null references users(id) on delete cascade,
+  character_id uuid not null references chat_characters(id) on delete cascade,
+  day date not null,
+  primary key (user_id, character_id, day)
+);
+-- 🎓 Her class timetable, alongside her work week: which days, what hours, and where she studies.
+alter table chat_characters add column if not exists class_days int[] not null default '{}';
+alter table chat_characters add column if not exists class_start text not null default '' check (char_length(class_start) <= 5);
+alter table chat_characters add column if not exists class_end text not null default '' check (char_length(class_end) <= 5);
+alter table chat_characters add column if not exists school text not null default '' check (char_length(school) <= 200);
+-- 🏡 Time off at home (a staycation) alongside a trip away or a sick spell.
+alter table chat_away drop constraint if exists chat_away_kind_check;
+alter table chat_away add constraint chat_away_kind_check check (kind in ('trip', 'sick', 'stay'));

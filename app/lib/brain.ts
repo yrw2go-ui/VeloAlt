@@ -9,7 +9,7 @@
 //   "errandsum" — a short report to the owner after that call
 import { cleanReply, isMeta } from "./text";
 import { secretKnowers, standingNote, standingOf } from "./standing";
-import { sickFor, lifeNote, WANTS } from "./life";
+import { sickFor, lifeNote, offToday, WANTS } from "./life";
 import Anthropic from "@anthropic-ai/sdk";
 import type { Caller } from "./caller";
 import { sql } from "./db";
@@ -26,7 +26,7 @@ import { friendsOf, friendsNote, sapphicWith } from "./friends";
 import { workNow } from "./work";
 import { sceneClockNote } from "./sceneClock";
 import { inPersonFor, inPersonNote } from "./inPerson";
-import { picaNote, picaHandleNote, awayFor } from "./picagram";
+import { picaNote, picaHandleNote, awayFor, stayFor } from "./picagram";
 /** How many recent scenes (2 weeks) with her got pushed from their planned time. */
 async function pushedLately(userId: string, sceneId: string): Promise<number> {
   const [r] = await sql()`select count(*)::int as n from chat_scenes s where s.user_id = ${userId} and s.pushed
@@ -168,9 +168,12 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
   const trust = ch ? await trustFor(caller.userId, ch).catch(() => null) : null;
   // 😊 How happy she is with them right now — another thing that colours how she takes news.
   const happy = ch && !errand ? await happyFor(caller.userId, ch).catch(() => null) : null;
+  // 🙈 A day she called off work or skipped class for them: she isn't where her schedule says.
+  const skived = ch && !errand ? await offToday(caller.userId, ch.id, chZone || today.tz).catch(() => false) : false;
   // 🤒✈️ Off colour, or away on a trip: it changes what she's up for and where her photos come from.
   const unwell = ch && !errand ? await sickFor(caller.userId, ch.id).catch(() => null) : null;
   const trip = ch && !errand ? await awayFor(caller.userId, ch.id).catch(() => null) : null;
+  const stay = ch && !errand ? await stayFor(caller.userId, ch.id).catch(() => null) : null;
   // 💗 And where her heart is, for a romantic character (it grows and cools over time).
   const love = ch && !errand ? await loveFor(caller.userId, ch, arc).catch(() => null) : null;
   // 🎬 A scene (date/outing) being played out right now with this character.
@@ -198,7 +201,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
         errand ? "" : name ? `Their first name is ${name}.` : "You don't know their name yet — if it comes up naturally, ask, and remember it.",
         `Right now it is ${today.label}${errand ? "" : " where they are"}.`,
         chClock,
-        ch ? workNow(ch, chZone || today.tz).text : "",
+        ch ? workNow(ch, chZone || today.tz, Date.now(), skived, ch.id).text : "",
         errand ? "" : calendarNote(today.date, !!proTools && !ch),
         ch?.birthday ? ownBirthdayNote(ch.birthday, chZone ? localNow(chZone).date : today.date) : "",
         about,
@@ -229,7 +232,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
         trust !== null && mode !== "remember" && mode !== "memo" ? trustNote(trust, arc) : "",
         happy !== null && mode !== "remember" && mode !== "memo" ? happyNote(happy, arc) : "",
         love !== null && mode !== "remember" && mode !== "memo" ? loveNote(love) : "",
-        ch && mode !== "remember" && mode !== "memo" ? lifeNote(unwell, trip) : "",
+        ch && mode !== "remember" && mode !== "memo" ? lifeNote(unwell, trip, stay) : "",
         ch && mode !== "remember" && mode !== "memo" ? WANTS : "",
         love !== null && (mode === "remember" || mode === "memo") ? `HOW MUCH YOU LOVE THEM: ${love}/100. ${LOVE_REMEMBER}` : "",
         happy !== null && (mode === "remember" || mode === "memo") ? `HOW HAPPY YOU ARE WITH THEM: ${happy}/100. ${HAPPY_REMEMBER}` : "",
