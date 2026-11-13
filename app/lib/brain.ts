@@ -8,6 +8,7 @@
 //   "errand"    — a turn on a call Velo is making FOR the owner to someone else
 //   "errandsum" — a short report to the owner after that call
 import { cleanTags, dropMeta, isMeta } from "./text";
+import { secretKnowers, standingNote, standingOf } from "./standing";
 import Anthropic from "@anthropic-ai/sdk";
 import type { Caller } from "./caller";
 import { sql } from "./db";
@@ -159,6 +160,9 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
   const chClock = chZone ? `Where YOU live (${CHARACTER_ZONES.find(z => z[0] === chZone)?.[1] || chZone}), it's ${localNow(chZone).label}. Live by your own clock — sleepy late at night, busy in your morning — and notice the time difference with them when it matters (like telling them it's late for you). Don't mention the time unless it's relevant.` : "";
   // 💕 A romantic character with an adult: their relationship develops (feelings, updated after each chat/call).
   const arc = !!ch?.romantic && !!u?.adult_confirmed_at;
+  // 💞🤫 Where the romance stands (official girlfriend, or kept secret) — only once romance is on.
+  const standing = arc ? standingOf(ch!) : "";
+  const standNote = standing ? standingNote(standing, name, standing === "secret" ? await secretKnowers(caller.userId, ch!.id).catch(() => []) : []) : "";
   // 🤝 How much this character trusts them (null when Trust is 0 / off).
   const trust = ch ? await trustFor(caller.userId, ch).catch(() => null) : null;
   // 🎬 A scene (date/outing) being played out right now with this character.
@@ -211,6 +215,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
         mode === "chat" ? REACT_HINT : "",
         photoMoment && !introKind ? PHOTO_MOMENT : "",
         introKind ? introNote(introKind) : "",
+        standNote,
         group && ch ? groupNote(ch.name, name, group.others, mode === "memo", group.scene || null, !!ch.romantic && !!u?.adult_confirmed_at, !!group.banter, !!ch.poly_ok, sapphicWith(ch, friends, !!u?.adult_confirmed_at).filter(n => group.others.includes(n)), group.inPerson ?? null, group.catchUp || "") + (group.private ? `\n🔒 PRIVATE: ${name || "they"} just texted YOU privately (an @message) — the others can't see it or your answer. Answer only ${name || "them"}, privately, like a quick discreet text back (even if you're all in the same room). Don't announce it or say it out loud to the others.` : "") : "",
         arc && (mode === "remember" || mode === "memo") ? FEELINGS_REMEMBER : "",
         trust !== null && mode !== "remember" && mode !== "memo" ? trustNote(trust, arc) : "",

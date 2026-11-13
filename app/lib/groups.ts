@@ -4,6 +4,7 @@
 // as acquaintances, and become friends the more they all chat together (see chat_bonds, friends.ts).
 import { sql } from "./db";
 import { askVelo, type Turn } from "./brain";
+import { maybeRevealSecrets } from "./standing";
 import { getCharacter, referenceUrls, type Character } from "./characters";
 import { friendsOf, writeStory } from "./friends";
 import { scrub } from "./secrets";
@@ -213,6 +214,9 @@ async function closer(userId: string, chars: Character[]) {
     await sql()`update chat_bonds set messages = messages + 1, occasions = occasions + case when last_at < now() - interval '6 hours' then 1 else 0 end, last_at = now()
       where user_id = ${userId} and a_id = ${a} and b_id = ${b}`;
   }
+  // 🤫 Once two of them are really close, one may work out a secret relationship in the room.
+  const out = await maybeRevealSecrets(userId, chars).catch(e => { console.error("groups: secret", e instanceof Error ? e.message : e); return []; });
+  for (const o of out) console.log(`velo: ${o.knower} worked out ${o.who}'s secret`);
 }
 
 /** Each character saves her own memory of the group chat (what they shared, what she learned about the others). */

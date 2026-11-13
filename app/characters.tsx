@@ -14,7 +14,7 @@ import { BRAIN_OPTIONS } from "./lib/brainOptions";
 
 type VoiceOption = { id: string; name: string; kind: "female" | "male"; about: string; preview: string; owner?: string };
 
-export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; brain?: string; work_attire?: string; work_days?: number[]; work_start?: string; work_end?: string; part_time?: boolean; poly_ok?: boolean; sapphic?: boolean; big_following?: boolean; portrait_url: string | null; portrait_job: string | null };
+export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; brain?: string; standing?: string; work_attire?: string; work_days?: number[]; work_start?: string; work_end?: string; part_time?: boolean; poly_ok?: boolean; sapphic?: boolean; big_following?: boolean; portrait_url: string | null; portrait_job: string | null };
 
 /** A character's picture in a circle (their initial until a portrait exists). */
 export function CharacterFace({ c, size }: { c: Pick<Character, "name" | "portrait_url">; size: number }) {
@@ -78,6 +78,9 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
   const [partTime, setPartTime] = useState(!!seed?.part_time);
   // 💞🌈 Romance options.
   const [polyOk, setPolyOk] = useState(!!seed?.poly_ok);
+  // 💞🤫 Where it stands: official girlfriend, or together but kept quiet (one or the other).
+  const [gf, setGf] = useState(seed?.standing === "gf");
+  const [secret, setSecret] = useState(seed?.standing === "secret");
   const [sapphic, setSapphic] = useState(!!seed?.sapphic);
   const [bigFollowing, setBigFollowing] = useState(!!seed?.big_following);
   const [wear, setWear] = useState(seed?.casual_wear || "");
@@ -117,7 +120,7 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
   const working = !!c?.portrait_job;
   const dirty = !c || name !== c.name || personality !== c.personality || backstory !== c.backstory || relation !== c.relation || appearance !== c.appearance || job !== (c.job || "") || wear !== (c.casual_wear || "") || hobbies !== (c.hobbies || "") || voice.id !== c.voice || JSON.stringify(traits) !== JSON.stringify(cleanTraits(c.traits && Object.keys(c.traits).length ? c.traits : DEFAULT_TRAITS)) || preset !== (c.preset || "") || zone !== (c.time_zone || "") || bday !== (c.birthday || "") || romantic !== !!c.romantic || (romantic ? arc : "") !== (c.romance_arc || "") || refIds.join() !== (c.reference_ids || []).join() || brain !== (c.brain || "")
     || attire !== (c.work_attire || "") || [...workDays].sort().join() !== [...(c.work_days || [])].sort().join() || workStart !== (c.work_start || "") || workEnd !== (c.work_end || "") || partTime !== !!c.part_time
-    || (romantic && polyOk) !== !!c.poly_ok || (romantic && sapphic) !== !!c.sapphic || bigFollowing !== !!c.big_following;
+    || (romantic && gf ? "gf" : romantic && secret ? "secret" : "") !== (c.standing || "") || (romantic && polyOk) !== !!c.poly_ok || (romantic && sapphic) !== !!c.sapphic || bigFollowing !== !!c.big_following;
 
   // A portrait in progress: check back every few seconds until it's ready.
   useEffect(() => {
@@ -135,7 +138,7 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
     setBusy(true); setMsg("");
     try {
       const fields = { name, personality, backstory, relation, appearance, job, casualWear: wear, hobbies, voice: { id: voice.id, name: voice.name, kind: voice.kind, owner: voice.owner }, romantic, romanceArc: romantic ? arc : "", traits, preset, timeZone: zone, birthday: bday, brain,
-        workAttire: attire, workDays, workStart: workStart && workEnd ? workStart : "", workEnd: workStart && workEnd ? workEnd : "", partTime, polyOk: romantic && polyOk, sapphic: romantic && sapphic, bigFollowing };
+        workAttire: attire, workDays, workStart: workStart && workEnd ? workStart : "", workEnd: workStart && workEnd ? workEnd : "", partTime, polyOk: romantic && polyOk, sapphic: romantic && sapphic, bigFollowing, gf: romantic && gf, secret: romantic && secret };
       const r = await api<{ character: Character }>("/api/characters", { action: c ? "update" : "create", id: c?.id, ...fields, referenceIds: refIds });
       // 🖼️ Pictures picked while making a new character: upload them now (first one as headshot), as references.
       if (!c && pending.files.length && pending.fictional) {
@@ -190,6 +193,22 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
         <label style={{ fontSize: 13, fontWeight: 700 }}>Name
           <input value={name} onChange={e => setName(e.target.value)} maxLength={60} placeholder="e.g. Captain Mira" aria-label="Character name" style={{ marginTop: 4 }} />
         </label>
+        {voice.kind === "female" && (
+          <div data-testid="standing" className="row" style={{ gap: 14, flexWrap: "wrap", padding: "8px 12px", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface2)" }}>
+            <label className="row" style={{ gap: 6, fontSize: 13, fontWeight: 700, cursor: "pointer" }} title="Officially together — everyone knows">
+              <input type="checkbox" checked={gf} data-testid="is-gf" onChange={e => { setGf(e.target.checked); if (e.target.checked) setSecret(false); }} style={{ width: 20, height: 20 }} />💞 gf
+            </label>
+            <label className="row" style={{ gap: 6, fontSize: 13, fontWeight: 700, cursor: "pointer" }} title="Together, but kept private in front of others">
+              <input type="checkbox" checked={secret} data-testid="is-secret" onChange={e => { setSecret(e.target.checked); if (e.target.checked) setGf(false); }} style={{ width: 20, height: 20 }} />🤫 secret
+            </label>
+            <span className="muted" style={{ fontSize: 11, flexBasis: "100%" }}>
+              {!romantic ? "Turn on 💕 Romantic below for these to mean anything."
+                : gf ? "Official: she talks about you as her boyfriend, and everyone you both know knows."
+                : secret ? "Discreet in front of others — her personality can still hint or flirt. Someone she gets really close to in group chats and meet-ups may work it out in time."
+                : "Neither ticked: nobody knows anything either way, as before."}
+            </span>
+          </div>
+        )}
         <label style={{ fontSize: 13, fontWeight: 700 }}>Personality preset <span className="muted" style={{ fontWeight: 500 }}>· optional starting point</span>
           <select value={preset} onChange={e => applyPreset(e.target.value)} aria-label="Personality preset" style={{ marginTop: 4, display: "block", width: "100%" }}>
             <option value="">— Custom —</option>
