@@ -144,6 +144,12 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       .then(r => { setChars(r.characters); setPortraits(r.portraits); setAdmin(r.admin); setBrains(r.brains || []); setBrainModels(r.brainModels || []); }).catch(() => {});
   }, [userId]);
   const withChar = chars.find(c => c.id === withId) || null;
+  // Watch for notification taps that change the URL.
+  useEffect(() => {
+    const check = () => { const c = urlParam("chat"); if (c && c !== withId) { setWithId(c !== "velo" ? c : null); setTab("chat"); } };
+    window.addEventListener("popstate", check);
+    return () => window.removeEventListener("popstate", check);
+  }, [withId]);
   // 👥 Group chats (you and 2–6 characters).
   const [groups, setGroups] = useState<Group[]>([]);
   const [groupId, setGroupId] = useState<string | null>(() => (urlParam("chat") ? null : place.groupId || null));
