@@ -852,6 +852,9 @@ export function SceneSheet({ who, plan, onClose, onStart }: { who: string; plan?
 
 
 /** 🗑 Long-press (or right-click) a message to start selecting; then a tap toggles it. */
+// 📷 A press on a photo or video is the phone's own (long-press to save / share), never ours.
+const onPhoto = (e: { target: EventTarget | null }) => !!(e.target instanceof Element && e.target.closest("img, video"));
+
 export function Selectable({ id, selecting, onStart, onToggle, children }: { id?: string; selecting: Set<string> | null; onStart: (id: string) => void; onToggle: (id: string) => void; children: React.ReactNode }) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fired = useRef(false);
@@ -860,11 +863,11 @@ export function Selectable({ id, selecting, onStart, onToggle, children }: { id?
   const cancel = () => { if (timer.current) clearTimeout(timer.current); timer.current = null; };
   return (
     <div data-testid="msg-row" data-selected={on ? "1" : undefined}
-      onPointerDown={() => { if (selecting) return; fired.current = false; cancel(); timer.current = setTimeout(() => { fired.current = true; onStart(id); }, 550); }}
+      onPointerDown={e => { if (selecting || onPhoto(e)) return; fired.current = false; cancel(); timer.current = setTimeout(() => { fired.current = true; onStart(id); }, 550); }}
       onPointerUp={cancel} onPointerLeave={cancel} onPointerCancel={cancel}
-      onContextMenu={e => { e.preventDefault(); if (!selecting) onStart(id); }}
+      onContextMenu={e => { if (onPhoto(e)) return; e.preventDefault(); if (!selecting) onStart(id); }}
       onClickCapture={e => { if (selecting) { e.stopPropagation(); e.preventDefault(); if (!fired.current) onToggle(id); fired.current = false; } else if (fired.current) { e.stopPropagation(); fired.current = false; } }}
-      style={{ display: "flex", flexDirection: "column", borderRadius: 14, outline: on ? "2px solid var(--accent)" : undefined, background: on ? "rgba(124,140,255,.12)" : undefined, position: "relative", cursor: selecting ? "pointer" : undefined, userSelect: selecting ? "none" : undefined, WebkitTouchCallout: "none" } as React.CSSProperties}>
+      style={{ display: "flex", flexDirection: "column", borderRadius: 14, outline: on ? "2px solid var(--accent)" : undefined, background: on ? "rgba(124,140,255,.12)" : undefined, position: "relative", cursor: selecting ? "pointer" : undefined, userSelect: selecting ? "none" : undefined, ...(selecting ? { WebkitTouchCallout: "none" } : {}) } as React.CSSProperties}>
       {selecting && <span aria-hidden style={{ position: "absolute", top: 4, left: 4, fontSize: 14, zIndex: 1 }}>{on ? "☑️" : "⬜"}</span>}
       {children}
     </div>
