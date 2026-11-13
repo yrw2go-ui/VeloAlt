@@ -124,7 +124,7 @@ export default function Picagram({ name, onChat, openProfile, onProfileOpened }:
       {loading && <div className="muted" style={{ textAlign: "center", padding: 18 }} data-testid="pica-loading">Loading…</div>}
       {!more && posts && posts.length > 0 && <div className="muted" style={{ textAlign: "center", padding: 18, fontSize: 13 }}>You&apos;re all caught up ✨</div>}
       {err && <div style={{ color: "var(--bad)", padding: 14 }}>⚠️ {err}</div>}
-      {profile && <Profile id={profile} onClose={() => setProfile(null)} onFollow={setFollowed} onChat={onChat} onMessage={id => { setProfile(null); setThread(id); }} />}
+      {profile && <Profile id={profile} onClose={() => setProfile(null)} onFollow={setFollowed} onChat={onChat} onMessage={id => { setProfile(null); setThread(id); }} onDeleted={id => setPosts(ps => (ps || []).filter(p => p.author.account?.id !== id))} />}
       {inbox && <Inbox onClose={() => setInbox(false)} onOpen={id => setThread(id)} />}
       {thread && <Thread id={thread} onClose={() => setThread(null)} onProfile={id => { setThread(null); setInbox(false); setProfile(id); }} />}
       {followingOpen && <Following onClose={() => setFollowingOpen(false)} onUnfollow={acc => setFollowed(acc, false)} onOpen={id => { setFollowingOpen(false); setProfile(id); }} />}
@@ -294,11 +294,19 @@ function Grid({ photos, onOpen }: { photos: Photo[]; onOpen: (p: Photo) => void 
 }
 
 /** 👤 Her profile: bio, followers, Follow, and all her photos. */
-function Profile({ id, onClose, onFollow, onChat, onMessage }: { id: string; onClose: () => void; onFollow: (account: string, on: boolean) => void; onChat?: (characterId: string) => void; onMessage?: (id: string) => void }) {
+function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: string; onClose: () => void; onFollow: (account: string, on: boolean) => void; onChat?: (characterId: string) => void; onMessage?: (id: string) => void; onDeleted?: (id: string) => void }) {
   const [data, setData] = useState<{ account: { id: string; handle: string; name: string; bio: string; followers: number; followed: boolean; avatar: string | null; character_id: string | null }; photos: Photo[] } | null>(null);
   const [err, setErr] = useState("");
   const [befriending, setBefriending] = useState(false);
   // 🤝 She becomes a character (filled in from her profile; her photos are her headshot and references).
+  // 🗑 Gone for good: her, her posts, your messages with her and her pictures.
+  const remove = async () => {
+    const who = data?.account.name || "her";
+    if (!(await confirmAsk(`Delete ${who}? Her posts, your messages with her and her pictures go too. Anything you saved to your gallery stays.`, { yes: "Delete", danger: true }))) return;
+    setErr("");
+    try { await api("/api/pica", { action: "account.delete", id }); onDeleted?.(id); onClose(); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't delete her."); }
+  };
   const befriend = async () => {
     setBefriending(true); setErr("");
     try { const r = await api<{ characterId: string }>("/api/pica", { action: "befriend", id }); setData(d => (d ? { ...d, account: { ...d.account, character_id: r.characterId, followed: true } } : d)); onFollow(id, true); }
@@ -338,6 +346,11 @@ function Profile({ id, onClose, onFollow, onChat, onMessage }: { id: string; onC
                   <button className="ghost" onClick={befriend} disabled={befriending} data-testid="pica-befriend" style={{ flex: 1 }}>{befriending ? "Making her profile…" : "🤝 Befriend"}</button>
                 </>}
           </div>
+          {!data.account.character_id && (
+            <div style={{ padding: "0 16px 10px" }}>
+              <button className="ghost" onClick={remove} data-testid="pica-profile-delete" style={{ padding: "4px 12px", fontSize: 13, color: "var(--bad)" }}>🗑 Delete this account</button>
+            </div>
+          )}
           {data.account.character_id && <div className="muted" style={{ padding: "0 16px 10px", fontSize: 12 }}>🤝 You&apos;re friends — she&apos;s one of your characters now (edit her in her character card).</div>}
           {err && <div style={{ color: "var(--bad)", padding: "0 16px 10px", fontSize: 13 }}>⚠️ {err}</div>}
           <Grid photos={data.photos} onOpen={setView} />
@@ -388,6 +401,13 @@ function Following({ onClose, onUnfollow, onOpen }: { onClose: () => void; onUnf
     setList(l => (l || []).filter(x => x.id !== id)); onUnfollow(id);
     await api("/api/pica", { action: "follow", id, on: false }).catch(() => {});
   };
+  // 🗑 Gone for good: her, her posts, her DMs and her pictures (anything you saved stays).
+  const remove = async (id: string, who: string) => {
+    if (!(await confirmAsk(`Delete ${who}? Her posts, your messages with her and her pictures go too. Anything you saved to your gallery stays.`, { yes: "Delete", danger: true }))) return;
+    setSaid("");
+    try { await api("/api/pica", { action: "account.delete", id }); setList(l => (l || []).filter(x => x.id !== id)); onUnfollow(id); }
+    catch (e) { setSaid(e instanceof Error ? e.message : "Couldn't delete her."); }
+  };
   return (
     <div role="dialog" aria-modal="true" data-testid="pica-following" style={{ position: "fixed", inset: 0, background: "var(--bg)", zIndex: 2600, overflowY: "auto" }}>
       <div className="row" style={{ padding: "10px 14px", gap: 8, position: "sticky", top: 0, background: "var(--bg)", borderBottom: "1px solid var(--border)" }}>
@@ -406,6 +426,7 @@ function Following({ onClose, onUnfollow, onOpen }: { onClose: () => void; onUnf
               <div className="muted" style={{ fontSize: 12 }}>{a.name}</div>
             </div>
             <button className="ghost" onClick={() => unfollow(a.id)} data-testid="pica-unfollow" style={{ padding: "4px 12px", fontSize: 13 }}>Unfollow</button>
+            {!a.friend && <button className="ghost" onClick={() => remove(a.id, a.name)} aria-label={`Delete ${a.name}`} data-testid="pica-account-delete" style={{ padding: "4px 10px", fontSize: 15, color: "var(--bad)" }}>🗑</button>}
           </div>
         ))}
       </div>

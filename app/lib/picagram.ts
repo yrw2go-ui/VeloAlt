@@ -308,18 +308,50 @@ export async function picaNote(userId: string, ch: Character, personName: string
 type U = { name: string; tz: string; adult: boolean; look: string };
 export const MAX_FOLLOWING = 70, MAX_ACCOUNTS = 120;
 /** One new account a day (up to 120 in all), to discover. */
+// 🙅 No look-alikes: a new woman can't reuse a handle, a first name or a surname that someone they
+// already follow (or one of their characters) has — "@chloehart / Chloe Hart" and
+// "@ChloeHart91 / Claire Hart" are the same person twice as far as a reader is concerned.
+const bare = (h: string) => h.toLowerCase().replace(/[^a-z]/g, "");
+const parts = (n: string) => n.toLowerCase().replace(/[^a-z ]/g, "").split(/\s+/).filter(Boolean);
+function tooClose(handle: string, name: string, taken: { handle: string; name: string }[]): string {
+  const [first, ...rest] = parts(name);
+  const last = rest.at(-1) || "";
+  for (const t of taken) {
+    const [tf, ...tr] = parts(t.name);
+    const tl = tr.at(-1) || "";
+    if (bare(handle) && bare(handle) === bare(t.handle)) return `@${t.handle}`;
+    if (first && tf && first === tf) return `${t.name} (same first name)`;
+    // A shared surname is only a problem when the first names are near each other too
+    // (Chloe Hart / Claire Hart), not when they're plainly different people (Jo Hart).
+    if (last && tl && last === tl && first[0] === tf[0]) return `${t.name} (same surname, and both ${first[0].toUpperCase()}…)`;
+  }
+  return "";
+}
+
 async function newAccount(userId: string): Promise<Record<string, unknown> | null> {
   const [{ all }] = await sql()`select count(*)::int as all from pica_accounts where user_id = ${userId}`;
   if (all >= MAX_ACCOUNTS) return null;
-  const taken = (await sql()`select handle, name from pica_accounts where user_id = ${userId}`).map(r => `${r.handle} (${r.name})`);
-  const raw = await writeText("", `Invent ONE woman who posts on Picagram (a social photo app like Instagram): beautiful, aged 21–35, with her own look, background and vibe (fitness, travel, fashion, beach life, cooking, nightlife, yoga, cars, art, music…) — different from the ones already taken. Fictional, never a real person. JSON only: {"name":"First Last","handle":"lowercase_handle","bio":"short bio with emojis","look":"one detailed sentence for an image generator: age, face, hair, eyes, skin, build, usual style","followers":12000}`,
-    taken.length ? `Already taken (make her clearly different): ${taken.slice(-40).join(", ")}` : "(none yet)", 600).catch(() => "");
-  let a: { name?: string; handle?: string; bio?: string; look?: string; followers?: number } = {};
-  try { a = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); } catch { return null; }
-  const handle = String(a.handle || a.name || "").toLowerCase().replace(/[^a-z0-9._]/g, "").slice(0, 28);
-  if (handle.length < 2 || !a.name || taken.some(t => t.startsWith(`${handle} `))) return null;
-  const [row] = await sql()`insert into pica_accounts (user_id, handle, name, bio, look, followers) values (${userId}, ${handle}, ${scrub(String(a.name)).slice(0, 60)}, ${scrub(String(a.bio || "")).slice(0, 300)}, ${scrub(String(a.look || "")).slice(0, 600)}, ${Math.max(2000, Math.min(900000, Number(a.followers) || rand(5000, 200000)))}) returning *`;
-  return row || null;
+  // Everyone already in their life: the women they follow and their own characters.
+  const accounts = (await sql()`select handle, name from pica_accounts where user_id = ${userId}`).map(r => ({ handle: String(r.handle), name: String(r.name) }));
+  const chars = (await sql()`select name from chat_characters where owner_id is null or owner_id = ${userId}`).map(r => ({ handle: "", name: String(r.name) }));
+  const taken = [...accounts, ...chars];
+  const names = taken.map(t => (t.handle ? `${t.handle} (${t.name})` : t.name));
+  // Three goes at someone genuinely new, telling her what's already taken each time.
+  let clash = "";
+  for (let go = 0; go < 3; go++) {
+    const raw = await writeText("", `Invent ONE woman who posts on Picagram (a social photo app like Instagram): beautiful, aged 21–35, with her own look, background and vibe (fitness, travel, fashion, beach life, cooking, nightlife, yoga, cars, art, music…). She must be clearly NOT one of the people listed as taken: a different first name, a different surname and a different handle from every one of them — not a variation on one (no "chloehart" when "Chloe Hart" is taken, no adding numbers). Fictional, never a real person. JSON only: {"name":"First Last","handle":"lowercase_handle","bio":"short bio with emojis","look":"one detailed sentence for an image generator: age, face, hair, eyes, skin, build, usual style","followers":12000}`,
+      `${names.length ? `ALREADY TAKEN — avoid these names, surnames and handles entirely:\n${names.slice(-60).join(", ")}` : "(nobody yet)"}${clash ? `\n\nYour last try clashed with ${clash} — pick a completely different name.` : ""}`, 600).catch(() => "");
+    let a: { name?: string; handle?: string; bio?: string; look?: string; followers?: number } = {};
+    try { a = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); } catch { continue; }
+    const handle = String(a.handle || a.name || "").toLowerCase().replace(/[^a-z0-9._]/g, "").slice(0, 28);
+    const name = scrub(String(a.name || "")).replace(/\s+/g, " ").trim().slice(0, 60);
+    if (handle.length < 2 || !name) continue;
+    clash = tooClose(handle, name, taken);
+    if (clash) { console.warn(`pica: ${name} (@${handle}) is too close to ${clash} — trying again`); continue; }
+    const [row] = await sql()`insert into pica_accounts (user_id, handle, name, bio, look, followers) values (${userId}, ${handle}, ${name}, ${scrub(String(a.bio || "")).slice(0, 300)}, ${scrub(String(a.look || "")).slice(0, 600)}, ${Math.max(2000, Math.min(900000, Number(a.followers) || rand(5000, 200000)))}) returning *`;
+    return row || null;
+  }
+  return null;
 }
 
 async function accountPosts(userId: string, day: string, isToday: boolean, u: U, want: number): Promise<void> {
@@ -484,6 +516,26 @@ export async function picaDeletePost(userId: string, postId: string): Promise<bo
   const needle = cap ? `posted on Picagram: "${cap.slice(0, 160)}"` : desc ? `(a photo: ${desc.slice(0, 160)})` : "";
   if (needle) await sql()`delete from velo_memories where user_id = ${userId} and position(${needle} in text) > 0`;
   return true;
+}
+
+/** 🗑 Delete a Picagram account you don't like: her, her posts, her DMs and her pictures.
+ *  Anything you saved to your own gallery stays. Someone you've befriended is a character now —
+ *  she's deleted from her character card, not here. */
+export async function picaDeleteAccount(userId: string, accountId: string): Promise<"gone" | "character" | "unknown"> {
+  const [a] = await sql()`select character_id from pica_accounts where id = ${accountId} and user_id = ${userId}`;
+  if (!a) return "unknown";
+  if (a.character_id) return "character";
+  // Her pictures, except the ones they saved (those are theirs now).
+  const mine = await sql()`select distinct m.id from velo_media m
+    left join pica_posts p on p.media_id = m.id
+    where m.user_id = ${userId} and (p.account_id = ${accountId} or m.id = (select avatar_media_id from pica_accounts where id = ${accountId}))
+      and not exists (select 1 from pica_saved s where s.user_id = ${userId} and s.media_id = m.id)`;
+  // Her DM photos too.
+  const dms = await sql()`select d.media_id as id from pica_dms d where d.user_id = ${userId} and d.account_id = ${accountId} and d.media_id is not null
+    and not exists (select 1 from pica_saved s where s.user_id = ${userId} and s.media_id = d.media_id)`;
+  await sql()`delete from pica_accounts where id = ${accountId} and user_id = ${userId}`;
+  for (const m of [...mine, ...dms]) await deleteMedia(userId, String(m.id)).catch(() => false);
+  return "gone";
 }
 
 /** 🔴 New posts since they last looked at Picagram (not their own). */
