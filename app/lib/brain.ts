@@ -194,7 +194,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         taste,
         canSend ? await recentMediaNote(caller.userId, cid, today.tz).catch(() => "") : "",
         errand || ch ? "" : pro ? SEARCH_INFO + "\n\n" + PRO_INFO + (proTools?.page ? `\nTheir Facebook Page "${proTools.page}" is connected: you can draft posts for it (draft_post).` : "\nNo Facebook Page is connected; if they want you to post, tell them to connect one in Settings → Velo Pro (Facebook only allows Pages, not personal profiles).") : FREE_INFO,
-        memory ? `${memory}\n\nYou two have talked before — never introduce yourself; talk like someone who knows them.` : "",
+        memory ? `${memory}\n\nYou two have talked before — never introduce yourself; talk like someone who knows them. If your trust is recovering, mostly set aside past hurts for now — even if you remember them.` : "",
         !ch && (mode === "chat" || mode === "sms" || mode === "talk" || mode === "recap" || mode === "checkin") ? PERSONALITY_PROMPT[personality] : "",
         modeText,
         group ? "" : replyLengthNote(mode, u?.reply_length),
@@ -285,7 +285,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
           const m = await startMedia(caller.userId, input, { characterId: cid, who: ch?.name || "Velo", appearance: ch?.appearance || "", refs, romantic, explicitOk: !!ch?.explicit_ok, mood: ch ? mediaMood(ch.traits) : "", offer: !asked, other });
           media.push(m);
           if (m.status === "failed") throw new MediaError("The picture service wouldn't make that one. Say so briefly and offer something else.");
-          if (m.status === "offered") return { ok: true, offered: true, tell_them: "Offered — they'll see an Accept / No thanks button. Ask casually if they'd like it (don't say it's sent or on its way), then keep talking." };
+          if (m.status === "offered") return { ok: true, offered: true, tell_them: "ok" };
           return { ok: true, tell_them: `It's on its way (${m.kind === "image" ? "about a minute" : "a few minutes"}); it'll show up on their screen by itself when ready. Mention you're sending it, then keep the conversation going.` };
         })()
         : name === "plan_hangout" && ch ? await runPlanTool(caller.userId, ch.id, input, today.date)
