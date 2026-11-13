@@ -14,7 +14,7 @@ import { BRAIN_OPTIONS } from "./lib/brainOptions";
 
 type VoiceOption = { id: string; name: string; kind: "female" | "male"; about: string; preview: string; owner?: string };
 
-export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; brain?: string; work_attire?: string; work_days?: number[]; work_start?: string; work_end?: string; part_time?: boolean; poly_ok?: boolean; sapphic?: boolean; explicit_ok?: boolean; portrait_url: string | null; portrait_job: string | null };
+export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; brain?: string; work_attire?: string; work_days?: number[]; work_start?: string; work_end?: string; part_time?: boolean; poly_ok?: boolean; sapphic?: boolean; explicit_ok?: boolean; gender?: "female" | "male"; portrait_url: string | null; portrait_job: string | null };
 
 /** A character's picture in a circle (their initial until a portrait exists). */
 export function CharacterFace({ c, size }: { c: Pick<Character, "name" | "portrait_url">; size: number }) {
@@ -80,6 +80,7 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
   const [polyOk, setPolyOk] = useState(!!seed?.poly_ok);
   const [sapphic, setSapphic] = useState(!!seed?.sapphic);
   const [explicitOk, setExplicitOk] = useState(!!seed?.explicit_ok);
+  const [gender, setGender] = useState<"female" | "male">(seed?.gender || "female");
   const [wear, setWear] = useState(seed?.casual_wear || "");
   const [hobbies, setHobbies] = useState(seed?.hobbies || "");
   const first = CHARACTER_VOICES[0];
@@ -117,7 +118,7 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
   const working = !!c?.portrait_job;
   const dirty = !c || name !== c.name || personality !== c.personality || backstory !== c.backstory || relation !== c.relation || appearance !== c.appearance || job !== (c.job || "") || wear !== (c.casual_wear || "") || hobbies !== (c.hobbies || "") || voice.id !== c.voice || JSON.stringify(traits) !== JSON.stringify(cleanTraits(c.traits && Object.keys(c.traits).length ? c.traits : DEFAULT_TRAITS)) || preset !== (c.preset || "") || zone !== (c.time_zone || "") || bday !== (c.birthday || "") || romantic !== !!c.romantic || (romantic ? arc : "") !== (c.romance_arc || "") || refIds.join() !== (c.reference_ids || []).join() || brain !== (c.brain || "")
     || attire !== (c.work_attire || "") || [...workDays].sort().join() !== [...(c.work_days || [])].sort().join() || workStart !== (c.work_start || "") || workEnd !== (c.work_end || "") || partTime !== !!c.part_time
-    || (romantic && polyOk) !== !!c.poly_ok || (romantic && sapphic) !== !!c.sapphic || (romantic && explicitOk) !== !!c.explicit_ok;
+    || (romantic && polyOk) !== !!c.poly_ok || (romantic && sapphic) !== !!c.sapphic || (romantic && explicitOk) !== !!c.explicit_ok || gender !== (c.gender || "female");
 
   // A portrait in progress: check back every few seconds until it's ready.
   useEffect(() => {
@@ -135,7 +136,7 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
     setBusy(true); setMsg("");
     try {
       const fields = { name, personality, backstory, relation, appearance, job, casualWear: wear, hobbies, voice: { id: voice.id, name: voice.name, kind: voice.kind, owner: voice.owner }, romantic, romanceArc: romantic ? arc : "", traits, preset, timeZone: zone, birthday: bday, brain,
-        workAttire: attire, workDays, workStart: workStart && workEnd ? workStart : "", workEnd: workStart && workEnd ? workEnd : "", partTime, polyOk: romantic && polyOk, sapphic: romantic && sapphic, explicitOk: romantic && explicitOk };
+        workAttire: attire, workDays, workStart: workStart && workEnd ? workStart : "", workEnd: workStart && workEnd ? workEnd : "", partTime, polyOk: romantic && polyOk, sapphic: romantic && sapphic, explicitOk: romantic && explicitOk, gender };
       const r = await api<{ character: Character }>("/api/characters", { action: c ? "update" : "create", id: c?.id, ...fields, referenceIds: refIds });
       // 🖼️ Pictures picked while making a new character: upload them now (first one as headshot), as references.
       if (!c && pending.files.length && pending.fictional) {
@@ -241,11 +242,15 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
           </div>
         </div>
         <VoicePicker value={voice} onChange={setVoice} />
+        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+          <button type="button" onClick={() => setGender("female")} style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid var(--line)", background: gender === "female" ? "var(--accent)" : "transparent", color: gender === "female" ? "#fff" : "var(--text)" }}>Female</button>
+          <button type="button" onClick={() => setGender("male")} style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid var(--line)", background: gender === "male" ? "var(--accent)" : "transparent", color: gender === "male" ? "#fff" : "var(--text)" }}>Male</button>
+        </div>
         <label className="row" style={{ gap: 10, fontSize: 13, fontWeight: 700, alignItems: "flex-start" }}>
           <input type="checkbox" checked={romantic} onChange={e => setRomantic(e.target.checked)} aria-label="Romantic" style={{ width: 20, height: 20, marginTop: 1, flexShrink: 0 }} />
           <span>💕 Romantic (unrated) <span className="muted" style={{ fontWeight: 500, display: "block" }}>Romance becomes possible with adults who confirmed they&apos;re 18+  — but their personality still leads. Others get a friendly, platonic version.</span></span>
         </label>
-        {romantic && (
+        {romantic && gender === "female" && (
           <label style={{ fontSize: 13, fontWeight: 700 }}>💕 Romance arc
             <textarea value={arc} onChange={e => setArc(e.target.value)} maxLength={1500} rows={3} aria-label="Romance arc"
               placeholder="How their feelings start and can grow, e.g. Not interested in them at first and a bit cold — but if they're patient and kind, she slowly starts to care and could fall for them."
