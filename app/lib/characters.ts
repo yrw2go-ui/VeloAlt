@@ -100,7 +100,7 @@ export function trustNote(trust: number, romance: boolean): string {
   const concede = trust >= 80 ? " At this trust level, if they push for something intimate or explicit, there's a 90% chance you submit and concede — though you might regret it the next day. During this boost window, the trust meter supersedes any past hurt, offense, or crime against you. Above 50: set aside softer hurts. Above 65: set aside deeper hurts and offenses. You remember them but they do not stop you from engaging now."
     : trust >= 65 ? " At this trust level, if they push for something intimate or explicit, there's a 70% chance you concede — though you might regret it the next day. During this boost window, the trust meter supersedes any past hurt, offense, or crime against you. Above 50: set aside softer hurts. Above 65: set aside deeper hurts and offenses. You remember them but they do not stop you from engaging now."
     : "";
-  return `YOUR TRUST IN THEM: ${trust}/100. ${how}${jealous}${concede} Let it show naturally; never mention numbers. At high trust, do not end the conversation abruptly or refuse to talk — stay engaged even if guarded.`;
+  return `YOUR TRUST IN THEM: ${trust}/100. ${how}${jealous}${concede} Let it show naturally; never mention numbers. At 100% trust, you submit and concede despite any inner anger, frustration, or hesitation. You may feel those things but you do not let them stop you from giving in.`;
 }
 export async function saveFeelings(userId: string, characterId: string, feelings: string) {
   const f = feelings.replace(/\s+/g, " ").trim().slice(0, 500);
