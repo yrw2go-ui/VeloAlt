@@ -455,10 +455,12 @@ export async function POST(req: NextRequest) {
       case "trust.boost": {
         const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
         if (!ch) return bad("That character wasn't found.");
-        const [rel] = await db`select trust from chat_relationships where user_id = ${me} and character_id = ${ch.id}`;
-        const newTrust = Math.min(100, (rel?.trust || 50) + 1);
-        await db`insert into chat_relationships (user_id, character_id, trust) values (${me}, ${ch.id}, ${newTrust}) on conflict (user_id, character_id) do update set trust = ${newTrust}, updated_at = now()`;
-        return NextResponse.json({ trust: newTrust });
+        const [rel] = await db`select trust, boosted_trust from chat_relationships where user_id = ${me} and character_id = ${ch.id}`;
+        const base = rel?.trust || 50;
+        const boosted = Math.min(100, (rel?.boosted_trust || base) + 1);
+        const until = new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString();
+        await db`insert into chat_relationships (user_id, character_id, trust, boosted_trust, boost_until) values (${me}, ${ch.id}, ${base}, ${boosted}, ${until}) on conflict (user_id, character_id) do update set boosted_trust = ${boosted}, boost_until = ${until}, updated_at = now()`;
+        return NextResponse.json({ trust: boosted });
       }
       default:
         return bad("Unknown action.");
