@@ -23,8 +23,22 @@ export function dropMeta(t: string): string {
   return cleanTags(lines.join("\n"));
 }
 
-/** True when nothing usable is left once the stage directions are gone. */
+/** True when nothing usable is left once the stage directions and leaked tool calls are gone. */
 export function isMeta(t: string): boolean {
-  const left = dropMeta(t);
+  const left = cleanReply(t);
   return !!t.trim() && (!left || !SAYS.test(left));
 }
+
+// 🧰 Some models write a tool call out as text instead of making one: "<invoke name="x">…</invoke>",
+// "<function_calls>", a ```json block. None of that is a message, so it never reaches the chat.
+const CALL_TAGS = /<\/?\s*(invoke|antml:invoke|function_calls|antml:function_calls|function_results|tool_use|tool_call|parameter|antml:parameter|thinking|antml:thinking)\b[^>]*>/gi;
+const FENCE = /```[a-z]*\s*|```/gi;
+/** Strips tool-call scaffolding and code fences a model leaked into its reply. */
+export function stripScaffolding(t: string): string {
+  const out = t.replace(/<\s*(invoke|antml:invoke|function_calls|antml:function_calls|tool_use|parameter|antml:parameter|thinking|antml:thinking)\b[^>]*>[\s\S]*?<\/\s*\1\s*>/gi, " ")
+    .replace(CALL_TAGS, " ").replace(FENCE, " ")
+    .replace(/[ \t]{2,}/g, " ").replace(/^[ \t]+|[ \t]+$/gm, "");
+  return /[\p{L}\p{N}]/u.test(out) ? cleanTags(out) : "";
+}
+/** Everything a reply goes through before it's shown: stray HTML, leaked tool calls, stage directions. */
+export const cleanReply = (t: string) => dropMeta(stripScaffolding(cleanTags(t)));

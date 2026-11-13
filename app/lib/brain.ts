@@ -7,7 +7,7 @@
 //   "remember" / "memo" — after a call / chat: save a summary, goals and facts to memory
 //   "errand"    — a turn on a call Velo is making FOR the owner to someone else
 //   "errandsum" — a short report to the owner after that call
-import { cleanTags, dropMeta, isMeta } from "./text";
+import { cleanReply, isMeta } from "./text";
 import { secretKnowers, standingNote, standingOf } from "./standing";
 import Anthropic from "@anthropic-ai/sdk";
 import type { Caller } from "./caller";
@@ -468,7 +468,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
   // Their reaction tag (chat only) becomes a badge on the person's message; it's never shown or spoken.
   let react: string | undefined;
   reply = reply.replace(REACT_TAG, (_, e: string) => { if (!react && REACTIONS.includes(e)) react = e; return ""; });
-  reply = dropMeta(cleanTags(reply));
+  reply = cleanReply(reply);
   if (!reply && media?.length) reply = media.some(m => m.kind === "video") ? "Here you go 😊" : "Here you go — what do you think? 😊";
   return { reply: reply || (errand ? "Sorry, could you say that again?" : "Sorry, I lost my train of thought — could you say that again?"), changed, drafts, media, ...(mode === "chat" && react ? { react } : {}), by: answeredByAlt ? "alt" : "claude" };
 }

@@ -1,6 +1,6 @@
 // ✉️ Picagram DMs: private chats with Picagram accounts (people who aren't characters). They answer in
 // their own voice and can send photos of themselves. Characters never DM here — they chat in the normal chat.
-import { dropMeta } from "./text";
+import { cleanReply } from "./text";
 import { sql } from "./db";
 import { writeText } from "./llm";
 import { scrub } from "./secrets";
@@ -99,6 +99,17 @@ async function addDm(userId: string, accountId: string, role: "user" | "assistan
 }
 const transcript = (list: Dm[], her: string, me: string) => list.slice(-30).map(m => `${m.role === "user" ? me : her}: ${m.media ? "(sent a photo) " : ""}${m.content}`).join("\n");
 
+// "sending you one", "here's a selfie", "📸" — and a refusal, to tell them apart.
+const CLAIMS_PHOTO = /\b(send(ing)?|sent|here'?s|here you go|snapp(ing|ed)|taking|took|coming (your way|right up)|on (its|it's) way|round two)\b[\s\S]{0,60}\b(pics?|pictures?|photos?|selfies?|snaps?|shots?|it|one|this)\b|📸|🤳/i;
+const REFUSES_PHOTO = /\b(can'?t|cannot|won'?t|not (going to|gonna)|no (pics?|photos?|selfies?)|maybe later|not right now)\b/i;
+
+/** What photo she meant to send, from the conversation (used when she says one's coming but picks none). */
+async function describePhoto(a: Record<string, unknown>, u: { name: string; now: string; adult: boolean; chatModel: string }, history: Dm[]): Promise<string> {
+  const raw = await write(brainOf(a, u.chatModel), `You are ${a.name} (@${a.handle}) on Picagram. You told ${u.name} you'd send a photo of yourself, and it hasn't gone out yet. Describe exactly the photo you meant (where, outfit, pose, light) in 1–2 sentences${u.adult ? ", tasteful and PG-13 — flattering and flirty is fine, never nudity or lingerie" : ", fully clothed"}. JSON only: {"photo":"..."}`,
+    `${u.now}\nYou look like: ${a.look}\n\nTHE CONVERSATION:\n${transcript(history, String(a.name), u.name)}`, 400);
+  try { return String(JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]).photo || ""); } catch { return ""; }
+}
+
 /** 💬 They send a DM; she answers in her own voice (and sometimes with a photo of herself). */
 export async function dmSend(userId: string, accountId: string, text: string): Promise<{ added: Dm[]; note?: string }> {
   const a = await account(userId, accountId);
@@ -115,13 +126,17 @@ export async function dmSend(userId: string, accountId: string, text: string): P
   const obj = raw.match(/\{[\s\S]*\}/);
   try { j = obj ? JSON.parse(obj[0]) : { reply: raw }; } catch { j = { reply: raw.replace(/\{[\s\S]*\}/, "").trim() || raw }; }
   if (typeof j.reply !== "string" && !obj) j.reply = raw;
-  j.reply = String(j.reply || "").replace(/^```(json)?|```$/g, "").trim();
-  // 🙈 Stage directions about the app ("…the system is waiting for their reply") are dropped, not sent.
-  const reply = scrub(dropMeta(String(j.reply || "")).replace(/\s+/g, " ").trim()).slice(0, 2000);
+  // 🙈 Stage directions, leaked tool calls and code fences are dropped — they're not a message.
+  const reply = scrub(cleanReply(String(j.reply || "")).replace(/\s+/g, " ").trim()).slice(0, 2000);
   // Her brain didn't answer: say so (no fake 😊), and they can send again or pick another brain.
   if (!reply) return { added: [mine], note: `${a.name} didn't answer — her brain didn't respond. Try again, or pick another brain (🧠 at the top).` };
   const added: Dm[] = [mine, await addDm(userId, accountId, "assistant", reply)];
   let note: string | undefined;
+  // 📸 She said a photo was coming but didn't actually pick one: work out what she meant and send it,
+  // so what she says and what arrives always match (the same as in the normal chat).
+  if (!(j.photo && String(j.photo).trim()) && CLAIMS_PHOTO.test(reply) && !REFUSES_PHOTO.test(reply)) {
+    j.photo = await describePhoto(a, u, [...history, added[1]]).catch(e => { console.warn("pica dm: describe", e instanceof Error ? e.message : e); return ""; });
+  }
   if (j.photo && String(j.photo).trim()) {
     try { const m = await sendPhotoOf(userId, a, scrub(String(j.photo)).slice(0, 600), u.adult); added.push({ ...(await addDm(userId, accountId, "assistant", "", m.id, 5)), media: m }); }
     catch (e) { note = e instanceof MediaError ? e.message.replace(/ Tell them[\s\S]*$/, "") : "Her photo didn't go through."; console.warn("pica dm: photo", e instanceof Error ? e.message : e); }
@@ -138,11 +153,7 @@ export async function dmSendPhoto(userId: string, accountId: string): Promise<{ 
   const a = await account(userId, accountId);
   const u = await userInfo(userId);
   const history = await messages(userId, accountId, 30);
-  const raw = await write(brainOf(a, u.chatModel), `You are ${a.name} (@${a.handle}) on Picagram. You told ${u.name} you'd send a photo of yourself but it never went through. Describe exactly the photo you meant to send (where, outfit, pose, light) in 1–2 sentences${u.adult ? ", tasteful and PG-13 — flattering and flirty is fine, never nudity or lingerie" : ", fully clothed"}. JSON only: {"photo":"..."}`,
-    `${u.now}\nYou look like: ${a.look}\n\nTHE CONVERSATION:\n${transcript(history, String(a.name), u.name)}`, 400);
-  let photo = "";
-  try { photo = String(JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]).photo || ""); } catch { /* fall back */ }
-  photo = scrub(photo || `${a.name} taking a selfie, smiling at the camera`).slice(0, 600);
+  const photo = scrub((await describePhoto(a, u, history).catch(() => "")) || `${a.name} taking a selfie, smiling at the camera`).slice(0, 600);
   try {
     const m = await sendPhotoOf(userId, a, photo, u.adult);
     const d = await addDm(userId, accountId, "assistant", "", m.id);
