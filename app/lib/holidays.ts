@@ -80,7 +80,21 @@ export function breakNote(reason: string, date: string): string {
 }
 
 // 🎉 Work on a holiday: most people are off, but somebody always has to cover (nurses, baristas,
-// hotels, shops). Who works is settled per person and per holiday, so it never changes mid-chat.
+// hotels, shops). Who works is settled per person and per holiday, so it never changes mid-chat —
+// and nobody is put on two holidays in a row: if she covered the last one, this one is hers.
 const hash = (s: string) => { let h = 2166136261; for (const ch of s) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return Math.abs(h); };
-/** Does she have to work this holiday? (About one in four does.) */
-export const worksHoliday = (characterId: string, date: string) => hash(`${characterId}:${date}`) % 100 < 25;
+const drawn = (characterId: string, date: string) => hash(`${characterId}:${date}`) % 100 < 20;
+
+/** The holiday before this one, counting back into last year if need be. */
+export function holidayBefore(date: string): string | null {
+  const y = parse(date)[0];
+  const all = [...holidays(y - 1), ...holidays(y)].map(h => h.date).filter(d => d < date);
+  return all.length ? all[all.length - 1] : null;
+}
+
+/** Does she have to work this holiday? (About one in six does, and never two in a row.) */
+export function worksHoliday(characterId: string, date: string): boolean {
+  if (!drawn(characterId, date)) return false;
+  const last = holidayBefore(date);
+  return !(last && drawn(characterId, last)); // she covered the last one — this one she gets off.
+}
