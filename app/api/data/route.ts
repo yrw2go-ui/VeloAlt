@@ -18,7 +18,7 @@ import { PERSONALITIES } from "../../lib/persona";
 import { deleteFile, ownFile } from "../../lib/files";
 import { getCharacterFor, trustFor, activeScene } from "../../lib/characters";
 import { US_STATES } from "../../lib/states";
-import { acceptMedia, declineMedia, mediaNote, checkMedia, sweepMedia, getMedia, listGallery, deleteMedia, VIDEO_MODELS, DEFAULT_VIDEO_MODEL, mediaReady, MediaError } from "../../lib/media";
+import { acceptMedia, declineMedia, mediaNote, checkMedia, sweepMedia, getMedia, listGallery, deleteMedia, VIDEO_MODELS, DEFAULT_VIDEO_MODEL, mediaReady, MediaError, launch } from "../../lib/media";
 
 // 📦 Everything the app reads and changes, for the signed-in person only.
 // POST { action, ...args } → { ... }. Every query is scoped to their user_id.
@@ -175,6 +175,22 @@ export async function POST(req: NextRequest) {
       case "media.accept": {
         const m = needId() ? await acceptMedia(me, id) : null;
         return m ? NextResponse.json({ media: m }) : bad("That offer isn't open anymore.");
+      }
+      case "media.resend": {
+        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
+        if (!ch) return bad("That character was not found.");
+        // First try to retrieve an existing image (done or working).
+        const [existing] = await db`select id, status from velo_media where user_id = ${me} and character_id = ${ch.id} and status in ('done', 'working') and not peek order by created_at desc limit 1`;
+        if (existing) {
+          const m = await checkMedia(me, String(existing.id));
+          if (m) return NextResponse.json({ media: m });
+        }
+        // Nothing existing — create a new one from the last prompt.
+        const [last] = await db`select id, prompt, kind, model, refs, description from velo_media where user_id = ${me} and character_id = ${ch.id} order by created_at desc limit 1`;
+        if (!last) return bad("Nothing to resend.");
+        const [row] = await db`insert into velo_media (user_id, character_id, kind, prompt, model, description, refs, status, peek) values (${me}, ${ch.id}, ${last.kind}, ${last.prompt}, ${last.model}, ${last.description}, ${last.refs}, 'working', false) returning id`;
+        const m = await launch(String(row.id), last.kind, last.model, last.prompt, last.refs || [], last.description);
+        return NextResponse.json({ media: m });
       }
       case "media.decline": {
         const m = needId() ? await declineMedia(me, id) : null;
