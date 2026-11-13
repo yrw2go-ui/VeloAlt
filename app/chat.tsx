@@ -259,6 +259,8 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   const [inPerson, setInPerson] = useState<InPerson | null>(null);
   const [selectMode, setSelectMode] = useState(false);
   const [moreMenu, setMoreMenu] = useState(false);
+  const [heartTaps, setHeartTaps] = useState(0);
+  const [trustBoost, setTrustBoost] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const toggleSelect = (id: string) => setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const deleteSelected = async () => {
@@ -560,6 +562,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
             {cid && !scene && !inPerson && <button type="button" onClick={() => { setTogetherSheet({ place: "", busy: false }); setMoreMenu(false); }} disabled={!msgs || busy} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", border: "none", background: "transparent", color: "var(--text)", cursor: "pointer", fontSize: 14 }}>🧍 Together</button>}
             {cid && !scene && inPerson && <button type="button" onClick={() => { openPeek(true); setMoreMenu(false); }} disabled={!msgs || busy || !!peekSheet} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", border: "none", background: "transparent", color: "var(--text)", cursor: "pointer", fontSize: 14 }}>👁️ ICU</button>}
             <button type="button" onClick={() => { setSelectMode(s => !s); setMoreMenu(false); }} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", border: "none", background: "transparent", color: "var(--text)", cursor: "pointer", fontSize: 14 }}>☑ Select</button>
+            {cid && <button type="button" onClick={async () => { if (heartTaps >= 55) return; setHeartTaps(t => t + 1); setTrustBoost(b => b + 1); await data("trust.boost", { characterId: cid }).catch(() => {}); }} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", border: "none", background: "transparent", color: heartTaps > 0 ? "var(--accent)" : "var(--text)", cursor: "pointer", fontSize: 14 }}>❤️ Love ({heartTaps}/55)</button>}
           </div>}
         </div>
         <button type="button" onClick={() => picker.current?.click()} disabled={!msgs || busy || uploading} aria-label="Attach a photo or file" data-testid="chat-attach"
