@@ -18,7 +18,7 @@ import { BIO_SECTIONS, BIO_MAX } from "../../lib/bioSections";
 import { availableModels, availableBrains, CHAT_MODELS, MODEL_INFO, type ChatModel } from "../../lib/models";
 import { PERSONALITIES } from "../../lib/persona";
 import { deleteFile, ownFile } from "../../lib/files";
-import { getCharacterFor, trustFor, activeScene } from "../../lib/characters";
+import { getCharacterFor, trustFor, happyFor, loveFor, activeScene } from "../../lib/characters";
 import { US_STATES } from "../../lib/states";
 import { acceptMedia, declineMedia, mediaNote, checkMedia, sweepMedia, getMedia, listGallery, deleteMedia, VIDEO_MODELS, DEFAULT_VIDEO_MODEL, mediaReady, MediaError } from "../../lib/media";
 
@@ -358,7 +358,9 @@ export async function POST(req: NextRequest) {
       case "relationship.get": {
         const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
         if (!ch) return bad("That character wasn't found.");
-        return NextResponse.json({ trust: await trustFor(me, ch) });
+        const [who] = await db`select adult_confirmed_at from users where id = ${me}`;
+        const romance = !!ch.romantic && !!who?.adult_confirmed_at;
+        return NextResponse.json({ trust: await trustFor(me, ch), happy: await happyFor(me, ch), love: await loveFor(me, ch, romance) });
       }
       case "media.check": {
         const m = needId() ? await checkMedia(me, id) : null;

@@ -33,9 +33,15 @@ const chip = (on: boolean) => ({ display: "flex", alignItems: "center", gap: 6, 
 const Badge = ({ n }: { n?: number }) => (n ? <span data-testid="unread-badge" aria-label={`${n} unread`} style={{ position: "absolute", top: -6, right: -4, minWidth: 18, height: 18, padding: "0 5px", borderRadius: 999, background: "#ef4444", color: "#fff", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid var(--bg, #0b0d17)" }}>{n > 99 ? "99+" : n}</span> : null);
 
 /** 💞🤫 Where the romance stands, on her chip: official, or kept secret. */
-const Standing = ({ c }: { c: Character }) => (c.romantic && (c.standing === "gf" || c.standing === "secret")
-  ? <span data-testid={`standing-${c.standing}`} title={c.standing === "gf" ? "Officially together" : "Together, kept secret"} aria-label={c.standing === "gf" ? "girlfriend" : "secret"} style={{ fontSize: 11, marginLeft: 1 }}>{c.standing === "gf" ? "💞" : "🤫"}</span>
-  : null);
+const STANDING_BADGE: Record<string, { icon: string; title: string }> = {
+  gf: { icon: "💞", title: "Officially together" },
+  secret: { icon: "🤫", title: "Seeing each other, kept quiet" },
+  "gf+secret": { icon: "💞🤫", title: "Your girlfriend — and nobody knows" },
+};
+const Standing = ({ c }: { c: Character }) => {
+  const b = c.romantic && c.standing ? STANDING_BADGE[c.standing] : null;
+  return b ? <span data-testid={`standing-${c.standing}`} title={b.title} aria-label={b.title} style={{ fontSize: 11, marginLeft: 1 }}>{b.icon}</span> : null;
+};
 
 export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdit, onGallery, unread = {}, groups = [], activeGroup = null, onPickGroup, onNewGroup }: {
   characters: Character[]; active: string | null; admin: boolean; onPick: (id: string | null) => void; onNew: () => void; onEdit: (c: Character) => void; onGallery: () => void; unread?: Record<string, number>;
@@ -84,8 +90,8 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
   // 💞🌈 Romance options.
   const [polyOk, setPolyOk] = useState(!!seed?.poly_ok);
   // 💞🤫 Where it stands: official girlfriend, or together but kept quiet (one or the other).
-  const [gf, setGf] = useState(seed?.standing === "gf");
-  const [secret, setSecret] = useState(seed?.standing === "secret");
+  const [gf, setGf] = useState(!!seed?.standing?.includes("gf"));
+  const [secret, setSecret] = useState(!!seed?.standing?.includes("secret"));
   const [sapphic, setSapphic] = useState(!!seed?.sapphic);
   const [bigFollowing, setBigFollowing] = useState(!!seed?.big_following);
   const [wear, setWear] = useState(seed?.casual_wear || "");
@@ -125,7 +131,7 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
   const working = !!c?.portrait_job;
   const dirty = !c || name !== c.name || personality !== c.personality || backstory !== c.backstory || relation !== c.relation || appearance !== c.appearance || job !== (c.job || "") || wear !== (c.casual_wear || "") || hobbies !== (c.hobbies || "") || voice.id !== c.voice || JSON.stringify(traits) !== JSON.stringify(cleanTraits(c.traits && Object.keys(c.traits).length ? c.traits : DEFAULT_TRAITS)) || preset !== (c.preset || "") || zone !== (c.time_zone || "") || bday !== (c.birthday || "") || romantic !== !!c.romantic || (romantic ? arc : "") !== (c.romance_arc || "") || refIds.join() !== (c.reference_ids || []).join() || brain !== (c.brain || "")
     || attire !== (c.work_attire || "") || [...workDays].sort().join() !== [...(c.work_days || [])].sort().join() || workStart !== (c.work_start || "") || workEnd !== (c.work_end || "") || partTime !== !!c.part_time
-    || (romantic && gf ? "gf" : romantic && secret ? "secret" : "") !== (c.standing || "") || (romantic && polyOk) !== !!c.poly_ok || (romantic && sapphic) !== !!c.sapphic || bigFollowing !== !!c.big_following;
+    || (romantic ? [gf ? "gf" : "", secret ? "secret" : ""].filter(Boolean).join("+") : "") !== (c.standing || "") || (romantic && polyOk) !== !!c.poly_ok || (romantic && sapphic) !== !!c.sapphic || bigFollowing !== !!c.big_following;
 
   // A portrait in progress: check back every few seconds until it's ready.
   useEffect(() => {
@@ -201,16 +207,18 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
         {voice.kind === "female" && (
           <div data-testid="standing" className="row" style={{ gap: 14, flexWrap: "wrap", padding: "8px 12px", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface2)" }}>
             <label className="row" style={{ gap: 6, fontSize: 13, fontWeight: 700, cursor: "pointer" }} title="Officially together — everyone knows">
-              <input type="checkbox" checked={gf} data-testid="is-gf" onChange={e => { setGf(e.target.checked); if (e.target.checked) setSecret(false); }} style={{ width: 20, height: 20 }} />💞 gf
+              <input type="checkbox" checked={gf} data-testid="is-gf" onChange={e => setGf(e.target.checked)} style={{ width: 20, height: 20 }} />💞 gf
             </label>
             <label className="row" style={{ gap: 6, fontSize: 13, fontWeight: 700, cursor: "pointer" }} title="Together, but kept private in front of others">
-              <input type="checkbox" checked={secret} data-testid="is-secret" onChange={e => { setSecret(e.target.checked); if (e.target.checked) setGf(false); }} style={{ width: 20, height: 20 }} />🤫 secret
+              <input type="checkbox" checked={secret} data-testid="is-secret" onChange={e => setSecret(e.target.checked)} style={{ width: 20, height: 20 }} />🤫 secret
             </label>
             <span className="muted" style={{ fontSize: 11, flexBasis: "100%" }}>
               {!romantic ? "Turn on 💕 Romantic below for these to mean anything."
+                : gf && secret ? "Your girlfriend, and nobody knows: official between you two, discreet in front of everyone else."
                 : gf ? "Official: she talks about you as her boyfriend, and everyone you both know knows."
-                : secret ? "Discreet in front of others — her personality can still hint or flirt. Someone she gets really close to in group chats and meet-ups may work it out in time."
+                : secret ? "Seeing each other, quietly — nothing official, and discreet in front of others."
                 : "Neither ticked: nobody knows anything either way, as before."}
+              {(gf || secret) && romantic ? " How she feels about it is hers — some love it, some want more, some hate being hidden." : ""}
             </span>
           </div>
         )}

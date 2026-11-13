@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
         if (!work.start || !work.end) { work.start = ""; work.end = ""; }
         const polyOk = romantic && b.polyOk === true, sapphic = romantic && b.sapphic === true, bigFollowing = b.bigFollowing === true;
         // 💞🤫 Official girlfriend, or a relationship kept secret (one or the other, romance only).
-        const standing = romantic ? (b.gf === true ? "gf" : b.secret === true ? "secret" : "") : "";
+        const standing = romantic ? [b.gf === true ? "gf" : "", b.secret === true ? "secret" : ""].filter(Boolean).join("+") : "";
         const zone = typeof b.timeZone === "string" && b.timeZone && isValidTimeZone(b.timeZone) ? b.timeZone : "";
         // Up to 4 reference pictures: finished photos of this character from the admin's gallery.
         const want = (Array.isArray(b.referenceIds) ? b.referenceIds : []).map(String).filter((x: string) => /^[0-9a-f-]{36}$/i.test(x)).slice(0, 4);

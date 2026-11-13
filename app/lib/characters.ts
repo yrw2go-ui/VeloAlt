@@ -10,7 +10,7 @@ import { del } from "@vercel/blob";
 import { sql } from "./db";
 import { CHARACTER_VOICES, VOICE_ID, FISH_ID } from "./voices";
 import { PG13 } from "./persona";
-import { traitsPrompt, trustOn, startingTrust } from "./traits";
+import { traitsPrompt, trustOn, startingTrust, startingLove } from "./traits";
 import { saveImageItem } from "./media";
 import { scheduleText } from "./work";
 import { friendsOf } from "./friends";
@@ -89,6 +89,62 @@ export async function saveTrust(userId: string, characterId: string, trust: numb
   const t = Math.max(0, Math.min(100, Math.round(Math.max(previous - 12, Math.min(previous + 8, trust)))));
   await sql()`insert into chat_relationships (user_id, character_id, trust) values (${userId}, ${characterId}, ${t})
     on conflict (user_id, character_id) do update set trust = excluded.trust, updated_at = now()`;
+}
+// 😊 How happy she is with them right now (0–100). It starts content, moves a little after each
+// chat or call, and slips on its own when they go quiet on her — attention is part of it.
+export const HAPPY_START = 60;
+export async function happyFor(userId: string, c: Character): Promise<number> {
+  const [r] = await sql()`select happy from chat_relationships where user_id = ${userId} and character_id = ${c.id}`;
+  const base = r?.happy ?? HAPPY_START;
+  // Left alone: a little lower each day after the first two, down to 25 (never below).
+  const [m] = await sql()`select extract(epoch from now() - max(created_at)) / 86400 as days from velo_messages
+    where user_id = ${userId} and character_id = ${c.id}`;
+  const quiet = Math.max(0, Math.floor(Number(m?.days || 0)) - 2);
+  return Math.max(quiet ? 25 : 0, Math.min(100, Math.round(base - quiet * 3)));
+}
+export async function saveHappy(userId: string, characterId: string, happy: number, previous: number) {
+  // Small steps, like trust: a good day lifts her a little, a bad one costs a little more.
+  const h = Math.max(0, Math.min(100, Math.round(Math.max(previous - 12, Math.min(previous + 8, happy)))));
+  await sql()`insert into chat_relationships (user_id, character_id, happy) values (${userId}, ${characterId}, ${h})
+    on conflict (user_id, character_id) do update set happy = excluded.happy, updated_at = now()`;
+}
+/** 😊 How happy she is, and what it means for what she'll put up with. */
+export function happyNote(happy: number, romance: boolean): string {
+  const how = happy >= 75 ? "You're happy with how things are between you: warm, generous, quick to forgive, and you give them the benefit of the doubt."
+    : happy >= 45 ? "You're content enough, with the odd niggle: mostly easy with them, but things that bother you do land."
+    : happy >= 25 ? "You're not very happy right now: shorter, more easily hurt, less patient, and you bring up what's missing more often."
+    : "You're unhappy: distant or sharp, you've had enough of being taken for granted, and you say so.";
+  const take = romance
+    ? ` The happier you are, the more you take in your stride — including finding out he's seeing another woman as well as you: happy, you can be curious, teasing or open to it; unhappy, it lands hard and you let him know.`
+    : "";
+  return `HOW HAPPY YOU ARE WITH THEM: ${happy}/100. ${how}${take} It grows with attention, time together and being treated well, and slips when they go quiet on you or let you down. Let it show naturally; never mention numbers.`;
+}
+// 💗 How much she loves them (0–100), for a romantic character with an adult. It starts from how
+// quick she is to attach (her Love slider), then grows or cools with everything that happens.
+export async function loveFor(userId: string, c: Character, romance: boolean): Promise<number | null> {
+  if (!romance) return null;
+  const [r] = await sql()`select love from chat_relationships where user_id = ${userId} and character_id = ${c.id}`;
+  const base = r?.love ?? startingLove(c.traits);
+  // Months of silence cool it, slowly: nothing for a week, then a point a day, never below 15.
+  const [m] = await sql()`select extract(epoch from now() - max(created_at)) / 86400 as days from velo_messages
+    where user_id = ${userId} and character_id = ${c.id}`;
+  const quiet = Math.max(0, Math.floor(Number(m?.days || 0)) - 7);
+  return Math.max(quiet ? 15 : 0, Math.min(100, Math.round(base - quiet)));
+}
+export async function saveLove(userId: string, characterId: string, love: number, previous: number) {
+  // Love moves slowest of all: a little at a time, and it can go either way.
+  const l = Math.max(0, Math.min(100, Math.round(Math.max(previous - 8, Math.min(previous + 5, love)))));
+  await sql()`insert into chat_relationships (user_id, character_id, love) values (${userId}, ${characterId}, ${l})
+    on conflict (user_id, character_id) do update set love = excluded.love, updated_at = now()`;
+}
+/** 💗 Where her heart is, and what that means for how she is with them. */
+export function loveNote(love: number): string {
+  const how = love >= 80 ? "You're in love with them, deeply: they're the first person you think of, you miss them when they're gone, you say it and show it, and you want a future with them."
+    : love >= 60 ? "You love them: warm, affectionate, openly attached — pet names, I-miss-yous, wanting to see them."
+    : love >= 40 ? "You're falling for them: you catch yourself thinking about them, you flirt and want more time together, but you haven't fully handed your heart over."
+    : love >= 20 ? "You like them and there's something there, but it's early: interested, a bit guarded, you don't say big things yet."
+    : "Your heart isn't in it right now: friendly or distant, no declarations, and the romance is cooling (or hasn't started).";
+  return `HOW MUCH YOU LOVE THEM: ${love}/100. ${how} It grows slowly with how they treat you, time together and feeling wanted — and it cools when they're careless with you, absent, or you're left feeling second best. Never jump ahead of it, and never mention numbers.`;
 }
 /** How trust shows up in what she says. */
 export function trustNote(trust: number, romance: boolean): string {

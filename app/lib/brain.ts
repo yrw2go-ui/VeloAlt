@@ -12,7 +12,7 @@ import { secretKnowers, standingNote, standingOf } from "./standing";
 import Anthropic from "@anthropic-ai/sdk";
 import type { Caller } from "./caller";
 import { sql } from "./db";
-import { VELO_SYSTEM, CALL_TALK, CALL_RECAP, CALL_REMEMBER, CHAT_REMEMBER, SMS_TALK, PRO_INFO, FREE_INFO, SEARCH_INFO, errandPrompt, ERRAND_SUMMARY, FEELINGS_REMEMBER, TRUST_REMEMBER, PERSONALITY_PROMPT, PERSONALITIES, type Personality } from "./persona";
+import { VELO_SYSTEM, CALL_TALK, CALL_RECAP, CALL_REMEMBER, CHAT_REMEMBER, SMS_TALK, PRO_INFO, FREE_INFO, SEARCH_INFO, errandPrompt, ERRAND_SUMMARY, FEELINGS_REMEMBER, TRUST_REMEMBER, HAPPY_REMEMBER, LOVE_REMEMBER, PERSONALITY_PROMPT, PERSONALITIES, type Personality } from "./persona";
 import { MEMORY_TOOLS, isMemoryTool, runMemoryTool, MemoryError, memoryBlock, saveConversationMemory } from "./memory";
 import { REMINDER_TOOLS, isReminderTool, runReminderTool, ReminderError } from "./reminders";
 import { proToolsFor, isProTool, runProTool, ProError, type Draft } from "./pro";
@@ -32,7 +32,7 @@ async function pushedLately(userId: string, sceneId: string): Promise<number> {
     and s.character_id = (select character_id from chat_scenes where id = ${sceneId}) and s.started_at > now() - interval '14 days'`;
   return Number(r?.n || 0);
 }
-import { characterPrompt, feelingsFor, saveFeelings, trustFor, saveTrust, trustNote, activeScene, sceneNote, noteMentions, acquaintancesNote, referenceUrls, pictureOf, type Character } from "./characters";
+import { characterPrompt, feelingsFor, saveFeelings, trustFor, saveTrust, trustNote, happyFor, saveHappy, happyNote, loveFor, saveLove, loveNote, activeScene, sceneNote, noteMentions, acquaintancesNote, referenceUrls, pictureOf, type Character } from "./characters";
 import { aboutThem } from "./bio";
 import { mediaMood, allowsSuggestive } from "./traits";
 import { CHARACTER_ZONES } from "./states";
@@ -165,6 +165,10 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
   const standNote = standing ? standingNote(standing, name, standing === "secret" ? await secretKnowers(caller.userId, ch!.id).catch(() => []) : []) : "";
   // 🤝 How much this character trusts them (null when Trust is 0 / off).
   const trust = ch ? await trustFor(caller.userId, ch).catch(() => null) : null;
+  // 😊 How happy she is with them right now — another thing that colours how she takes news.
+  const happy = ch && !errand ? await happyFor(caller.userId, ch).catch(() => null) : null;
+  // 💗 And where her heart is, for a romantic character (it grows and cools over time).
+  const love = ch && !errand ? await loveFor(caller.userId, ch, arc).catch(() => null) : null;
   // 🎬 A scene (date/outing) being played out right now with this character.
   const scene = ch && (mode === "chat" || mode === "talk") && !group ? await activeScene(caller.userId, ch.id).catch(() => null) : null;
   // 📸 Every so often (sooner as they get closer), she offers a photo of the moment.
@@ -219,6 +223,10 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
         group && ch ? groupNote(ch.name, name, group.others, mode === "memo", group.scene || null, !!ch.romantic && !!u?.adult_confirmed_at, !!group.banter, !!ch.poly_ok, sapphicWith(ch, friends, !!u?.adult_confirmed_at).filter(n => group.others.includes(n)), group.inPerson ?? null, group.catchUp || "") + (group.private ? `\n🔒 PRIVATE: ${name || "they"} just texted YOU privately (an @message) — the others can't see it or your answer. Answer only ${name || "them"}, privately, like a quick discreet text back (even if you're all in the same room). Don't announce it or say it out loud to the others.` : "") : "",
         arc && (mode === "remember" || mode === "memo") ? FEELINGS_REMEMBER : "",
         trust !== null && mode !== "remember" && mode !== "memo" ? trustNote(trust, arc) : "",
+        happy !== null && mode !== "remember" && mode !== "memo" ? happyNote(happy, arc) : "",
+        love !== null && mode !== "remember" && mode !== "memo" ? loveNote(love) : "",
+        love !== null && (mode === "remember" || mode === "memo") ? `HOW MUCH YOU LOVE THEM: ${love}/100. ${LOVE_REMEMBER}` : "",
+        happy !== null && (mode === "remember" || mode === "memo") ? `HOW HAPPY YOU ARE WITH THEM: ${happy}/100. ${HAPPY_REMEMBER}` : "",
         trust !== null && (mode === "remember" || mode === "memo") ? `YOUR TRUST IN THEM: ${trust}/100. ${TRUST_REMEMBER(arc)}` : "",
       ].filter(Boolean).join("\n\n"),
     },
@@ -458,6 +466,8 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
       const j = JSON.parse((reply.match(/\{[\s\S]*\}/) || ["{}"])[0]) as { summary?: unknown; goals?: unknown; facts?: unknown; feelings?: unknown; trust?: unknown };
       if (arc && ch && typeof j.feelings === "string") await saveFeelings(caller.userId, ch.id, scrubText(j.feelings));
       if (trust !== null && ch && Number.isFinite(Number((j as { trust?: unknown }).trust))) await saveTrust(caller.userId, ch.id, Number((j as { trust?: unknown }).trust), trust);
+      if (happy !== null && ch && Number.isFinite(Number((j as { happy?: unknown }).happy))) await saveHappy(caller.userId, ch.id, Number((j as { happy?: unknown }).happy), happy);
+      if (love !== null && ch && Number.isFinite(Number((j as { love?: unknown }).love))) await saveLove(caller.userId, ch.id, Number((j as { love?: unknown }).love), love);
       const list = (v: unknown) => (Array.isArray(v) ? v.map(String) : []);
       if (typeof j.summary === "string") { await saveConversationMemory(caller, mode === "memo" ? "chat" : "call", j.summary, list(j.goals), list(j.facts), cid); saved = true; }
     } catch (e) { console.error("velo: memory", e); }

@@ -353,9 +353,14 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
 
   // 🤝 Her trust in them (a small meter at the top of a character's chat).
   const [trust, setTrust] = useState<number | null>(null);
+  // 😊 And how happy she is with them (every character has one).
+  const [happy, setHappy] = useState<number | null>(null);
+  // 💗 And how much she loves them (romantic characters only).
+  const [love, setLove] = useState<number | null>(null);
   useEffect(() => {
     if (!cid) return;
-    data<{ trust: number | null }>("relationship.get", { characterId: cid }).then(r => setTrust(r.trust)).catch(() => {});
+    data<{ trust: number | null; happy: number | null; love: number | null }>("relationship.get", { characterId: cid })
+      .then(r => { setTrust(r.trust); setHappy(r.happy ?? null); setLove(r.love ?? null); }).catch(() => {});
   }, [cid, userId]);
 
   // 😮 React to one of her messages (tap it). Tap the same one again to take it back.
@@ -493,6 +498,24 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
             <div style={{ width: `${trust}%`, height: "100%", borderRadius: 999, background: trust >= 70 ? "#10b981" : trust >= 40 ? "#f59e0b" : "#ef4444", transition: "width .4s" }} />
           </div>
           <span className="muted" style={{ minWidth: 30, textAlign: "right" }}>{trust}%</span>
+        </div>
+      )}
+      {character && happy !== null && (
+        <div data-testid="happy-meter" title="How happy she is with you — attention and time together lift it; being left alone lowers it. The happier she is, the more she takes in her stride" className="row" style={{ gap: 8, padding: "6px 14px", borderBottom: "1px solid var(--border)", fontSize: 12 }}>
+          <span>😊 {character.name}&apos;s happiness</span>
+          <div style={{ flex: 1, height: 6, borderRadius: 999, background: "var(--surface2)", overflow: "hidden" }}>
+            <div style={{ width: `${happy}%`, height: "100%", borderRadius: 999, background: happy >= 75 ? "#10b981" : happy >= 45 ? "#f59e0b" : "#ef4444", transition: "width .4s" }} />
+          </div>
+          <span className="muted" style={{ minWidth: 30, textAlign: "right" }}>{happy}%</span>
+        </div>
+      )}
+      {character && love !== null && (
+        <div data-testid="love-meter" title="How much she loves you — it grows slowly with how you treat her and the time you spend together, and it can cool off" className="row" style={{ gap: 8, padding: "6px 14px", borderBottom: "1px solid var(--border)", fontSize: 12 }}>
+          <span>💗 {character.name}&apos;s love</span>
+          <div style={{ flex: 1, height: 6, borderRadius: 999, background: "var(--surface2)", overflow: "hidden" }}>
+            <div style={{ width: `${love}%`, height: "100%", borderRadius: 999, background: love >= 60 ? "#ec4899" : love >= 30 ? "#f59e0b" : "#64748b", transition: "width .4s" }} />
+          </div>
+          <span className="muted" style={{ minWidth: 30, textAlign: "right" }}>{love}%</span>
         </div>
       )}
       {character && scene && (
