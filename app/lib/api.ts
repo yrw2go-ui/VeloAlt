@@ -29,7 +29,7 @@ async function shrink(file: File): Promise<File> {
 }
 
 /** Saves a file to Velo's storage (purpose "chat" for attachments, "face" for her picture). */
-export async function uploadFile(file: File, purpose: "chat" | "face" | "bio"): Promise<SavedFile> {
+export async function uploadFile(file: File, purpose: "chat" | "face" | "bio" | "picame"): Promise<SavedFile> {
   const form = new FormData();
   form.set("file", await shrink(file));
   form.set("purpose", purpose);

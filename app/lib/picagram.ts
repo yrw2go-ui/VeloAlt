@@ -79,7 +79,8 @@ export async function picaLooked(userId: string): Promise<boolean> {
 type Planned = { author: string; kind: "image" | "text"; caption: string; photo: string; with: string; vacation: { place: string; days: number; home?: boolean } | null; friend_comments: { from: string; text: string }[] };
 
 async function generateDay(userId: string, day: string, isToday: boolean): Promise<boolean> {
-  const chars = (await listCharacters(userId)).filter(c => !c.owner_id || c.owner_id === userId);
+  const away = new Set((await sql()`select id from chat_characters where pica_hidden`).map(r => String(r.id)));
+  const chars = (await listCharacters(userId)).filter(c => (!c.owner_id || c.owner_id === userId) && !away.has(c.id));
   const u = await userInfo(userId);
   // 📅 How much lands in the feed today, from everyone else (their own posts don't count):
   // 4–9, split between their characters and the women they follow (plus the new face of the day).
@@ -182,7 +183,8 @@ export async function picaFeed(userId: string, before: string | null, limit = 6,
       left join velo_media m on m.id = p.media_id left join velo_files mf on mf.id = m.file_id left join velo_files mt on mt.id = m.thumb_file_id
       left join chat_away a on a.user_id = p.user_id and a.character_id = p.author_id and a.kind = 'trip' and a.until >= current_date
       left join pica_accounts ac on ac.id = p.account_id left join velo_media am on am.id = ac.avatar_media_id left join velo_files af on af.id = am.file_id
-    where p.user_id = ${userId} and p.created_at <= now() and (${before}::timestamptz is null or p.created_at < ${before}::timestamptz)
+    where p.user_id = ${userId} and p.created_at <= now() and (p.author_id is null or not coalesce(c.pica_hidden, false))
+      and (${before}::timestamptz is null or p.created_at < ${before}::timestamptz)
       and (${after}::timestamptz is null or p.created_at > ${after}::timestamptz)
     order by p.created_at desc limit ${Math.min(limit, 20)}`;
   const ids = rows.map(r => String(r.id));
@@ -481,18 +483,25 @@ export async function picaFollow(userId: string, accountId: string, on: boolean)
     const [{ n }] = await sql()`select count(*)::int as n from pica_accounts where user_id = ${userId} and followed and id <> ${accountId}`;
     if (n >= MAX_FOLLOWING) throw new PicaLimit(`You follow ${MAX_FOLLOWING} accounts — unfollow some in 👥 Following to add new ones.`);
   }
-  const r = await sql()`update pica_accounts set followed = ${on}, followers = followers + ${on ? 1 : -1} where id = ${accountId} and user_id = ${userId} returning id`;
-  return r.length > 0;
+  const r = await sql()`update pica_accounts set followed = ${on}, followers = followers + ${on ? 1 : -1} where id = ${accountId} and user_id = ${userId} returning id, character_id, name`;
+  if (!r.length) return false;
+  // 👀 She can see who follows her: unfollowing a friend is something she notices and may bring up.
+  const [a] = r;
+  if (a.character_id) await sql()`insert into velo_memories (user_id, character_id, kind, text) values (${userId}, ${a.character_id}, 'fact',
+    ${on ? `He followed me again on Picagram.` : `He unfollowed me on Picagram — I noticed, and I'm not sure why.`})`;
+  return true;
 }
 
 /** 👤 Someone's profile: who she is and her photos. */
 export async function picaProfile(userId: string, accountId: string) {
-  const [a] = await sql()`select a.id, a.handle, a.name, a.bio, a.followers, a.followed, a.character_id, f.url as avatar from pica_accounts a left join velo_media m on m.id = a.avatar_media_id left join velo_files f on f.id = m.file_id where a.id = ${accountId} and a.user_id = ${userId}`;
+  const [a] = await sql()`select a.id, a.handle, a.name, a.bio, a.followers, a.followed, a.character_id, a.lives, f.url as avatar, coalesce(ch.pica_hidden, false) as hidden
+    from pica_accounts a left join velo_media m on m.id = a.avatar_media_id left join velo_files f on f.id = m.file_id left join chat_characters ch on ch.id = a.character_id
+    where a.id = ${accountId} and a.user_id = ${userId}`;
   if (!a) return null;
   const posts = await sql()`select p.id, p.caption, p.created_at::text as at, m.id as media_id, f.url, t.url as thumb, exists(select 1 from pica_saved s where s.user_id = p.user_id and s.media_id = m.id) as saved
     from pica_posts p join velo_media m on m.id = p.media_id join velo_files f on f.id = m.file_id left join velo_files t on t.id = m.thumb_file_id
     where p.user_id = ${userId} and p.account_id = ${accountId} and p.created_at <= now() and m.status = 'done' order by p.created_at desc limit 60`;
-  return { account: { id: String(a.id), handle: String(a.handle), name: String(a.name), bio: String(a.bio), followers: Number(a.followers), followed: !!a.followed, avatar: a.avatar ? String(a.avatar) : null, character_id: a.character_id ? String(a.character_id) : null },
+  return { account: { id: String(a.id), handle: String(a.handle), name: String(a.name), bio: String(a.bio), followers: Number(a.followers), followed: !!a.followed, avatar: a.avatar ? String(a.avatar) : null, character_id: a.character_id ? String(a.character_id) : null, lives: a.lives ? String(a.lives) : "", hidden: !!a.hidden },
     photos: posts.map(r => ({ media_id: String(r.media_id), url: String(r.url), thumb: r.thumb ? String(r.thumb) : null, caption: String(r.caption || ""), saved: !!r.saved })) };
 }
 
@@ -510,11 +519,46 @@ export async function picaSavedList(userId: string, before: string | null) {
   return rows.map(r => ({ media_id: String(r.media_id), url: String(r.url), thumb: r.thumb ? String(r.thumb) : null, at: String(r.at), saved: true }));
 }
 
+/** 👤 Your own Picagram: your bio, your picture, and everything you've posted. */
+export async function picaMe(userId: string) {
+  const [u] = await sql()`select u.name, u.pica_bio, f.url as avatar, f2.url as bio_photo from users u
+    left join velo_files f on f.id = u.pica_avatar_file_id left join velo_files f2 on f2.id = u.bio_photo_file_id where u.id = ${userId}`;
+  const posts = await sql()`select p.id, p.caption, p.created_at::text as at, m.id as media_id, f.url, t.url as thumb,
+      exists(select 1 from pica_saved s where s.user_id = p.user_id and s.media_id = m.id) as saved
+    from pica_posts p join velo_media m on m.id = p.media_id join velo_files f on f.id = m.file_id left join velo_files t on t.id = m.thumb_file_id
+    where p.user_id = ${userId} and p.author_id is null and p.account_id is null and m.status = 'done' order by p.created_at desc limit 60`;
+  const [{ n }] = await sql()`select count(*)::int as n from pica_posts where user_id = ${userId} and author_id is null and account_id is null`;
+  const [{ f }] = await sql()`select count(*)::int as f from pica_accounts where user_id = ${userId} and followed`;
+  return { name: String(u?.name || "You"), bio: String(u?.pica_bio || ""),
+    avatar: u?.avatar ? String(u.avatar) : u?.bio_photo ? String(u.bio_photo) : null, posts: Number(n), following: Number(f),
+    photos: posts.map(r => ({ media_id: String(r.media_id), url: String(r.url), thumb: r.thumb ? String(r.thumb) : null, caption: String(r.caption || ""), at: String(r.at), saved: !!r.saved })) };
+}
+
+/** ✍️ Your Picagram bio, in your own words. */
+export async function picaMeBio(userId: string, bio: string): Promise<string> {
+  const text = scrub(bio).slice(0, 300);
+  await sql()`update users set pica_bio = ${text}, updated_at = now() where id = ${userId}`;
+  return text;
+}
+
+/** 🙈 Characters on Picagram, and whether you've hidden their posts. */
+export async function picaCharacters(userId: string) {
+  const rows = await sql()`select c.id, c.name, c.pica_hidden, f.url as portrait from chat_characters c left join velo_files f on f.id = c.portrait_file_id
+    where (c.owner_id is null or c.owner_id = ${userId}) order by c.name`;
+  return rows.map(r => ({ id: String(r.id), name: String(r.name), portrait: r.portrait ? String(r.portrait) : null, hidden: !!r.pica_hidden }));
+}
+
+/** 🙈 Hide (or show) a character's posts. She can't tell — unlike unfollowing her. */
+export async function picaHide(userId: string, characterId: string, on: boolean): Promise<boolean> {
+  const r = await sql()`update chat_characters set pica_hidden = ${on} where id = ${characterId} and (owner_id is null or owner_id = ${userId}) returning id`;
+  return r.length > 0;
+}
+
 /** 👥 Who they follow (up to 70), to unfollow some. */
 export async function picaFollowing(userId: string) {
   const rows = await sql()`select a.id, a.handle, a.name, a.character_id, f.url as avatar from pica_accounts a left join velo_media m on m.id = a.avatar_media_id left join velo_files f on f.id = m.file_id
     where a.user_id = ${userId} and a.followed order by a.name`;
-  return rows.map(r => ({ id: String(r.id), handle: String(r.handle), name: String(r.name), avatar: r.avatar ? String(r.avatar) : null, friend: !!r.character_id }));
+  return rows.map(r => ({ id: String(r.id), handle: String(r.handle), name: String(r.name), avatar: r.avatar ? String(r.avatar) : null, friend: !!r.character_id, character_id: r.character_id ? String(r.character_id) : null }));
 }
 
 /** 🤝 Befriend her: she becomes a character (filled in for them; her photos are her headshot and references). */
@@ -577,6 +621,7 @@ export async function picaDeletePost(userId: string, postId: string): Promise<bo
 export async function picaDeleteAccount(userId: string, accountId: string): Promise<"gone" | "friend" | "unknown"> {
   const [a] = await sql()`select character_id from pica_accounts where id = ${accountId} and user_id = ${userId}`;
   if (!a) return "unknown";
+  if (a.character_id) return "friend"; // she's a character — hide her instead.
   // Her pictures, except the ones they saved (those are theirs now) and any that belong to her as a character.
   const mine = await sql()`select distinct m.id from velo_media m
     left join pica_posts p on p.media_id = m.id
@@ -587,7 +632,7 @@ export async function picaDeleteAccount(userId: string, accountId: string): Prom
     and not exists (select 1 from pica_saved s where s.user_id = ${userId} and s.media_id = d.media_id)`;
   await sql()`delete from pica_accounts where id = ${accountId} and user_id = ${userId}`;
   for (const m of [...mine, ...dms]) await deleteMedia(userId, String(m.id)).catch(() => false);
-  return a.character_id ? "friend" : "gone";
+  return "gone";
 }
 
 /** 🔴 New posts since they last looked at Picagram (not their own). */

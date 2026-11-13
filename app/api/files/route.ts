@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
     const form = await req.formData().catch(() => null);
     const file = form?.get("file");
     const p0 = String(form?.get("purpose") || "");
-    const purpose = p0 === "face" ? "face" : p0 === "bio" ? "bio" : p0 === "character" ? "character" : p0 === "pica" ? "pica" : "chat";
+    const purpose = p0 === "face" ? "face" : p0 === "bio" ? "bio" : p0 === "character" ? "character" : p0 === "pica" ? "pica" : p0 === "picame" ? "picame" : "chat";
     if (!(file instanceof File)) return NextResponse.json({ error: "Choose a file." }, { status: 400 });
     const type = (file.type || "").toLowerCase();
     const allowed = purpose === "chat" ? [...IMAGE_TYPES, ...DOC_TYPES] : IMAGE_TYPES;
@@ -81,6 +81,13 @@ export async function POST(req: NextRequest) {
       values (${c.userId}, ${purpose === "chat" ? "file" : purpose}, ${blob.url}, ${blob.pathname}, ${name}, ${type}, ${body.length}, ${thumbUrl})
       returning id, url, thumb_url, name, content_type, size, kind`;
 
+    if (purpose === "picame") {
+      // 👤 Your Picagram picture: one at a time, and it replaces the last one.
+      const old = await sql()`select id from velo_files where user_id = ${c.userId} and kind = 'picame' and id <> ${row.id}`;
+      await sql()`update users set pica_avatar_file_id = ${row.id}, updated_at = now() where id = ${c.userId}`;
+      for (const o of old) await deleteFile(c.userId, String(o.id));
+      return NextResponse.json({ file: row });
+    }
     if (purpose === "face") {
       // One custom face at a time: the old one is removed.
       const old = await sql()`select id from velo_files where user_id = ${c.userId} and kind = 'face' and id <> ${row.id}`;

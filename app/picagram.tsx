@@ -1,7 +1,7 @@
 "use client";
 // 📸 Picagram: everyone's posts, newest first, a few at a time as you scroll. Like, comment, and post your own.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, uploadPicaPicture } from "./lib/api";
+import { api, uploadFile, uploadPicaPicture } from "./lib/api";
 import { hideSecrets } from "./lib/secrets";
 import { MediaView, type Media } from "./media";
 import { stamp } from "./lib/when";
@@ -39,6 +39,7 @@ export default function Picagram({ name, onChat, openProfile, onProfileOpened }:
   useEffect(() => { if (openProfile) { setProfile(openProfile); onProfileOpened?.(); } }, [openProfile]); // eslint-disable-line react-hooks/exhaustive-deps
   const [savedOpen, setSavedOpen] = useState(false);
   const [making, setMaking] = useState(false);
+  const [mine, setMine] = useState(false);
   const [followingOpen, setFollowingOpen] = useState(false);
   // ✉️ DMs with accounts (characters chat in the normal chat).
   const [inbox, setInbox] = useState(false);
@@ -114,6 +115,7 @@ export default function Picagram({ name, onChat, openProfile, onProfileOpened }:
           {dmUnread > 0 && <span data-testid="pica-dm-badge" style={{ position: "absolute", top: -4, right: -4, minWidth: 16, height: 16, padding: "0 4px", borderRadius: 999, background: "#ef4444", color: "#fff", fontSize: 10, fontWeight: 800, lineHeight: "16px" }}>{dmUnread}</span>}
         </button>
         <button className="ghost" onClick={() => setFollowingOpen(true)} aria-label="Following" data-testid="pica-following-open" style={{ padding: "6px 10px" }}>👥</button>
+        <button className="ghost" onClick={() => setMine(true)} aria-label="My profile" data-testid="pica-me-open" style={{ padding: "6px 10px" }}>🙋</button>
         <button className="ghost" onClick={() => setMaking(true)} aria-label="Make someone" data-testid="pica-make-open" style={{ padding: "6px 10px" }}>👩</button>
         <button className="ghost" onClick={() => setSavedOpen(true)} aria-label="Saved pictures" data-testid="pica-saved-open" style={{ padding: "6px 10px" }}>🔖</button>
         <button className="ghost" onClick={() => load(true)} disabled={loading} aria-label="Refresh" style={{ padding: "6px 10px" }}>↻</button>
@@ -132,6 +134,7 @@ export default function Picagram({ name, onChat, openProfile, onProfileOpened }:
       {followingOpen && <Following onClose={() => setFollowingOpen(false)} onUnfollow={acc => setFollowed(acc, false)} onOpen={id => { setFollowingOpen(false); setProfile(id); }} />}
       {savedOpen && <Saved onClose={() => setSavedOpen(false)} />}
       {composing && <Composer onClose={() => setComposing(false)} onPosted={() => { setComposing(false); load(true); }} />}
+      {mine && <MyProfile name={name} onClose={() => setMine(false)} />}
       {making && <MakeHer onClose={() => setMaking(false)} onMade={id => { setMaking(false); load(true); setProfile(id); }} />}
     </div>
   );
@@ -298,17 +301,21 @@ function Grid({ photos, onOpen }: { photos: Photo[]; onOpen: (p: Photo) => void 
 
 /** 👤 Her profile: bio, followers, Follow, and all her photos. */
 function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: string; onClose: () => void; onFollow: (account: string, on: boolean) => void; onChat?: (characterId: string) => void; onMessage?: (id: string) => void; onDeleted?: (id: string) => void }) {
-  const [data, setData] = useState<{ account: { id: string; handle: string; name: string; bio: string; followers: number; followed: boolean; avatar: string | null; character_id: string | null }; photos: Photo[] } | null>(null);
+  const [data, setData] = useState<{ account: { id: string; handle: string; name: string; bio: string; followers: number; followed: boolean; avatar: string | null; character_id: string | null; lives: string; hidden: boolean }; photos: Photo[] } | null>(null);
   const [err, setErr] = useState("");
   const [befriending, setBefriending] = useState(false);
   // 🤝 She becomes a character (filled in from her profile; her photos are her headshot and references).
   // 🗑 Gone for good: her, her posts, your messages with her and her pictures.
+  const [hidden, setHidden] = useState(false);
+  const hideHer = async () => {
+    const c = data?.account.character_id;
+    if (!c) return;
+    const on = !hidden; setHidden(on);
+    await api("/api/pica", { action: "hide", id: c, on }).catch(() => setHidden(!on));
+  };
   const remove = async () => {
     const who = data?.account.name || "her";
-    const ask = data?.account.character_id
-      ? `Delete ${who}'s Picagram account? Her posts and your Picagram messages with her go. She stays one of your characters — delete her from her character card if you want her gone for good.`
-      : `Delete ${who}? Her posts, your messages with her and her pictures go too. Anything you saved to your gallery stays.`;
-    if (!(await confirmAsk(ask, { yes: "Delete", danger: true }))) return;
+    if (!(await confirmAsk(`Delete ${who}? Her posts, your messages with her and her pictures go too. Anything you saved to your gallery stays.`, { yes: "Delete", danger: true }))) return;
     setErr("");
     try { await api("/api/pica", { action: "account.delete", id }); onDeleted?.(id); onClose(); }
     catch (e) { setErr(e instanceof Error ? e.message : "Couldn't delete her."); }
@@ -320,10 +327,11 @@ function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: 
     setBefriending(false);
   };
   const [view, setView] = useState<Photo | null>(null);
-  useEffect(() => { api<NonNullable<typeof data>>("/api/pica", { action: "profile", id }).then(setData).catch(() => onClose()); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { api<NonNullable<typeof data>>("/api/pica", { action: "profile", id }).then(d => { setData(d); setHidden(d.account.hidden); }).catch(() => onClose()); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
   const follow = async () => {
     if (!data) return;
     const on = !data.account.followed;
+    if (!on && data.account.character_id && !(await confirmAsk(`Unfollow ${data.account.name}? She can see who follows her — she'll notice, and she might bring it up. To keep her posts out of your feed without her knowing, hide them instead.`, { yes: "Unfollow" }))) return;
     setData(d => (d ? { ...d, account: { ...d.account, followed: on, followers: d.account.followers + (on ? 1 : -1) } } : d)); onFollow(id, on);
     await api("/api/pica", { action: "follow", id, on }).catch(e => { setData(d => (d ? { ...d, account: { ...d.account, followed: !on, followers: d.account.followers + (on ? -1 : 1) } } : d)); onFollow(id, !on); setErr(e instanceof Error ? e.message : "Couldn't follow."); });
   };
@@ -341,6 +349,7 @@ function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: 
               <div style={{ fontWeight: 800 }}>{data.account.name}</div>
               <div className="muted" style={{ fontSize: 13 }}><b style={{ color: "var(--text)" }}>{data.photos.length}</b> posts · <b style={{ color: "var(--text)" }}>{fmt(data.account.followers)}</b> followers</div>
               <div style={{ fontSize: 13, marginTop: 4, whiteSpace: "pre-wrap" }}>{data.account.bio}</div>
+              {data.account.lives && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>📍 {data.account.lives}</div>}
             </div>
           </div>
           <div className="row" style={{ padding: "0 16px 12px", gap: 8 }}>
@@ -352,10 +361,12 @@ function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: 
                   <button className="ghost" onClick={befriend} disabled={befriending} data-testid="pica-befriend" style={{ flex: 1 }}>{befriending ? "Making her profile…" : "🤝 Befriend"}</button>
                 </>}
           </div>
-          <div style={{ padding: "0 16px 10px" }}>
-            <button className="ghost" onClick={remove} data-testid="pica-profile-delete" style={{ padding: "4px 12px", fontSize: 13, color: "var(--bad)" }}>🗑 Delete this account</button>
+          <div className="row" style={{ padding: "0 16px 10px", gap: 10 }}>
+            {data.account.character_id
+              ? <button className="ghost" onClick={hideHer} data-testid="pica-profile-hide" style={{ padding: "4px 12px", fontSize: 13 }}>{hidden ? "👁 Show her posts again" : "🙈 Hide her posts"}</button>
+              : <button className="ghost" onClick={remove} data-testid="pica-profile-delete" style={{ padding: "4px 12px", fontSize: 13, color: "var(--bad)" }}>🗑 Delete this account</button>}
           </div>
-          {data.account.character_id && <div className="muted" style={{ padding: "0 16px 10px", fontSize: 12 }}>🤝 You&apos;re friends — she&apos;s one of your characters now (edit her in her character card). Deleting here removes only her Picagram account.</div>}
+          {data.account.character_id && <div className="muted" style={{ padding: "0 16px 10px", fontSize: 12 }}>🤝 You&apos;re friends — she&apos;s one of your characters (edit her in her character card). Her account can&apos;t be deleted, but you can hide her posts, and she&apos;ll never know. Unfollowing her she <i>would</i> notice.</div>}
           {err && <div style={{ color: "var(--bad)", padding: "0 16px 10px", fontSize: 13 }}>⚠️ {err}</div>}
           <Grid photos={data.photos} onOpen={setView} />
           {!data.photos.length && <div className="muted" style={{ textAlign: "center", padding: 24 }}>No photos yet</div>}
@@ -388,7 +399,13 @@ function Saved({ onClose }: { onClose: () => void }) {
 
 /** 👥 Who you follow (up to 70) — unfollow some to make room for new ones. */
 function Following({ onClose, onUnfollow, onOpen }: { onClose: () => void; onUnfollow: (id: string) => void; onOpen: (id: string) => void }) {
-  const [list, setList] = useState<{ id: string; handle: string; name: string; avatar: string | null; friend: boolean }[] | null>(null);
+  const [list, setList] = useState<{ id: string; handle: string; name: string; avatar: string | null; friend: boolean; character_id: string | null }[] | null>(null);
+  // 🙈 Your characters: hide their posts without them ever knowing (unlike unfollowing).
+  const [chars, setChars] = useState<{ id: string; name: string; portrait: string | null; hidden: boolean }[] | null>(null);
+  const hide = async (id: string, on: boolean) => {
+    setChars(cs => (cs || []).map(c => (c.id === id ? { ...c, hidden: on } : c)));
+    await api("/api/pica", { action: "hide", id, on }).catch(() => setChars(cs => (cs || []).map(c => (c.id === id ? { ...c, hidden: !on } : c))));
+  };
   // ✨ Bring new women in right now, instead of waiting for the one who turns up each day.
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState("");
@@ -401,16 +418,15 @@ function Following({ onClose, onUnfollow, onOpen }: { onClose: () => void; onUnf
     setBusy(false);
   };
   useEffect(() => { api<{ accounts: NonNullable<typeof list> }>("/api/pica", { action: "following" }).then(r => setList(r.accounts)).catch(() => setList([])); }, []);
-  const unfollow = async (id: string) => {
+  useEffect(() => { api<{ characters: NonNullable<typeof chars> }>("/api/pica", { action: "characters" }).then(r => setChars(r.characters)).catch(() => setChars([])); }, []);
+  const unfollow = async (id: string, who: string, friend: boolean) => {
+    if (friend && !(await confirmAsk(`Unfollow ${who}? She can see who follows her — she'll notice, and she might bring it up. To just keep her posts out of your feed without her knowing, hide her below instead.`, { yes: "Unfollow" }))) return;
     setList(l => (l || []).filter(x => x.id !== id)); onUnfollow(id);
     await api("/api/pica", { action: "follow", id, on: false }).catch(() => {});
   };
   // 🗑 Gone for good: her, her posts, her DMs and her pictures (anything you saved stays).
-  const remove = async (id: string, who: string, friend: boolean) => {
-    const ask = friend
-      ? `Delete ${who}'s Picagram account? Her posts and your Picagram messages with her go. She stays one of your characters — delete her from her character card if you want her gone for good.`
-      : `Delete ${who}? Her posts, your messages with her and her pictures go too. Anything you saved to your gallery stays.`;
-    if (!(await confirmAsk(ask, { yes: "Delete", danger: true }))) return;
+  const remove = async (id: string, who: string) => {
+    if (!(await confirmAsk(`Delete ${who}? Her posts, your messages with her and her pictures go too. Anything you saved to your gallery stays.`, { yes: "Delete", danger: true }))) return;
     setSaid("");
     try { await api("/api/pica", { action: "account.delete", id }); setList(l => (l || []).filter(x => x.id !== id)); onUnfollow(id); }
     catch (e) { setSaid(e instanceof Error ? e.message : "Couldn't delete her."); }
@@ -432,10 +448,23 @@ function Following({ onClose, onUnfollow, onOpen }: { onClose: () => void; onUnf
               <div style={{ fontWeight: 800, fontSize: 14 }}>{a.handle}{a.friend ? " 🤝" : ""}</div>
               <div className="muted" style={{ fontSize: 12 }}>{a.name}</div>
             </div>
-            <button className="ghost" onClick={() => unfollow(a.id)} data-testid="pica-unfollow" style={{ padding: "4px 12px", fontSize: 13 }}>Unfollow</button>
-            <button className="ghost" onClick={() => remove(a.id, a.name, a.friend)} aria-label={`Delete ${a.name}`} data-testid="pica-account-delete" style={{ padding: "4px 10px", fontSize: 15, color: "var(--bad)" }}>🗑</button>
+            <button className="ghost" onClick={() => unfollow(a.id, a.name, a.friend)} data-testid="pica-unfollow" style={{ padding: "4px 12px", fontSize: 13 }}>Unfollow</button>
+            {!a.friend && <button className="ghost" onClick={() => remove(a.id, a.name)} aria-label={`Delete ${a.name}`} data-testid="pica-account-delete" style={{ padding: "4px 10px", fontSize: 15, color: "var(--bad)" }}>🗑</button>}
           </div>
         ))}
+        {/* 🙈 Your characters: out of the feed, and she never knows. */}
+        {chars && chars.length > 0 && (
+          <>
+            <div className="muted" style={{ padding: "16px 14px 6px", fontSize: 12, fontWeight: 700 }}>YOUR CHARACTERS ON PICAGRAM<div style={{ fontWeight: 500, marginTop: 2 }}>Hiding keeps her posts out of your feed. She can&apos;t tell — unlike unfollowing her.</div></div>
+            {chars.map(c => (
+              <div key={c.id} className="row" data-testid="pica-character-row" style={{ gap: 10, padding: "10px 14px", borderBottom: "1px solid var(--border)", opacity: c.hidden ? 0.55 : 1 }}>
+                <Avatar name={c.name} url={c.portrait} size={40} />
+                <div style={{ flex: 1, minWidth: 0, fontWeight: 700, fontSize: 14 }}>{c.name}{c.hidden ? <span className="muted" style={{ fontWeight: 500 }}> · hidden</span> : ""}</div>
+                <button className="ghost" onClick={() => hide(c.id, !c.hidden)} data-testid="pica-hide" data-hidden={c.hidden ? "yes" : undefined} style={{ padding: "4px 12px", fontSize: 13 }}>{c.hidden ? "👁 Show" : "🙈 Hide"}</button>
+              </div>
+            ))}
+          </>
+        )}
       </div>
     </div>
   );
@@ -661,6 +690,73 @@ function MakeHer({ onClose, onMade }: { onClose: () => void; onMade: (id: string
         {busy && <div className="muted" style={{ fontSize: 13 }}>{busy}</div>}
         {err && <div style={{ color: "var(--bad)", fontSize: 13 }} data-testid="pica-make-err">⚠️ {err}</div>}
       </div>
+    </div>
+  );
+}
+
+/** 🙋 Your own Picagram: your picture, your bio, and everything you've posted. */
+function MyProfile({ name, onClose }: { name: string; onClose: () => void }) {
+  type Me = { name: string; bio: string; avatar: string | null; posts: number; following: number; photos: (Photo & { at: string })[] };
+  const [me, setMe] = useState<Me | null>(null);
+  const [bio, setBio] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState("");
+  const [err, setErr] = useState("");
+  const [view, setView] = useState<Photo | null>(null);
+  const pic = useRef<HTMLInputElement>(null);
+  useEffect(() => { api<Me>("/api/pica", { action: "me" }).then(m => { setMe(m); setBio(m.bio); }).catch(() => onClose()); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const saveBio = async () => {
+    setBusy("Saving…"); setErr("");
+    try { const r = await api<{ bio: string }>("/api/pica", { action: "me.bio", bio: hideSecrets(bio).text }); setMe(m => (m ? { ...m, bio: r.bio } : m)); setBio(r.bio); setEditing(false); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't save your bio."); }
+    setBusy("");
+  };
+  const changePic = async (f: File | undefined) => {
+    if (!f) return;
+    setBusy("Uploading…"); setErr("");
+    try { const file = await uploadFile(f, "picame"); setMe(m => (m ? { ...m, avatar: file.url } : m)); }
+    catch (e) { setErr(e instanceof Error ? e.message : "That picture didn't upload."); }
+    setBusy("");
+  };
+
+  return (
+    <div role="dialog" aria-modal="true" data-testid="pica-me" style={{ position: "fixed", inset: 0, background: "var(--bg)", zIndex: 2600, overflowY: "auto" }}>
+      <div className="row" style={{ padding: "10px 14px", gap: 8, position: "sticky", top: 0, background: "var(--bg)", borderBottom: "1px solid var(--border)" }}>
+        <button className="ghost" onClick={onClose} aria-label="Back" style={{ padding: "4px 10px" }}>←</button>
+        <b style={{ flex: 1 }}>{me?.name || name}</b>
+      </div>
+      {me && (
+        <div style={{ maxWidth: 560, margin: "0 auto" }}>
+          <div className="row" style={{ gap: 16, padding: 16, alignItems: "flex-start" }}>
+            <div style={{ textAlign: "center" }}>
+              <Avatar name={me.name} url={me.avatar} size={76} />
+              <button type="button" className="ghost" onClick={() => pic.current?.click()} disabled={!!busy} data-testid="pica-me-pic-btn" style={{ display: "block", marginTop: 6, padding: "3px 8px", fontSize: 11 }}>Change</button>
+              <input ref={pic} type="file" accept="image/jpeg,image/png,image/webp" hidden data-testid="pica-me-pic" onChange={e => changePic(e.target.files?.[0])} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 800 }}>{me.name}</div>
+              <div className="muted" style={{ fontSize: 13 }}><b style={{ color: "var(--text)" }}>{me.posts}</b> posts · <b style={{ color: "var(--text)" }}>{me.following}</b> following</div>
+              {editing
+                ? <>
+                    <textarea value={bio} onChange={e => setBio(e.target.value)} maxLength={300} data-testid="pica-me-bio" style={{ width: "100%", marginTop: 6, minHeight: 64, resize: "vertical", padding: "8px 10px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--card)", color: "var(--text)", fontSize: 13 }} placeholder="A line or two about you" />
+                    <div className="row" style={{ gap: 8, marginTop: 6 }}>
+                      <button className="btn" onClick={saveBio} disabled={!!busy} data-testid="pica-me-bio-save" style={{ padding: "4px 12px", fontSize: 13 }}>{busy || "Save"}</button>
+                      <button className="ghost" onClick={() => { setBio(me.bio); setEditing(false); }} style={{ padding: "4px 12px", fontSize: 13 }}>Cancel</button>
+                    </div>
+                  </>
+                : <>
+                    <div style={{ fontSize: 13, marginTop: 4, whiteSpace: "pre-wrap" }}>{me.bio || <span className="muted">No bio yet</span>}</div>
+                    <button className="ghost" onClick={() => setEditing(true)} data-testid="pica-me-edit" style={{ marginTop: 6, padding: "4px 12px", fontSize: 13 }}>✍️ Edit bio</button>
+                  </>}
+            </div>
+          </div>
+          {err && <div style={{ color: "var(--bad)", padding: "0 16px 10px", fontSize: 13 }} data-testid="pica-me-err">⚠️ {err}</div>}
+          <Grid photos={me.photos} onOpen={setView} />
+          {!me.photos.length && <div className="muted" style={{ textAlign: "center", padding: 24 }}>Nothing posted yet — tap ＋ Post</div>}
+        </div>
+      )}
+      {view && <Viewer photo={view} onClose={() => setView(null)} onSaved={on => setMe(m => (m ? { ...m, photos: m.photos.map(x => (x.media_id === view.media_id ? { ...x, saved: on } : x)) } : m))} />}
     </div>
   );
 }

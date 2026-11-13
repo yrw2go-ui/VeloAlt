@@ -4,7 +4,7 @@ import { allow } from "../../lib/rateLimit";
 import { sql } from "../../lib/db";
 import { MediaError, mediaReady } from "../../lib/media";
 import { dmThreads, dmUnread, dmOpen, dmSend, dmSendPhoto, dmBrain, dmMyPhotoDraft, dmMyPhoto, DmError } from "../../lib/picaDm";
-import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSavedList, picaFollowing, picaBefriend, picaCounts, picaDeletePost, picaCreateAccount, picaNew, picaFromPhoto, myPhotoDraft, newFaces, picaDeleteAccount, PicaLimit } from "../../lib/picagram";
+import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSavedList, picaFollowing, picaBefriend, picaCounts, picaDeletePost, picaCreateAccount, picaMe, picaMeBio, picaCharacters, picaHide, picaNew, picaFromPhoto, myPhotoDraft, newFaces, picaDeleteAccount, PicaLimit } from "../../lib/picagram";
 
 // 📸 Picagram. POST { action, ... }:
 //   feed { before? } → { posts }   (a few at a time; today's and missed days' posts are made as needed)
@@ -79,6 +79,12 @@ export async function POST(req: NextRequest) {
         });
         return NextResponse.json(r);
       }
+      // 👤 Your own Picagram page: your bio, your picture, your posts.
+      case "me": return NextResponse.json(await picaMe(me));
+      case "me.bio": return NextResponse.json({ bio: await picaMeBio(me, String(b.bio || "")) });
+      // 🙈 Characters whose posts you'd rather not see (she can't tell).
+      case "characters": return NextResponse.json({ characters: await picaCharacters(me) });
+      case "hide": return UUID.test(id) && (await picaHide(me, id, b.on === true)) ? NextResponse.json({ ok: true }) : bad("Unknown character.");
       case "following": return NextResponse.json({ accounts: await picaFollowing(me) });
       case "befriend": {
         if (!UUID.test(id)) return bad("Unknown account.");
@@ -90,8 +96,9 @@ export async function POST(req: NextRequest) {
         if (!UUID.test(id)) return bad("Unknown account.");
         const r = await picaDeleteAccount(me, id);
         if (r === "unknown") return bad("Unknown account.");
-        // She's a character too: her Picagram side is gone, she isn't.
-        return NextResponse.json({ ok: true, friend: r === "friend" });
+        // She's one of your characters: her account stays — hide her posts instead.
+        if (r === "friend") return bad("She's one of your characters — hide her posts instead (👥 Following), or delete her from her character card.");
+        return NextResponse.json({ ok: true });
       }
       case "follow": return UUID.test(id) && (await picaFollow(me, id, b.on === true)) ? NextResponse.json({ ok: true }) : bad("Unknown account.");
       case "profile": { const p = UUID.test(id) ? await picaProfile(me, id) : null; return p ? NextResponse.json(p) : bad("Unknown account."); }
