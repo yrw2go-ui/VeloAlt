@@ -32,6 +32,11 @@ const chip = (on: boolean) => ({ display: "flex", alignItems: "center", gap: 6, 
 /** 🔴 A small number on a chip: their unread messages there. */
 const Badge = ({ n }: { n?: number }) => (n ? <span data-testid="unread-badge" aria-label={`${n} unread`} style={{ position: "absolute", top: -6, right: -4, minWidth: 18, height: 18, padding: "0 5px", borderRadius: 999, background: "#ef4444", color: "#fff", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid var(--bg, #0b0d17)" }}>{n > 99 ? "99+" : n}</span> : null);
 
+/** 💞🤫 Where the romance stands, on her chip: official, or kept secret. */
+const Standing = ({ c }: { c: Character }) => (c.romantic && (c.standing === "gf" || c.standing === "secret")
+  ? <span data-testid={`standing-${c.standing}`} title={c.standing === "gf" ? "Officially together" : "Together, kept secret"} aria-label={c.standing === "gf" ? "girlfriend" : "secret"} style={{ fontSize: 11, marginLeft: 1 }}>{c.standing === "gf" ? "💞" : "🤫"}</span>
+  : null);
+
 export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdit, onGallery, unread = {}, groups = [], activeGroup = null, onPickGroup, onNewGroup }: {
   characters: Character[]; active: string | null; admin: boolean; onPick: (id: string | null) => void; onNew: () => void; onEdit: (c: Character) => void; onGallery: () => void; unread?: Record<string, number>;
   groups?: Group[]; activeGroup?: string | null; onPickGroup?: (id: string) => void; onNewGroup?: () => void;
@@ -42,7 +47,7 @@ export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdi
       <button style={{ ...chip(active === null), position: "relative" }} onClick={() => onPick(null)} aria-pressed={active === null}><VeloAvatar size={26} /> Velo<Badge n={active === null ? 0 : unread.velo} /></button>
       {characters.map(c => (
         <button key={c.id} style={{ ...chip(active === c.id), position: "relative" }} aria-pressed={active === c.id} onClick={() => (active !== c.id ? onPick(c.id) : admin ? onEdit(c) : undefined)}>
-          <CharacterFace c={c} size={26} /> {c.name}{admin && active === c.id ? " ✎" : ""}<Badge n={active === c.id ? 0 : unread[c.id]} />
+          <CharacterFace c={c} size={26} /> {c.name}<Standing c={c} />{admin && active === c.id ? " ✎" : ""}<Badge n={active === c.id ? 0 : unread[c.id]} />
         </button>
       ))}
       {groups.map(g => (
