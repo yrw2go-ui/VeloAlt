@@ -122,7 +122,8 @@ export function happyNote(happy: number, romance: boolean): string {
 // 💗 How much she loves them (0–100), for a romantic character with an adult. It starts from how
 // quick she is to attach (her Love slider), then grows or cools with everything that happens.
 export async function loveFor(userId: string, c: Character, romance: boolean): Promise<number | null> {
-  if (!romance) return null;
+  // Only for a woman in a romance: a male character has no love meter — it isn't what he's for.
+  if (!romance || c.voice_kind === "male") return null;
   const [r] = await sql()`select love from chat_relationships where user_id = ${userId} and character_id = ${c.id}`;
   const base = r?.love ?? startingLove(c.traits);
   // Months of silence cool it, slowly: nothing for a week, then a point a day, never below 15.
