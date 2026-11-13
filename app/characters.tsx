@@ -243,7 +243,7 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
         <VoicePicker value={voice} onChange={setVoice} />
         <label className="row" style={{ gap: 10, fontSize: 13, fontWeight: 700, alignItems: "flex-start" }}>
           <input type="checkbox" checked={romantic} onChange={e => setRomantic(e.target.checked)} aria-label="Romantic" style={{ width: 20, height: 20, marginTop: 1, flexShrink: 0 }} />
-          <span>💕 Romantic (PG-13) <span className="muted" style={{ fontWeight: 500, display: "block" }}>Romance becomes possible with adults who confirmed they&apos;re 18+ (never explicit) — but their personality still leads. Others get a friendly, platonic version.</span></span>
+          <span>💕 Romantic (unrated) <span className="muted" style={{ fontWeight: 500, display: "block" }}>Romance becomes possible with adults who confirmed they&apos;re 18+  — but their personality still leads. Others get a friendly, platonic version.</span></span>
         </label>
         {romantic && (
           <label style={{ fontSize: 13, fontWeight: 700 }}>💕 Romance arc
@@ -704,7 +704,7 @@ export function NewCharacterSheet({ onDraft, onBlank, onClose }: { onDraft: (d: 
         <textarea value={vibe} onChange={e => setVibe(e.target.value)} maxLength={300} rows={2} placeholder="Vibe (optional) — e.g. shy bookworm with a wild side, Texas girl, loves horror movies" aria-label="Vibe" data-testid="gen-vibe" style={{ resize: "vertical" }} />
         <input value={job} onChange={e => setJob(e.target.value)} maxLength={120} placeholder="Job (optional) — e.g. nurse, barista, real estate agent" aria-label="Job" data-testid="gen-job" />
         <div className="row" style={{ gap: 16, flexWrap: "wrap", fontSize: 14, fontWeight: 600 }}>
-          <label className="row" style={{ gap: 6 }}><input type="checkbox" checked={romantic} onChange={e => setRomantic(e.target.checked)} data-testid="gen-romantic" style={{ width: 18, height: 18 }} /> 💕 Romantic (PG-13)</label>
+          <label className="row" style={{ gap: 6 }}><input type="checkbox" checked={romantic} onChange={e => setRomantic(e.target.checked)} data-testid="gen-romantic" style={{ width: 18, height: 18 }} /> 💕 Romantic (unrated)</label>
           <label className="row" style={{ gap: 6 }}><input type="checkbox" checked={male} onChange={e => setMale(e.target.checked)} data-testid="gen-male" style={{ width: 18, height: 18 }} /> Male</label>
         </div>
         {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
