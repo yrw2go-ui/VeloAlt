@@ -194,8 +194,10 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
   const model = kind === "image" ? (ref ? EDIT_MODEL() : IMAGE_MODEL()) : videoModel(String(u?.video_model || DEFAULT_VIDEO_MODEL), !!ref);
   const sendRefs = kind === "image" ? refs : ref ? [ref] : [];
   const who = people ? null : o ? (withMe ? `me+${o.name}` : o.name) : withMe ? "me" : "none";
-  // 💬 Her line when it arrives: none for a picture of someone else ("miss me yet?" would make no sense), nothing flirty for a view or a thing.
-  const caption = ctx.peek || ctx.pica || (o && !withMe) ? null : captionFor(kind, ctx.romantic && withMe);
+  // 💬 Her line when it arrives — but only for one she offered. A picture they ASKED for speaks for
+  // itself: "just for you 😘" under something they requested is a line too many. Also none for a
+  // picture of someone else ("miss me yet?" would make no sense), a peek, or a Picagram post.
+  const caption = ctx.peek || ctx.pica || !ctx.offer || (o && !withMe) ? null : captionFor(kind, ctx.romantic && withMe);
   const [row] = await sql()`insert into velo_media (user_id, character_id, kind, prompt, model, caption, description, refs, poster_url, status, peek, subject, pica)
     values (${userId}, ${ctx.characterId}, ${kind}, ${prompt}, ${model}, ${caption}, ${desc.slice(0, ctx.raw ? 1500 : 400)}, ${sendRefs}, ${kind === "video" ? ref : null}, ${ctx.offer ? "offered" : "working"}, ${!!ctx.peek}, ${who}, ${!!ctx.pica}) returning id`;
   if (ctx.offer) return { id: row.id, kind, status: "offered", url: null, description: desc, subject: who };

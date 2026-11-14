@@ -14,6 +14,7 @@ import { confirmAsk } from "./lib/dialog";
 import { useDictation } from "./dictate";
 import { CharacterFace, LinkBackForm } from "./characters";
 import { MediaView, ReactionBar, type Media } from "./media";
+import { isHot } from "./lib/reactions";
 
 /** Who this chat is with: Velo (no character) or one of their characters. */
 export type ChatWith = { id: string; name: string; portrait_url: string | null; romantic?: boolean; brain?: string; live_in?: boolean; home?: boolean };
@@ -479,11 +480,17 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     try { note = (await data<{ note: string }>("media.react", { id, reaction: next })).note; set(next, note); }
     catch { set(cur.reaction || null); return; }
     // A peek is theirs alone: she never sees it, or their reaction to it.
-    if (!next || busy || holder?.peek || Math.random() > 0.55) return;
+    // 🔥 A reaction that says something (🔥 🥵 🤤 💦 😈) always gets an answer; a plain one
+    // only about a third of the time — most of the time a ❤️ just sits there, like it would.
+    const hot = isHot(next);
+    if (!next || busy || holder?.peek || (!hot && Math.random() > 0.35)) return;
     setBusy(true);
     try {
       const history = realMsgs(msgsRef.current.map(x => (x.media?.id === id ? { ...x, content: note } : x)));
-      const ask = `(They just reacted ${next} to the ${cur.kind === "image" ? "photo" : "video"} you sent. React back naturally in one short line — a few words or an emoji is fine. Don't send anything new.)`;
+      const what = cur.kind === "image" ? "photo" : "video";
+      const ask = hot
+        ? `(They just reacted ${next} to the ${what} you sent — that's them saying they really liked it. Answer in ONE short line, pleased and a bit smug, the way YOU would: something like "glad you liked it", "thought you might like that one", "you really liked that one, huh?" — or just 😏 😉 😜 👌 👀 😈 on its own. Your words, not those exactly. Don't send anything new and don't describe the ${what} again.)`
+        : `(They just reacted ${next} to the ${what} you sent. React back naturally in one short line — a few words or an emoji is fine. Don't send anything new.)`;
       const r = await api<{ reply: string }>("/api/velo", { mode: "chat", messages: [...history, { role: "user", content: ask }], timeZone: timeZone(), name, ...thread });
       if (r.reply) {
         setMsgs(list => [...(list || []), { role: "assistant", content: r.reply }]);
