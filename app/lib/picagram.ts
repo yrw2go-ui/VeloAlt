@@ -10,7 +10,7 @@ import { startMedia, deleteMedia, MediaError, type Media } from "./media";
 import { allowsSuggestive, mediaMood } from "./traits";
 import { isValidTimeZone, localDate, zonedParts, zonedToUtc } from "./localTime";
 import { randomComments } from "./picaComments";
-import { vibeNote } from "./vibes";
+import { vibeNote, rollLesbian } from "./vibes";
 import { localNote } from "./local";
 import { makeCharacter } from "./makeCharacter";
 import { homeOf, homeText, livesNote, FAR_CHANCE } from "./where";
@@ -265,6 +265,14 @@ export async function picaComment(userId: string, postId: string, text: string):
 }
 
 /** 📝 Their own post: text, and/or a photo of them made from a description (their own pictures as reference, if they want). */
+/** 💬 Say what's in a picture you uploaded for her. It's what the comments are about. */
+export async function picaPictureAbout(userId: string, mediaId: string, about: string): Promise<boolean> {
+  const text = scrub(about).replace(/\s+/g, " ").trim().slice(0, 400);
+  if (!text) return false;
+  const rows = await sql()`update velo_media set prompt = ${text} where id = ${mediaId} and user_id = ${userId} and model = 'upload' and character_id is null returning id`;
+  return rows.length > 0;
+}
+
 /** 👥 Your characters, for "who's in it with me" — the ones with a picture on file come first. */
 export async function picaWithMe(userId: string) {
   const rows = await sql()`select c.id, c.name, f.url as portrait, coalesce(array_length(c.reference_ids, 1), 0) as shots
@@ -374,6 +382,8 @@ async function newAccount(userId: string): Promise<Record<string, unknown> | nul
   // 🏠 Most of them live near the person (so they could actually meet); about one in seven is far away.
   const home = await homeOf(userId);
   const far = Math.random() < FAR_CHANCE;
+  // ⚢ Uncommon: about one in seventeen. Her bio says so in her own way.
+  const intoWomen = rollLesbian();
   const where = !home ? "" : far
     ? ` She lives far from ${homeText(home)} — her own city in another state entirely; say which in "lives".`
     : ` ${localNote(homeText(home))} Put that town in "lives" as "Town, ST".`;
@@ -382,7 +392,7 @@ async function newAccount(userId: string): Promise<Record<string, unknown> | nul
   for (let go = 0; go < 3; go++) {
     const raw = await writeText("", `Invent ONE woman who posts on Picagram (a social photo app like Instagram).
 ${vibeNote()}
-She must be clearly NOT one of the people listed as taken: a different first name, a different surname and a different handle from every one of them — not a variation on one (no "chloehart" when "Chloe Hart" is taken, no adding numbers). Fictional, never a real person.${where} JSON only: {"name":"First Last","handle":"lowercase_handle","bio":"short bio with emojis","look":"one detailed sentence for an image generator: age, face, hair, eyes, skin, build, usual style","lives":"City, State","followers":12000}`,
+${intoWomen ? "⚢ SHE IS A LESBIAN — into women, not men. Let her bio say so the way a real profile would (a flag, \"she/her 🏳️‍🌈\", \"girls only\", a line about her girlfriend or ex-girlfriend) without making it the whole bio, and keep the rest of her exactly as the lane says.\n" : ""}She must be clearly NOT one of the people listed as taken: a different first name, a different surname and a different handle from every one of them — not a variation on one (no "chloehart" when "Chloe Hart" is taken, no adding numbers). Fictional, never a real person.${where} JSON only: {"name":"First Last","handle":"lowercase_handle","bio":"short bio with emojis","look":"one detailed sentence for an image generator: age, face, hair, eyes, skin, build, usual style","lives":"City, State","followers":12000}`,
       `${names.length ? `ALREADY TAKEN — avoid these names, surnames and handles entirely:\n${names.slice(-60).join(", ")}` : "(nobody yet)"}${clash ? `\n\nYour last try clashed with ${clash} — pick a completely different name.` : ""}`, 600).catch(() => "");
     let a: { name?: string; handle?: string; bio?: string; look?: string; lives?: string; followers?: number } = {};
     try { a = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); } catch { continue; }
@@ -392,7 +402,7 @@ She must be clearly NOT one of the people listed as taken: a different first nam
     clash = tooClose(handle, name, taken);
     if (clash) { console.warn(`pica: ${name} (@${handle}) is too close to ${clash} — trying again`); continue; }
     const lives = scrub(String(a.lives || (home && !far ? homeText(home) : ""))).replace(/\s+/g, " ").trim().slice(0, 120);
-    const [row] = await sql()`insert into pica_accounts (user_id, handle, name, bio, look, lives, followers) values (${userId}, ${handle}, ${name}, ${scrub(String(a.bio || "")).slice(0, 300)}, ${scrub(String(a.look || "")).slice(0, 600)}, ${lives || null}, ${Math.max(2000, Math.min(900000, Number(a.followers) || rand(5000, 200000)))}) returning *`;
+    const [row] = await sql()`insert into pica_accounts (user_id, handle, name, bio, look, lives, followers, lesbian) values (${userId}, ${handle}, ${name}, ${scrub(String(a.bio || "")).slice(0, 300)}, ${scrub(String(a.look || "")).slice(0, 600)}, ${lives || null}, ${Math.max(2000, Math.min(900000, Number(a.followers) || rand(5000, 200000)))}, ${intoWomen}) returning *`;
     return row || null;
   }
   return null;
@@ -627,10 +637,10 @@ export async function picaBefriend(userId: string, accountId: string): Promise<s
   const [av] = a.avatar_media_id ? await sql()`select file_id from velo_media where id = ${a.avatar_media_id} and status = 'done'` : [];
   const names = (await sql()`select name from chat_characters where owner_id is null or owner_id = ${userId}`).map(r => String(r.name));
   const first = String(a.name).split(/\s+/)[0];
-  const d = await makeCharacter({ name: names.includes(first) ? String(a.name) : first, vibe: `She posts on Picagram as @${a.handle}: "${a.bio}". Looks: ${a.look}. You two just became friends after you followed her on Picagram.`, romantic: u.adult, male: false, avoidNames: [], lives: a.lives ? `WHERE SHE LIVES: ${a.lives} — keep it exactly.` : livesNote(await homeOf(userId)) });
-  const [c] = await sql()`insert into chat_characters (created_by, owner_id, intro_status, name, personality, backstory, relation, appearance, job, casual_wear, hobbies, voice, voice_name, voice_kind, romantic, romance_arc, traits, birthday, time_zone, work_attire, work_days, work_start, work_end, part_time, portrait_file_id, reference_ids)
+  const d = await makeCharacter({ name: names.includes(first) ? String(a.name) : first, vibe: `She posts on Picagram as @${a.handle}: "${a.bio}". Looks: ${a.look}. You two just became friends after you followed her on Picagram.`, romantic: u.adult, male: false, avoidNames: [], lives: a.lives ? `WHERE SHE LIVES: ${a.lives} — keep it exactly.` : livesNote(await homeOf(userId)), lesbian: !!a.lesbian });
+  const [c] = await sql()`insert into chat_characters (created_by, owner_id, intro_status, name, personality, backstory, relation, appearance, job, casual_wear, hobbies, voice, voice_name, voice_kind, romantic, romance_arc, traits, birthday, time_zone, work_attire, work_days, work_start, work_end, part_time, lesbian, lesbian_personality, portrait_file_id, reference_ids)
     values (${userId}, ${userId}, 'accepted', ${d.name}, ${d.personality}, ${d.backstory}, ${scrub(`Someone you met on Picagram (@${a.handle}) — you followed her and became friends`)}, ${scrub(String(a.look || d.appearance)).slice(0, 600)}, ${d.job}, ${d.casual_wear}, ${d.hobbies}, ${d.voice}, ${d.voice_name}, ${d.voice_kind}, ${d.romantic}, ${d.romance_arc}, ${JSON.stringify(d.traits)}::jsonb, ${d.birthday}, '',
-      ${d.work_attire}, ${d.work_days}::int[], ${d.work_start}, ${d.work_end}, ${d.part_time}, ${av?.file_id || photos[0]?.file_id || null}, ${photos.map(p => String(p.id))}::uuid[]) returning id`;
+      ${d.work_attire}, ${d.work_days}::int[], ${d.work_start}, ${d.work_end}, ${d.part_time}, ${!!d.lesbian}, ${d.lesbian_personality || ""}, ${av?.file_id || photos[0]?.file_id || null}, ${photos.map(p => String(p.id))}::uuid[]) returning id`;
   // Her pictures are hers now (her gallery and references), and she keeps posting as a character.
   if (photos.length) await sql()`update velo_media set character_id = ${c.id} where id = any(${photos.map(p => String(p.id))}::uuid[]) and user_id = ${userId}`;
   await sql()`update pica_accounts set character_id = ${c.id}, followed = true where id = ${accountId}`;

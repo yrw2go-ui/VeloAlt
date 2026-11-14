@@ -62,3 +62,13 @@ Avoid the stock version: give her one thing that cuts against the type (a ${v.la
 /** The ids already used, so the next few come out different. */
 export const vibeIdsIn = (texts: string[]): string[] =>
   VIBES.filter(v => texts.some(t => new RegExp(`\\(${v.id}\\)`).test(t))).map(v => v.id);
+
+// ⚢ Into women: uncommon. About one woman in seventeen, characters and Picagram alike.
+export const LESBIAN_ODDS = 1 / 17;
+export const rollLesbian = () => Math.random() < LESBIAN_ODDS;
+
+/** What to ask for when she is: the same woman, written twice, a little different with men. */
+export const LESBIAN_ASK = `⚢ SHE IS A LESBIAN — into women, not men. Write her personality TWICE:
+- "personality": who she is at heart — how she talks, jokes, argues, looks after people. No mention of who she's attracted to.
+- "lesbian_personality": the SAME woman, nearly the same words, changed only where it shows: with men (the user included) she's friendly, funny and easy but plainly not interested that way, and she deflects a come-on lightly rather than coldly; with women she's the one doing the looking and the flirting. One or two clauses different, not a different person.
+Keep both the same length and the same voice. Everything else about her — her job, her town, her hobbies, her look — is unchanged by this.`;

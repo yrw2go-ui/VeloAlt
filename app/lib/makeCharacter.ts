@@ -6,17 +6,19 @@ import { availableBrains } from "./models";
 import { cleanTraits, TRAITS } from "./traits";
 import { CHARACTER_VOICES } from "./voices";
 import { scrub } from "./secrets";
-import { vibeNote, AGE_FROM, AGE_TO } from "./vibes";
+import { vibeNote, rollLesbian, LESBIAN_ASK, AGE_FROM, AGE_TO } from "./vibes";
 
-export type Hints = { name?: string; vibe?: string; job?: string; romantic?: boolean; male?: boolean; avoidNames?: string[]; lives?: string; liveIn?: boolean; local?: boolean };
+export type Hints = { name?: string; vibe?: string; job?: string; romantic?: boolean; male?: boolean; avoidNames?: string[]; lives?: string; liveIn?: boolean; local?: boolean; lesbian?: boolean };
 const str = (v: unknown, n: number) => scrub(String(v ?? "").replace(/\s+/g, " ").trim()).slice(0, n);
 
 export async function makeCharacter(h: Hints) {
   const kind = h.male ? "male" : "female";
-  const sys = `You invent ONE original character for a companion chat app. Make them feel like a real, specific person with a life of their own — not generic. Use the hints if given; invent everything else, varied and surprising (different backgrounds, towns, looks, jobs, quirks). A ${kind} adult${h.romantic ? " — romance with the user is possible (PG-13), so give them a believable romance arc that starts from who they are, not instant love" : " — friendly and platonic"}. Never a real or famous person. Nothing sexual or explicit.${h.lives ? `\n${h.lives}` : ""}${h.male || str(h.vibe, 300) ? "" : `\n${vibeNote()}`}${h.liveIn ? `
+  // ⚢ Rare, and only for a woman romance is on for: about one in seventeen.
+  const lesbian = !h.male && !!h.romantic && (h.lesbian === true || (h.lesbian === undefined && rollLesbian()));
+  const sys = `You invent ONE original character for a companion chat app. Make them feel like a real, specific person with a life of their own — not generic. Use the hints if given; invent everything else, varied and surprising (different backgrounds, towns, looks, jobs, quirks). A ${kind} adult${h.romantic ? " — romance with the user is possible (PG-13), so give them a believable romance arc that starts from who they are, not instant love" : " — friendly and platonic"}. Never a real or famous person. Nothing sexual or explicit.${h.lives ? `\n${h.lives}` : ""}${h.male || str(h.vibe, 300) ? "" : `\n${vibeNote()}`}${lesbian ? `\n${LESBIAN_ASK}` : ""}${h.liveIn ? `
 🏠 THEY LIVE WITH THE USER, at the user's place. Work out a believable arrangement and write it into BOTH "backstory" and "relation": how they came to move in (a room going spare, a flatmate who left, a lease that fell through, moving in together after a while, family of a sort, a short stay that stuck), how long they've been there, what they pay or do instead, which room is theirs, and the little rhythms of sharing a house (who cooks, who's up first, the one thing they argue about). "relation" should say it plainly, e.g. "your flatmate — she rents the back room" or "your girlfriend, who moved in last spring". Keep it ordinary and specific, not a fairy tale.` : ""}
 Reply with ONLY a JSON object with these keys:
-"name" (first name${h.avoidNames?.length ? `, not ${h.avoidNames.slice(0, 40).join(", ")}` : ""}), "age" (a number, ${h.male ? "21–45" : `${AGE_FROM}–${AGE_TO}`}), "personality" (2–4 sentences: how they talk and act), "backstory" (3–5 sentences: where they're from, what shaped them, what they care about), "relation" (who they are to the user, e.g. "a new neighbor you keep running into"), "appearance" (one detailed sentence for a portrait: age, hair, eyes, build, style — no clothing brands), "job" (specific, with a place), "casual_wear", "hobbies", "work_attire", "work_days" (array of day numbers 0=Sun…6=Sat), "work_start" ("HH:MM" 24h), "part_time" (true/false), "birthday" ("MM-DD"), ${h.romantic ? '"romance_arc" (2–3 sentences), ' : ""}"traits" (object of 0–10 numbers for: ${TRAITS.map(t => t.key).join(", ")}; suggestive at most ${h.romantic ? 4 : 1}, language at most 3).`;
+"name" (first name${h.avoidNames?.length ? `, not ${h.avoidNames.slice(0, 40).join(", ")}` : ""}), "age" (a number, ${h.male ? "21–45" : `${AGE_FROM}–${AGE_TO}`}), "personality" (2–4 sentences: how they talk and act), "backstory" (3–5 sentences: where they're from, what shaped them, what they care about), "relation" (who they are to the user, e.g. "a new neighbor you keep running into"), "appearance" (one detailed sentence for a portrait: age, hair, eyes, build, style — no clothing brands), "job" (specific, with a place), "casual_wear", "hobbies", "work_attire", "work_days" (array of day numbers 0=Sun…6=Sat), "work_start" ("HH:MM" 24h), "part_time" (true/false), "birthday" ("MM-DD"), ${h.romantic ? '"romance_arc" (2–3 sentences), ' : ""}${lesbian ? '"lesbian_personality" (as described above), ' : ""}"traits" (object of 0–10 numbers for: ${TRAITS.map(t => t.key).join(", ")}; suggestive at most ${h.romantic ? 4 : 1}, language at most 3).`;
   const user = `HINTS (optional — keep any that are given):\nName: ${str(h.name, 40) || "(you pick)"}\nVibe / personality: ${str(h.vibe, 300) || "(surprise me)"}\nJob: ${str(h.job, 120) || "(you pick)"}`;
   // Claude writes it; if Claude can't right now, an Atlas brain (Qwen / DeepSeek) does.
   const raw = await writeText(null, sys, user, 1600).catch(async e => {
@@ -42,6 +44,8 @@ Reply with ONLY a JSON object with these keys:
     job: str(h.job, 300) || str(j.job, 300), casual_wear: str(j.casual_wear, 400), hobbies: str(j.hobbies, 600), work_attire: str(j.work_attire, 400),
     work_days: [...new Set((Array.isArray(j.work_days) ? j.work_days : []).map(Number).filter(d => Number.isInteger(d) && d >= 0 && d <= 6))],
     work_start: start, work_end: end, part_time: part, birthday: bday, romantic: !!h.romantic, romance_arc: h.romantic ? str(j.romance_arc, 1500) : "",
+    // ⚢ Only if she is: the tick, and the version of her that's used while it's on.
+    lesbian, lesbian_personality: lesbian ? str(j.lesbian_personality, 2000) || str(j.personality, 2000) : "",
     traits, voice: v.voiceId, voice_name: v.name, voice_kind: v.kind,
     age: Number.isInteger(Number(j.age)) && Number(j.age) >= 21 && Number(j.age) <= 60 ? Number(j.age) : null,
   };

@@ -632,8 +632,11 @@ function MakeHer({ onClose, onMade }: { onClose: () => void; onMade: (id: string
   const [lives, setLives] = useState("");
   const [followers, setFollowers] = useState("");
   const [follow, setFollow] = useState(true);
-  const [head, setHead] = useState<{ mediaId: string; url: string } | null>(null);
-  const [shot, setShot] = useState<{ mediaId: string; url: string } | null>(null);
+  const [head, setHead] = useState<{ mediaId: string; url: string; note?: string } | null>(null);
+  const [shot, setShot] = useState<{ mediaId: string; url: string; note?: string } | null>(null);
+  // 💬 What's in each picture, in your words — it's what her followers comment on.
+  const [headAbout, setHeadAbout] = useState("");
+  const [shotAbout, setShotAbout] = useState("");
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const headIn = useRef<HTMLInputElement>(null);
@@ -643,12 +646,17 @@ function MakeHer({ onClose, onMade }: { onClose: () => void; onMade: (id: string
     if (!f) return;
     setErr(""); setBusy(which === "head" ? "Uploading her headshot…" : "Uploading her photo…");
     try {
-      const r = await uploadPicaPicture(f);
+      const r = await uploadPicaPicture(f, which === "head" ? headAbout : shotAbout);
       if (which === "head") setHead(r); else setShot(r);
     } catch (e) { setErr(e instanceof Error ? e.message : "That picture didn't upload."); }
     setBusy("");
   };
 
+  // 💬 Changed your mind about what's in it: saved against the picture, so the comments follow.
+  const saveAbout = async (p: { mediaId: string } | null, about: string) => {
+    if (!p) return;
+    await api("/api/pica", { action: "picture.about", id: p.mediaId, about }).catch(() => {});
+  };
   const make = async () => {
     setErr(""); setBusy("Putting her up…");
     try {
@@ -675,7 +683,7 @@ function MakeHer({ onClose, onMade }: { onClose: () => void; onMade: (id: string
         <button className="btn" onClick={make} disabled={!!busy || !name.trim() || !handle.trim() || !head} data-testid="pica-make-save" style={{ padding: "6px 14px" }}>{busy ? "…" : "Put her up"}</button>
       </div>
       <div style={{ maxWidth: 560, margin: "0 auto", padding: "12px 14px 40px", display: "flex", flexDirection: "column", gap: 12 }}>
-        <div className="muted" style={{ fontSize: 13 }}>Her pictures are what she looks like: every photo she posts is built from them. Use AI-made or fictional pictures — not photos of a real person.</div>
+        <div className="muted" style={{ fontSize: 13 }}>Her pictures are what she looks like: every photo she posts is built from them. Say what&apos;s in each one and her followers comment on that — the outfit, the place, what she&apos;s doing. Leave it blank and it&apos;s read off the picture instead. Use AI-made or fictional pictures — not photos of a real person.</div>
         <div className="row" style={{ gap: 14, alignItems: "flex-start" }}>
           <div style={{ textAlign: "center" }}>
             {shown(head, "Her headshot")}
@@ -688,6 +696,23 @@ function MakeHer({ onClose, onMade }: { onClose: () => void; onMade: (id: string
             <input ref={shotIn} type="file" accept="image/jpeg,image/png,image/webp" hidden data-testid="pica-make-shot" onChange={e => pick(e.target.files?.[0], "shot")} />
           </div>
         </div>
+        {(head || shot) && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {head && (
+              <div><label style={label} htmlFor="mk-head-about">What&apos;s in her headshot</label>
+                <input id="mk-head-about" style={field} value={headAbout} onChange={e => setHeadAbout(e.target.value)} onBlur={() => saveAbout(head, headAbout)} maxLength={400}
+                  data-testid="pica-make-head-about" placeholder="e.g. close-up on her back porch, white tank top, hair up, laughing" />
+              </div>
+            )}
+            {shot && (
+              <div><label style={label} htmlFor="mk-shot-about">What&apos;s in her photo</label>
+                <input id="mk-shot-about" style={field} value={shotAbout} onChange={e => setShotAbout(e.target.value)} onBlur={() => saveAbout(shot, shotAbout)} maxLength={400}
+                  data-testid="pica-make-shot-about" placeholder="e.g. at the beach in a red bikini, sunglasses on, sand on her feet" />
+              </div>
+            )}
+            <span className="muted" style={{ fontSize: 11 }}>This is what her followers see, so they comment on it — the outfit, the place, what she&apos;s doing. Blank, and it&apos;s read off the picture instead.</span>
+          </div>
+        )}
         <div><label style={label} htmlFor="mk-name">Name *</label><input id="mk-name" style={field} value={name} onChange={e => setName(e.target.value)} placeholder="Ava Lane" data-testid="pica-make-name" maxLength={60} /></div>
         <div><label style={label} htmlFor="mk-handle">Handle *</label><input id="mk-handle" style={field} value={handle} onChange={e => setHandle(e.target.value.toLowerCase().replace(/[^a-z0-9._]/g, ""))} placeholder="avalane" data-testid="pica-make-handle" maxLength={28} /></div>
         <div><label style={label} htmlFor="mk-bio">Bio</label><textarea id="mk-bio" style={{ ...field, minHeight: 60, resize: "vertical" }} value={bio} onChange={e => setBio(e.target.value)} placeholder="☕ coffee &amp; long runs · 📍 Chicago" data-testid="pica-make-bio" maxLength={300} /></div>

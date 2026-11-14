@@ -4,7 +4,7 @@ import { allow } from "../../lib/rateLimit";
 import { sql } from "../../lib/db";
 import { MediaError, mediaReady } from "../../lib/media";
 import { dmThreads, dmUnread, dmOpen, dmSend, dmSendPhoto, dmBrain, dmMyPhotoDraft, dmMyPhoto, DmError } from "../../lib/picaDm";
-import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSavedList, picaFollowing, picaBefriend, picaCounts, picaDeletePost, picaCreateAccount, picaWithMe, picaMe, picaMeBio, picaCharacters, picaHide, picaNew, picaFromPhoto, myPhotoDraft, newFaces, picaDeleteAccount, PicaLimit } from "../../lib/picagram";
+import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSavedList, picaFollowing, picaBefriend, picaCounts, picaDeletePost, picaCreateAccount, picaPictureAbout, picaWithMe, picaMe, picaMeBio, picaCharacters, picaHide, picaNew, picaFromPhoto, myPhotoDraft, newFaces, picaDeleteAccount, PicaLimit } from "../../lib/picagram";
 
 // 📸 Picagram. POST { action, ... }:
 //   feed { before? } → { posts }   (a few at a time; today's and missed days' posts are made as needed)
@@ -86,6 +86,11 @@ export async function POST(req: NextRequest) {
       // 🙈 Characters whose posts you'd rather not see (she can't tell).
       case "characters": return NextResponse.json({ characters: await picaCharacters(me) });
       case "hide": return UUID.test(id) && (await picaHide(me, id, b.on === true)) ? NextResponse.json({ ok: true }) : bad("Unknown character.");
+      // 💬 What's in a picture you uploaded, in your words — her followers comment on this.
+      case "picture.about": {
+        if (!UUID.test(id)) return bad("Unknown picture.");
+        return NextResponse.json({ ok: await picaPictureAbout(me, id, String(b.about || "")) });
+      }
       // 👥 Who you could be in a picture with (your characters, the ones with a face on file first).
       case "withme": return NextResponse.json({ characters: await picaWithMe(me) });
       case "following": return NextResponse.json({ accounts: await picaFollowing(me) });

@@ -41,11 +41,12 @@ export async function uploadFile(file: File, purpose: "chat" | "face" | "bio" | 
 }
 
 /** 👩 A picture for a Picagram account you're making (her headshot, or a full shot to post from). */
-export async function uploadPicaPicture(file: File): Promise<{ mediaId: string; url: string }> {
+export async function uploadPicaPicture(file: File, about = ""): Promise<{ mediaId: string; url: string; note?: string }> {
   const form = new FormData();
   form.set("file", await shrink(file));
   form.set("purpose", "pica");
   form.set("fictional", "yes");
+  if (about.trim()) form.set("about", about.trim());
   const res = await fetch("/api/files", { method: "POST", body: form });
   const out = await res.json().catch(() => ({}));
   if (res.status === 401) window.dispatchEvent(new Event("velo:signed-out"));

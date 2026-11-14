@@ -9,6 +9,7 @@ import { IMAGE_TYPES, DOC_TYPES, MAX_BYTES, MAX_FILES, blobReady, deleteFile } f
 import { thumbOf, saveImageItem } from "../../lib/media";
 import { isAdmin, getCharacter } from "../../lib/characters";
 import { describePhoto } from "../../lib/bio";
+import { scrub } from "../../lib/secrets";
 
 /** 🔒 Re-saves a photo without its hidden data (GPS location, camera, date…), upright, same format. */
 async function cleanImage(buf: Buffer, type: string): Promise<Buffer> {
@@ -46,10 +47,16 @@ export async function POST(req: NextRequest) {
       let img: Buffer;
       try { img = await cleanImage(Buffer.from(await file.arrayBuffer()), type); }
       catch { return NextResponse.json({ error: "That picture couldn't be read. Try another one." }, { status: 400 }); }
-      // What the picture shows, in words: it's what her followers comment on when it goes up.
-      const note = await describePhoto(img, type).catch(e => { console.error("files: describe pica photo", e instanceof Error ? e.message : e); return null; });
-      const item = await saveImageItem(c.userId, null, img, type, note && note !== "NONE" ? note : "A photo of her", "upload");
-      return NextResponse.json({ mediaId: item.mediaId, url: item.url });
+      // 💬 What the picture shows, in words: it's what her followers comment on when it goes up,
+      // and what her caption is written from. Your own words if you gave any; otherwise read off
+      // the picture itself. Both if you wrote something short — the detail is what makes a comment
+      // land on the right thing.
+      const said = scrub(String(form?.get("about") || "").replace(/\s+/g, " ").trim()).slice(0, 400);
+      const seen = said.length > 120 ? null : await describePhoto(img, type).catch(e => { console.error("files: describe pica photo", e instanceof Error ? e.message : e); return null; });
+      const look = seen && seen !== "NONE" ? seen : "";
+      const note = [said, said && look ? `(also in the picture: ${look})` : look].filter(Boolean).join(" ") || "A photo of her";
+      const item = await saveImageItem(c.userId, null, img, type, note, "upload");
+      return NextResponse.json({ mediaId: item.mediaId, url: item.url, note });
     }
 
     // 🎭 An admin adding a picture of a character (e.g. made in Atlas Cloud): into her gallery, optionally her headshot.

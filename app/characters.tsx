@@ -15,7 +15,7 @@ import { BRAIN_OPTIONS } from "./lib/brainOptions";
 
 type VoiceOption = { id: string; name: string; kind: "female" | "male"; about: string; preview: string; owner?: string };
 
-export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; brain?: string; standing?: string; work_attire?: string; work_days?: number[]; work_start?: string; work_end?: string; part_time?: boolean; school?: string; class_days?: number[]; class_start?: string; class_end?: string; poly_ok?: boolean; sapphic?: boolean; live_in?: boolean; local?: boolean; attached?: "single" | "dating" | "married"; sees_others?: boolean; lesbian?: boolean; partner?: string; big_following?: boolean; busy?: "work" | "class" | null; ditched?: boolean; home?: boolean; portrait_url: string | null; portrait_job: string | null };
+export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; brain?: string; standing?: string; work_attire?: string; work_days?: number[]; work_start?: string; work_end?: string; part_time?: boolean; school?: string; class_days?: number[]; class_start?: string; class_end?: string; poly_ok?: boolean; sapphic?: boolean; live_in?: boolean; local?: boolean; attached?: "single" | "dating" | "married"; sees_others?: boolean; lesbian?: boolean; lesbian_personality?: string; partner?: string; big_following?: boolean; busy?: "work" | "class" | null; ditched?: boolean; home?: boolean; portrait_url: string | null; portrait_job: string | null };
 
 /** A character's picture in a circle (their initial until a portrait exists). */
 export function CharacterFace({ c, size }: { c: Pick<Character, "name" | "portrait_url">; size: number }) {
@@ -119,6 +119,8 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
   const [partner, setPartner] = useState(seed?.partner || "");
   const [seesOthers, setSeesOthers] = useState(!!seed?.sees_others);
   const [lesbian, setLesbian] = useState(!!seed?.lesbian);
+  // ⚢ The version of her that's used while that tick is on — usually her usual self, a clause or two different.
+  const [lesbianWho, setLesbianWho] = useState(seed?.lesbian_personality || "");
   const [gf, setGf] = useState(!!seed?.standing?.includes("gf"));
   const [secret, setSecret] = useState(!!seed?.standing?.includes("secret"));
   const [sapphic, setSapphic] = useState(!!seed?.sapphic);
@@ -170,7 +172,7 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
   const working = !!c?.portrait_job;
   const dirty = !c || gender !== (c.voice_kind === "male" ? "male" : "female") || name !== c.name || personality !== c.personality || backstory !== c.backstory || relation !== c.relation || appearance !== c.appearance || job !== (c.job || "") || wear !== (c.casual_wear || "") || hobbies !== (c.hobbies || "") || voice.id !== c.voice || JSON.stringify(traits) !== JSON.stringify(cleanTraits(c.traits && Object.keys(c.traits).length ? c.traits : DEFAULT_TRAITS)) || preset !== (c.preset || "") || zone !== (c.time_zone || "") || bday !== (c.birthday || "") || romantic !== !!c.romantic || (romantic ? arc : "") !== (c.romance_arc || "") || refIds.join() !== (c.reference_ids || []).join() || brain !== (c.brain || "")
     || attire !== (c.work_attire || "") || [...workDays].sort().join() !== [...(c.work_days || [])].sort().join() || workStart !== (c.work_start || "") || workEnd !== (c.work_end || "") || partTime !== !!c.part_time || school !== (c.school || "") || [...classDays].sort().join() !== [...(c.class_days || [])].sort().join() || classStart !== (c.class_start || "") || classEnd !== (c.class_end || "")
-    || (romantic ? [gf ? "gf" : "", secret ? "secret" : ""].filter(Boolean).join("+") : "") !== (c.standing || "") || (romantic && polyOk) !== !!c.poly_ok || (romantic && sapphic) !== !!c.sapphic || bigFollowing !== !!c.big_following || liveIn !== !!c.live_in || local !== !!c.local || attached !== (c.attached || "single") || partner !== (c.partner || "") || seesOthers !== !!c.sees_others || lesbian !== !!c.lesbian;
+    || (romantic ? [gf ? "gf" : "", secret ? "secret" : ""].filter(Boolean).join("+") : "") !== (c.standing || "") || (romantic && polyOk) !== !!c.poly_ok || (romantic && sapphic) !== !!c.sapphic || bigFollowing !== !!c.big_following || liveIn !== !!c.live_in || local !== !!c.local || attached !== (c.attached || "single") || partner !== (c.partner || "") || seesOthers !== !!c.sees_others || lesbian !== !!c.lesbian || lesbianWho !== (c.lesbian_personality || "");
 
   // A portrait in progress: check back every few seconds until it's ready.
   useEffect(() => {
@@ -188,7 +190,7 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
     setBusy(true); setMsg("");
     try {
       const fields = { name, personality, backstory, relation, appearance, job, casualWear: wear, hobbies, voice: { id: voice.id, name: voice.name, kind: voice.kind, owner: voice.owner }, romantic, romanceArc: romantic ? arc : "", traits, preset, timeZone: zone, birthday: bday, brain,
-        workAttire: attire, workDays, workStart: workStart && workEnd ? workStart : "", workEnd: workStart && workEnd ? workEnd : "", partTime, school, classDays, classStart: classStart && classEnd ? classStart : "", classEnd: classStart && classEnd ? classEnd : "", polyOk: romantic && polyOk, sapphic: romantic && sapphic, bigFollowing, liveIn, local, attached, partner, seesOthers, lesbian: romantic && lesbian, gf: romantic && gf, secret: romantic && secret };
+        workAttire: attire, workDays, workStart: workStart && workEnd ? workStart : "", workEnd: workStart && workEnd ? workEnd : "", partTime, school, classDays, classStart: classStart && classEnd ? classStart : "", classEnd: classStart && classEnd ? classEnd : "", polyOk: romantic && polyOk, sapphic: romantic && sapphic, bigFollowing, liveIn, local, attached, partner, seesOthers, lesbian: romantic && lesbian, lesbianPersonality: lesbianWho, gf: romantic && gf, secret: romantic && secret };
       const r = await api<{ character: Character }>("/api/characters", { action: c ? "update" : "create", id: c?.id, ...fields, referenceIds: refIds });
       // 🖼️ Pictures picked while making a new character: upload them now (first one as headshot), as references.
       if (!c && pending.files.length && pending.fictional) {
@@ -220,7 +222,7 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
   const [saved, setSaved] = useState(false);
   const saving = useRef(false);
   const edited = JSON.stringify([gender, name, personality, backstory, relation, appearance, job, wear, hobbies, voice.id, traits, preset, zone, bday, romantic, arc, refIds, brain,
-    attire, workDays, workStart, workEnd, partTime, school, classDays, classStart, classEnd, gf, secret, polyOk, sapphic, bigFollowing, liveIn, local, attached, partner, seesOthers, lesbian]);
+    attire, workDays, workStart, workEnd, partTime, school, classDays, classStart, classEnd, gf, secret, polyOk, sapphic, bigFollowing, liveIn, local, attached, partner, seesOthers, lesbian, lesbianWho]);
   useEffect(() => {
     if (!c || !dirty || busy || working || !name.trim()) return;
     const t = setTimeout(async () => {
@@ -312,6 +314,17 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
             {romantic && (
               <label className="row" style={{ gap: 6, fontSize: 13, fontWeight: 700, cursor: "pointer" }} title="Into women — she flirts with other women more than with you until you win her round">
                 <input type="checkbox" checked={lesbian} data-testid="is-lesbian" onChange={e => setLesbian(e.target.checked)} style={{ width: 20, height: 20 }} />⚢ Into women
+              </label>
+            )}
+            {romantic && lesbian && (
+              <label style={{ fontSize: 13, fontWeight: 700 }}>⚢ Her personality while that&apos;s true <span className="muted" style={{ fontWeight: 500 }}>· used instead of the one below, only while the tick is on</span>
+                <textarea value={lesbianWho} onChange={e => setLesbianWho(e.target.value)} maxLength={2000} rows={4} aria-label="Personality while into women" data-testid="lesbian-personality"
+                  placeholder="Usually the same as her normal personality, with a clause or two different: friendly and funny with you and other men but plainly not interested that way, and she's the one doing the looking with women."
+                  style={{ marginTop: 4, resize: "vertical" }} />
+                <span className="muted" style={{ fontWeight: 500, fontSize: 11, display: "block", marginTop: 2 }}>
+                  {lesbianWho.trim() ? "Win her round and the tick comes off — she goes back to the personality below, unchanged." : "Empty, and her usual personality is used as it is."}
+                  {!lesbianWho.trim() && personality.trim() ? <> <button type="button" className="ghost" onClick={() => setLesbianWho(personality)} data-testid="copy-personality" style={{ padding: "2px 8px", fontSize: 11 }}>Copy her usual one to start from</button></> : null}
+                </span>
               </label>
             )}
             <span className="muted" style={{ fontSize: 11 }}>
