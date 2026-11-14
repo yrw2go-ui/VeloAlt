@@ -6,6 +6,7 @@
 // Nothing here is a hard no for long: a turn-down is about tonight, not about them.
 import { sql } from "./db";
 import { soreFor } from "./sore";
+import { busyWithTheirs, type Her } from "./attached";
 import type { Character } from "./characters";
 import { writeText } from "./llm";
 import { workNow } from "./work";
@@ -45,6 +46,7 @@ const REASONS = {
   busy: "you're in the middle of something you can't drop right now",
   mess: "you look a mess right now and don't want to be seen like this — later or another night would be better",
   sore: "something's been sitting with you since earlier and you're not quite yourself tonight — you'd rather do this when you're properly in the mood for it",
+  theirs: "you already have plans tonight with the person you're seeing — don't say who or go into it at all, just that you're tied up",
 } as const;
 
 /** If nothing can be written for her in time, this is what she says — her words, not a description. */
@@ -55,6 +57,7 @@ const PLAIN: Record<keyof typeof REASONS, string> = {
   busy: "I'd love to, I'm just in the middle of something I can't drop.",
   mess: "I'd love to, I'm just a complete mess right now 🙈",
   sore: "I'd love to, I'm just not quite myself tonight.",
+  theirs: "I'd love to, I've just got plans tonight 🙈",
 };
 
 /** Her turn-down, in her own voice (a short text). Falls back to a plain line if no AI answers. */
@@ -149,6 +152,11 @@ async function decide(userId: string, ch: Character, ask: Ask, timeZone: unknown
     if (r.ok) await forgetTurnDown(userId, ch.id, ask).catch(() => {});
     else await noteTurnDown(userId, ch.id, ask).catch(() => {});
     return r;
+  }
+  // 💘 Out with the person she's seeing: not tonight, and she doesn't go into it.
+  if (ask !== "call" && luck !== "yes" && busyWithTheirs(ch as unknown as Her)) {
+    await noteTurnDown(userId, ch.id, ask).catch(() => {});
+    return { ok: false, say: await sayNo(ch, String(name), ask, "theirs", "another night") };
   }
   // 🤒 Run down: fine on the phone, but she doesn't want to be seen or go out.
   if (sick && ask !== "call" && luck !== "yes" && roll() > 0.35) {

@@ -10,6 +10,8 @@ import { startMedia, deleteMedia, MediaError, type Media } from "./media";
 import { allowsSuggestive, mediaMood } from "./traits";
 import { isValidTimeZone, localDate, zonedParts, zonedToUtc } from "./localTime";
 import { randomComments } from "./picaComments";
+import { vibeNote } from "./vibes";
+import { localNote } from "./local";
 import { makeCharacter } from "./makeCharacter";
 import { homeOf, homeText, livesNote, FAR_CHANCE } from "./where";
 
@@ -263,15 +265,36 @@ export async function picaComment(userId: string, postId: string, text: string):
 }
 
 /** 📝 Their own post: text, and/or a photo of them made from a description (their own pictures as reference, if they want). */
-export async function picaPost(userId: string, caption: string, photo: string, useMyPhotos: boolean, raw = false): Promise<string> {
+/** 👥 Your characters, for "who's in it with me" — the ones with a picture on file come first. */
+export async function picaWithMe(userId: string) {
+  const rows = await sql()`select c.id, c.name, f.url as portrait, coalesce(array_length(c.reference_ids, 1), 0) as shots
+    from chat_characters c left join velo_files f on f.id = c.portrait_file_id
+    where c.owner_id is null or c.owner_id = ${userId} order by (f.url is null), c.name`;
+  return rows.map(r => ({ id: String(r.id), name: String(r.name), portrait: r.portrait ? String(r.portrait) : null, pictures: Number(r.shots) + (r.portrait ? 1 : 0) }));
+}
+
+export async function picaPost(userId: string, caption: string, photo: string, useMyPhotos: boolean, raw = false, withId = ""): Promise<string> {
   const u = await userInfo(userId);
   const cap = scrub(caption).trim().slice(0, 2000), desc = scrub(photo).replace(/\s+/g, " ").trim().slice(0, 600);
   if (!cap && !desc) throw new MediaError("Write something or describe a photo.");
+  // 👥 One of your characters in the picture with you: her own pictures are the reference for her face.
+  const [her] = withId && /^[0-9a-f-]{36}$/i.test(withId)
+    ? await sql()`select c.id, c.name, c.appearance, c.portrait_file_id, c.reference_ids from chat_characters c
+        where c.id = ${withId} and (c.owner_id is null or c.owner_id = ${userId})`
+    : [];
+  let other: { name: string; refs: string[]; appearance: string } | null = null;
+  if (her) {
+    const ids = [...((her.reference_ids || []) as string[])].filter(Boolean);
+    const shots = ids.length ? await sql()`select f.url from velo_media m join velo_files f on f.id = m.file_id where m.id = any(${ids}::uuid[]) and m.status = 'done'` : [];
+    const [face] = her.portrait_file_id ? await sql()`select url from velo_files where id = ${her.portrait_file_id}` : [];
+    const refs = [...(face ? [String(face.url)] : []), ...shots.map(r => String(r.url))].filter(x => /^https?:\/\//.test(x)).slice(0, 2);
+    other = { name: String(her.name), refs, appearance: String(her.appearance || "") };
+  }
   let media: Media | null = null;
   if (desc) {
     const refs = useMyPhotos ? await myRefs(userId) : [];
     media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: desc },
-      { characterId: null, who: u.name, appearance: u.look, refs, romantic: u.adult, offer: false, other: null, pica: true, ...(raw && refs.length ? { raw: true } : {}) });
+      { characterId: null, who: u.name, appearance: u.look, refs, romantic: u.adult, offer: false, other, pica: true, ...(raw && refs.length && !other ? { raw: true } : {}) });
   }
   const now = Date.now();
   const [post] = await sql()`insert into pica_posts (user_id, author_id, kind, caption, photo, media_id, likes_target, seen_at) values (${userId}, null, ${media ? "image" : "text"}, ${cap}, ${media ? desc : ""}, ${media?.id || null}, ${rand(10, 300)}, now()) returning id`;
@@ -353,11 +376,13 @@ async function newAccount(userId: string): Promise<Record<string, unknown> | nul
   const far = Math.random() < FAR_CHANCE;
   const where = !home ? "" : far
     ? ` She lives far from ${homeText(home)} — her own city in another state entirely; say which in "lives".`
-    : ` She lives about twenty minutes from ${homeText(home)} — a nearby suburb or town in the same area; say which in "lives", and let her haunts be local.`;
+    : ` ${localNote(homeText(home))} Put that town in "lives" as "Town, ST".`;
   // Three goes at someone genuinely new, telling her what's already taken each time.
   let clash = "";
   for (let go = 0; go < 3; go++) {
-    const raw = await writeText("", `Invent ONE woman who posts on Picagram (a social photo app like Instagram): beautiful, aged 21–35, with her own look, background and vibe (fitness, travel, fashion, beach life, cooking, nightlife, yoga, cars, art, music…). She must be clearly NOT one of the people listed as taken: a different first name, a different surname and a different handle from every one of them — not a variation on one (no "chloehart" when "Chloe Hart" is taken, no adding numbers). Fictional, never a real person.${where} JSON only: {"name":"First Last","handle":"lowercase_handle","bio":"short bio with emojis","look":"one detailed sentence for an image generator: age, face, hair, eyes, skin, build, usual style","lives":"City, State","followers":12000}`,
+    const raw = await writeText("", `Invent ONE woman who posts on Picagram (a social photo app like Instagram).
+${vibeNote()}
+She must be clearly NOT one of the people listed as taken: a different first name, a different surname and a different handle from every one of them — not a variation on one (no "chloehart" when "Chloe Hart" is taken, no adding numbers). Fictional, never a real person.${where} JSON only: {"name":"First Last","handle":"lowercase_handle","bio":"short bio with emojis","look":"one detailed sentence for an image generator: age, face, hair, eyes, skin, build, usual style","lives":"City, State","followers":12000}`,
       `${names.length ? `ALREADY TAKEN — avoid these names, surnames and handles entirely:\n${names.slice(-60).join(", ")}` : "(nobody yet)"}${clash ? `\n\nYour last try clashed with ${clash} — pick a completely different name.` : ""}`, 600).catch(() => "");
     let a: { name?: string; handle?: string; bio?: string; look?: string; lives?: string; followers?: number } = {};
     try { a = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); } catch { continue; }
@@ -521,7 +546,7 @@ export async function picaFollow(userId: string, accountId: string, on: boolean)
 
 /** 👤 Someone's profile: who she is and her photos. */
 export async function picaProfile(userId: string, accountId: string) {
-  const [a] = await sql()`select a.id, a.handle, a.name, a.bio, a.followers, a.followed, a.character_id, a.lives, a.mine, a.ref_media_ids, f.url as avatar, coalesce(ch.pica_hidden, false) as hidden
+  const [a] = await sql()`select a.id, a.handle, a.name, a.bio, a.followers, a.followed, a.character_id, a.lives, a.mine, a.ref_media_ids, f.url as avatar, coalesce(ch.pica_hidden, false) as hidden, ch.attached
     from pica_accounts a left join velo_media m on m.id = a.avatar_media_id left join velo_files f on f.id = m.file_id left join chat_characters ch on ch.id = a.character_id
     where a.id = ${accountId} and a.user_id = ${userId}`;
   if (!a) return null;
@@ -531,7 +556,7 @@ export async function picaProfile(userId: string, accountId: string) {
   const posts = await sql()`select p.id, p.caption, p.created_at::text as at, m.id as media_id, f.url, t.url as thumb, exists(select 1 from pica_saved s where s.user_id = p.user_id and s.media_id = m.id) as saved
     from pica_posts p join velo_media m on m.id = p.media_id join velo_files f on f.id = m.file_id left join velo_files t on t.id = m.thumb_file_id
     where p.user_id = ${userId} and p.account_id = ${accountId} and p.created_at <= now() and m.status = 'done' order by p.created_at desc limit 60`;
-  return { account: { id: String(a.id), handle: String(a.handle), name: String(a.name), bio: String(a.bio), followers: Number(a.followers), followed: !!a.followed, avatar: a.avatar ? String(a.avatar) : null, character_id: a.character_id ? String(a.character_id) : null, lives: a.lives ? String(a.lives) : "", hidden: !!a.hidden },
+  return { account: { id: String(a.id), handle: String(a.handle), name: String(a.name), bio: String(a.bio), followers: Number(a.followers), followed: !!a.followed, avatar: a.avatar ? String(a.avatar) : null, character_id: a.character_id ? String(a.character_id) : null, lives: a.lives ? String(a.lives) : "", hidden: !!a.hidden, married: a.attached === "married" },
     photos: posts.map(r => ({ media_id: String(r.media_id), url: String(r.url), thumb: r.thumb ? String(r.thumb) : null, caption: String(r.caption || ""), saved: !!r.saved })) };
 }
 
@@ -586,9 +611,10 @@ export async function picaHide(userId: string, characterId: string, on: boolean)
 
 /** 👥 Who they follow (up to 70), to unfollow some. */
 export async function picaFollowing(userId: string) {
-  const rows = await sql()`select a.id, a.handle, a.name, a.character_id, f.url as avatar from pica_accounts a left join velo_media m on m.id = a.avatar_media_id left join velo_files f on f.id = m.file_id
+  const rows = await sql()`select a.id, a.handle, a.name, a.character_id, ch.attached, f.url as avatar from pica_accounts a
+    left join velo_media m on m.id = a.avatar_media_id left join velo_files f on f.id = m.file_id left join chat_characters ch on ch.id = a.character_id
     where a.user_id = ${userId} and a.followed order by a.name`;
-  return rows.map(r => ({ id: String(r.id), handle: String(r.handle), name: String(r.name), avatar: r.avatar ? String(r.avatar) : null, friend: !!r.character_id, character_id: r.character_id ? String(r.character_id) : null }));
+  return rows.map(r => ({ id: String(r.id), handle: String(r.handle), name: String(r.name), avatar: r.avatar ? String(r.avatar) : null, friend: !!r.character_id, character_id: r.character_id ? String(r.character_id) : null, married: r.attached === "married" }));
 }
 
 /** 🤝 Befriend her: she becomes a character (filled in for them; her photos are her headshot and references). */

@@ -4,14 +4,15 @@ import { allow } from "../../lib/rateLimit";
 import { sql } from "../../lib/db";
 import { MediaError, mediaReady } from "../../lib/media";
 import { dmThreads, dmUnread, dmOpen, dmSend, dmSendPhoto, dmBrain, dmMyPhotoDraft, dmMyPhoto, DmError } from "../../lib/picaDm";
-import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSavedList, picaFollowing, picaBefriend, picaCounts, picaDeletePost, picaCreateAccount, picaMe, picaMeBio, picaCharacters, picaHide, picaNew, picaFromPhoto, myPhotoDraft, newFaces, picaDeleteAccount, PicaLimit } from "../../lib/picagram";
+import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSavedList, picaFollowing, picaBefriend, picaCounts, picaDeletePost, picaCreateAccount, picaWithMe, picaMe, picaMeBio, picaCharacters, picaHide, picaNew, picaFromPhoto, myPhotoDraft, newFaces, picaDeleteAccount, PicaLimit } from "../../lib/picagram";
 
 // 📸 Picagram. POST { action, ... }:
 //   feed { before? } → { posts }   (a few at a time; today's and missed days' posts are made as needed)
 //   comments { id } → { comments }   like { id, on }   seen { ids }   comment { id, text } → { added }
 //   follow { id, on }   profile { id } → { account, photos }   save { id: mediaId, on }   saved { before? } → { items }   (🔖 their Picagram gallery)
 //   following → { accounts } (up to 70)   befriend { id } → { characterId }   (🤝 she becomes a character)
-//   post { caption, photo?, useMyPhotos? } → { id }   (photo: a description; Atlas makes it)
+//   post { caption, photo?, useMyPhotos?, withId? } → { id }   (photo: a description; Atlas makes it; withId: a character in it with you)
+//   mine → { characters } (who you could put in a photo with you)
 const bad = (error: string, status = 400) => NextResponse.json({ error }, { status });
 const UUID = /^[0-9a-f-]{36}$/i;
 
@@ -85,6 +86,8 @@ export async function POST(req: NextRequest) {
       // 🙈 Characters whose posts you'd rather not see (she can't tell).
       case "characters": return NextResponse.json({ characters: await picaCharacters(me) });
       case "hide": return UUID.test(id) && (await picaHide(me, id, b.on === true)) ? NextResponse.json({ ok: true }) : bad("Unknown character.");
+      // 👥 Who you could be in a picture with (your characters, the ones with a face on file first).
+      case "withme": return NextResponse.json({ characters: await picaWithMe(me) });
       case "following": return NextResponse.json({ accounts: await picaFollowing(me) });
       case "befriend": {
         if (!UUID.test(id)) return bad("Unknown account.");
@@ -120,7 +123,7 @@ export async function POST(req: NextRequest) {
       case "post": {
         if (!allow(`pica-p:${me}`, [{ ms: 60_000, max: 3 }, { ms: 86_400_000, max: 30 }])) return bad("That's a lot of posts — try again in a bit.", 429);
         if (String(b.photo || "").trim() && !mediaReady()) return bad("Photos aren't set up yet.");
-        return NextResponse.json({ id: await picaPost(me, String(b.caption || ""), String(b.photo || ""), b.useMyPhotos === true, b.drafted === true) });
+        return NextResponse.json({ id: await picaPost(me, String(b.caption || ""), String(b.photo || ""), b.useMyPhotos === true, b.drafted === true, String(b.withId || "")) });
       }
       default: return bad("Unknown action.");
     }

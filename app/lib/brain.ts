@@ -26,7 +26,7 @@ import { friendsOf, friendsNote, sapphicWith } from "./friends";
 import { workNow } from "./work";
 import { sceneClockNote } from "./sceneClock";
 import { inPersonFor, inPersonNote, homeNote, LIVE_IN_NOTE, HOME } from "./inPerson";
-import { picaNote, picaHandleNote, awayFor, stayFor } from "./picagram";
+import { myRefs, picaNote, picaHandleNote, awayFor, stayFor } from "./picagram";
 /** How many recent scenes (2 weeks) with her got pushed from their planned time. */
 async function pushedLately(userId: string, sceneId: string): Promise<number> {
   const [r] = await sql()`select count(*)::int as n from chat_scenes s where s.user_id = ${userId} and s.pushed
@@ -34,6 +34,7 @@ async function pushedLately(userId: string, sceneId: string): Promise<number> {
   return Number(r?.n || 0);
 }
 import { soreFor, setSore, mend as mendSore, soreNote, SORE_REMEMBER } from "./sore";
+import { attachedNote, lesbianNote, maybeStartDating, maybeEndIt, endedNote, wonOver, WON_OVER, type Her } from "./attached";
 import { characterPrompt, feelingsFor, saveFeelings, trustFor, saveTrust, trustNote, happyFor, saveHappy, happyNote, loveFor, saveLove, loveNote, activeScene, sceneNote, noteMentions, acquaintancesNote, referenceUrls, pictureOf, type Character } from "./characters";
 import { aboutThem } from "./bio";
 import { mediaMood, allowsSuggestive } from "./traits";
@@ -179,6 +180,14 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
   const love = ch && !errand ? await loveFor(caller.userId, ch, arc).catch(() => null) : null;
   // 💔 Something that hurt her and hasn't worn off yet (at most 48 hours).
   const sore = ch && !errand ? await soreFor(caller.userId, ch.id).catch(() => null) : null;
+  // 💍 Where else her heart is: seeing someone, married — and the odd one that starts or ends.
+  const her = ch as unknown as Her | null;
+  let ended: "ended" | "divorced" | null = null;
+  if (her && !errand && mode !== "remember" && mode !== "memo") {
+    ended = await maybeEndIt(her).catch(() => null);
+    if (ended) { her.attached = "single"; }
+    else if (await maybeStartDating(caller.userId, her).catch(() => false)) her.attached = "dating";
+  }
   // 🎬 A scene (date/outing) being played out right now with this character.
   const scene = ch && (mode === "chat" || mode === "talk") && !group ? await activeScene(caller.userId, ch.id).catch(() => null) : null;
   // 📸 Every so often (sooner as they get closer), she offers a photo of the moment.
@@ -238,12 +247,16 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
         happy !== null && mode !== "remember" && mode !== "memo" ? happyNote(happy, arc) : "",
         love !== null && mode !== "remember" && mode !== "memo" ? loveNote(love) : "",
         sore && mode !== "remember" && mode !== "memo" ? soreNote(sore, name) : "",
+        her && her.attached !== "single" && mode !== "remember" && mode !== "memo" ? attachedNote({ ...her, romantic }, name) : "",
+        ended && her ? endedNote(ended, String(her.partner || "")) : "",
+        her?.lesbian && romantic && mode !== "remember" && mode !== "memo" ? lesbianNote(her, name, !!ch?.poly_ok) : "",
         ch && mode !== "remember" && mode !== "memo" ? lifeNote(unwell, trip, stay) : "",
         ch && mode !== "remember" && mode !== "memo" ? WANTS : "",
         love !== null && (mode === "remember" || mode === "memo") ? `HOW MUCH YOU LOVE THEM: ${love}/100. ${LOVE_REMEMBER}` : "",
         happy !== null && (mode === "remember" || mode === "memo") ? `HOW HAPPY YOU ARE WITH THEM: ${happy}/100. ${HAPPY_REMEMBER}` : "",
         trust !== null && (mode === "remember" || mode === "memo") ? `YOUR TRUST IN THEM: ${trust}/100. ${TRUST_REMEMBER(arc)}` : "",
         ch && (mode === "remember" || mode === "memo") ? `${sore ? `${soreNote(sore, name)}\n` : ""}${SORE_REMEMBER}` : "",
+        her?.lesbian && romantic && (mode === "remember" || mode === "memo") ? WON_OVER : "",
       ].filter(Boolean).join("\n\n"),
     },
   ];
@@ -303,7 +316,9 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
   const sources = new Map<string, string>(); // url → title, from the web pages she cited
   const maxTokens = mode === "talk" || mode === "errand" || mode === "sms" ? 4000 : 8000;
 
-  // Runs one of Velo's own tools (the same for every model).
+  // Runs one of Velo's own tools (the same for every model). (`name` here is the tool's name —
+  // the person's own name is kept as theirName, since it's needed for a picture of the two of them.)
+  const theirName = name;
   const runTool = async (name: string, input: unknown): Promise<{ content: string; isError?: boolean }> => {
     try {
       const out = name === "send_media" && canSend ? await (async () => {
@@ -312,8 +327,14 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
           // Only her own unprompted idea becomes an offer they accept or decline.
           const asked = (input as { they_asked?: unknown })?.they_asked === true || ASKED_FOR_MEDIA.test(String(lastSaid)) || (YES.test(String(lastSaid)) && MENTIONS_MEDIA.test(String(lastHers)));
           const who = (input as { of_person?: unknown })?.of_person;
-          const other = typeof who === "string" && who.trim() ? await pictureOf(caller.userId, cid, who) : null;
+          let other = typeof who === "string" && who.trim() ? await pictureOf(caller.userId, cid, who) : null;
           if (typeof other === "string") throw new MediaError(other);
+          // 🙋 The two of them in it: his own "About you" photos are the reference for his face.
+          if (!other && (input as { with_them?: unknown })?.with_them === true) {
+            const mine = await myRefs(caller.userId).catch(() => []);
+            if (!mine.length) throw new MediaError(`There's no photo of ${theirName || "them"} to work from. Say you'd need a picture of them first (Settings → About you) and offer one of just you instead.`);
+            other = { name: theirName || "them", refs: mine, appearance: String(u?.bio_photo_note || "") };
+          }
           const m = await startMedia(caller.userId, input, { characterId: cid, who: ch?.name || "Velo", appearance: ch?.appearance || "", refs, romantic, mood: ch ? mediaMood(ch.traits) : "", offer: !asked, other });
           media.push(m);
           if (m.status === "failed") throw new MediaError("The picture service wouldn't make that one. Say so briefly and offer something else.");
@@ -485,6 +506,8 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
       if (happy !== null && ch && Number.isFinite(Number((j as { happy?: unknown }).happy))) await saveHappy(caller.userId, ch.id, Number((j as { happy?: unknown }).happy), happy);
       if (love !== null && ch && Number.isFinite(Number((j as { love?: unknown }).love))) await saveLove(caller.userId, ch.id, Number((j as { love?: unknown }).love), love);
       // 💔 Something hurt her, or something's been put right.
+      // ⚢ She's been won round: the tick comes off her card and the icon goes.
+      if (her?.lesbian && (j as { won_over?: unknown }).won_over === true) await wonOver(ch!.id).catch(() => {});
       const hurt = (j as { sore?: unknown }).sore;
       if (ch && hurt === "mended") await mendSore(caller.userId, ch.id).catch(() => {});
       else if (ch && hurt && typeof hurt === "object") {

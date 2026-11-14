@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, uploadCharacterPicture } from "./lib/api";
 import { confirmAsk } from "./lib/dialog";
+import { localConflict } from "./lib/local";
 import { VeloAvatar } from "./avatar";
 import { CHARACTER_VOICES } from "./lib/voices";
 import { TRAITS, PRESETS, DEFAULT_TRAITS, cleanTraits, type TraitKey } from "./lib/traits";
@@ -14,7 +15,7 @@ import { BRAIN_OPTIONS } from "./lib/brainOptions";
 
 type VoiceOption = { id: string; name: string; kind: "female" | "male"; about: string; preview: string; owner?: string };
 
-export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; brain?: string; standing?: string; work_attire?: string; work_days?: number[]; work_start?: string; work_end?: string; part_time?: boolean; school?: string; class_days?: number[]; class_start?: string; class_end?: string; poly_ok?: boolean; sapphic?: boolean; live_in?: boolean; big_following?: boolean; busy?: "work" | "class" | null; ditched?: boolean; home?: boolean; portrait_url: string | null; portrait_job: string | null };
+export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; brain?: string; standing?: string; work_attire?: string; work_days?: number[]; work_start?: string; work_end?: string; part_time?: boolean; school?: string; class_days?: number[]; class_start?: string; class_end?: string; poly_ok?: boolean; sapphic?: boolean; live_in?: boolean; local?: boolean; attached?: "single" | "dating" | "married"; sees_others?: boolean; lesbian?: boolean; partner?: string; big_following?: boolean; busy?: "work" | "class" | null; ditched?: boolean; home?: boolean; portrait_url: string | null; portrait_job: string | null };
 
 /** A character's picture in a circle (their initial until a portrait exists). */
 export function CharacterFace({ c, size }: { c: Pick<Character, "name" | "portrait_url">; size: number }) {
@@ -39,6 +40,14 @@ const Badge = ({ n }: { n?: number }) => (n ? <span data-testid="unread-badge" a
 const Ditched = ({ c }: { c: Character }) =>
   c.ditched ? <span data-testid="ditched" title={`She's ${c.busy === "class" ? "skipped class" : "called off work"} today`} aria-label="skipped it today" style={{ fontSize: 11, marginLeft: 1 }}>😏</span> : null;
 
+/** 💍 Married. ⚢ Into women (until you win her round). */
+const Attached = ({ c }: { c: Character }) => (
+  <>
+    {c.attached === "married" && <span data-testid="is-married" title={c.partner ? `Married to ${c.partner}` : "Married"} aria-label="married" style={{ fontSize: 11, marginLeft: 1 }}>💍</span>}
+    {c.lesbian && <span data-testid="is-sapphic" title="Into women — win her round and this goes" aria-label="into women" style={{ fontSize: 11, marginLeft: 1 }}>⚢</span>}
+  </>
+);
+
 /** 💞🤫 Where the romance stands, on her chip: official, or kept secret. */
 const STANDING_BADGE: Record<string, { icon: string; title: string }> = {
   gf: { icon: "💞", title: "Officially together" },
@@ -61,7 +70,7 @@ export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdi
       {characters.map(c => (
         <button key={c.id} style={{ ...chip(active === c.id, c.busy, c.home), position: "relative" }} aria-pressed={active === c.id} data-busy={c.busy || undefined} data-ditched={c.ditched ? "yes" : undefined} data-home={c.home ? "yes" : undefined}
           title={c.ditched ? `${c.name} should be ${c.busy === "class" ? "in class" : "at work"} — she's not` : c.busy === "work" ? `${c.name} is at work` : c.busy === "class" ? `${c.name} is in class` : undefined} onClick={() => (active !== c.id ? onPick(c.id) : admin ? onEdit(c) : undefined)}>
-          <CharacterFace c={c} size={26} /> {c.name}<Ditched c={c} /><Standing c={c} />{admin && active === c.id ? " ✎" : ""}<Badge n={active === c.id ? 0 : unread[c.id]} />
+          <CharacterFace c={c} size={26} /> {c.name}<Ditched c={c} /><Attached c={c} /><Standing c={c} />{admin && active === c.id ? " ✎" : ""}<Badge n={active === c.id ? 0 : unread[c.id]} />
         </button>
       ))}
       {groups.map(g => (
@@ -104,6 +113,12 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
   const [polyOk, setPolyOk] = useState(!!seed?.poly_ok);
   // 💞🤫 Where it stands: official girlfriend, or together but kept quiet (one or the other).
   const [liveIn, setLiveIn] = useState(!!seed?.live_in);
+  const [local, setLocal] = useState(!!seed?.local);
+  // 💍 Where else her heart is, and whether she might start something of her own.
+  const [attached, setAttached] = useState<"single" | "dating" | "married">(seed?.attached || "single");
+  const [partner, setPartner] = useState(seed?.partner || "");
+  const [seesOthers, setSeesOthers] = useState(!!seed?.sees_others);
+  const [lesbian, setLesbian] = useState(!!seed?.lesbian);
   const [gf, setGf] = useState(!!seed?.standing?.includes("gf"));
   const [secret, setSecret] = useState(!!seed?.standing?.includes("secret"));
   const [sapphic, setSapphic] = useState(!!seed?.sapphic);
@@ -155,7 +170,7 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
   const working = !!c?.portrait_job;
   const dirty = !c || gender !== (c.voice_kind === "male" ? "male" : "female") || name !== c.name || personality !== c.personality || backstory !== c.backstory || relation !== c.relation || appearance !== c.appearance || job !== (c.job || "") || wear !== (c.casual_wear || "") || hobbies !== (c.hobbies || "") || voice.id !== c.voice || JSON.stringify(traits) !== JSON.stringify(cleanTraits(c.traits && Object.keys(c.traits).length ? c.traits : DEFAULT_TRAITS)) || preset !== (c.preset || "") || zone !== (c.time_zone || "") || bday !== (c.birthday || "") || romantic !== !!c.romantic || (romantic ? arc : "") !== (c.romance_arc || "") || refIds.join() !== (c.reference_ids || []).join() || brain !== (c.brain || "")
     || attire !== (c.work_attire || "") || [...workDays].sort().join() !== [...(c.work_days || [])].sort().join() || workStart !== (c.work_start || "") || workEnd !== (c.work_end || "") || partTime !== !!c.part_time || school !== (c.school || "") || [...classDays].sort().join() !== [...(c.class_days || [])].sort().join() || classStart !== (c.class_start || "") || classEnd !== (c.class_end || "")
-    || (romantic ? [gf ? "gf" : "", secret ? "secret" : ""].filter(Boolean).join("+") : "") !== (c.standing || "") || (romantic && polyOk) !== !!c.poly_ok || (romantic && sapphic) !== !!c.sapphic || bigFollowing !== !!c.big_following || liveIn !== !!c.live_in;
+    || (romantic ? [gf ? "gf" : "", secret ? "secret" : ""].filter(Boolean).join("+") : "") !== (c.standing || "") || (romantic && polyOk) !== !!c.poly_ok || (romantic && sapphic) !== !!c.sapphic || bigFollowing !== !!c.big_following || liveIn !== !!c.live_in || local !== !!c.local || attached !== (c.attached || "single") || partner !== (c.partner || "") || seesOthers !== !!c.sees_others || lesbian !== !!c.lesbian;
 
   // A portrait in progress: check back every few seconds until it's ready.
   useEffect(() => {
@@ -173,7 +188,7 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
     setBusy(true); setMsg("");
     try {
       const fields = { name, personality, backstory, relation, appearance, job, casualWear: wear, hobbies, voice: { id: voice.id, name: voice.name, kind: voice.kind, owner: voice.owner }, romantic, romanceArc: romantic ? arc : "", traits, preset, timeZone: zone, birthday: bday, brain,
-        workAttire: attire, workDays, workStart: workStart && workEnd ? workStart : "", workEnd: workStart && workEnd ? workEnd : "", partTime, school, classDays, classStart: classStart && classEnd ? classStart : "", classEnd: classStart && classEnd ? classEnd : "", polyOk: romantic && polyOk, sapphic: romantic && sapphic, bigFollowing, liveIn, gf: romantic && gf, secret: romantic && secret };
+        workAttire: attire, workDays, workStart: workStart && workEnd ? workStart : "", workEnd: workStart && workEnd ? workEnd : "", partTime, school, classDays, classStart: classStart && classEnd ? classStart : "", classEnd: classStart && classEnd ? classEnd : "", polyOk: romantic && polyOk, sapphic: romantic && sapphic, bigFollowing, liveIn, local, attached, partner, seesOthers, lesbian: romantic && lesbian, gf: romantic && gf, secret: romantic && secret };
       const r = await api<{ character: Character }>("/api/characters", { action: c ? "update" : "create", id: c?.id, ...fields, referenceIds: refIds });
       // 🖼️ Pictures picked while making a new character: upload them now (first one as headshot), as references.
       if (!c && pending.files.length && pending.fictional) {
@@ -196,13 +211,16 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
     } catch (e) { setMsg(e instanceof Error ? e.message : "Couldn't save."); return null; }
     finally { setBusy(false); }
   };
+  // 📍 Marked local, but her story puts her somewhere else: say so (a warning, never a block).
+  const clash = local ? localConflict(`${backstory} ${relation} ${job} ${personality}`) : "";
+
   // 💾 Autosave: three seconds after you stop changing things, an existing character saves itself.
   // Every change restarts the clock — typing a sentence saves once, at the end, not halfway through.
   // (A new one still needs Create — it has to pass the safety check and be given a name first.)
   const [saved, setSaved] = useState(false);
   const saving = useRef(false);
   const edited = JSON.stringify([gender, name, personality, backstory, relation, appearance, job, wear, hobbies, voice.id, traits, preset, zone, bday, romantic, arc, refIds, brain,
-    attire, workDays, workStart, workEnd, partTime, school, classDays, classStart, classEnd, gf, secret, polyOk, sapphic, bigFollowing, liveIn]);
+    attire, workDays, workStart, workEnd, partTime, school, classDays, classStart, classEnd, gf, secret, polyOk, sapphic, bigFollowing, liveIn, local, attached, partner, seesOthers, lesbian]);
   useEffect(() => {
     if (!c || !dirty || busy || working || !name.trim()) return;
     const t = setTimeout(async () => {
@@ -272,10 +290,54 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
             </span>
           </div>
         )}
+        {gender === "female" && (
+          <div data-testid="hers" style={{ padding: "8px 12px", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface2)", display: "flex", flexDirection: "column", gap: 8 }}>
+            <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
+              <label style={{ fontSize: 13, fontWeight: 700 }}>Her own love life
+                <select value={attached} onChange={e => setAttached(e.target.value as typeof attached)} data-testid="attached" aria-label="Her own love life" style={{ marginTop: 4, display: "block" }}>
+                  <option value="single">Single</option>
+                  <option value="dating">Seeing someone</option>
+                  <option value="married">💍 Married</option>
+                </select>
+              </label>
+              {attached !== "single" && (
+                <label style={{ fontSize: 13, fontWeight: 700, flex: 1, minWidth: 140 }}>His or her name <span className="muted" style={{ fontWeight: 500 }}>· optional</span>
+                  <input value={partner} onChange={e => setPartner(e.target.value)} maxLength={120} data-testid="partner" aria-label="Partner" placeholder="e.g. Marcus" style={{ marginTop: 4 }} />
+                </label>
+              )}
+            </div>
+            <label className="row" style={{ gap: 6, fontSize: 13, fontWeight: 700, cursor: "pointer" }} title="She might start something of her own — short-term only">
+              <input type="checkbox" checked={seesOthers} data-testid="sees-others" onChange={e => setSeesOthers(e.target.checked)} style={{ width: 20, height: 20 }} />💘 She may see other people
+            </label>
+            {romantic && (
+              <label className="row" style={{ gap: 6, fontSize: 13, fontWeight: 700, cursor: "pointer" }} title="Into women — she flirts with other women more than with you until you win her round">
+                <input type="checkbox" checked={lesbian} data-testid="is-lesbian" onChange={e => setLesbian(e.target.checked)} style={{ width: 20, height: 20 }} />⚢ Into women
+              </label>
+            )}
+            <span className="muted" style={{ fontSize: 11 }}>
+              {attached === "married" ? "Married: a 💍 on her chip and her Picagram bio. Anything with you stays quiet, and she's slower to fall — it means more when she does. Marriages end now and then." :
+               attached === "dating" ? "Seeing someone: short-term, a few weeks or months. She keeps on with you, more quietly, and the odd night she's not free." :
+               seesOthers ? "Single for now — she may meet someone, always short-term, and she'll still be yours while it lasts." :
+               "Single, and staying that way — nothing with anyone else."}
+              {romantic && lesbian ? " ⚢ She flirts with women far more than with you to start with; win her round over time and the tick comes off by itself." : ""}
+              {!romantic && lesbian ? " (Turn on 💕 Romantic below for ⚢ to mean anything.)" : ""}
+            </span>
+          </div>
+        )}
         <div data-testid="live-in" style={{ padding: "8px 12px", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface2)" }}>
-          <label className="row" style={{ gap: 6, fontSize: 13, fontWeight: 700, cursor: "pointer" }} title="She lives with you — when she's home you're in the same house">
-            <input type="checkbox" checked={liveIn} data-testid="is-live-in" onChange={e => setLiveIn(e.target.checked)} style={{ width: 20, height: 20 }} />🏠 Lives with me
-          </label>
+          <div className="row" style={{ gap: 16, flexWrap: "wrap" }}>
+            <label className="row" style={{ gap: 6, fontSize: 13, fontWeight: 700, cursor: "pointer" }} title="She lives with you — when she's home you're in the same house">
+              <input type="checkbox" checked={liveIn} data-testid="is-live-in" onChange={e => setLiveIn(e.target.checked)} style={{ width: 20, height: 20 }} />🏠 Lives with me
+            </label>
+            <label className="row" style={{ gap: 6, fontSize: 13, fontWeight: 700, cursor: "pointer" }} title="She lives within about an hour — close enough to see on a weeknight">
+              <input type="checkbox" checked={local} data-testid="is-local" onChange={e => setLocal(e.target.checked)} style={{ width: 20, height: 20 }} />📍 Local
+            </label>
+          </div>
+          {local && clash && (
+            <div data-testid="local-clash" style={{ marginTop: 6, padding: "6px 10px", borderRadius: 10, background: "rgba(245,158,11,.15)", border: "1px solid rgba(245,158,11,.45)", fontSize: 12, fontWeight: 500 }}>
+              ⚠️ Her card says <b>{clash}</b> — that isn&apos;t within an hour. Change where she lives, or untick Local.
+            </div>
+          )}
           <span className="muted" style={{ fontSize: 11, display: "block", marginTop: 4 }}>
             {liveIn
               ? "When she's home you're in the same house: she talks to you face to face instead of texting, 👁️ ICU works, and her chip goes faint green. A 🏠 Home / Out toggle sits above the message box. Say how you two came to live together in her description or backstory."
@@ -812,11 +874,12 @@ export function NewCharacterSheet({ onDraft, onBlank, onClose }: { onDraft: (d: 
   const [job, setJob] = useState("");
   const [romantic, setRomantic] = useState(false);
   const [male, setMale] = useState(false);
+  const [local, setLocal] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const make = async () => {
     setBusy(true); setErr("");
-    try { onDraft((await api<{ draft: Partial<Character> }>("/api/characters", { action: "generate", name, vibe, job, romantic, male })).draft); }
+    try { onDraft((await api<{ draft: Partial<Character> }>("/api/characters", { action: "generate", name, vibe, job, romantic, male, local })).draft); }
     catch (e) { setErr(e instanceof Error ? e.message : "Couldn't come up with one — try again."); setBusy(false); }
   };
   return (
@@ -833,6 +896,7 @@ export function NewCharacterSheet({ onDraft, onBlank, onClose }: { onDraft: (d: 
         <div className="row" style={{ gap: 16, flexWrap: "wrap", fontSize: 14, fontWeight: 600 }}>
           <label className="row" style={{ gap: 6 }}><input type="checkbox" checked={romantic} onChange={e => setRomantic(e.target.checked)} data-testid="gen-romantic" style={{ width: 18, height: 18 }} /> 💕 Romantic (PG-13)</label>
           <label className="row" style={{ gap: 6 }}><input type="checkbox" checked={male} onChange={e => setMale(e.target.checked)} data-testid="gen-male" style={{ width: 18, height: 18 }} /> Male</label>
+          <label className="row" style={{ gap: 6 }} title="A real town within about an hour of you"><input type="checkbox" checked={local} onChange={e => setLocal(e.target.checked)} data-testid="gen-local" style={{ width: 18, height: 18 }} /> 📍 Local</label>
         </div>
         {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
         <button className="btn" onClick={make} disabled={busy} data-testid="gen-make">{busy ? "Dreaming one up…" : "✨ Make one for me"}</button>

@@ -11,8 +11,11 @@ import { makeCharacter } from "../../lib/makeCharacter";
 import { listLinks, setLink, removeLink, writeStory, linkSuggestions } from "../../lib/friends";
 import { MAX_CHARACTERS, DAILY_PORTRAITS, isAdmin, listCharacters, getCharacter, screenCharacter, startPortrait, checkPortrait, deleteCharacter, portraitsReady, chooseVoice, VoiceError } from "../../lib/characters";
 import { setHome } from "../../lib/inPerson";
+import { localNote } from "../../lib/local";
+import { cleanPartner } from "../../lib/attached";
+const homeSaid = async (me: string) => { const h = await homeOf(me); return h ? homeText(h) : ""; };
 import { picaRenamed } from "../../lib/picagram";
-import { homeOf, livesNote } from "../../lib/where";
+import { homeOf, homeText, livesNote } from "../../lib/where";
 import { workNow, inClass } from "../../lib/work";
 
 // 🎭 Characters. Everyone can list them and chat; only admins create and edit. POST { action, ... }:
@@ -93,7 +96,10 @@ export async function POST(req: NextRequest) {
         const work = { attire: clean(b.workAttire, 400), days: [...new Set((Array.isArray(b.workDays) ? b.workDays : []).map(Number).filter((d: number) => Number.isInteger(d) && d >= 0 && d <= 6))] as number[], start: hhmm(b.workStart), end: hhmm(b.workEnd), part: b.partTime === true };
         if (!work.start || !work.end) { work.start = ""; work.end = ""; }
         const polyOk = romantic && b.polyOk === true, sapphic = romantic && b.sapphic === true, bigFollowing = b.bigFollowing === true;
-        const liveIn = b.liveIn === true;
+        const liveIn = b.liveIn === true, local = b.local === true;
+        const attached = b.attached === "married" ? "married" : b.attached === "dating" ? "dating" : "single";
+        const seesOthers = b.seesOthers === true, lesbian = romantic && b.lesbian === true;
+        const partner = cleanPartner(b.partner);
         // 💞🤫 Official girlfriend, or a relationship kept secret (one or the other, romance only).
         const standing = romantic ? [b.gf === true ? "gf" : "", b.secret === true ? "secret" : ""].filter(Boolean).join("+") : "";
         const zone = typeof b.timeZone === "string" && b.timeZone && isValidTimeZone(b.timeZone) ? b.timeZone : "";
@@ -109,8 +115,13 @@ export async function POST(req: NextRequest) {
         // Same voice as before: keep it (no trip to ElevenLabs).
         const v = prev && (b.voice?.id ?? b.voice) === prev.voice ? { id: prev.voice, name: prev.voice_name, kind: prev.voice_kind } : await chooseVoice(b.voice);
         const [row] = action === "create"
-          ? await sql()`insert into chat_characters (created_by, name, personality, backstory, relation, appearance, job, casual_wear, hobbies, voice, voice_name, voice_kind, romantic, romance_arc, traits, preset, time_zone, birthday, brain, work_attire, work_days, work_start, work_end, part_time, poly_ok, sapphic, live_in, big_following, standing, school, class_days, class_start, class_end) values (${me}, ${f.name}, ${f.personality}, ${f.backstory}, ${f.relation}, ${f.appearance}, ${f.job}, ${f.casual_wear}, ${f.hobbies}, ${v.id}, ${v.name}, ${v.kind}, ${romantic}, ${arc}, ${JSON.stringify(traits)}::jsonb, ${presetId}, ${zone}, ${bday}, ${brain}, ${work.attire}, ${work.days}::int[], ${work.start}, ${work.end}, ${work.part}, ${polyOk}, ${sapphic}, ${liveIn}, ${bigFollowing}, ${standing}, ${klass.school}, ${klass.days}::int[], ${klass.start}, ${klass.end}) returning id`
-          : await sql()`update chat_characters set name = ${f.name}, personality = ${f.personality}, backstory = ${f.backstory}, relation = ${f.relation}, appearance = ${f.appearance}, job = ${f.job}, casual_wear = ${f.casual_wear}, hobbies = ${f.hobbies}, voice = ${v.id}, voice_name = ${v.name}, voice_kind = ${v.kind}, romantic = ${romantic}, romance_arc = ${arc}, traits = ${JSON.stringify(traits)}::jsonb, preset = ${presetId}, time_zone = ${zone}, birthday = ${bday}, brain = ${brain}, work_attire = ${work.attire}, work_days = ${work.days}::int[], work_start = ${work.start}, work_end = ${work.end}, part_time = ${work.part}, poly_ok = ${polyOk}, sapphic = ${sapphic}, live_in = ${liveIn}, big_following = ${bigFollowing}, standing = ${standing}, school = ${klass.school}, class_days = ${klass.days}::int[], class_start = ${klass.start}, class_end = ${klass.end}, reference_ids = ${want.filter((x: string) => refs.includes(x))}::uuid[], updated_at = now() where id = ${id} returning id`;
+          ? await sql()`insert into chat_characters (created_by, name, personality, backstory, relation, appearance, job, casual_wear, hobbies, voice, voice_name, voice_kind, romantic, romance_arc, traits, preset, time_zone, birthday, brain, work_attire, work_days, work_start, work_end, part_time, poly_ok, sapphic, live_in, local, attached, sees_others, lesbian, partner, big_following, standing, school, class_days, class_start, class_end) values (${me}, ${f.name}, ${f.personality}, ${f.backstory}, ${f.relation}, ${f.appearance}, ${f.job}, ${f.casual_wear}, ${f.hobbies}, ${v.id}, ${v.name}, ${v.kind}, ${romantic}, ${arc}, ${JSON.stringify(traits)}::jsonb, ${presetId}, ${zone}, ${bday}, ${brain}, ${work.attire}, ${work.days}::int[], ${work.start}, ${work.end}, ${work.part}, ${polyOk}, ${sapphic}, ${liveIn}, ${local}, ${attached}, ${seesOthers}, ${lesbian}, ${partner}, ${bigFollowing}, ${standing}, ${klass.school}, ${klass.days}::int[], ${klass.start}, ${klass.end}) returning id`
+          : await sql()`update chat_characters set name = ${f.name}, personality = ${f.personality}, backstory = ${f.backstory}, relation = ${f.relation}, appearance = ${f.appearance}, job = ${f.job}, casual_wear = ${f.casual_wear}, hobbies = ${f.hobbies}, voice = ${v.id}, voice_name = ${v.name}, voice_kind = ${v.kind}, romantic = ${romantic}, romance_arc = ${arc}, traits = ${JSON.stringify(traits)}::jsonb, preset = ${presetId}, time_zone = ${zone}, birthday = ${bday}, brain = ${brain}, work_attire = ${work.attire}, work_days = ${work.days}::int[], work_start = ${work.start}, work_end = ${work.end}, part_time = ${work.part}, poly_ok = ${polyOk}, sapphic = ${sapphic}, live_in = ${liveIn}, local = ${local}, attached = ${attached}, sees_others = ${seesOthers}, lesbian = ${lesbian}, partner = ${partner}, big_following = ${bigFollowing}, standing = ${standing}, school = ${klass.school}, class_days = ${klass.days}::int[], class_start = ${klass.start}, class_end = ${klass.end}, reference_ids = ${want.filter((x: string) => refs.includes(x))}::uuid[], updated_at = now() where id = ${id} returning id`;
+        // 💍 Her own relationship: starting one sets the clock, ending one clears it.
+        if (attached !== (prev?.attached || "single")) {
+          if (attached === "single") await sql()`update chat_characters set attached_since = null, attached_until = null, partner = '' where id = ${row.id}`;
+          else await sql()`update chat_characters set attached_since = coalesce(attached_since, current_date), attached_until = ${attached === "dating" ? new Date(Date.now() + (14 + Math.floor(Math.random() * 90)) * 86_400_000).toISOString().slice(0, 10) : null} where id = ${row.id}`;
+        }
         // 🏠 Just moved in: she's home to start with. Moved out: she isn't in the house any more.
         if (liveIn !== !!prev?.live_in) await setHome(me, String(row.id), liveIn).catch(e => console.error("characters: live-in", e instanceof Error ? e.message : e));
         // ✍️ Renamed: her Picagram account and everyone's memories of her follow the new name.
@@ -130,8 +141,8 @@ export async function POST(req: NextRequest) {
           const [{ n }] = await sql()`select count(*)::int as n from chat_characters where owner_id is null`;
           if (n >= MAX_CHARACTERS) return bad(`There can be up to ${MAX_CHARACTERS} characters — delete one first.`);
         }
-        const [row] = await sql()`insert into chat_characters (created_by, owner_id, intro_status, name, personality, backstory, relation, appearance, job, casual_wear, hobbies, voice, voice_name, voice_kind, romantic, romance_arc, traits, preset, time_zone, birthday, brain, work_attire, work_days, work_start, work_end, part_time, poly_ok, sapphic, live_in, big_following, standing, school, class_days, class_start, class_end)
-          select ${me}, owner_id, intro_status, ${name}, personality, backstory, relation, appearance, job, casual_wear, hobbies, voice, voice_name, voice_kind, romantic, romance_arc, traits, preset, time_zone, birthday, brain, work_attire, work_days, work_start, work_end, part_time, poly_ok, sapphic, live_in, big_following, standing, school, class_days, class_start, class_end
+        const [row] = await sql()`insert into chat_characters (created_by, owner_id, intro_status, name, personality, backstory, relation, appearance, job, casual_wear, hobbies, voice, voice_name, voice_kind, romantic, romance_arc, traits, preset, time_zone, birthday, brain, work_attire, work_days, work_start, work_end, part_time, poly_ok, sapphic, live_in, local, attached, sees_others, lesbian, partner, big_following, standing, school, class_days, class_start, class_end)
+          select ${me}, owner_id, intro_status, ${name}, personality, backstory, relation, appearance, job, casual_wear, hobbies, voice, voice_name, voice_kind, romantic, romance_arc, traits, preset, time_zone, birthday, brain, work_attire, work_days, work_start, work_end, part_time, poly_ok, sapphic, live_in, local, attached, sees_others, lesbian, partner, big_following, standing, school, class_days, class_start, class_end
           from chat_characters where id = ${id} returning id`;
         return NextResponse.json({ character: await getCharacter(String(row.id)) });
       }
@@ -146,7 +157,7 @@ export async function POST(req: NextRequest) {
       // ✨ A whole new character from a few hints — only a draft for the editor (nothing is saved).
       case "generate": {
         if (!allow(`chargen:${me}`, [{ ms: 60_000, max: 6 }, { ms: 86_400_000, max: 100 }])) return bad("That's a lot of new characters — give it a minute.", 429);
-        try { return NextResponse.json({ draft: await makeCharacter({ name: String(b.name || ""), vibe: String(b.vibe || ""), job: String(b.job || ""), romantic: b.romantic === true, male: b.male === true, liveIn: b.liveIn === true, lives: livesNote(await homeOf(me)) }) }); }
+        try { return NextResponse.json({ draft: { local: b.local === true, ...await makeCharacter({ name: String(b.name || ""), vibe: String(b.vibe || ""), job: String(b.job || ""), romantic: b.romantic === true, male: b.male === true, liveIn: b.liveIn === true, local: b.local === true, lives: b.local === true ? localNote(await homeSaid(me)) : livesNote(await homeOf(me)) }) } }); }
         catch (e) { return bad(e instanceof Error ? e.message : "Couldn't come up with one — try again.", 502); }
       }
       // Make one of her gallery pictures the main headshot.

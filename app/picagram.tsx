@@ -233,13 +233,17 @@ function Composer({ onClose, onPosted }: { onClose: () => void; onPosted: () => 
   const [caption, setCaption] = useState("");
   const [photo, setPhoto] = useState("");
   const [mine, setMine] = useState(true);
+  // 👥 One of your characters in the picture with you.
+  const [who, setWho] = useState("");
+  const [people, setPeople] = useState<{ id: string; name: string; portrait: string | null; pictures: number }[]>([]);
+  useEffect(() => { api<{ characters: typeof people }>("/api/pica", { action: "withme" }).then(r => setPeople(r.characters)).catch(() => {}); }, []);
   const [sheet, setSheet] = useState(false);
   const [drafted, setDrafted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const post = async () => {
     setBusy(true); setErr("");
-    try { await api("/api/pica", { action: "post", caption: hideSecrets(caption).text, photo: hideSecrets(photo).text, useMyPhotos: mine, drafted }); onPosted(); }
+    try { await api("/api/pica", { action: "post", caption: hideSecrets(caption).text, photo: hideSecrets(photo).text, useMyPhotos: mine, drafted, withId: who }); onPosted(); }
     catch (e) { setErr(e instanceof Error ? e.message : "Couldn't post."); setBusy(false); }
   };
   return (
@@ -260,6 +264,15 @@ function Composer({ onClose, onPosted }: { onClose: () => void; onPosted: () => 
           <label className="row" style={{ gap: 10, fontSize: 13 }}>
             <input type="checkbox" checked={mine} onChange={e => setMine(e.target.checked)} data-testid="pica-mine" style={{ width: 20, height: 20, flexShrink: 0 }} />
             <span>Use my photos as reference <span className="muted">(your profile photo and your past posts)</span></span>
+          </label>
+        )}
+        {photo.trim() && people.length > 0 && (
+          <label style={{ fontSize: 13, fontWeight: 700 }}>👥 With me in it <span className="muted" style={{ fontWeight: 500 }}>· optional</span>
+            <select value={who} onChange={e => setWho(e.target.value)} data-testid="pica-with" aria-label="Who's in it with me" style={{ marginTop: 4, display: "block", width: "100%" }}>
+              <option value="">— just me —</option>
+              {people.map(p => <option key={p.id} value={p.id}>{p.name}{p.pictures ? "" : " (no picture of her yet)"}</option>)}
+            </select>
+            {who && <span className="muted" style={{ fontWeight: 500, fontSize: 11, display: "block", marginTop: 4 }}>Say what you&apos;re both doing in the photo — her face comes from her own pictures.</span>}
           </label>
         )}
         {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
@@ -301,7 +314,7 @@ function Grid({ photos, onOpen }: { photos: Photo[]; onOpen: (p: Photo) => void 
 
 /** 👤 Her profile: bio, followers, Follow, and all her photos. */
 function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: string; onClose: () => void; onFollow: (account: string, on: boolean) => void; onChat?: (characterId: string) => void; onMessage?: (id: string) => void; onDeleted?: (id: string) => void }) {
-  const [data, setData] = useState<{ account: { id: string; handle: string; name: string; bio: string; followers: number; followed: boolean; avatar: string | null; character_id: string | null; lives: string; hidden: boolean }; photos: Photo[] } | null>(null);
+  const [data, setData] = useState<{ account: { id: string; handle: string; name: string; bio: string; followers: number; followed: boolean; avatar: string | null; character_id: string | null; lives: string; hidden: boolean; married: boolean }; photos: Photo[] } | null>(null);
   const [err, setErr] = useState("");
   const [befriending, setBefriending] = useState(false);
   // 🤝 She becomes a character (filled in from her profile; her photos are her headshot and references).
@@ -346,7 +359,7 @@ function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: 
           <div className="row" style={{ gap: 16, padding: 16 }}>
             <Avatar name={data.account.name} url={data.account.avatar} size={76} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 800 }}>{data.account.name}</div>
+              <div style={{ fontWeight: 800 }}>{data.account.name}{data.account.married && <span data-testid="pica-ring" title="Married" aria-label="married" style={{ marginLeft: 4 }}>💍</span>}</div>
               <div className="muted" style={{ fontSize: 13 }}><b style={{ color: "var(--text)" }}>{data.photos.length}</b> posts · <b style={{ color: "var(--text)" }}>{fmt(data.account.followers)}</b> followers</div>
               <div style={{ fontSize: 13, marginTop: 4, whiteSpace: "pre-wrap" }}>{data.account.bio}</div>
               {data.account.lives && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>📍 {data.account.lives}</div>}
@@ -399,7 +412,7 @@ function Saved({ onClose }: { onClose: () => void }) {
 
 /** 👥 Who you follow (up to 70) — unfollow some to make room for new ones. */
 function Following({ onClose, onUnfollow, onOpen }: { onClose: () => void; onUnfollow: (id: string) => void; onOpen: (id: string) => void }) {
-  const [list, setList] = useState<{ id: string; handle: string; name: string; avatar: string | null; friend: boolean; character_id: string | null }[] | null>(null);
+  const [list, setList] = useState<{ id: string; handle: string; name: string; avatar: string | null; friend: boolean; character_id: string | null; married?: boolean }[] | null>(null);
   // 🙈 Your characters: hide their posts without them ever knowing (unlike unfollowing).
   const [chars, setChars] = useState<{ id: string; name: string; portrait: string | null; hidden: boolean }[] | null>(null);
   const hide = async (id: string, on: boolean) => {
@@ -445,7 +458,7 @@ function Following({ onClose, onUnfollow, onOpen }: { onClose: () => void; onUnf
           <div key={a.id} className="row" data-testid="pica-following-row" style={{ gap: 10, padding: "10px 14px", borderBottom: "1px solid var(--border)" }}>
             <span onClick={() => onOpen(a.id)} style={{ cursor: "pointer", display: "flex" }}><Avatar name={a.name} url={a.avatar} size={40} /></span>
             <div style={{ flex: 1, minWidth: 0, cursor: "pointer" }} onClick={() => onOpen(a.id)}>
-              <div style={{ fontWeight: 800, fontSize: 14 }}>{a.handle}{a.friend ? " 🤝" : ""}</div>
+              <div style={{ fontWeight: 800, fontSize: 14 }}>{a.handle}{a.friend ? " 🤝" : ""}{a.married ? " 💍" : ""}</div>
               <div className="muted" style={{ fontSize: 12 }}>{a.name}</div>
             </div>
             <button className="ghost" onClick={() => unfollow(a.id, a.name, a.friend)} data-testid="pica-unfollow" style={{ padding: "4px 12px", fontSize: 13 }}>Unfollow</button>
