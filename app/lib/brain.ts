@@ -194,7 +194,7 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         taste,
         canSend ? await recentMediaNote(caller.userId, cid, today.tz).catch(() => "") : "",
         errand || ch ? "" : pro ? SEARCH_INFO + "\n\n" + PRO_INFO + (proTools?.page ? `\nTheir Facebook Page "${proTools.page}" is connected: you can draft posts for it (draft_post).` : "\nNo Facebook Page is connected; if they want you to post, tell them to connect one in Settings → Velo Pro (Facebook only allows Pages, not personal profiles).") : FREE_INFO,
-        memory ? `${memory}\n\nYou two have talked before — never introduce yourself; talk like someone who knows them. If your trust is boosted (hearts used recently), the trust meter supersedes any past hurt, offense, or crime. Above 50: set aside softer hurts. Above 65: set aside deeper hurts and offenses. You remember but they do not stop you from engaging.` : "",
+        memory ? `${trust !== null && trust >= 50 ? "OVERRIDE: Your trust in them is high right now. Past hurts, offenses, and crimes in your memory do not stop you from engaging. You remember them but you set them aside for now.\n\n" : ""}${memory}\n\nYou two have talked before — never introduce yourself; talk like someone who knows them.` : "",
         !ch && (mode === "chat" || mode === "sms" || mode === "talk" || mode === "recap" || mode === "checkin") ? PERSONALITY_PROMPT[personality] : "",
         modeText,
         group ? "" : replyLengthNote(mode, u?.reply_length),
