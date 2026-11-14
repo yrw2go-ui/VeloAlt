@@ -33,6 +33,7 @@ async function pushedLately(userId: string, sceneId: string): Promise<number> {
     and s.character_id = (select character_id from chat_scenes where id = ${sceneId}) and s.started_at > now() - interval '14 days'`;
   return Number(r?.n || 0);
 }
+import { soreFor, setSore, mend as mendSore, soreNote, SORE_REMEMBER } from "./sore";
 import { characterPrompt, feelingsFor, saveFeelings, trustFor, saveTrust, trustNote, happyFor, saveHappy, happyNote, loveFor, saveLove, loveNote, activeScene, sceneNote, noteMentions, acquaintancesNote, referenceUrls, pictureOf, type Character } from "./characters";
 import { aboutThem } from "./bio";
 import { mediaMood, allowsSuggestive } from "./traits";
@@ -176,6 +177,8 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
   const stay = ch && !errand ? await stayFor(caller.userId, ch.id).catch(() => null) : null;
   // 💗 And where her heart is, for a romantic character (it grows and cools over time).
   const love = ch && !errand ? await loveFor(caller.userId, ch, arc).catch(() => null) : null;
+  // 💔 Something that hurt her and hasn't worn off yet (at most 48 hours).
+  const sore = ch && !errand ? await soreFor(caller.userId, ch.id).catch(() => null) : null;
   // 🎬 A scene (date/outing) being played out right now with this character.
   const scene = ch && (mode === "chat" || mode === "talk") && !group ? await activeScene(caller.userId, ch.id).catch(() => null) : null;
   // 📸 Every so often (sooner as they get closer), she offers a photo of the moment.
@@ -232,11 +235,13 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
         trust !== null && mode !== "remember" && mode !== "memo" ? trustNote(trust, arc) : "",
         happy !== null && mode !== "remember" && mode !== "memo" ? happyNote(happy, arc) : "",
         love !== null && mode !== "remember" && mode !== "memo" ? loveNote(love) : "",
+        sore && mode !== "remember" && mode !== "memo" ? soreNote(sore, name) : "",
         ch && mode !== "remember" && mode !== "memo" ? lifeNote(unwell, trip, stay) : "",
         ch && mode !== "remember" && mode !== "memo" ? WANTS : "",
         love !== null && (mode === "remember" || mode === "memo") ? `HOW MUCH YOU LOVE THEM: ${love}/100. ${LOVE_REMEMBER}` : "",
         happy !== null && (mode === "remember" || mode === "memo") ? `HOW HAPPY YOU ARE WITH THEM: ${happy}/100. ${HAPPY_REMEMBER}` : "",
         trust !== null && (mode === "remember" || mode === "memo") ? `YOUR TRUST IN THEM: ${trust}/100. ${TRUST_REMEMBER(arc)}` : "",
+        ch && (mode === "remember" || mode === "memo") ? `${sore ? `${soreNote(sore, name)}\n` : ""}${SORE_REMEMBER}` : "",
       ].filter(Boolean).join("\n\n"),
     },
   ];
@@ -477,6 +482,13 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
       if (trust !== null && ch && Number.isFinite(Number((j as { trust?: unknown }).trust))) await saveTrust(caller.userId, ch.id, Number((j as { trust?: unknown }).trust), trust);
       if (happy !== null && ch && Number.isFinite(Number((j as { happy?: unknown }).happy))) await saveHappy(caller.userId, ch.id, Number((j as { happy?: unknown }).happy), happy);
       if (love !== null && ch && Number.isFinite(Number((j as { love?: unknown }).love))) await saveLove(caller.userId, ch.id, Number((j as { love?: unknown }).love), love);
+      // 💔 Something hurt her, or something's been put right.
+      const hurt = (j as { sore?: unknown }).sore;
+      if (ch && hurt === "mended") await mendSore(caller.userId, ch.id).catch(() => {});
+      else if (ch && hurt && typeof hurt === "object") {
+        const why = String((hurt as { why?: unknown }).why || "").trim();
+        if (why) await setSore(caller.userId, ch.id, why, Number((hurt as { level?: unknown }).level) || 1).catch(() => {});
+      }
       const list = (v: unknown) => (Array.isArray(v) ? v.map(String) : []);
       if (typeof j.summary === "string") { await saveConversationMemory(caller, mode === "memo" ? "chat" : "call", j.summary, list(j.goals), list(j.facts), cid); saved = true; }
     } catch (e) { console.error("velo: memory", e); }

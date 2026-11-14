@@ -5,6 +5,7 @@
 //
 // Nothing here is a hard no for long: a turn-down is about tonight, not about them.
 import { sql } from "./db";
+import { soreFor } from "./sore";
 import type { Character } from "./characters";
 import { writeText } from "./llm";
 import { workNow } from "./work";
@@ -24,10 +25,12 @@ const ASKS: Record<Ask, string> = {
 };
 
 /** How likely she is to say yes: she wants to, and being happy and in love makes her keener. */
-function chanceOfYes(happy: number, love: number | null, busy: boolean): number {
+function chanceOfYes(happy: number, love: number | null, busy: boolean, sore = 0): number {
   const base = busy ? 0.3 : 0.92; // at work or in class she usually can't; otherwise she's nearly always up for it
   const mood = (happy - 60) / 400 + (love === null ? 0 : (love - 50) / 500); // ±~0.2 in total
-  return Math.max(busy ? 0.12 : 0.6, Math.min(busy ? 0.55 : 0.98, base + mood));
+  // 💔 Still sore: a bit less up for things while it wears off. Never a wall — sweet talk still works.
+  const hurt = sore * 0.08;
+  return Math.max(busy ? 0.1 : 0.45, Math.min(busy ? 0.55 : 0.98, base + mood - hurt));
 }
 
 /** The reasons she might beg off, with how she'd put it. */
@@ -37,6 +40,7 @@ const REASONS = {
   tired: "you've had a long day and you're not up for it tonight — you'd rather do it another time when you can actually enjoy it",
   busy: "you're in the middle of something you can't drop right now",
   mess: "you look a mess right now and don't want to be seen like this — later or another night would be better",
+  sore: "something's been sitting with you since earlier and you're not quite yourself tonight — you'd rather do this when you're properly in the mood for it",
 } as const;
 
 /** Her turn-down, in her own voice (a short text). Falls back to a plain line if no AI answers. */
@@ -108,7 +112,9 @@ export async function canShe(userId: string, ch: Character, ask: Ask, timeZone: 
   const sick = await sickFor(userId, ch.id).catch(() => null);
   const at = workNow(ch, tz, Date.now(), await offToday(userId, ch.id, tz).catch(() => false), ch.id);
   const busy = at.atWork;
-  const yes = roll() < chanceOfYes(happy, love, busy);
+  // 💔 Something that hurt her and hasn't worn off: she's a little less up for things.
+  const sore = await soreFor(userId, ch.id).catch(() => null);
+  const yes = roll() < chanceOfYes(happy, love, busy, sore?.level || 0);
   // 💬 They're asking again after a no: sweet talk can change her mind.
   if (await askedBefore(userId, ch.id, ask).catch(() => false)) {
     const r = await persuaded(userId, ch, ask, String(name), happy, love, luck).catch(() => ({ ok: true as const }));
@@ -131,7 +137,8 @@ export async function canShe(userId: string, ch: Character, ask: Ask, timeZone: 
     return { ok: true, mark: "she slipped away from work for me", note: `You're supposed to be at work right now and you're slipping away for them anyway (a long break, calling off, sneaking out) — be a bit giddy and guilty about it, and keep an ear out for getting caught.` };
   }
   if (!yes) {
-    const reason = ask === "person" || ask === "scene" ? (Math.random() < 0.5 ? "mess" : "tired") : "busy";
+    const reason = sore && Math.random() < 0.6 ? "sore"
+      : ask === "person" || ask === "scene" ? (Math.random() < 0.5 ? "mess" : "tired") : "busy";
     await noteTurnDown(userId, ch.id, ask).catch(() => {});
     return { ok: false, say: await sayNo(ch, String(name), ask, reason, "later tonight or tomorrow") };
   }
@@ -170,5 +177,5 @@ export function lifeNote(sick: { what: string } | null, away: { place: string; u
 
 // 💞 What she's after, underneath it all. Characters want someone; some just make it harder to get there.
 export const WANTS = `WHAT YOU WANT: underneath everything, you want someone in your life — to be close to them, to matter to them, to be wanted back. However guarded, prickly, busy or slow-burning you are, that's the direction you're pulled in, and any relationship here can grow into a deep, passionate, two-way one — some of you just make that harder to reach than others, and it has to be earned.
-When something hurts you (being ignored, let down, made to feel second best, finding out about someone else), feel it the way YOU would and let it show — go quiet, get short, pull back a little. But you don't stay there: you're not built to hold a grudge for long, and when they come back to you, make an effort, apologise, or try to put things right, you let them — slowly if you're proud, quickly if you're soft, but you do. Never punish them for days on end, never go cold forever, and never be cruel, controlling or threatening.
+When something hurts you (being ignored, let down, made to feel second best, finding out about someone else), feel it the way YOU would and let it show — go quiet, get short, pull back a little. But you don't stay there: you're not built to hold a grudge for long, and when they come back to you, make an effort, apologise, or try to put things right, you let them — slowly if you're proud, quickly if you're soft, but you do. Whatever it is, it's measured in hours, not days: a day or two at the very most, and less than that if they make the effort. Never punish them for days on end, never go cold forever, and never be cruel, controlling or threatening.
 And when you turn something down — a video chat, meeting up, a call, a photo, anything — you're never mean, cold, mocking or cruel about it. You say no warmly, in your own way, and leave the door open. If they then ask again sweetly, let yourself be talked into it when you want to be; if they get pushy or sulky about it, hold your ground, kindly.`;
