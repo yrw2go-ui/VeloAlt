@@ -232,6 +232,10 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
         if (r.by === "claude" && lastMark !== "⏰") await marker("wait");
         if (r.by === "alt" && lastMark === "⏰") await marker("back");
       }
+      if (r.reply?.toLowerCase().startsWith("prompt to send image")) {
+        r.reply = r.reply.slice(20).trim();
+        // Trigger accept flow
+      }
       if (r.react) setMsgs(list => (list || []).map(x => (x.id && x.id === myId ? { ...x, theirReaction: r.react } : x)));
       // 🎨 Photos/videos being made show up right under the reply and fill in when ready.
       const sent: ChatMsg[] = (r.media || []).filter(x => x.status !== "failed").map(media => ({ role: "assistant", content: mediaNote(media), media }));
@@ -656,7 +660,7 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
         style={{ position: "relative", cursor: !mine && m.id ? "pointer" : undefined, padding: "12px 16px", borderRadius: 18, borderBottomLeftRadius: mine ? 18 : 4, borderBottomRightRadius: mine ? 4 : 18,
         background: mine ? "linear-gradient(135deg, var(--accent), var(--accent2))" : "var(--surface2)", color: "var(--text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", lineHeight: 1.5, fontSize: 19 }}>
         {m.file && <div style={{ marginBottom: m.content && m.content !== "📎" ? 8 : 0 }}><FileThumb f={m.file} size={180} /></div>}
-        {m.content !== "📎" && styled(m.content.replace(/\*\*(.+?)\*\*/g, "$1"))}
+        {m.content !== "📎" && styled(m.content.replace(/^prompt to send image\s*/i, "").replace(/\*\*(.+?)\*\*/g, "$1"))}
         {!mine && /sent.*(pic|photo|image|picture)|here.*(pic|photo)|sending you|on the way|coming|sent it/i.test(m.content) && !m.media && (
           <button type="button" onClick={e => { e.stopPropagation(); onResend?.(m.id || ""); }} disabled={resending}
             style={{ marginTop: 8, fontSize: 15, padding: "6px 14px", borderRadius: 999, border: "1px solid var(--accent)", background: "var(--accent)", color: "#fff", fontWeight: 600, cursor: "pointer" }}>
