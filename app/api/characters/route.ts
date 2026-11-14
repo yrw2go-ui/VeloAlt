@@ -49,8 +49,12 @@ export async function POST(req: NextRequest) {
       const home = new Set((await sql()`select character_id from chat_in_person where user_id = ${me} and place = 'home'`).map(r => String(r.character_id)));
       const characters = list.map(c => {
         const zone = isValidTimeZone(c.time_zone) ? c.time_zone : "America/Chicago";
-        const at = workNow(c, zone, Date.now(), off.has(`${c.id}:${localDate(Date.now(), zone)}`), c.id);
-        return { ...c, busy: at.atWork ? (at.kind || (inClass(c) ? "class" : "work")) : null, home: c.live_in && home.has(c.id) };
+        // 🙈 Called off / skipped today: she should be there, and isn't. The ring stays and she gets a 😏.
+        const skived = off.has(`${c.id}:${localDate(Date.now(), zone)}`);
+        const at = workNow(c, zone, Date.now(), skived, c.id);
+        const due = skived ? workNow(c, zone, Date.now(), false, c.id) : at;
+        const busy = due.atWork ? (due.kind || (inClass(c) ? "class" : "work")) : null;
+        return { ...c, busy, ditched: !!busy && skived, home: c.live_in && home.has(c.id) };
       });
       return NextResponse.json({ characters, portraits: portraitsReady(), admin, brains: admin ? availableBrains() : [], brainModels: admin ? brainList() : [] });
     }

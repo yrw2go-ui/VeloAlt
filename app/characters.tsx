@@ -14,7 +14,7 @@ import { BRAIN_OPTIONS } from "./lib/brainOptions";
 
 type VoiceOption = { id: string; name: string; kind: "female" | "male"; about: string; preview: string; owner?: string };
 
-export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; brain?: string; standing?: string; work_attire?: string; work_days?: number[]; work_start?: string; work_end?: string; part_time?: boolean; school?: string; class_days?: number[]; class_start?: string; class_end?: string; poly_ok?: boolean; sapphic?: boolean; live_in?: boolean; big_following?: boolean; busy?: "work" | "class" | null; home?: boolean; portrait_url: string | null; portrait_job: string | null };
+export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; brain?: string; standing?: string; work_attire?: string; work_days?: number[]; work_start?: string; work_end?: string; part_time?: boolean; school?: string; class_days?: number[]; class_start?: string; class_end?: string; poly_ok?: boolean; sapphic?: boolean; live_in?: boolean; big_following?: boolean; busy?: "work" | "class" | null; ditched?: boolean; home?: boolean; portrait_url: string | null; portrait_job: string | null };
 
 /** A character's picture in a circle (their initial until a portrait exists). */
 export function CharacterFace({ c, size }: { c: Pick<Character, "name" | "portrait_url">; size: number }) {
@@ -26,13 +26,18 @@ export function CharacterFace({ c, size }: { c: Pick<Character, "name" | "portra
 }
 
 const chip = (on: boolean, busy?: "work" | "class" | null, home?: boolean) => ({ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, padding: "4px 10px 4px 4px", borderRadius: 999, cursor: "pointer", fontSize: 13, fontWeight: 700,
-  // 💼 at work: yellow. 🎓 in class: orange. (Not when she called off or skipped.) 🏠 home: faint green.
-  border: `${busy || home ? 2 : 1}px solid ${busy === "work" ? "#facc15" : busy === "class" ? "#f97316" : home ? "rgba(74,222,128,0.5)" : on ? "var(--accent)" : "var(--border)"}`,
+  // 🎓 in class: yellow. 💼 at work: orange. The ring stays when she's ditched it — she gets a 😏 instead.
+  // 🏠 home (someone who lives with you): faint green.
+  border: `${busy || home ? 2 : 1}px solid ${busy === "class" ? "#facc15" : busy === "work" ? "#f97316" : home ? "rgba(74,222,128,0.5)" : on ? "var(--accent)" : "var(--border)"}`,
   background: on ? "rgba(124,140,255,0.15)" : "var(--surface2)", color: "var(--text)" } as const);
 
 /** The chips above the chat. Tap a chip to switch chats; admins tap the open one again to edit it. */
 /** 🔴 A small number on a chip: their unread messages there. */
 const Badge = ({ n }: { n?: number }) => (n ? <span data-testid="unread-badge" aria-label={`${n} unread`} style={{ position: "absolute", top: -6, right: -4, minWidth: 18, height: 18, padding: "0 5px", borderRadius: 999, background: "#ef4444", color: "#fff", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid var(--bg, #0b0d17)" }}>{n > 99 ? "99+" : n}</span> : null);
+
+/** 😏 She should be in class or at work, and she's skipped it — for you. */
+const Ditched = ({ c }: { c: Character }) =>
+  c.ditched ? <span data-testid="ditched" title={`She's ${c.busy === "class" ? "skipped class" : "called off work"} today`} aria-label="skipped it today" style={{ fontSize: 11, marginLeft: 1 }}>😏</span> : null;
 
 /** 💞🤫 Where the romance stands, on her chip: official, or kept secret. */
 const STANDING_BADGE: Record<string, { icon: string; title: string }> = {
@@ -54,9 +59,9 @@ export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdi
     <div data-testid="character-strip" style={{ display: "flex", gap: 8, overflowX: "auto", padding: "12px 12px 8px", borderBottom: "1px solid var(--border)" }}>
       <button style={{ ...chip(active === null), position: "relative" }} onClick={() => onPick(null)} aria-pressed={active === null}><VeloAvatar size={26} /> Velo<Badge n={active === null ? 0 : unread.velo} /></button>
       {characters.map(c => (
-        <button key={c.id} style={{ ...chip(active === c.id, c.busy, c.home), position: "relative" }} aria-pressed={active === c.id} data-busy={c.busy || undefined} data-home={c.home ? "yes" : undefined}
-          title={c.busy === "work" ? `${c.name} is at work` : c.busy === "class" ? `${c.name} is in class` : undefined} onClick={() => (active !== c.id ? onPick(c.id) : admin ? onEdit(c) : undefined)}>
-          <CharacterFace c={c} size={26} /> {c.name}<Standing c={c} />{admin && active === c.id ? " ✎" : ""}<Badge n={active === c.id ? 0 : unread[c.id]} />
+        <button key={c.id} style={{ ...chip(active === c.id, c.busy, c.home), position: "relative" }} aria-pressed={active === c.id} data-busy={c.busy || undefined} data-ditched={c.ditched ? "yes" : undefined} data-home={c.home ? "yes" : undefined}
+          title={c.ditched ? `${c.name} should be ${c.busy === "class" ? "in class" : "at work"} — she's not` : c.busy === "work" ? `${c.name} is at work` : c.busy === "class" ? `${c.name} is in class` : undefined} onClick={() => (active !== c.id ? onPick(c.id) : admin ? onEdit(c) : undefined)}>
+          <CharacterFace c={c} size={26} /> {c.name}<Ditched c={c} /><Standing c={c} />{admin && active === c.id ? " ✎" : ""}<Badge n={active === c.id ? 0 : unread[c.id]} />
         </button>
       ))}
       {groups.map(g => (
