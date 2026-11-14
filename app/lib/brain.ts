@@ -201,7 +201,8 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
         modeText,
         group ? "" : replyLengthNote(mode, u?.reply_length),
         scene ? sceneNote(scene) : "",
-        together && ch ? inPersonNote(together, name || "them") : "",
+        together && ch ? inPersonNote(together, name || "them") + ` It is ${today.label} right now.` : ""
+        atHome && ch?.live_in ? "\n🏠 YOU ARE AT HOME WITH THEM RIGHT NOW. You see them there. Talk face to face. Peek works." : "",
         scene ? sceneClockNote(scene, today.tz, scene.clock === "now" && scene.planned_time ? await pushedLately(caller.userId, scene.id).catch(() => 0) : 0) : "",
         ch && mode !== "remember" && mode !== "memo" && !group ? await plansNote(caller.userId, ch.id, today.date).catch(() => "") : "",
         ch && mode !== "remember" && mode !== "memo" && !opts.promise ? await promisesNote(caller.userId, ch.id, today.tz).catch(() => "") : "",
