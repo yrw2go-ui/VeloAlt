@@ -257,6 +257,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   // 🧍 Together in person (not a scene): she talks face to face, and 👁️ ICU works.
   type InPerson = { place: string; started_at: string };
   const [inPerson, setInPerson] = useState<InPerson | null>(null);
+  const [atHome, setAtHome] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [moreMenu, setMoreMenu] = useState(false);
   const [heartTaps, setHeartTaps] = useState(0);
@@ -553,6 +554,13 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
         <button type="button" className="btn ghost" onClick={() => { setSelectMode(false); setSelected(new Set()); }} style={{ fontSize: 15 }}>Cancel</button>
         <button type="button" className="btn" onClick={deleteSelected} disabled={!selected.size} style={{ fontSize: 15 }}>Delete</button>
       </div>}
+      {character?.live_in && (
+        <div style={{ display: "flex", justifyContent: "center", padding: "6px 12px", borderTop: "1px solid var(--border)" }}>
+          <button type="button" onClick={async () => { const next = !atHome; setAtHome(next); await data("livein.set", { characterId: cid, atHome: next }).catch(() => {}); }} style={{ padding: "6px 16px", borderRadius: 999, border: "1px solid var(--border)", background: atHome ? "rgba(16,185,129,0.2)" : "transparent", color: atHome ? "#10b981" : "var(--muted)", fontWeight: 600, fontSize: 14 }}>
+            {atHome ? "🏠 Home" : "🚶 Away"}
+          </button>
+        </div>
+      )}
       <form onSubmit={e => { e.preventDefault(); send(text); }} className="row" style={{ padding: "10px 12px", borderTop: "1px solid var(--border)" }}>
         <input ref={picker} type="file" accept={ACCEPT} hidden onChange={e => pick(e.target.files?.[0])} data-testid="chat-file-input" />
         <div style={{ position: "relative" }}>
