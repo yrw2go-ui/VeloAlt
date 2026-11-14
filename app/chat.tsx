@@ -564,7 +564,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
         <button type="button" className="btn ghost" onClick={() => { setSelectMode(false); setSelected(new Set()); }} style={{ fontSize: 15 }}>Cancel</button>
         <button type="button" className="btn" onClick={deleteSelected} disabled={!selected.size} style={{ fontSize: 15 }}>Delete</button>
       </div>}
-      {character?.live_in && userAtHome && (
+      {character?.live_in && (
         <div style={{ display: "flex", justifyContent: "center", padding: "6px 12px", borderTop: "1px solid var(--border)" }}>
           <button type="button" onClick={async () => { const next = !atHome; setAtHome(next); await data("livein.set", { characterId: cid, atHome: next }).catch(() => {}); }} style={{ padding: "6px 16px", borderRadius: 999, border: "1px solid var(--border)", background: atHome ? "rgba(16,185,129,0.2)" : "transparent", color: atHome ? "#10b981" : "var(--muted)", fontWeight: 600, fontSize: 14 }}>
             {atHome ? "🏠 Home" : "🚶 Away"}
