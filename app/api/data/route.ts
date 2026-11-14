@@ -473,6 +473,14 @@ export async function POST(req: NextRequest) {
         await db`insert into chat_relationships (user_id, character_id, at_home) values (${me}, ${ch.id}, ${!!b.atHome}) on conflict (user_id, character_id) do update set at_home = ${!!b.atHome}, updated_at = now()`;
         return NextResponse.json({ atHome: !!b.atHome });
       }
+      case "user.home": {
+        await db`update users set at_home = ${!!b.atHome}, updated_at = now() where id = ${me}`;
+        return NextResponse.json({ atHome: !!b.atHome });
+      }
+      case "user.home.get": {
+        const [u] = await db`select at_home from users where id = ${me}`;
+        return NextResponse.json({ atHome: !!u?.at_home });
+      }
       case "livein.get": {
         const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
         if (!ch) return bad("That character wasn't found.");
