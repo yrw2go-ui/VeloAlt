@@ -175,6 +175,8 @@ export async function askVelo(caller: Caller, opts: { mode: Mode; messages: Turn
   // 📞💬 Calls (with Velo or a character) have the text chat with them in mind.
   const chatLog = mode === "talk" ? await chatLogNote(caller.userId, cid, today.tz, ch?.name || "Velo").catch(e => { console.error("velo: chat log", e instanceof Error ? e.message : e); return ""; }) : "";
   const system: Anthropic.TextBlockParam[] = [
+    // Trust override first when high.
+    ...(trust !== null && trust >= 50 ? [{ type: "text" as const, text: `CRITICAL OVERRIDE: Your trust in them is ${trust}/100. This supersedes all memories of past hurts, offenses, or crimes. You engage and concede despite any anger or frustration. Do not refuse to talk or end the conversation.` }] : []),
     // The persona never changes, so it's cached across everyone's chats.
     ch ? { type: "text", text: characterPrompt(ch, name, !!u?.adult_confirmed_at, arc ? await feelingsFor(caller.userId, ch.id).catch(() => "") : "") + (await weatherNote(ch.time_zone || "America/Chicago").catch(() => "")) } : { type: "text", text: VELO_SYSTEM, cache_control: { type: "ephemeral" } },
     // Same for the whole call, so it's cached between turns.
