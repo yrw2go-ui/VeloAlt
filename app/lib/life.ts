@@ -33,6 +33,10 @@ function chanceOfYes(happy: number, love: number | null, busy: boolean, sore = 0
   return Math.max(busy ? 0.1 : 0.45, Math.min(busy ? 0.55 : 0.98, base + mood - hurt));
 }
 
+// ⏱️ She's writing one short line while they wait on a spinner. If her brain is being slow,
+// her plain words go out instead — nobody waits a minute for "not tonight".
+const SAY_BUDGET = { ms: 12_000 };
+
 /** The reasons she might beg off, with how she'd put it. */
 const REASONS = {
   work: "you're at work right now and can't just disappear",
@@ -43,14 +47,26 @@ const REASONS = {
   sore: "something's been sitting with you since earlier and you're not quite yourself tonight — you'd rather do this when you're properly in the mood for it",
 } as const;
 
+/** If nothing can be written for her in time, this is what she says — her words, not a description. */
+const PLAIN: Record<keyof typeof REASONS, string> = {
+  work: "I'd love to, I'm just stuck at work right now 😩",
+  sick: "I'd love to, I'm just feeling rough today 😷",
+  tired: "I'd love to, I've just had such a long day — I'd rather be properly up for it.",
+  busy: "I'd love to, I'm just in the middle of something I can't drop.",
+  mess: "I'd love to, I'm just a complete mess right now 🙈",
+  sore: "I'd love to, I'm just not quite myself tonight.",
+};
+
 /** Her turn-down, in her own voice (a short text). Falls back to a plain line if no AI answers. */
 async function sayNo(ch: Character, name: string, ask: Ask, reason: keyof typeof REASONS, when: string): Promise<string> {
   const them = name || "them";
   const raw = await writeText(ch.brain,
     `You are ${ch.name}. ${ch.personality ? `You: ${ch.personality.slice(0, 300)}` : ""} ${them} just asked you for ${ASKS[ask]} and you can't right now: ${REASONS[reason]}. Write ONE short text turning it down the way YOU would — warm, in your own voice, and suggest when instead (${when}). You still want to see them; this is about right now, not about them. NEVER be mean, cold, sarcastic at their expense, dismissive or cruel about it, whatever your personality: no guilt-tripping, no punishing them, no making them feel stupid for asking. Even at your pricklist you let them know you'd like to, just not now. 1–2 sentences, under 180 characters, no quotes, no stage directions.`,
-    `It's ${when}.`, 200).catch(() => "");
+    `It's ${when}.`, 200, SAY_BUDGET).catch(() => "");
   const text = scrub(raw.replace(/\s+/g, " ").replace(/^["']|["']$/g, "").trim()).slice(0, 220);
-  return text || `I'd love to, I just can't right now — ${REASONS[reason]}. ${when.charAt(0).toUpperCase()}${when.slice(1)}?`;
+  // 💬 Nothing came back in time: her own plain words, warm, in HER voice (the reasons above are
+  // written to her, not to them — dropping one into a sentence would read like it's about them).
+  return text || `${PLAIN[reason]} ${when.charAt(0).toUpperCase()}${when.slice(1)}?`;
 }
 
 // 💬 Asking again, nicely. After a turn-down she remembers being asked, and sweet talk can win her
@@ -87,7 +103,7 @@ async function persuaded(userId: string, ch: Character, ask: Ask, name: string, 
     `You are ${ch.name}. ${ch.personality ? `You: ${ch.personality.slice(0, 300)}` : ""} You just told ${name || "them"} you couldn't do ${ASKS[ask]}. They're asking again. ${heart} ${mood}
 Decide honestly, as YOU: if they're being sweet, warm, funny or persuasive — and you want to say yes — let yourself be talked into it. If they're pushy, sulky, demanding or rude about it, hold your ground (kindly). If they simply asked again with nothing new, it's a coin toss, leaning on how you feel about them.
 Answer with JSON only: {"yes": true or false, "say": "one short text in your own voice, under 180 characters"}. Whatever you decide, never be mean, cold, sarcastic at their expense or cruel — if it's no, it's a warm no with another time.`,
-    `WHAT'S BEEN SAID SINCE YOU SAID NO:\n${await sinceNo(userId, ch.id)}`, 300).catch(() => "");
+    `WHAT'S BEEN SAID SINCE YOU SAID NO:\n${await sinceNo(userId, ch.id)}`, 300, SAY_BUDGET).catch(() => "");
   let j: { yes?: unknown; say?: unknown } = {};
   try { j = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); } catch { /* she didn't answer */ }
   const say = scrub(String(j.say || "").replace(/\s+/g, " ").trim()).slice(0, 220);
@@ -101,6 +117,18 @@ Answer with JSON only: {"yes": true or false, "say": "one short text in your own
  * call off or ditch a class for them.
  */
 export async function canShe(userId: string, ch: Character, ask: Ask, timeZone: unknown, adult: boolean, luck?: "yes" | "no"): Promise<Answer> {
+  // ⏱️ Whatever happens, deciding never holds the whole request up: if it's taking this long,
+  // something is wrong at her end and she simply says yes rather than leaving them on a spinner.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      decide(userId, ch, ask, timeZone, adult, luck),
+      new Promise<Answer>(res => { timer = setTimeout(() => { console.error("life: deciding took too long — letting it go ahead"); res({ ok: true }); }, 25_000); }),
+    ]);
+  } finally { clearTimeout(timer); }
+}
+
+async function decide(userId: string, ch: Character, ask: Ask, timeZone: unknown, adult: boolean, luck?: "yes" | "no"): Promise<Answer> {
   // How a coin lands. Tests pin it; in the app it's a real coin.
   const roll = () => (luck === "yes" ? 0 : luck === "no" ? 0.999 : Math.random());
   const tz = isValidTimeZone(ch.time_zone) ? ch.time_zone : isValidTimeZone(timeZone) ? String(timeZone) : "America/Chicago";

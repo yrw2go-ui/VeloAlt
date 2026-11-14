@@ -15,25 +15,25 @@ export const toOaTools = (tools: Anthropic.Tool[]) =>
 
 export class ProviderError extends Error {}
 
-export async function oaChat(p: OpenAiProvider, messages: OaMessage[], tools: ReturnType<typeof toOaTools>, maxTokens: number, mustUse?: string): Promise<{ content: string; toolCalls: OaToolCall[] }> {
+export async function oaChat(p: OpenAiProvider, messages: OaMessage[], tools: ReturnType<typeof toOaTools>, maxTokens: number, mustUse?: string, timeoutMs?: number): Promise<{ content: string; toolCalls: OaToolCall[] }> {
   // Some models (Qwen on Atlas) refuse a forced tool choice ("invalid request params"): then ask nicely instead —
   // just that one tool on offer, and "auto".
   if (mustUse && tools.length) {
-    try { return await oaChatOnce(p, messages, tools, maxTokens, mustUse); }
+    try { return await oaChatOnce(p, messages, tools, maxTokens, mustUse, timeoutMs); }
     catch (e) {
       if (!(e instanceof ProviderError) || !/^400\b/.test(e.message)) throw e;
-      return oaChatOnce(p, messages, tools.filter(t => t.function.name === mustUse), maxTokens);
+      return oaChatOnce(p, messages, tools.filter(t => t.function.name === mustUse), maxTokens, undefined, timeoutMs);
     }
   }
-  return oaChatOnce(p, messages, tools, maxTokens, mustUse);
+  return oaChatOnce(p, messages, tools, maxTokens, mustUse, timeoutMs);
 }
 
-async function oaChatOnce(p: OpenAiProvider, messages: OaMessage[], tools: ReturnType<typeof toOaTools>, maxTokens: number, mustUse?: string): Promise<{ content: string; toolCalls: OaToolCall[] }> {
+async function oaChatOnce(p: OpenAiProvider, messages: OaMessage[], tools: ReturnType<typeof toOaTools>, maxTokens: number, mustUse?: string, timeoutMs = 60_000): Promise<{ content: string; toolCalls: OaToolCall[] }> {
   const res = await fetch(`${p.baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${p.key}`, "Content-Type": "application/json" },
     body: JSON.stringify({ model: p.model, messages, max_tokens: p.minTokens ? Math.max(maxTokens, p.minTokens) : maxTokens, ...(tools.length ? { tools, tool_choice: mustUse ? { type: "function", function: { name: mustUse } } : "auto" } : {}), ...(p.extra || {}) }),
-    signal: AbortSignal.timeout(60_000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const body = await res.text();
   let data: Record<string, any> = {}; // eslint-disable-line @typescript-eslint/no-explicit-any
