@@ -253,7 +253,7 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
         </label>
         <label className="row" style={{ gap: 10, fontSize: 13, fontWeight: 700, alignItems: "flex-start", marginTop: 8 }}>
           <input type="checkbox" checked={liveIn} onChange={e => setLiveIn(e.target.checked)} style={{ width: 20, height: 20, marginTop: 1, flexShrink: 0 }} />
-          <span>🏠 Live-in <span className="muted" style={{ fontWeight: 500, display: "block" }}>When home, they're at your house. Toggle home/away in chat.</span></span>
+          <span>🏠 Live-in <span className="muted" style={{ fontWeight: 500, display: "block" }}>When home, they are at your house. Toggle home/away in chat.</span></span>
         </label>
         {romantic && gender === "female" && (
           <label style={{ fontSize: 13, fontWeight: 700 }}>💕 Romance arc
