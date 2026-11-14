@@ -25,7 +25,7 @@ import { ownFile, fileForAi } from "./files";
 import { friendsOf, friendsNote, sapphicWith } from "./friends";
 import { workNow } from "./work";
 import { sceneClockNote } from "./sceneClock";
-import { inPersonFor, inPersonNote } from "./inPerson";
+import { inPersonFor, inPersonNote, homeNote, LIVE_IN_NOTE, HOME } from "./inPerson";
 import { picaNote, picaHandleNote, awayFor, stayFor } from "./picagram";
 /** How many recent scenes (2 weeks) with her got pushed from their planned time. */
 async function pushedLately(userId: string, sceneId: string): Promise<number> {
@@ -218,7 +218,9 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
         modeText,
         group ? "" : replyLengthNote(mode, u?.reply_length),
         scene ? sceneNote(scene) : "",
-        together && ch ? inPersonNote(together, name || "them") : "",
+        together && ch ? (ch.live_in && together.place === HOME ? homeNote(name || "them") : inPersonNote(together, name || "them")) : "",
+        ch?.live_in && !together && mode !== "remember" && mode !== "memo" ? `${LIVE_IN_NOTE} Right now you're out — so this is a text to them.` : "",
+        ch?.live_in && together && together.place === HOME ? LIVE_IN_NOTE : "",
         ch && mode !== "memo" && mode !== "remember" ? await picaNote(caller.userId, ch, name).catch(() => "") : "",
         ch ? await picaHandleNote(caller.userId, ch).catch(() => "") : "",
         scene ? sceneClockNote(scene, today.tz, scene.clock === "now" && scene.planned_time ? await pushedLately(caller.userId, scene.id).catch(() => 0) : 0) : "",

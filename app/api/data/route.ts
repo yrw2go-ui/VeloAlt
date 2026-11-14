@@ -4,6 +4,7 @@ import { readyIntros, acceptIntro, declineIntro, IntroError } from "../../lib/in
 import { peekAt, draftPeek, draftIcu } from "../../lib/peek";
 import { inPersonFor, startInPerson, endInPerson } from "../../lib/inPerson";
 import { canShe, sickFor, type Answer } from "../../lib/life";
+import { setHome, isHome } from "../../lib/inPerson";
 // 🎲 In tests the coin is pinned (set in the test environment only); in the app it's a real coin.
 const luckOf = (b: Record<string, unknown>): "yes" | "no" | undefined =>
   (process.env.VELO_TEST_LUCK === "1" ? (b.luck === "ask" ? undefined : b.luck === "no" ? "no" : "yes") : undefined);
@@ -327,6 +328,20 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: false, say: her.say, message: { id: String(row.id), role: "assistant", content: her.say } });
       }
       // 🧍 Together in person (not a scene): she talks face to face, and 👁️ ICU works.
+      // 🏠 A live-in character: is she in or out? (Her own toggle, no asking involved — she lives here.)
+      case "home.get":
+      case "home.set": {
+        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
+        if (!ch) return bad("That character wasn't found.");
+        if (!ch.live_in) return bad("She doesn't live with you — tick Lives with me on her card first.");
+        if (b.action === "home.get") return NextResponse.json({ home: await isHome(me, ch), liveIn: true });
+        const home = b.home === true;
+        if ((await isHome(me, ch)) === home) return NextResponse.json({ home });
+        await setHome(me, ch.id, home);
+        const line = home ? `🏠 ${ch.name} is home` : `🏠 ${ch.name} went out`;
+        const [row] = await db`insert into velo_messages (user_id, role, content, character_id) values (${me}, 'user', ${line}, ${ch.id}) returning id`;
+        return NextResponse.json({ home, marker: { id: String(row.id), role: "user", content: line } });
+      }
       case "inperson.get":
       case "inperson.start":
       case "inperson.end": {
@@ -366,7 +381,7 @@ export async function POST(req: NextRequest) {
       case "icu": {
         const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
         if (!ch) return bad("That character wasn't found.");
-        if (!(await inPersonFor(me, ch.id))) return bad("ICU works when you two are together in person — tap 🧍 first.");
+        if (!(await inPersonFor(me, ch.id))) return bad(ch.live_in ? `ICU and *peek* work when ${ch.name}'s home — flip the 🏠 Home toggle.` : "ICU works when you two are together in person — tap 🧍 first.");
         if (!mediaReady()) return bad("Photos aren't set up yet.");
         if (!allow(`peek:${me}`, [{ ms: 60_000, max: 10 }, { ms: 86_400_000, max: 300 }])) return NextResponse.json({ error: "That's a lot of peeks — try again in a bit." }, { status: 429 });
         const [u] = await db`select adult_confirmed_at from users where id = ${me}`;

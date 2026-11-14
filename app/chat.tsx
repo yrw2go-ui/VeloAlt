@@ -16,7 +16,7 @@ import { CharacterFace, LinkBackForm } from "./characters";
 import { MediaView, ReactionBar, type Media } from "./media";
 
 /** Who this chat is with: Velo (no character) or one of their characters. */
-export type ChatWith = { id: string; name: string; portrait_url: string | null; romantic?: boolean; brain?: string };
+export type ChatWith = { id: string; name: string; portrait_url: string | null; romantic?: boolean; brain?: string; live_in?: boolean; home?: boolean };
 
 export type ChatFile = { id: string; url: string; thumb?: string | null; name: string; type: string };
 export type ChatMsg = { id?: string; at?: string; role: "user" | "assistant"; content: string; peek?: boolean; draft?: Draft; file?: ChatFile; media?: Media; reaction?: string | null; theirReaction?: string | null };
@@ -148,8 +148,9 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     if ((!t && !file) || busy || uploading || !msgs) return;
     // 👀 "*peek*" during a scene: first the picture's description pops up to check or tweak, then exactly that is made.
     // 👁️ "ICU" when you're together in person (no scene): the same pop-up, for what you see right now.
-    const icu = !scene && /^\s*\*?\s*icu\s*\*?\s*[.!]?\s*$/i.test(t);
-    if (cid && !file && icu && !inPerson) { setErr("ICU works when you two are together in person — tap 🧍 first."); return; }
+    // At home with someone who lives with you, *peek* means the same as ICU: a picture of what you see.
+    const icu = !scene && /^\s*\*?\s*(icu|pe(e|a)k)\s*\*?\s*[.!]?\s*$/i.test(t);
+    if (cid && !file && icu && !inPerson) { setErr(character?.live_in ? `ICU and *peek* work when ${character.name}'s home — flip the 🏠 Home toggle.` : "ICU works when you two are together in person — tap 🧍 first."); return; }
     if (cid && !file && ((scene && /^\s*\*?\s*pe(e|a)k\s*\*?\s*[.!]?\s*$/i.test(t)) || icu)) {
       setText(""); openPeek(!scene);
       return;
@@ -321,10 +322,23 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   useEffect(() => {
     if (!cid) return;
     data<{ scene: { id: string; title: string; details: string } | null }>("scene.active", { characterId: cid }).then(r => setScene(r.scene)).catch(() => {});
-    setInPerson(null);
+    setInPerson(character?.live_in && character.home ? { place: "home", started_at: new Date().toISOString() } : null);
     data<{ inPerson: InPerson | null }>("inperson.get", { characterId: cid }).then(r => setInPerson(r.inPerson)).catch(() => {});
     data<{ plans: Plan[] }>("plans.due", { characterId: cid, today: todayYmd() }).then(r => setPlans(r.plans)).catch(() => {});
   }, [cid, userId]);
+  // 🏠 She lives here: in or out? While she's in, you're in the same house (so it's the
+  // in-person state, with "home" as the place) — she talks to you instead of texting.
+  const atHome = !!character?.live_in && inPerson?.place === "home";
+  const setHome = async (home: boolean) => {
+    if (!cid || busy) return;
+    setInPerson(home ? { place: "home", started_at: new Date().toISOString() } : null);
+    try {
+      const r = await data<{ home: boolean; marker?: ChatMsg }>("home.set", { characterId: cid, home });
+      if (r.marker) setMsgs(m => [...(m || []), r.marker!]);
+      setInPerson(r.home ? { place: "home", started_at: new Date().toISOString() } : null);
+      onChanged();
+    } catch { setInPerson(home ? null : { place: "home", started_at: new Date().toISOString() }); }
+  };
   const skipPlan = async (p: Plan) => {
     setPlans(ps => ps.filter(x => x.id !== p.id));
     await data("plans.skip", { planId: p.id }).catch(() => {});
@@ -529,7 +543,22 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
           <button className="ghost" onClick={endScene} disabled={busy} data-testid="scene-end" style={{ padding: "4px 10px", fontSize: 12 }}>End video chat</button>
         </div>
       )}
-      {character && !scene && inPerson && (
+      {character?.live_in && !scene && (
+        <div data-testid="live-in-bar" className="row" style={{ gap: 8, padding: "6px 14px", borderBottom: "1px solid var(--border)", background: atHome ? "rgba(74,222,128,.12)" : "var(--surface2)", fontSize: 13 }}>
+          <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {atHome ? <>🏠 <b>{character.name}&apos;s home</b> <span className="muted">· you&apos;re in the house together</span></> : <>🚪 <b>{character.name}&apos;s out</b> <span className="muted">· you&apos;re texting</span></>}
+          </span>
+          <div className="row" style={{ gap: 0, borderRadius: 999, border: "1px solid var(--border)", overflow: "hidden" }}>
+            {([[true, "🏠 Home"], [false, "🚪 Out"]] as const).map(([v, label]) => (
+              <button key={label} type="button" onClick={() => setHome(v)} disabled={busy} aria-pressed={atHome === v}
+                data-testid={v ? "home-on" : "home-off"}
+                style={{ padding: "4px 10px", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer", color: "var(--text)",
+                  background: atHome === v ? (v ? "rgba(74,222,128,.3)" : "rgba(124,140,255,.22)") : "transparent" }}>{label}</button>
+            ))}
+          </div>
+        </div>
+      )}
+      {character && !scene && inPerson && !atHome && (
         <div data-testid="inperson-banner" className="row" style={{ gap: 8, padding: "8px 14px", borderBottom: "1px solid var(--border)", background: "linear-gradient(90deg, rgba(16,185,129,.16), rgba(124,140,255,.12))", fontSize: 13 }}>
           <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>🧍 <b>Together in person</b>{inPerson.place ? <span className="muted"> · {inPerson.place}</span> : null}</span>
           {onGroup && others.length > 0 && <button className="ghost" onClick={() => setMeetSheet({ ids: [], place: inPerson.place, busy: false })} disabled={busy} data-testid="meetup-open" style={{ padding: "4px 10px", fontSize: 12 }}>👥 Meet up</button>}
@@ -655,7 +684,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
               <div onClick={() => setMoreOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
               <div role="menu" data-testid="chat-more-menu" className="card" style={{ position: "absolute", bottom: 52, left: 0, zIndex: 41, minWidth: 220, padding: 6, display: "flex", flexDirection: "column", gap: 2, boxShadow: "0 8px 24px rgba(0,0,0,.45)" }}>
                 {cid && !scene && <button type="button" role="menuitem" data-testid="scene-open" onClick={() => { setMoreOpen(false); setSceneSheet(true); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", fontSize: 15, cursor: "pointer" }}><span style={{ fontSize: 19 }}>🎥</span> Start a video chat</button>}
-                {cid && !scene && !inPerson && <button type="button" role="menuitem" data-testid="inperson-open" onClick={() => { setMoreOpen(false); setTogetherSheet({ place: "", busy: false }); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", fontSize: 15, cursor: "pointer" }}><span style={{ fontSize: 19 }}>🧍</span> Together in person</button>}
+                {cid && !scene && !inPerson && !character?.live_in && <button type="button" role="menuitem" data-testid="inperson-open" onClick={() => { setMoreOpen(false); setTogetherSheet({ place: "", busy: false }); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", fontSize: 15, cursor: "pointer" }}><span style={{ fontSize: 19 }}>🧍</span> Together in person</button>}
                 {cid && !scene && inPerson && <button type="button" role="menuitem" data-testid="icu-open" disabled={!!peekSheet} onClick={() => { setMoreOpen(false); openPeek(true); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", fontSize: 15, cursor: "pointer" }}><span style={{ fontSize: 19 }}>👁️</span> ICU — see {who} right now</button>}
                 <button type="button" role="menuitem" data-testid="chat-from-gallery" onClick={() => { setMoreOpen(false); setPickGallery(true); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", fontSize: 15, cursor: "pointer" }}><span style={{ fontSize: 19 }}>🖼️</span> From my gallery</button>
                 <button type="button" role="menuitem" data-testid="chat-attach" disabled={uploading} onClick={() => { setMoreOpen(false); picker.current?.click(); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", fontSize: 15, cursor: "pointer" }}><span style={{ fontSize: 19 }}>📎</span> Photo or file</button>

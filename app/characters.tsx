@@ -14,7 +14,7 @@ import { BRAIN_OPTIONS } from "./lib/brainOptions";
 
 type VoiceOption = { id: string; name: string; kind: "female" | "male"; about: string; preview: string; owner?: string };
 
-export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; brain?: string; standing?: string; work_attire?: string; work_days?: number[]; work_start?: string; work_end?: string; part_time?: boolean; school?: string; class_days?: number[]; class_start?: string; class_end?: string; poly_ok?: boolean; sapphic?: boolean; big_following?: boolean; busy?: "work" | "class" | null; portrait_url: string | null; portrait_job: string | null };
+export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; brain?: string; standing?: string; work_attire?: string; work_days?: number[]; work_start?: string; work_end?: string; part_time?: boolean; school?: string; class_days?: number[]; class_start?: string; class_end?: string; poly_ok?: boolean; sapphic?: boolean; live_in?: boolean; big_following?: boolean; busy?: "work" | "class" | null; home?: boolean; portrait_url: string | null; portrait_job: string | null };
 
 /** A character's picture in a circle (their initial until a portrait exists). */
 export function CharacterFace({ c, size }: { c: Pick<Character, "name" | "portrait_url">; size: number }) {
@@ -25,9 +25,9 @@ export function CharacterFace({ c, size }: { c: Pick<Character, "name" | "portra
   return <span aria-label={c.name} style={{ display: "flex", flexShrink: 0, width: size, height: size, borderRadius: "50%", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, var(--accent), var(--accent2))", color: "#fff", fontWeight: 800, fontSize: size * 0.42 }}>{c.name.slice(0, 1).toUpperCase()}</span>;
 }
 
-const chip = (on: boolean, busy?: "work" | "class" | null) => ({ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, padding: "4px 10px 4px 4px", borderRadius: 999, cursor: "pointer", fontSize: 13, fontWeight: 700,
-  // 💼 at work: yellow. 🎓 in class: orange. (Not when she called off or skipped.)
-  border: `${busy ? 2 : 1}px solid ${busy === "work" ? "#facc15" : busy === "class" ? "#f97316" : on ? "var(--accent)" : "var(--border)"}`,
+const chip = (on: boolean, busy?: "work" | "class" | null, home?: boolean) => ({ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, padding: "4px 10px 4px 4px", borderRadius: 999, cursor: "pointer", fontSize: 13, fontWeight: 700,
+  // 💼 at work: yellow. 🎓 in class: orange. (Not when she called off or skipped.) 🏠 home: faint green.
+  border: `${busy || home ? 2 : 1}px solid ${busy === "work" ? "#facc15" : busy === "class" ? "#f97316" : home ? "rgba(74,222,128,0.5)" : on ? "var(--accent)" : "var(--border)"}`,
   background: on ? "rgba(124,140,255,0.15)" : "var(--surface2)", color: "var(--text)" } as const);
 
 /** The chips above the chat. Tap a chip to switch chats; admins tap the open one again to edit it. */
@@ -54,7 +54,7 @@ export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdi
     <div data-testid="character-strip" style={{ display: "flex", gap: 8, overflowX: "auto", padding: "12px 12px 8px", borderBottom: "1px solid var(--border)" }}>
       <button style={{ ...chip(active === null), position: "relative" }} onClick={() => onPick(null)} aria-pressed={active === null}><VeloAvatar size={26} /> Velo<Badge n={active === null ? 0 : unread.velo} /></button>
       {characters.map(c => (
-        <button key={c.id} style={{ ...chip(active === c.id, c.busy), position: "relative" }} aria-pressed={active === c.id} data-busy={c.busy || undefined}
+        <button key={c.id} style={{ ...chip(active === c.id, c.busy, c.home), position: "relative" }} aria-pressed={active === c.id} data-busy={c.busy || undefined} data-home={c.home ? "yes" : undefined}
           title={c.busy === "work" ? `${c.name} is at work` : c.busy === "class" ? `${c.name} is in class` : undefined} onClick={() => (active !== c.id ? onPick(c.id) : admin ? onEdit(c) : undefined)}>
           <CharacterFace c={c} size={26} /> {c.name}<Standing c={c} />{admin && active === c.id ? " ✎" : ""}<Badge n={active === c.id ? 0 : unread[c.id]} />
         </button>
@@ -98,6 +98,7 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
   // 💞🌈 Romance options.
   const [polyOk, setPolyOk] = useState(!!seed?.poly_ok);
   // 💞🤫 Where it stands: official girlfriend, or together but kept quiet (one or the other).
+  const [liveIn, setLiveIn] = useState(!!seed?.live_in);
   const [gf, setGf] = useState(!!seed?.standing?.includes("gf"));
   const [secret, setSecret] = useState(!!seed?.standing?.includes("secret"));
   const [sapphic, setSapphic] = useState(!!seed?.sapphic);
@@ -149,7 +150,7 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
   const working = !!c?.portrait_job;
   const dirty = !c || gender !== (c.voice_kind === "male" ? "male" : "female") || name !== c.name || personality !== c.personality || backstory !== c.backstory || relation !== c.relation || appearance !== c.appearance || job !== (c.job || "") || wear !== (c.casual_wear || "") || hobbies !== (c.hobbies || "") || voice.id !== c.voice || JSON.stringify(traits) !== JSON.stringify(cleanTraits(c.traits && Object.keys(c.traits).length ? c.traits : DEFAULT_TRAITS)) || preset !== (c.preset || "") || zone !== (c.time_zone || "") || bday !== (c.birthday || "") || romantic !== !!c.romantic || (romantic ? arc : "") !== (c.romance_arc || "") || refIds.join() !== (c.reference_ids || []).join() || brain !== (c.brain || "")
     || attire !== (c.work_attire || "") || [...workDays].sort().join() !== [...(c.work_days || [])].sort().join() || workStart !== (c.work_start || "") || workEnd !== (c.work_end || "") || partTime !== !!c.part_time || school !== (c.school || "") || [...classDays].sort().join() !== [...(c.class_days || [])].sort().join() || classStart !== (c.class_start || "") || classEnd !== (c.class_end || "")
-    || (romantic ? [gf ? "gf" : "", secret ? "secret" : ""].filter(Boolean).join("+") : "") !== (c.standing || "") || (romantic && polyOk) !== !!c.poly_ok || (romantic && sapphic) !== !!c.sapphic || bigFollowing !== !!c.big_following;
+    || (romantic ? [gf ? "gf" : "", secret ? "secret" : ""].filter(Boolean).join("+") : "") !== (c.standing || "") || (romantic && polyOk) !== !!c.poly_ok || (romantic && sapphic) !== !!c.sapphic || bigFollowing !== !!c.big_following || liveIn !== !!c.live_in;
 
   // A portrait in progress: check back every few seconds until it's ready.
   useEffect(() => {
@@ -167,7 +168,7 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
     setBusy(true); setMsg("");
     try {
       const fields = { name, personality, backstory, relation, appearance, job, casualWear: wear, hobbies, voice: { id: voice.id, name: voice.name, kind: voice.kind, owner: voice.owner }, romantic, romanceArc: romantic ? arc : "", traits, preset, timeZone: zone, birthday: bday, brain,
-        workAttire: attire, workDays, workStart: workStart && workEnd ? workStart : "", workEnd: workStart && workEnd ? workEnd : "", partTime, school, classDays, classStart: classStart && classEnd ? classStart : "", classEnd: classStart && classEnd ? classEnd : "", polyOk: romantic && polyOk, sapphic: romantic && sapphic, bigFollowing, gf: romantic && gf, secret: romantic && secret };
+        workAttire: attire, workDays, workStart: workStart && workEnd ? workStart : "", workEnd: workStart && workEnd ? workEnd : "", partTime, school, classDays, classStart: classStart && classEnd ? classStart : "", classEnd: classStart && classEnd ? classEnd : "", polyOk: romantic && polyOk, sapphic: romantic && sapphic, bigFollowing, liveIn, gf: romantic && gf, secret: romantic && secret };
       const r = await api<{ character: Character }>("/api/characters", { action: c ? "update" : "create", id: c?.id, ...fields, referenceIds: refIds });
       // 🖼️ Pictures picked while making a new character: upload them now (first one as headshot), as references.
       if (!c && pending.files.length && pending.fictional) {
@@ -196,7 +197,7 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
   const [saved, setSaved] = useState(false);
   const saving = useRef(false);
   const edited = JSON.stringify([gender, name, personality, backstory, relation, appearance, job, wear, hobbies, voice.id, traits, preset, zone, bday, romantic, arc, refIds, brain,
-    attire, workDays, workStart, workEnd, partTime, school, classDays, classStart, classEnd, gf, secret, polyOk, sapphic, bigFollowing]);
+    attire, workDays, workStart, workEnd, partTime, school, classDays, classStart, classEnd, gf, secret, polyOk, sapphic, bigFollowing, liveIn]);
   useEffect(() => {
     if (!c || !dirty || busy || working || !name.trim()) return;
     const t = setTimeout(async () => {
@@ -266,6 +267,16 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
             </span>
           </div>
         )}
+        <div data-testid="live-in" style={{ padding: "8px 12px", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface2)" }}>
+          <label className="row" style={{ gap: 6, fontSize: 13, fontWeight: 700, cursor: "pointer" }} title="She lives with you — when she's home you're in the same house">
+            <input type="checkbox" checked={liveIn} data-testid="is-live-in" onChange={e => setLiveIn(e.target.checked)} style={{ width: 20, height: 20 }} />🏠 Lives with me
+          </label>
+          <span className="muted" style={{ fontSize: 11, display: "block", marginTop: 4 }}>
+            {liveIn
+              ? "When she's home you're in the same house: she talks to you face to face instead of texting, 👁️ ICU works, and her chip goes faint green. A 🏠 Home / Out toggle sits above the message box. Say how you two came to live together in her description or backstory."
+              : "Tick this if she lives at your place."}
+          </span>
+        </div>
         <label style={{ fontSize: 13, fontWeight: 700 }}>Personality preset <span className="muted" style={{ fontWeight: 500 }}>· optional starting point</span>
           <select value={preset} onChange={e => applyPreset(e.target.value)} aria-label="Personality preset" style={{ marginTop: 4, display: "block", width: "100%" }}>
             <option value="">— Custom —</option>

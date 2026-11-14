@@ -127,7 +127,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   useEffect(() => {
     api<{ characters: Character[]; portraits: boolean; admin: boolean; brains?: string[]; brainModels?: { id: string; model: string }[] }>("/api/characters", { action: "list" })
       .then(r => { setChars(r.characters); setPortraits(r.portraits); setAdmin(r.admin); setBrains(r.brains || []); setBrainModels(r.brainModels || []); }).catch(() => {});
-  }, [userId]);
+  }, [userId, refresh]);
   const withChar = chars.find(c => c.id === withId) || null;
   // 👥 Group chats (you and 2–6 characters).
   const [groups, setGroups] = useState<Group[]>([]);
@@ -183,7 +183,12 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
     document.addEventListener("visibilitychange", tick);
     return () => { clearInterval(t); document.removeEventListener("visibilitychange", tick); };
   }, [userId, withId, tab, refresh]);
-  const savedChar = (c: Character) => { setChars(cs => (cs.some(x => x.id === c.id) ? cs.map(x => (x.id === c.id ? c : x)) : [...cs, c])); setWithId(c.id); };
+  const savedChar = (c: Character) => {
+    setChars(cs => (cs.some(x => x.id === c.id) ? cs.map(x => (x.id === c.id ? { ...x, ...c } : x)) : [...cs, c]));
+    setWithId(c.id);
+    // Her chip also shows things the server works out (at work, in class, home) — ask for those again.
+    api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => setChars(r.characters)).catch(() => {});
+  };
   const bump = useCallback(() => setRefresh(r => r + 1), []);
 
   // Their profile: name, look, and the time zone they're in now.
