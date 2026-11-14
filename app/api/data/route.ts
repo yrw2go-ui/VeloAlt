@@ -467,6 +467,18 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true });
       }
 
+      case "livein.set": {
+        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
+        if (!ch) return bad("That character wasn't found.");
+        await db`insert into chat_relationships (user_id, character_id, at_home) values (${me}, ${ch.id}, ${!!b.atHome}) on conflict (user_id, character_id) do update set at_home = ${!!b.atHome}, updated_at = now()`;
+        return NextResponse.json({ atHome: !!b.atHome });
+      }
+      case "livein.get": {
+        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
+        if (!ch) return bad("That character wasn't found.");
+        const [rel] = await db`select at_home from chat_relationships where user_id = ${me} and character_id = ${ch.id}`;
+        return NextResponse.json({ atHome: !!rel?.at_home });
+      }
       case "trust.boost": {
         const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
         if (!ch) return bad("That character wasn't found.");
