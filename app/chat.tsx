@@ -127,6 +127,13 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     if ((!t && !file) || busy || uploading || !msgs) return;
     // 👀 "*peek*" during a scene: first the picture's description pops up to check or tweak, then exactly that is made.
     // 👁️ "ICU" when you're together in person (no scene): the same pop-up, for what you see right now.
+    const memMatch = t.match(/^\s*\[NEW MEMORIES\]\s*([\s\S]+)/i);
+    if (cid && memMatch) {
+      setText("");
+      await data("feelings.add", { characterId: cid, text: memMatch[1].trim() }).catch(() => {});
+      setMsgs(list => [...(list || []), { role: "user", content: t }, { role: "assistant", content: "(saved to feelings)" }]);
+      return;
+    }
     const icu = !scene && /^\s*\*?\s*icu\s*\*?\s*[.!]?\s*$/i.test(t);
     if (cid && !file && icu && !inPerson) { setErr("ICU works when you two are together in person — tap 🧍 first."); return; }
     if (cid && !file && ((scene && /^\s*\*?\s*pe(e|a)k\s*\*?\s*[.!]?\s*$/i.test(t)) || icu)) {
