@@ -19,7 +19,7 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, authToken:
 export const MAX_CHARACTERS = 50;
 export const DAILY_PORTRAITS = 30;
 
-export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; brain: string; owner_id?: string | null; work_attire: string; work_days: number[]; work_start: string; work_end: string; part_time: boolean; poly_ok: boolean; sapphic: boolean; explicit_ok: boolean; gender: "female" | "male"; home_attire: string; portrait_url: string | null; portrait_job: string | null };
+export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; brain: string; owner_id?: string | null; work_attire: string; work_days: number[]; work_start: string; work_end: string; part_time: boolean; poly_ok: boolean; sapphic: boolean; explicit_ok: boolean; gender: "female" | "male"; live_in: boolean; home_attire: string; portrait_url: string | null; portrait_job: string | null };
 
 export async function isAdmin(userId: string): Promise<boolean> {
   const [u] = await sql()`select is_admin from users where id = ${userId}`;
@@ -28,7 +28,7 @@ export async function isAdmin(userId: string): Promise<boolean> {
 
 export async function getCharacter(id: string): Promise<Character | null> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
-  const [c] = await sql()`select c.id, c.name, c.personality, c.backstory, c.relation, c.appearance, c.job, c.casual_wear, c.hobbies, c.voice, c.voice_name, c.voice_kind, c.romantic, c.romance_arc, c.reference_ids, c.time_zone, c.traits, c.preset, c.birthday, c.brain, c.work_attire, c.work_days, c.work_start, c.work_end, c.part_time, c.poly_ok, c.sapphic, c.explicit_ok, c.gender, c.home_attire, c.owner_id, c.portrait_job, f.url as portrait_url
+  const [c] = await sql()`select c.id, c.name, c.personality, c.backstory, c.relation, c.appearance, c.job, c.casual_wear, c.hobbies, c.voice, c.voice_name, c.voice_kind, c.romantic, c.romance_arc, c.reference_ids, c.time_zone, c.traits, c.preset, c.birthday, c.brain, c.work_attire, c.work_days, c.work_start, c.work_end, c.part_time, c.poly_ok, c.sapphic, c.explicit_ok, c.gender, c.live_in, c.home_attire, c.owner_id, c.portrait_job, f.url as portrait_url
     from chat_characters c left join velo_files f on f.id = c.portrait_file_id where c.id = ${id}`;
   return (c as Character) || null;
 }
@@ -42,7 +42,7 @@ export async function getCharacterFor(userId: string, id: string): Promise<Chara
 }
 
 export async function listCharacters(userId?: string): Promise<Character[]> {
-  return (await sql()`select c.id, c.name, c.personality, c.backstory, c.relation, c.appearance, c.job, c.casual_wear, c.hobbies, c.voice, c.voice_name, c.voice_kind, c.romantic, c.romance_arc, c.reference_ids, c.time_zone, c.traits, c.preset, c.birthday, c.brain, c.work_attire, c.work_days, c.work_start, c.work_end, c.part_time, c.poly_ok, c.sapphic, c.explicit_ok, c.gender, c.home_attire, c.portrait_job, f.url as portrait_url
+  return (await sql()`select c.id, c.name, c.personality, c.backstory, c.relation, c.appearance, c.job, c.casual_wear, c.hobbies, c.voice, c.voice_name, c.voice_kind, c.romantic, c.romance_arc, c.reference_ids, c.time_zone, c.traits, c.preset, c.birthday, c.brain, c.work_attire, c.work_days, c.work_start, c.work_end, c.part_time, c.poly_ok, c.sapphic, c.explicit_ok, c.gender, c.live_in, c.home_attire, c.portrait_job, f.url as portrait_url
     from chat_characters c left join velo_files f on f.id = c.portrait_file_id
     where c.owner_id is null or (c.owner_id = ${userId || null}::uuid and c.intro_status = 'accepted') order by c.created_at`) as Character[];
 }
