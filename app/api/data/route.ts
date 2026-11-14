@@ -487,6 +487,17 @@ export async function POST(req: NextRequest) {
         const [rel] = await db`select at_home from chat_relationships where user_id = ${me} and character_id = ${ch.id}`;
         return NextResponse.json({ atHome: !!rel?.at_home });
       }
+      case "feelings.add": {
+        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
+        if (!ch) return bad("That character wasn't found.");
+        const text = String(b.text || "").trim().slice(0, 500);
+        if (!text) return bad("Nothing to save.");
+        const [rel] = await db`select feelings from chat_relationships where user_id = ${me} and character_id = ${ch.id}`;
+        const current = rel?.feelings || "";
+        const updated = current ? `${current} ${text}`.slice(0, 500) : text;
+        await db`insert into chat_relationships (user_id, character_id, feelings) values (${me}, ${ch.id}, ${updated}) on conflict (user_id, character_id) do update set feelings = ${updated}, updated_at = now()`;
+        return NextResponse.json({ ok: true });
+      }
       case "trust.boost": {
         const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
         if (!ch) return bad("That character wasn't found.");
