@@ -198,6 +198,14 @@ export async function picaFeed(userId: string, before: string | null, limit = 6,
       and (${before}::timestamptz is null or p.created_at < ${before}::timestamptz)
       and (${after}::timestamptz is null or p.created_at > ${after}::timestamptz)
     order by p.created_at desc limit ${Math.min(limit, 20)}`;
+  // 🪪 A character who has no page yet gets one, so her name opens her profile like anyone else's.
+  for (const id of [...new Set(rows.filter(r => r.author_id && !r.acc_id).map(r => String(r.author_id)))]) {
+    const acc = await accountFor(userId, id).catch(() => null);
+    if (!acc) continue;
+    const [a] = await sql()`select a.id, a.handle, a.followed, f.url as avatar from pica_accounts a
+      left join velo_media m on m.id = a.avatar_media_id left join velo_files f on f.id = m.file_id where a.id = ${acc}`;
+    for (const r of rows) if (String(r.author_id) === id) { r.acc_id = a?.id; r.acc_handle = a?.handle; r.acc_followed = a?.followed; r.acc_avatar = a?.avatar; }
+  }
   const ids = rows.map(r => String(r.id));
   const cm = ids.length ? await commentsFor(userId, ids, name, 3) : new Map<string, PicaComment[]>();
   return rows.map(r => ({
@@ -426,7 +434,7 @@ function tooClose(handle: string, name: string, taken: { handle: string; name: s
 }
 
 async function newAccount(userId: string): Promise<Record<string, unknown> | null> {
-  const [{ all }] = await sql()`select count(*)::int as all from pica_accounts where user_id = ${userId}`;
+  const [{ all }] = await sql()`select count(*)::int as all from pica_accounts where user_id = ${userId} and character_id is null`;
   if (all >= MAX_ACCOUNTS) return null;
   // Everyone already in their life: the women they follow and their own characters.
   const accounts = (await sql()`select handle, name from pica_accounts where user_id = ${userId}`).map(r => ({ handle: String(r.handle), name: String(r.name) }));
@@ -507,7 +515,7 @@ async function accountPosts(userId: string, day: string, isToday: boolean, u: U,
 
 /** 👩 Make an account yourself: your specs, your bio, your two pictures. She goes up with a first post. */
 export async function picaCreateAccount(userId: string, spec: { name: string; handle: string; bio: string; look: string; lives: string; followers: number; follow: boolean; headshotMediaId: string; shotMediaId: string }): Promise<{ id: string; posted: boolean }> {
-  const [{ all }] = await sql()`select count(*)::int as all from pica_accounts where user_id = ${userId}`;
+  const [{ all }] = await sql()`select count(*)::int as all from pica_accounts where user_id = ${userId} and character_id is null`;
   if (all >= MAX_ACCOUNTS) throw new PicaLimit(`You have ${MAX_ACCOUNTS} Picagram people — delete some first.`);
   const handle = String(spec.handle || "").toLowerCase().replace(/[^a-z0-9._]/g, "").slice(0, 28);
   const name = scrub(String(spec.name || "")).replace(/\s+/g, " ").trim().slice(0, 60);
@@ -596,7 +604,7 @@ async function postFor(userId: string, a: Record<string, unknown>, u: U, at: num
 export class PicaLimit extends Error {}
 export async function picaFollow(userId: string, accountId: string, on: boolean): Promise<boolean> {
   if (on) {
-    const [{ n }] = await sql()`select count(*)::int as n from pica_accounts where user_id = ${userId} and followed and id <> ${accountId}`;
+    const [{ n }] = await sql()`select count(*)::int as n from pica_accounts where user_id = ${userId} and followed and character_id is null and id <> ${accountId}`;
     if (n >= MAX_FOLLOWING) throw new PicaLimit(`You follow ${MAX_FOLLOWING} accounts — unfollow some in 👥 Following to add new ones.`);
   }
   const r = await sql()`update pica_accounts set followed = ${on}, followers = followers + ${on ? 1 : -1} where id = ${accountId} and user_id = ${userId} returning id, character_id, name`;
@@ -609,9 +617,38 @@ export async function picaFollow(userId: string, accountId: string, on: boolean)
 }
 
 /** 👤 Someone's profile: who she is and her photos. */
+/**
+ * 🪪 Every character who posts has a page of her own. Characters you made yourself never had a
+ * Picagram account behind them, so there was nothing to open: the first time you look, hers is
+ * made from her card and her posts join it.
+ */
+export async function accountFor(userId: string, characterId: string): Promise<string | null> {
+  const [c] = await sql()`select id, name, job, personality, big_following from chat_characters
+    where id = ${characterId} and (owner_id is null or owner_id = ${userId})`;
+  if (!c) return null;
+  const [had] = await sql()`select id from pica_accounts where user_id = ${userId} and character_id = ${c.id}`;
+  if (had) {
+    await sql()`update pica_posts set account_id = ${had.id} where user_id = ${userId} and author_id = ${c.id} and account_id is null`;
+    return String(had.id);
+  }
+  // Her handle keeps her name's capitals (@RaeMori) — it's her name, not a label.
+  const taken = new Set((await sql()`select handle from pica_accounts where user_id = ${userId}`).map(r => String(r.handle).toLowerCase()));
+  let handle = String(c.name).replace(/[^A-Za-z0-9._]/g, "").slice(0, 24) || "friend";
+  while (taken.has(handle.toLowerCase()) || handle.length < 2) handle = `${handle.replace(/\d+$/, "")}${rand(1, 99)}`.slice(0, 28);
+  // Her newest picture stands in as her profile picture until you change it.
+  const [av] = await sql()`select m.id from pica_posts p join velo_media m on m.id = p.media_id
+    where p.user_id = ${userId} and p.author_id = ${c.id} and m.status = 'done' order by p.created_at desc limit 1`;
+  const [acc] = await sql()`insert into pica_accounts (user_id, handle, name, bio, look, followers, followed, character_id, avatar_media_id)
+    values (${userId}, ${handle}, ${String(c.name).slice(0, 60)}, ${scrub(String(c.job || "")).slice(0, 300)}, '', ${c.big_following ? rand(40000, 400000) : rand(400, 9000)}, true, ${c.id}, ${av?.id || null}) returning id`;
+  await sql()`update pica_posts set account_id = ${acc.id} where user_id = ${userId} and author_id = ${c.id} and account_id is null`;
+  return String(acc.id);
+}
+
 export async function picaProfile(userId: string, accountId: string) {
   const [a] = await sql()`select a.id, a.handle, a.name, a.bio, a.followers, a.followed, a.character_id, a.lives, a.mine, a.ref_media_ids, a.avatar_media_id, f.url as avatar, coalesce(ch.pica_hidden, false) as hidden, ch.attached
+    , pf.url as portrait
     from pica_accounts a left join velo_media m on m.id = a.avatar_media_id left join velo_files f on f.id = m.file_id left join chat_characters ch on ch.id = a.character_id
+      left join velo_files pf on pf.id = ch.portrait_file_id
     where a.id = ${accountId} and a.user_id = ${userId}`;
   if (!a) return null;
   // 🖼️ One you made yourself: make sure the pictures you gave her are up as posts (older ones weren't).
@@ -621,7 +658,7 @@ export async function picaProfile(userId: string, accountId: string) {
     from pica_posts p join velo_media m on m.id = p.media_id join velo_files f on f.id = m.file_id left join velo_files t on t.id = m.thumb_file_id
     where p.user_id = ${userId} and (p.account_id = ${accountId} or (${a.character_id || null}::uuid is not null and p.author_id = ${a.character_id || null}::uuid))
       and p.created_at <= now() and m.status = 'done' order by p.created_at desc limit 60`;
-  return { account: { id: String(a.id), handle: String(a.handle), name: String(a.name), bio: String(a.bio), followers: Number(a.followers), followed: !!a.followed, avatar: a.avatar ? String(a.avatar) : null, avatar_media_id: a.avatar_media_id ? String(a.avatar_media_id) : null, character_id: a.character_id ? String(a.character_id) : null, lives: a.lives ? String(a.lives) : "", hidden: !!a.hidden, married: a.attached === "married" },
+  return { account: { id: String(a.id), handle: String(a.handle), name: String(a.name), bio: String(a.bio), followers: Number(a.followers), followed: !!a.followed, avatar: a.avatar ? String(a.avatar) : a.portrait ? String(a.portrait) : null, avatar_media_id: a.avatar_media_id ? String(a.avatar_media_id) : null, character_id: a.character_id ? String(a.character_id) : null, lives: a.lives ? String(a.lives) : "", hidden: !!a.hidden, married: a.attached === "married" },
     photos: posts.map(r => ({ media_id: String(r.media_id), url: String(r.url), thumb: r.thumb ? String(r.thumb) : null, caption: String(r.caption || ""), saved: !!r.saved })) };
 }
 
@@ -806,7 +843,7 @@ export async function picaFromPhoto(userId: string, mediaId: string): Promise<st
   const taken = new Set((await sql()`select handle from pica_accounts where user_id = ${userId}`).map(r => String(r.handle).toLowerCase()));
   let handle = String(a.handle || name).replace(/[^A-Za-z0-9._]/g, "").slice(0, 24) || "newfriend";
   while (taken.has(handle.toLowerCase()) || handle.length < 2) handle = `${handle.replace(/\d+$/, "")}${rand(1, 99)}`.slice(0, 28);
-  const [{ n }] = await sql()`select count(*)::int as n from pica_accounts where user_id = ${userId} and followed`;
+  const [{ n }] = await sql()`select count(*)::int as n from pica_accounts where user_id = ${userId} and followed and character_id is null`;
   const [acc] = await sql()`insert into pica_accounts (user_id, handle, name, bio, look, followers, followed, avatar_media_id)
     values (${userId}, ${handle}, ${scrub(name).slice(0, 60)}, ${scrub(String(a.bio || "")).slice(0, 300)}, ${scrub(String(a.look || m.description || "")).slice(0, 600)}, ${Math.max(300, Math.min(900000, Number(a.followers) || rand(800, 30000)))}, ${n < MAX_FOLLOWING}, ${m.id}) returning id`;
   // Her first post: the photo you liked.
