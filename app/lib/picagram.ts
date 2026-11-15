@@ -47,6 +47,9 @@ export const awayText = (name: string, a: { place: string; until: string }) =>
   `${name} is out of town${a.place ? ` (${a.place})` : ""} until ${new Date(`${a.until}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })} — no meeting up in person till then.`;
 
 // 📅 How many posts from other people land in the feed on a day (their own posts are on top of this).
+/** 🌙 The last a post goes up: 1am, the small hours of the next morning. */
+const lastCall = (day: string, tz: string, fallback: number) => (zonedToUtc(`${day}T23:00`, tz) || fallback) + 2 * 3600_000;
+
 export const DAY_POSTS: [number, number] = [4, 9];
 
 /** Make sure each day (today, and a few missed ones) has its posts. Returns how many days were made. */
@@ -64,7 +67,7 @@ export async function ensurePicaDays(userId: string, backfill = 2, scheduled = f
   for (let i = backfill; i >= 0; i--) {
     const day = addDays(today, -i);
     if (i > 0 && (!first?.d || day < String(first.d))) continue;
-    if (i === 0 && hour < 7) continue; // today's posts start in the morning
+    if (i === 0 && hour >= 1 && hour < 7) continue; // today's posts start in the morning (the small hours still belong to last night)
     const [fresh] = await sql()`insert into pica_days (user_id, day) values (${userId}, ${day}) on conflict do nothing returning day`;
     if (!fresh) continue;
     try { if (await generateDay(userId, day, i === 0)) made++; }
@@ -121,7 +124,7 @@ async function generateDay(userId: string, day: string, isToday: boolean): Promi
   // When each post goes up: spread through the day (today: from now until the evening).
   const now = Date.now();
   const start = isToday ? now : zonedToUtc(`${day}T09:00`, u.tz) || now;
-  const end = isToday ? Math.max(now + 2 * 3600_000, zonedToUtc(`${day}T22:00`, u.tz) || now) : zonedToUtc(`${day}T21:30`, u.tz) || now;
+  const end = isToday ? Math.max(now + 2 * 3600_000, lastCall(day, u.tz, now)) : lastCall(day, u.tz, now) - 30 * 60_000;
   const times = posts.map(() => start + Math.random() * (end - start)).sort((a, b) => a - b);
   // Opening the app on a new day: the first post is already up.
   if (isToday && times.length) times[0] = now - rand(5, 50) * 60_000;
@@ -478,7 +481,7 @@ async function accountPosts(userId: string, day: string, isToday: boolean, u: U,
   let plan: { n?: number; handle?: string; caption?: string; photo?: string }[] = [];
   try { plan = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]).posts || []; } catch { /* skip today */ }
   const now = Date.now();
-  const start = isToday ? now : zonedToUtc(`${day}T09:00`, u.tz) || now, end = isToday ? Math.max(now + 2 * 3600_000, zonedToUtc(`${day}T22:00`, u.tz) || now) : zonedToUtc(`${day}T21:30`, u.tz) || now;
+  const start = isToday ? now : zonedToUtc(`${day}T09:00`, u.tz) || now, end = isToday ? Math.max(now + 2 * 3600_000, lastCall(day, u.tz, now)) : lastCall(day, u.tz, now) - 30 * 60_000;
   for (const [i, a] of who.entries()) {
     const p = plan.find(x => Number(x.n) === i + 1) || plan.find(x => String(x.handle || "").replace(/^@/, "").toLowerCase() === String(a.handle)) || null;
     const photo = scrub(String(p?.photo || `${a.name} candid lifestyle photo, natural light`)).slice(0, 600), caption = scrub(String(p?.caption || "✨")).slice(0, 600);

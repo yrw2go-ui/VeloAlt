@@ -74,11 +74,11 @@ async function closeEnough(userId: string, c: Character): Promise<boolean> {
   return happy >= 70 || (trust ?? 0) >= 65 || (love ?? 0) >= 55;
 }
 
-/** A decent hour where she is, and she isn't at work, in class, away or poorly. */
+/** A decent hour where she is (she's up until about 1am), and she isn't at work, in class, away or poorly. */
 async function free(userId: string, c: Character): Promise<boolean> {
   const tz = isValidTimeZone(c.time_zone) ? c.time_zone : "America/Chicago";
   const { hour } = zonedParts(Date.now(), tz);
-  if (hour < 9 || hour >= 22) return false;
+  if (hour >= 1 && hour < 9) return false; // between 1am and 9am nobody's knocking
   if (workNow(c, tz, Date.now(), await offToday(userId, c.id, tz).catch(() => false), c.id).atWork) return false;
   if (await awayFor(userId, c.id).catch(() => null)) return false;
   if (await sickFor(userId, c.id).catch(() => null)) return false;

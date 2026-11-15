@@ -166,7 +166,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
   const taste = mediaReady() && (mode === "chat" || mode === "talk") ? await tasteNote(caller.userId, cid).catch(() => "") : "";
   // 🕰️ A character can live in another time zone: their own clock, as well as the person's.
   const chZone = ch?.time_zone && isValidTimeZone(ch.time_zone) ? ch.time_zone : null;
-  const chClock = chZone ? `Where YOU live (${CHARACTER_ZONES.find(z => z[0] === chZone)?.[1] || chZone}), it's ${localNow(chZone).label}. Live by your own clock — sleepy late at night, busy in your morning — and notice the time difference with them when it matters (like telling them it's late for you). Don't mention the time unless it's relevant.` : "";
+  const chClock = chZone ? `Where YOU live (${CHARACTER_ZONES.find(z => z[0] === chZone)?.[1] || chZone}), it's ${localNow(chZone).label}. Live by your own clock — up and about in the evening and still going at midnight (you're usually up until around 1am), sleepy only in the small hours after that, busy in your morning — and notice the time difference with them when it matters (like telling them it's late for you). Don't mention the time unless it's relevant.` : "";
   // 💕 A romantic character with an adult: their relationship develops (feelings, updated after each chat/call).
   const arc = !!ch?.romantic && !!u?.adult_confirmed_at;
   // 💞🤫 Where the romance stands (official girlfriend, or kept secret) — only once romance is on.
@@ -218,6 +218,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
       text: [
         errand ? "" : name ? `Their first name is ${name}.` : "You don't know their name yet — if it comes up naturally, ask, and remember it.",
         `Right now it is ${today.label}${errand ? "" : " where they are"}.`,
+        errand ? "" : "The evening runs late: people here are up and talking until around 1am, so don't start winding the conversation down, saying goodnight or telling them to get some sleep just because it's gone eleven — only once it's properly the small hours, and even then only if it fits.",
         chClock,
         ch ? workNow(ch, chZone || today.tz, Date.now(), skived, ch.id).text : "",
         errand ? "" : calendarNote(today.date, !!proTools && !ch),
