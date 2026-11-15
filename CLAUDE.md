@@ -14,3 +14,8 @@ Keep replies short and ask at most one question at a time.
 - Velo never asks for, repeats, stores or sends passwords, PINs, one-time / verification codes, card numbers, CVVs or Social Security numbers.
 - Phone and tablet apps (Android, iPad): never read or send to the AI any password field (`isPassword`), secure window (`FLAG_SECURE`), lock screen, PIN pad, or one-time-code notification or SMS; skip banking, password-manager and authenticator apps entirely; never use autofill data. Run any screen or notification text through the same `hideSecrets` before it leaves the device.
 - Tests: `npm test` (tests/secrets.test.ts) — add a case for anything new it must catch or leave alone.
+
+## Saving (every app, every field)
+- Autosave only ever touches the server when something actually changed: compare against what was last saved and do nothing when they match — no request, and no "✓ Saved" tick pretending otherwise.
+- The clock starts again on every keystroke or tick: 3 seconds after the person stops, or the moment they tap away.
+- Save buttons stay greyed out until something changes.
