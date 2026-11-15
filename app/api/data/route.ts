@@ -23,7 +23,7 @@ import { BIO_SECTIONS, BIO_MAX } from "../../lib/bioSections";
 import { availableModels, availableBrains, CHAT_MODELS, MODEL_INFO, type ChatModel } from "../../lib/models";
 import { PERSONALITIES } from "../../lib/persona";
 import { deleteFile, ownFile } from "../../lib/files";
-import { getCharacterFor, trustFor, happyFor, loveFor, activeScene } from "../../lib/characters";
+import { getCharacterFor, trustFor, happyFor, loveFor, activeScene, saveFeelings } from "../../lib/characters";
 import { US_STATES } from "../../lib/states";
 import { acceptMedia, declineMedia, mediaNote, checkMedia, sweepMedia, getMedia, listGallery, deleteMedia, VIDEO_MODELS, DEFAULT_VIDEO_MODEL, mediaReady, MediaError } from "../../lib/media";
 
@@ -328,6 +328,22 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: false, say: her.say, message: { id: String(row.id), role: "assistant", content: her.say } });
       }
       // 🧍 Together in person (not a scene): she talks face to face, and 👁️ ICU works.
+      // 💭 Written straight into her feelings: anything you type in [brackets] in her chat.
+      case "feelings.set": {
+        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
+        if (!ch) return bad("That character wasn't found.");
+        const text = scrub(clean(b.text, 499)).replace(/\s+/g, " ").trim();
+        if (text.length < 5) return bad("Say a little more about how she feels.");
+        const [who] = await db`select adult_confirmed_at from users where id = ${me}`;
+        await saveFeelings(me, ch.id, text, true);
+        const line = `💭 ${text}`;
+        const [row] = await db`insert into velo_messages (user_id, role, content, character_id) values (${me}, 'user', ${line}, ${ch.id}) returning id`;
+        // Her feelings only reach her when romance is on for her, and once you've confirmed 18+.
+        const idle = !ch.romantic ? `Saved, but ${ch.name} isn't romantic — turn on 💕 Romantic on her card for it to reach her.`
+          : !who?.adult_confirmed_at ? "Saved — it reaches her once you've confirmed you're 18+."
+          : "";
+        return NextResponse.json({ ok: true, feelings: text, note: idle, marker: { id: String(row.id), role: "user", content: line } });
+      }
       // 🏠 A live-in character: is she in or out? (Her own toggle, no asking involved — she lives here.)
       case "home.get":
       case "home.set": {

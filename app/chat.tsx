@@ -35,7 +35,7 @@ const unsavedBy = new Map<string, number>();
 // Reactions travel with the history, so she knows what they reacted to (and what she did).
 const withReactions = (x: ChatMsg) => x.role === "assistant" && x.reaction ? `${x.content}\n(they reacted ${x.reaction} to this)` : x.role === "user" && x.theirReaction ? `${x.content}\n(you reacted ${x.theirReaction})` : x.content;
 // 👀 Peeks are only theirs: she never sees them.
-const realMsgs = (m: ChatMsg[]) => m.filter(x => !x.draft && !x.peek).map(x => ({ role: x.role, content: withReactions(x), ...(x.file ? { fileId: x.file.id } : {}) }));
+const realMsgs = (m: ChatMsg[]) => m.filter(x => !x.draft && !x.peek && !x.content.startsWith("💭 ")).map(x => ({ role: x.role, content: withReactions(x), ...(x.file ? { fileId: x.file.id } : {}) }));
 const INTRO = "Hi, I'm Velo! 👋 I'm here for whatever you need — planning your day, reminders, to-dos, talking things through, or just keeping you company. What should I call you?";
 const HELLO = (n: string) => [`Hey${n ? ` ${n}` : ""}! What's on your mind?`, `Hi${n ? ` ${n}` : ""} — how's your day going?`, `Hey${n ? ` ${n}` : ""}, good to see you. What can I do for you?`];
 const SUGGESTIONS = ["Plan my day", "Remind me to call Mom tomorrow at 6pm", "I need to vent", "Help me set a goal"];
@@ -154,6 +154,19 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     if (cid && !file && icu && !inPerson) { setErr(character?.live_in ? `ICU and *peek* work when ${character.name}'s home — flip the 🏠 Home toggle.` : "ICU works when you two are together in person — tap 🧍 first."); return; }
     if (cid && !file && ((scene && /^\s*\*?\s*pe(e|a)k\s*\*?\s*[.!]?\s*$/i.test(t)) || icu)) {
       setText(""); openPeek(!scene);
+      return;
+    }
+    // 💭 [In brackets] in a character's chat: written straight into how she feels about you,
+    // not sent to her as a message. Anything wrapped end to end counts.
+    const inner = t.startsWith("[") && t.endsWith("]") ? t.slice(1, -1).trim() : "";
+    if (cid && !file && inner) {
+      if (inner.length < 5) { setErr("Say a little more about how she feels."); return; }
+      setText(""); setErr("");
+      try {
+        const r = await data<{ marker: ChatMsg; note?: string }>("feelings.set", { characterId: cid, text: inner });
+        setMsgs(list => [...(list || []), r.marker]);
+        if (r.note) setErr(r.note);
+      } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't set that."); }
       return;
     }
     const opener: ChatMsg[] = msgs.length || cid ? [] : [{ role: "assistant", content: openingLine }];
@@ -753,6 +766,9 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
         <When at={m.at} align="center" />
       </div>
     </div>
+  );
+  if (m.content.startsWith("💭 ")) return (
+    <div data-testid="feelings-note" style={{ alignSelf: "center", maxWidth: "90%", textAlign: "center", fontSize: 12, padding: "6px 12px", borderRadius: 999, background: "rgba(236,72,153,.14)", border: "1px solid rgba(236,72,153,.4)" }} className="muted">{m.content}</div>
   );
   if (m.content.startsWith("🎬 ") || m.content.startsWith("🎥 ") || m.content.startsWith("🧍 ")) return (
     <div data-testid="scene-note" style={{ alignSelf: "center", maxWidth: "90%", textAlign: "center", fontSize: 12, padding: "6px 12px", borderRadius: 999, background: "var(--surface2)", border: "1px solid var(--border)" }} className="muted">{m.content}</div>
