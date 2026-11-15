@@ -8,14 +8,14 @@ const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m)
 const wanted = ["swimsuit-model", "bookworm", "cosplayer", "musician", "trainer", "waitress", "bartender",
   "hygienist", "attorney-rich", "trust-fund", "programmer", "stylist", "scientist", "professor", "cheerleader",
   "volleyball-coach", "streamer", "chef", "driver", "hostess", "car-sales", "candy-shop", "freshman",
-  "barista", "server", "nun", "aquarium"];
+  "barista", "server", "nun", "aquarium", "police"];
 for (const want of wanted) if (!VIBES.some(v => v.id === want)) { ok(false, `${want} is missing`); break; }
 ok(true, `all ${wanted.length} of the lives you listed are there`);
 ok(VIBES.length >= 30, `plus more besides, so they don't cycle (${VIBES.length})`);
 ok(new Set(VIBES.map(v => v.id)).size === VIBES.length, "none of them twice");
 ok(VIBES.every(v => v.look.length > 40 && v.life.length > 60), "each one says what she does all day AND how that makes her look");
 // The named places you gave come through by name.
-const places = ["Honchos Steakhouse", "Redfield Parcel", "GloClub", "Gilbert's Auto Sales", "Coco's Candy Shop", "South Holland Community College", "Cowgirls Espresso", "Tilted Kilt", "SHED Aquarium", "Chicago Gators", "HomeBuy Realty"];
+const places = ["Honchos Steakhouse", "Redfield Parcel", "GloClub", "Gilbert's Auto Sales", "Coco's Candy Shop", "South Holland Community College", "Cowgirls Espresso", "Tilted Kilt", "SHED Aquarium", "Chicago Gators", "HomeBuy Realty", "South Holland police"];
 for (const p of places) if (!VIBES.some(v => `${v.label} ${v.life} ${v.look}`.includes(p))) { ok(false, `${p} is missing`); break; }
 ok(true, "and the places you named are named");
 
