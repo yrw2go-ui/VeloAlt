@@ -123,7 +123,7 @@ const NOTE_ECHO = /[([*]\s*(?:i|she|he|they)?\s*reacted\s*([^\s)\]*]+)\s*(?:to\s
 
 /** Velo, or (with `character`) one of the characters: same chats, calls and memory flow, but in the
  *  character's own voice, with only their own memory of this person and no Velo tools. */
-export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode: Mode; messages: Turn[]; timeZone?: unknown; name?: string; goal?: string; toName?: string; character?: Character | null; origin?: string; promise?: string; noFallback?: boolean; group?: { others: string[]; scene?: { title: string; details: string; time?: string } | null; banter?: boolean; inPerson?: string | null; catchUp?: string; private?: boolean } }): Promise<AskResult> {
+export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?: boolean; mode: Mode; messages: Turn[]; timeZone?: unknown; name?: string; goal?: string; toName?: string; character?: Character | null; origin?: string; promise?: string; noFallback?: boolean; group?: { others: string[]; scene?: { title: string; details: string; time?: string } | null; banter?: boolean; inPerson?: string | null; catchUp?: string; private?: boolean } }): Promise<AskResult> {
   const { mode } = opts;
   const ch = opts.character || null;
   const cid = ch?.id || null;
@@ -352,7 +352,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
           // 📸 Asked for: they see exactly what's going to the picture service, and send it (or
           // change it, or drop it) themselves — the same two steps as a peek. Her own idea is
           // still just an offer.
-          if (asked && mode === "chat") {
+          if (asked && mode === "chat" && opts.asks === true) {
             const i = input as { kind?: unknown; description?: unknown; with_me?: unknown; with_them?: unknown; of_person?: unknown; same_moment?: unknown };
             ask = {
               kind: i.kind === "video" ? "video" : "image",

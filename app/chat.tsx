@@ -233,7 +233,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     const me = retry ? turn.current : ++turn.current;
     if (!retry || retry === 1) { setBusy(true); setErr(""); }
     try {
-      const r = await api<{ reply: string; replyId?: string; changed?: boolean; drafts?: Draft[]; media?: Media[]; react?: string; ask?: { kind: "image" | "video"; description: string; with_me: boolean; with_them: boolean; of_person: string; same_moment: boolean }; brainDown?: boolean; by?: "claude" | "alt" }>("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name, ...thread, saveReply: true, ...(myId ? { replyTo: myId } : {}), ...(retry ? { retry: true } : {}) });
+      const r = await api<{ reply: string; replyId?: string; changed?: boolean; drafts?: Draft[]; media?: Media[]; react?: string; ask?: { kind: "image" | "video"; description: string; with_me: boolean; with_them: boolean; of_person: string; same_moment: boolean }; brainDown?: boolean; by?: "claude" | "alt" }>("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name, ...thread, saveReply: true, asks: true, ...(myId ? { replyTo: myId } : {}), ...(retry ? { retry: true } : {}) });
       if (turn.current !== me) return;
       if (r.brainDown) {
         setBusy(false);
@@ -432,7 +432,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   const sendPic = async () => {
     setPicBusy(true); setErr("");
     try {
-      const r = await api<{ media?: Media[]; note?: string; ask?: typeof ask }>("/api/velo", { mode: "chat", messages: realMsgs(msgsRef.current), timeZone: timeZone(), name, ...thread, sendPhoto: true });
+      const r = await api<{ media?: Media[]; note?: string; ask?: typeof ask }>("/api/velo", { mode: "chat", messages: realMsgs(msgsRef.current), timeZone: timeZone(), name, ...thread, sendPhoto: true, asks: true });
       // 📸 The prompt comes to you first, the same as any photo you asked for.
       if (r.ask) { setAsk(r.ask); setPicBusy(false); return; }
       const sent: ChatMsg[] = (r.media || []).filter(x => x.status !== "failed").map(media => ({ role: "assistant", content: mediaNote(media), media }));

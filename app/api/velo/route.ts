@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
     // ⏰ A chat with a character on her own brain: if it's down, no stand-in (see BrainDown below).
     const noFallback = mode === "chat" && holdsOnWhenDown(character?.brain);
     let r;
-    try { r = await askVelo(caller, { mode, messages, timeZone: body.timeZone, name: body.name, character, origin: req.nextUrl.origin, noFallback, sendPhoto: body.sendPhoto === true && mode === "chat" }); }
+    try { r = await askVelo(caller, { mode, messages, timeZone: body.timeZone, name: body.name, character, origin: req.nextUrl.origin, noFallback, sendPhoto: body.sendPhoto === true && mode === "chat", asks: body.asks === true }); }
     catch (e) {
       if (!(e instanceof BrainDown)) throw e;
       // First time: she says she'll be right back. On retries: nothing to show yet.
