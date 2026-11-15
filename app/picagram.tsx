@@ -213,7 +213,10 @@ function PostCard({ p, me, obs, onChange, onProfile, onFollow, onNote, onRemoved
       {p.media ? (
         <div onDoubleClick={() => { if (!p.liked) like(); }} style={{ display: "flex", justifyContent: "center", background: "#000" }}><MediaView media={p.media} big who={p.author.name} /></div>
       ) : (
-        <div onDoubleClick={() => { if (!p.liked) like(); }} data-testid="pica-text" style={{ margin: "0 14px", padding: "28px 20px", borderRadius: 16, background: GRADS[p.id.charCodeAt(0) % GRADS.length], color: "#fff", fontSize: 18, fontWeight: 700, lineHeight: 1.4, whiteSpace: "pre-wrap", overflowWrap: "anywhere", textAlign: "center" }}>{noJargon(p.caption)}</div>
+        <div onDoubleClick={() => { if (!p.liked) like(); }} data-testid="pica-text" style={{ margin: "0 14px", padding: "20px 16px", borderRadius: 16, background: GRADS[p.id.charCodeAt(0) % GRADS.length], color: "#fff", fontSize: 18, fontWeight: 700, lineHeight: 1.4, whiteSpace: "pre-wrap", overflowWrap: "anywhere", textAlign: "center" }}>
+          <EditableBio value={noJargon(p.caption)} testid="pica-caption" placeholder="Say something" max={2000} size={18} weight={700}
+            onSave={async t => { onChange(x => ({ ...x, caption: t })); await api("/api/pica", { action: "caption.set", id: p.id, caption: hideSecrets(t).text }).catch(() => {}); }} />
+        </div>
       )}
       <div className="row" style={{ gap: 14, padding: "8px 14px 2px" }}>
         <button onClick={like} aria-label={p.liked ? "Unlike" : "Like"} aria-pressed={p.liked} data-testid="pica-like" style={{ background: "none", border: "none", fontSize: 24, cursor: "pointer", padding: 0 }}>{p.liked ? "❤️" : "🤍"}</button>
@@ -223,7 +226,13 @@ function PostCard({ p, me, obs, onChange, onProfile, onFollow, onNote, onRemoved
       <div style={{ padding: "0 14px", fontSize: 14, fontWeight: 700 }} data-testid="pica-likes">
         {likedBy.length ? <>Liked by {likedBy.slice(0, 2).join(", ")}{p.likes > likedBy.length ? <> and {fmt(p.likes - Math.min(2, likedBy.length))} others</> : null}</> : <>{fmt(p.likes)} likes</>}
       </div>
-      {p.media && p.caption && <div style={{ padding: "4px 14px", fontSize: 14, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}><b>{acc ? acc.handle : p.author.id ? p.author.name : me}</b> {noJargon(p.caption)}</div>}
+      {p.media && <div className="row" style={{ alignItems: "flex-start", padding: "4px 14px", fontSize: 14, gap: 6 }}>
+        <b style={{ flexShrink: 0 }}>{acc ? acc.handle : p.author.id ? p.author.name : me}</b>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <EditableBio value={noJargon(p.caption)} testid="pica-caption" placeholder="Add a caption" max={2000} size={14} weight={400}
+            onSave={async t => { onChange(x => ({ ...x, caption: t })); await api("/api/pica", { action: "caption.set", id: p.id, caption: hideSecrets(t).text }).catch(() => {}); }} />
+        </div>
+      </div>}
       <div style={{ padding: "2px 14px 0" }}><When at={p.created_at} /></div>
       {p.comments > list.length && !open && <button onClick={showAll} className="muted" data-testid="pica-all" style={{ background: "none", border: "none", padding: "2px 14px", fontSize: 13, cursor: "pointer" }}>View all {p.comments} comments</button>}
       <div style={{ padding: "2px 14px", display: "grid", gap: 3 }}>
@@ -891,7 +900,7 @@ function MakeHer({ onClose, onMade }: { onClose: () => void; onMade: (id: string
  * ✍️ A bio you just click and type in. It saves itself three seconds after you stop typing
  * (and when you tap away), so there's no Save button to remember.
  */
-function EditableBio({ value, onSave, testid, placeholder = "No bio yet", max = 300 }: { value: string; onSave: (t: string) => Promise<void>; testid: string; placeholder?: string; max?: number }) {
+function EditableBio({ value, onSave, testid, placeholder = "No bio yet", max = 300, size, weight }: { value: string; onSave: (t: string) => Promise<void>; testid: string; placeholder?: string; max?: number; size?: number; weight?: number }) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(value);
   const [saved, setSaved] = useState(false);
@@ -918,7 +927,7 @@ function EditableBio({ value, onSave, testid, placeholder = "No bio yet", max = 
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
   if (!editing) return (
     <div onClick={() => setEditing(true)} data-testid={testid} title="Click to edit"
-      style={{ fontSize: max <= 60 ? 15 : 13, fontWeight: max <= 60 ? 800 : 400, marginTop: max <= 60 ? 0 : 4, whiteSpace: "pre-wrap", cursor: "text", minHeight: 18 }}>
+      style={{ fontSize: size ?? (max <= 60 ? 15 : 13), fontWeight: weight ?? (max <= 60 ? 800 : 400), marginTop: size ? 0 : max <= 60 ? 0 : 4, whiteSpace: "pre-wrap", overflowWrap: "anywhere", cursor: "text", minHeight: 18, color: "inherit" }}>
       {text || <span className="muted">{placeholder}</span>}
       {saved && <span className="muted" data-testid={`${testid}-saved`} style={{ marginLeft: 6, fontSize: 11 }}>✓ Saved</span>}
     </div>
