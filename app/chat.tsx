@@ -547,7 +547,9 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     try { await data("profile.update", { adultConfirmed: true }); onAdult?.(); } catch { setErr("Couldn't save that. Try again."); }
   };
   const openingLine = msgs && !msgs.length && !name ? INTRO : HELLO(name.split(" ")[0])[hello];
-  const shown: ChatMsg[] = msgs && !msgs.length && !cid ? [{ role: "assistant", content: openingLine }] : msgs || [];
+  const NOTE_ONLY = /^\s*\((sent|sending) an? (photo|video|picture)\b/i;
+  const shown: ChatMsg[] = (msgs && !msgs.length && !cid ? [{ role: "assistant" as const, content: openingLine }] : msgs || [])
+    .filter(m => m.media || m.file || m.draft || !NOTE_ONLY.test(m.content || ""));
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
@@ -844,7 +846,7 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
         style={{ position: "relative", cursor: !mine && m.id ? "pointer" : undefined, padding: "10px 14px", borderRadius: 18, borderBottomLeftRadius: mine ? 18 : 4, borderBottomRightRadius: mine ? 4 : 18,
         background: mine ? "linear-gradient(135deg, var(--accent), var(--accent2))" : "var(--surface2)", color: "var(--text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", lineHeight: 1.45, fontSize: 15 }}>
         {m.file && <div style={{ marginBottom: m.content && m.content !== "📎" ? 8 : 0 }}><FileThumb f={m.file} size={180} /></div>}
-        {m.content !== "📎" && styled((mine ? m.content : noJargon(dropThoughts(m.content))).replace(/\*\*(.+?)\*\*/g, "$1"))}
+        {m.content !== "📎" && styled((mine ? m.content : noJargon(dropThoughts(m.content)).replace(/\(sent an? (photo|video|picture)[\s\S]*?\)\s*$/i, "").trim()).replace(/\*\*(.+?)\*\*/g, "$1"))}
         {mine && m.theirReaction && badge(m.theirReaction, who)}
         {!mine && m.reaction && badge(m.reaction, "You")}
       </div>
