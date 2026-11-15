@@ -17,7 +17,7 @@ import { MediaView, ReactionBar, type Media } from "./media";
 import { isHot } from "./lib/reactions";
 
 /** Who this chat is with: Velo (no character) or one of their characters. */
-export type ChatWith = { id: string; name: string; portrait_url: string | null; romantic?: boolean; brain?: string; live_in?: boolean; home?: boolean };
+export type ChatWith = { id: string; name: string; portrait_url: string | null; romantic?: boolean; brain?: string; live_in?: boolean; neighbor?: boolean; home?: boolean };
 
 export type ChatFile = { id: string; url: string; thumb?: string | null; name: string; type: string };
 export type ChatMsg = { id?: string; at?: string; role: "user" | "assistant"; content: string; peek?: boolean; draft?: Draft; file?: ChatFile; media?: Media; reaction?: string | null; theirReaction?: string | null };
@@ -255,12 +255,13 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       if (r.react) setMsgs(list => (list || []).map(x => (x.id && x.id === myId ? { ...x, theirReaction: r.react } : x)));
       // 🎨 Photos/videos being made show up right under the reply and fill in when ready.
       const sent: ChatMsg[] = (r.media || []).filter(x => x.status !== "failed").map(media => ({ at: new Date().toISOString(), role: "assistant", content: mediaNote(media), media }));
+      // A reaction on its own (no words): the badge on their message is the whole answer.
       const replyMsg: ChatMsg = { at: new Date().toISOString(), role: "assistant", content: r.reply, ...(r.replyId ? { id: r.replyId } : {}) };
-      setMsgs(m => [...(m || []), replyMsg, ...sent, ...(r.drafts || []).map(draft => ({ role: "assistant" as const, content: "", draft }))]);
+      setMsgs(m => [...(m || []), ...(r.reply ? [replyMsg] : []), ...sent, ...(r.drafts || []).map(draft => ({ role: "assistant" as const, content: "", draft }))]);
       // Free the box as soon as her reply shows; saving it can finish in the background.
       setBusy(false);
       // (The server saved it already; older servers didn't, so save it here then.)
-      const replyId = r.replyId || (await data<{ ids?: string[] }>("messages.add", { ...thread, messages: [{ role: "assistant", content: r.reply }] }).catch(() => ({ ids: [] as string[] }))).ids?.[0];
+      const replyId = !r.reply ? null : r.replyId || (await data<{ ids?: string[] }>("messages.add", { ...thread, messages: [{ role: "assistant", content: r.reply }] }).catch(() => ({ ids: [] as string[] }))).ids?.[0];
       if (replyId) setMsgs(list => (list || []).map(x => (x === replyMsg ? { ...x, id: replyId } : x)));
       if (r.changed) onChanged();
     } catch (e) {
@@ -343,6 +344,13 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   // 🏠 She lives here: in or out? While she's in, you're in the same house (so it's the
   // in-person state, with "home" as the place) — she talks to you instead of texting.
   const atHome = !!character?.live_in && inPerson?.place === "home";
+  // 🏘️ Are YOU in? One switch for the whole street — a neighbour only comes by when you're home.
+  const [iAmHome, setIAmHome] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!character?.neighbor || character.live_in) return;
+    data<{ home: boolean }>("athome.get").then(r => setIAmHome(r.home)).catch(() => {});
+  }, [character?.id, character?.neighbor, character?.live_in]); // eslint-disable-line react-hooks/exhaustive-deps
+  const setMyHome = async (v: boolean) => { setIAmHome(v); await data("athome.set", { home: v }).catch(() => setIAmHome(!v)); };
   const setHome = async (home: boolean) => {
     if (!cid || busy) return;
     setInPerson(home ? { place: "home", started_at: new Date().toISOString() } : null);
@@ -574,6 +582,21 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
                 data-testid={v ? "home-on" : "home-off"}
                 style={{ padding: "4px 10px", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer", color: "var(--text)",
                   background: atHome === v ? (v ? "rgba(74,222,128,.3)" : "rgba(124,140,255,.22)") : "transparent" }}>{label}</button>
+            ))}
+          </div>
+        </div>
+      )}
+      {character?.neighbor && !character.live_in && !scene && (
+        <div data-testid="neighbor-bar" className="row" style={{ gap: 8, padding: "6px 14px", borderBottom: "1px solid var(--border)", background: iAmHome ? "rgba(74,222,128,.12)" : "var(--surface2)", fontSize: 13 }}>
+          <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {iAmHome ? <>🏠 <b>You&apos;re home</b> <span className="muted">· {character.name} lives a few doors down</span></> : <>🚪 <b>You&apos;re out</b> <span className="muted">· nobody comes by</span></>}
+          </span>
+          <div className="row" style={{ gap: 0, borderRadius: 999, border: "1px solid var(--border)", overflow: "hidden" }}>
+            {([[true, "🏠 I'm home"], [false, "🚪 Out"]] as const).map(([v, label]) => (
+              <button key={label} type="button" onClick={() => setMyHome(v)} aria-pressed={iAmHome === v}
+                data-testid={v ? "iam-home-on" : "iam-home-off"}
+                style={{ padding: "4px 10px", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer", color: "var(--text)",
+                  background: iAmHome === v ? (v ? "rgba(74,222,128,.3)" : "rgba(124,140,255,.22)") : "transparent" }}>{label}</button>
             ))}
           </div>
         </div>

@@ -8,6 +8,7 @@ import { confirmAsk, currentAsk, subscribeAsk } from "./lib/dialog";
 import { VeloLogo, VeloLookPicker, applyVeloLook, useVeloLook } from "./avatar";
 import VeloCall, { canCallVelo, primeSpeech } from "./call";
 import Chat, { type ChatAdd } from "./chat";
+type DropIn = { id: string; characterId: string; who: string; portrait: string | null; kind: "door" | "over"; line: string };
 import { CallMedia, type Media } from "./media";
 import Picagram from "./picagram";
 import { CharacterStrip, CharacterEditor, CharacterFace, NewCharacterSheet, type Character } from "./characters";
@@ -221,6 +222,35 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
     return () => { clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
   }, [userId, bump]);
 
+  // 🔔 Neighbours. While you're marked home, someone a few doors down might knock, or spot your
+  // car and ask you over. Checked every minute; leaving it costs nothing with her.
+  const [dropIn, setDropIn] = useState<DropIn | null>(null);
+  const hasNeighbor = chars.some(c => c.neighbor && !c.live_in);
+  useEffect(() => {
+    if (!hasNeighbor) return;
+    let stop = false;
+    const check = async () => {
+      const r = await data<{ dropIn: DropIn | null }>("dropin.check").catch(() => ({ dropIn: null }));
+      if (!stop && r.dropIn) setDropIn(d => d || r.dropIn);
+    };
+    check();
+    const t = setInterval(check, 60_000);
+    const onVis = () => { if (document.visibilityState === "visible") check(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { stop = true; clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
+  }, [userId, hasNeighbor]);
+  const answerDoor = async () => {
+    if (!dropIn) return;
+    const d = dropIn; setDropIn(null);
+    const r = await data<{ characterId: string }>("dropin.answer", { id: d.id }).catch(() => null);
+    if (!r) return;
+    setTab("chat"); setGroupId(null); setWithId(r.characterId); setChatTick(t => t + 1);
+  };
+  const leaveIt = async () => {
+    const d = dropIn; setDropIn(null);
+    if (d) await data("dropin.ignore", { id: d.id }).catch(() => {});
+  };
+
   const doneDue = async (id: string) => {
     setDue(d => d.filter(x => x.id !== id));
     await data("reminders.dismiss", { id }).catch(() => {});
@@ -321,6 +351,29 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
               <button className="btn" onClick={() => doneDue(r.id)} style={{ padding: "8px 14px" }}>Done</button>
             </div>
           ))}
+        </div>
+      )}
+
+      {dropIn && (
+        <div role="dialog" aria-modal="true" data-testid="dropin" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 18, zIndex: 2700 }}>
+          <div className="card" style={{ width: "100%", maxWidth: 420, display: "flex", flexDirection: "column", gap: 12 }}>
+            <div className="row" style={{ gap: 12 }}>
+              {dropIn.portrait
+                // eslint-disable-next-line @next/next/no-img-element
+                ? <img src={dropIn.portrait} alt="" width={52} height={52} style={{ width: 52, height: 52, borderRadius: "50%", objectFit: "cover" }} />
+                : <span style={{ fontSize: 34 }}>{dropIn.kind === "door" ? "🔔" : "🏡"}</span>}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 800, fontSize: 17 }}>{dropIn.kind === "door" ? `${dropIn.who} is at your door` : `${dropIn.who} saw your car`}</div>
+                <div className="muted" style={{ fontSize: 12 }}>{dropIn.kind === "door" ? "She lives a few doors down." : "She's asking you over."}</div>
+              </div>
+            </div>
+            <div data-testid="dropin-line" style={{ fontSize: 15, padding: "10px 12px", borderRadius: 12, background: "var(--surface2)" }}>{dropIn.line}</div>
+            <div className="row" style={{ gap: 8 }}>
+              <button className="ghost" onClick={leaveIt} data-testid="dropin-no" style={{ flex: 1, padding: "10px 14px" }}>Not right now</button>
+              <button className="btn" onClick={answerDoor} data-testid="dropin-yes" style={{ flex: 1, padding: "10px 14px" }}>{dropIn.kind === "door" ? "🚪 Answer the door" : "🚶 Head over"}</button>
+            </div>
+            <div className="muted" style={{ fontSize: 11, textAlign: "center" }}>Leaving it is fine — she never knows you were standing there.</div>
+          </div>
         </div>
       )}
 

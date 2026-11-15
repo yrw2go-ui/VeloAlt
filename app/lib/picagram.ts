@@ -126,6 +126,9 @@ async function generateDay(userId: string, day: string, isToday: boolean): Promi
   // Opening the app on a new day: the first post is already up.
   if (isToday && times.length) times[0] = now - rand(5, 50) * 60_000;
   let vacationUsed = false;
+  // 🪪 A character who came from Picagram still has her account: her new posts belong to it too,
+  // so you can open her profile from the feed and see everything she's ever posted in one place.
+  const accountOf = new Map((await sql()`select id, character_id from pica_accounts where user_id = ${userId} and character_id is not null`).map(r => [String(r.character_id), String(r.id)]));
   for (let i = 0; i < posts.length; i++) {
     const { c, p } = posts[i];
     const at = new Date(times[i]);
@@ -142,8 +145,8 @@ async function generateDay(userId: string, day: string, isToday: boolean): Promi
     const fc = (Array.isArray(p.friend_comments) ? p.friend_comments : []).map(x => ({ c: byName.get(String(x.from || "").toLowerCase()), text: scrub(String(x.text || "")).slice(0, 300) })).filter(x => x.c && x.c.id !== c.id && x.text && lk.knownBy.includes(x.c.name)).slice(0, Math.random() < 0.5 ? 1 : 0);
     const likers = [...new Set([...fc.map(x => x.c!.name), ...lk.knownBy.filter(() => Math.random() < 0.4)])];
     const likerSecs = likers.map(() => rand(60, 6 * 3600));
-    const [post] = await sql()`insert into pica_posts (user_id, author_id, kind, caption, photo, media_id, likes_target, liked_by, liker_secs, place, created_at)
-      values (${userId}, ${c.id}, ${media ? "image" : "text"}, ${caption || (media ? "" : photo)}, ${media ? photo : ""}, ${media?.id || null}, ${big ? rand(200, 1500) : rand(20, 300)}, ${likers}, ${likerSecs}, ${p.vacation?.place ? scrub(String(p.vacation.place)).slice(0, 80) : ""}, ${at.toISOString()}) returning id`;
+    const [post] = await sql()`insert into pica_posts (user_id, author_id, account_id, kind, caption, photo, media_id, likes_target, liked_by, liker_secs, place, created_at)
+      values (${userId}, ${c.id}, ${accountOf.get(c.id) || null}, ${media ? "image" : "text"}, ${caption || (media ? "" : photo)}, ${media ? photo : ""}, ${media?.id || null}, ${big ? rand(200, 1500) : rand(20, 300)}, ${likers}, ${likerSecs}, ${p.vacation?.place ? scrub(String(p.vacation.place)).slice(0, 80) : ""}, ${at.toISOString()}) returning id`;
     for (const x of fc) await sql()`insert into pica_comments (post_id, user_id, author_id, text, created_at) values (${post.id}, ${userId}, ${x.c!.id}, ${x.text}, ${new Date(times[i] + rand(10, 240) * 60_000).toISOString()})`;
     // Her followers comment: more with a big following (up to 5 comments in all, counting a friend's).
     for (const s of randomComments(`${caption} ${photo}`, media ? "image" : "text", Math.max(0, (big ? rand(3, 5) : rand(1, 3)) - fc.length)))
@@ -197,7 +200,9 @@ export async function picaFeed(userId: string, before: string | null, limit = 6,
     id: String(r.id), kind: r.kind, caption: String(r.caption || ""), created_at: String(r.at),
     author: r.acc_id && !r.author_id
       ? { id: null, name: String(r.acc_name), portrait: r.acc_avatar ? String(r.acc_avatar) : null, away: null, account: { id: String(r.acc_id), handle: String(r.acc_handle), followed: !!r.acc_followed } }
-      : { id: r.author_id ? String(r.author_id) : null, name: r.author_id ? String(r.author_name) : name, portrait: r.portrait ? String(r.portrait) : null, away: r.away_place && r.author_id ? `✈️ ${r.away_place}` : null },
+      : { id: r.author_id ? String(r.author_id) : null, name: r.author_id ? String(r.author_name) : name, portrait: r.portrait ? String(r.portrait) : null, away: r.away_place && r.author_id ? `✈️ ${r.away_place}` : null,
+          // She came from Picagram and is a character now: her profile is still hers to open.
+          account: r.acc_id && r.author_id ? { id: String(r.acc_id), handle: String(r.acc_handle), followed: !!r.acc_followed } : undefined },
     saved: !!r.saved,
     media: r.m_id ? ({ id: String(r.m_id), kind: r.m_kind, status: r.m_status, url: r.m_status === "done" ? r.m_url : null, thumb: r.m_thumb || null } as Media) : null,
     likes: Math.max(ramp(Number(r.likes_target), String(r.at), String(r.id)), likersNow(r.liked_by || [], r.liker_secs || [], String(r.at)).length) + (r.liked ? 1 : 0), liked: !!r.liked,
@@ -603,7 +608,8 @@ export async function picaProfile(userId: string, accountId: string) {
     await putUpUploads(userId, a, (a.ref_media_ids as string[]).map(String), await userInfo(userId)).catch(e => console.error("pica: catch up her pictures", e instanceof Error ? e.message : e));
   const posts = await sql()`select p.id, p.caption, p.created_at::text as at, m.id as media_id, f.url, t.url as thumb, exists(select 1 from pica_saved s where s.user_id = p.user_id and s.media_id = m.id) as saved
     from pica_posts p join velo_media m on m.id = p.media_id join velo_files f on f.id = m.file_id left join velo_files t on t.id = m.thumb_file_id
-    where p.user_id = ${userId} and p.account_id = ${accountId} and p.created_at <= now() and m.status = 'done' order by p.created_at desc limit 60`;
+    where p.user_id = ${userId} and (p.account_id = ${accountId} or (${a.character_id || null}::uuid is not null and p.author_id = ${a.character_id || null}::uuid))
+      and p.created_at <= now() and m.status = 'done' order by p.created_at desc limit 60`;
   return { account: { id: String(a.id), handle: String(a.handle), name: String(a.name), bio: String(a.bio), followers: Number(a.followers), followed: !!a.followed, avatar: a.avatar ? String(a.avatar) : null, avatar_media_id: a.avatar_media_id ? String(a.avatar_media_id) : null, character_id: a.character_id ? String(a.character_id) : null, lives: a.lives ? String(a.lives) : "", hidden: !!a.hidden, married: a.attached === "married" },
     photos: posts.map(r => ({ media_id: String(r.media_id), url: String(r.url), thumb: r.thumb ? String(r.thumb) : null, caption: String(r.caption || ""), saved: !!r.saved })) };
 }

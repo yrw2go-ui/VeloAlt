@@ -199,11 +199,11 @@ function PostCard({ p, me, obs, onChange, onProfile, onFollow, onNote, onRemoved
       <div className="row" style={{ gap: 10, padding: "10px 14px" }}>
         <span onClick={() => acc && onProfile(acc.id)} style={{ cursor: acc ? "pointer" : undefined, display: "flex" }}><Avatar name={p.author.name} url={p.author.portrait} /></span>
         <div style={{ flex: 1, minWidth: 0 }} onClick={() => acc && onProfile(acc.id)} data-testid={acc ? "pica-account" : undefined}>
-          <div style={{ fontWeight: 800, fontSize: 14, cursor: acc ? "pointer" : undefined }}>{acc ? acc.handle : p.author.id ? p.author.name : `${me} (you)`}</div>
-          {acc && !acc.followed && <div className="muted" style={{ fontSize: 11 }}>Suggested for you</div>}
+          <div style={{ fontWeight: 800, fontSize: 14, cursor: acc ? "pointer" : undefined }}>{p.author.id ? p.author.name : acc ? acc.handle : `${me} (you)`}</div>
+          {acc && !p.author.id && !acc.followed && <div className="muted" style={{ fontSize: 11 }}>Suggested for you</div>}
           {p.author.away && <div className="muted" style={{ fontSize: 11 }} data-testid="pica-away">{p.author.away}</div>}
         </div>
-        {acc && <button className={acc.followed ? "ghost" : "btn"} onClick={follow} data-testid="pica-follow" style={{ padding: "4px 12px", fontSize: 13 }}>{acc.followed ? "Following" : "Follow"}</button>}
+        {acc && !p.author.id && <button className={acc.followed ? "ghost" : "btn"} onClick={follow} data-testid="pica-follow" style={{ padding: "4px 12px", fontSize: 13 }}>{acc.followed ? "Following" : "Follow"}</button>}
         <span className="muted" style={{ fontSize: 12 }} title={stamp(p.created_at)}>{ago(p.created_at)}</span>
         {!p.author.id && !acc && <button onClick={remove} aria-label="Delete post" data-testid="pica-delete" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16, padding: "0 2px", color: "var(--muted)" }}>🗑</button>}
       </div>

@@ -200,7 +200,7 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
   // picture of someone else ("miss me yet?" would make no sense), a peek, or a Picagram post.
   const caption = ctx.peek || ctx.pica || !ctx.offer || (o && !withMe) ? null : captionFor(kind, ctx.romantic && withMe);
   const [row] = await sql()`insert into velo_media (user_id, character_id, kind, prompt, model, caption, description, refs, poster_url, status, peek, subject, pica)
-    values (${userId}, ${ctx.characterId}, ${kind}, ${prompt}, ${model}, ${caption}, ${desc.slice(0, ctx.raw ? 1500 : 400)}, ${sendRefs}, ${kind === "video" ? ref : null}, ${ctx.offer ? "offered" : "working"}, ${!!ctx.peek}, ${who}, ${!!ctx.pica}) returning id`;
+    values (${userId}, ${ctx.characterId}, ${kind}, ${prompt}, ${model}, ${caption}, ${desc.slice(0, 400)}, ${sendRefs}, ${kind === "video" ? ref : null}, ${ctx.offer ? "offered" : "working"}, ${!!ctx.peek}, ${who}, ${!!ctx.pica}) returning id`;
   if (ctx.offer) return { id: row.id, kind, status: "offered", url: null, description: desc, subject: who };
   return { ...(await launch(row.id, kind, model, prompt, sendRefs, desc)), subject: who };
 }

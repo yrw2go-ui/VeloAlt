@@ -3,6 +3,7 @@ import { duePlans, setPlanStatus } from "../../lib/plans";
 import { readyIntros, acceptIntro, declineIntro, IntroError } from "../../lib/intros";
 import { peekAt, draftPeek, draftIcu } from "../../lib/peek";
 import { inPersonFor, startInPerson, endInPerson } from "../../lib/inPerson";
+import { atHome, setAtHome, maybeDropIn, waitingDropIn, answerDropIn, ignoreDropIn } from "../../lib/neighbor";
 import { canShe, sickFor, type Answer } from "../../lib/life";
 import { setHome, isHome } from "../../lib/inPerson";
 import { redoDraft, redoMake } from "../../lib/redo";
@@ -369,6 +370,18 @@ export async function POST(req: NextRequest) {
         const line = home ? `🏠 ${ch.name} is home` : `🏠 ${ch.name} went out`;
         const [row] = await db`insert into velo_messages (user_id, role, content, character_id) values (${me}, 'user', ${line}, ${ch.id}) returning id`;
         return NextResponse.json({ home, marker: { id: String(row.id), role: "user", content: line } });
+      }
+      // 🏘️ Neighbours. "home" is one switch for the whole street: while it's on, someone who lives
+      // a few doors down might knock, or spot your car and ask you over. Leaving it costs nothing.
+      case "athome.get": return NextResponse.json({ home: await atHome(me), dropIn: await waitingDropIn(me) });
+      case "athome.set": return NextResponse.json({ home: await setAtHome(me, b.home === true) });
+      case "dropin.check": return NextResponse.json({ dropIn: await maybeDropIn(me, typeof b.chance === "number" ? Math.max(0, Math.min(1, b.chance)) : undefined) });
+      case "dropin.ignore": return NextResponse.json({ ok: await ignoreDropIn(me, String(b.id || "")) });
+      case "dropin.answer": {
+        const r = await answerDropIn(me, String(b.id || ""));
+        if (!r) return bad("Nobody's at the door.");
+        const [row] = await db`insert into velo_messages (user_id, role, content, character_id) values (${me}, 'user', ${r.marker}, ${r.characterId}) returning id`;
+        return NextResponse.json({ characterId: r.characterId, marker: { id: String(row.id), role: "user", content: r.marker } });
       }
       case "inperson.get":
       case "inperson.start":

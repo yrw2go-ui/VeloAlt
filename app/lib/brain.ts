@@ -26,6 +26,7 @@ import { friendsOf, friendsNote, sapphicWith } from "./friends";
 import { workNow } from "./work";
 import { sceneClockNote } from "./sceneClock";
 import { inPersonFor, inPersonNote, homeNote, LIVE_IN_NOTE, HOME } from "./inPerson";
+import { NEIGHBOR_NOTE } from "./neighbor";
 import { myRefs, picaNote, picaHandleNote, awayFor, stayFor } from "./picagram";
 /** How many recent scenes (2 weeks) with her got pushed from their planned time. */
 async function pushedLately(userId: string, sceneId: string): Promise<number> {
@@ -112,6 +113,8 @@ const CLAIMS_MEDIA = /\b(send(ing)?|sent|here'?s|here you go|snapp(ing|ed)|takin
 const STRONG_CLAIM = /\b(sending|sent|snapping|snapped|taking one|took one|coming (your way|right up))\b|📸|🤳/i;
 const REFUSES_MEDIA = /\b(can'?t|cannot|won'?t|not (going to|gonna)|no (pics?|photos?|selfies?)|maybe later|not right now|limit)\b/i;
 const REACT_TAG = /\[react:\s*([^\]\s]+)\s*\]\s*/gu;
+// The same reaction written out as a note instead of the tag: "(they reacted ❤️ to this)", "*reacted 🔥*".
+const NOTE_ECHO = /[([*]\s*(?:i|she|he|they)?\s*reacted\s*([^\s)\]*]+)\s*(?:to\s+(?:this|that|it))?\s*[)\]*]\s*/giu;
 
 /** Velo, or (with `character`) one of the characters: same chats, calls and memory flow, but in the
  *  character's own voice, with only their own memory of this person and no Velo tools. */
@@ -230,6 +233,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
         together && ch ? (ch.live_in && together.place === HOME ? homeNote(name || "them") : inPersonNote(together, name || "them")) : "",
         ch?.live_in && !together && mode !== "remember" && mode !== "memo" ? `${LIVE_IN_NOTE} Right now you're out — so this is a text to them.` : "",
         ch?.live_in && together && together.place === HOME ? LIVE_IN_NOTE : "",
+        ch?.neighbor && !ch?.live_in ? NEIGHBOR_NOTE : "",
         ch && mode !== "memo" && mode !== "remember" ? await picaNote(caller.userId, ch, name).catch(() => "") : "",
         ch ? await picaHandleNote(caller.userId, ch).catch(() => "") : "",
         scene ? sceneClockNote(scene, today.tz, scene.clock === "now" && scene.planned_time ? await pushedLately(caller.userId, scene.id).catch(() => 0) : 0) : "",
@@ -524,9 +528,12 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
   // Their reaction tag (chat only) becomes a badge on the person's message; it's never shown or spoken.
   let react: string | undefined;
   reply = reply.replace(REACT_TAG, (_, e: string) => { if (!react && REACTIONS.includes(e)) react = e; return ""; });
+  // Sometimes she writes the note out — "(they reacted ❤️ to this)" — instead of the tag.
+  // That's the same thing: it becomes the badge on their message, never a message of its own.
+  reply = reply.replace(NOTE_ECHO, (m: string, e: string) => { if (REACTIONS.includes(e)) { if (!react) react = e; return ""; } return m; });
   reply = cleanReply(reply);
   if (!reply && media?.length) reply = media.some(m => m.kind === "video") ? "Here you go 😊" : "Here you go — what do you think? 😊";
-  return { reply: reply || (errand ? "Sorry, could you say that again?" : "Sorry, I lost my train of thought — could you say that again?"), changed, drafts, media, ...(mode === "chat" && react ? { react } : {}), by: answeredByAlt ? "alt" : "claude" };
+  return { reply: reply || (react && mode === "chat" ? "" : errand ? "Sorry, could you say that again?" : "Sorry, I lost my train of thought — could you say that again?"), changed, drafts, media, ...(mode === "chat" && react ? { react } : {}), by: answeredByAlt ? "alt" : "claude" };
 }
 
 // 🔎 For Qwen / DeepSeek: web search is a tool they call, answered by Claude with
