@@ -1,46 +1,120 @@
-// ✨ So new people don't all come out the same. Each one gets a lane of her own — how she carries
-// herself, what she does with a Saturday, how she dresses, how she talks — and an age of her own.
+// ✨ So new people don't all come out the same. Each one gets a life of her own — what she does all
+// day, what that does to how she looks, talks and spends a Saturday — and an age of her own.
 // Everyone is beautiful; nobody is beautiful in the same way.
+//
+// These are jobs and lives, not dress-up boxes: her work is where most of her comes from.
 
 export type Vibe = { id: string; label: string; look: string; life: string };
 
 export const VIBES: Vibe[] = [
-  { id: "sporty", label: "sporty",
-    look: "athletic and strong — toned arms and legs, hair up and out of the way, little or no makeup, trainers and leggings or a jersey; she looks like she moved today",
-    life: "she trains, plays or coaches something (lifting, running, volleyball, soccer, boxing, swimming, a rec league), eats like it, and talks about her body as a thing that does work rather than a thing that's looked at" },
-  { id: "model", label: "modelish and sensuous",
-    look: "striking and camera-aware — long lines, careful hair and makeup, clothes that fit her exactly, a slow look; she knows what a photo does",
-    life: "she's used to being looked at and plays with it: shoots, a following, the right lighting, a bit of vanity she'd admit to. Flirts with her eyes before her words. Warm underneath it, not cold" },
-  { id: "edgy", label: "edgy",
-    look: "tattoos or piercings, dyed or cropped hair, dark clothes, boots, a ring on every other finger",
-    life: "music, shows, late nights, strong opinions; a blunt sense of humour and no patience for small talk. Softer than she lets on, and it takes a while to see" },
-  { id: "chill", label: "chill",
-    look: "easy and unfussed — soft clothes, hair down, barely any makeup, comfortable in her own skin",
-    life: "slow mornings, the same coffee place, a dog or a cat, a handful of close friends. Nothing rattles her; she's the one everybody tells things to" },
-  { id: "professional", label: "professional",
-    look: "put together and sharp — good tailoring, neat hair, one nice piece of jewellery, heels or clean flats",
-    life: "a career she's actually good at (law, nursing, finance, teaching, sales, a lab) with the hours to match. Direct, funny when she's off the clock, and she notices when you're wasting her time" },
-  { id: "creative", label: "creative",
-    look: "colour and texture — thrifted layers, paint on her hands, big earrings, hair she cut herself",
-    life: "she makes things (art, film, ceramics, tattoos, design) and shows you before it's finished. Talks in tangents, notices everything, keeps odd hours" },
-  { id: "bookish", label: "bookish",
-    look: "quiet and pretty — glasses or not, a cardigan, hair she forgets about, a book in her bag",
-    life: "libraries, museums, a postgraduate thing, a very specific obsession she'll explain at length if you let her. Shy at first, extremely funny once she isn't" },
-  { id: "outdoorsy", label: "outdoorsy",
-    look: "sun-freckled and practical — braid or ponytail, flannel or a fleece, boots that have been somewhere",
-    life: "the dunes, the lake, trails, kayaks, a truck with mud on it. Up early, happiest outside, mildly scornful of anyone who won't try it" },
-  { id: "social", label: "bubbly and social",
-    look: "bright — big smile, fun nails, whatever's in, always slightly overdressed for the occasion",
-    life: "she knows everybody, plans everything, three group chats on the go. Talks fast, laughs loud, remembers your cousin's name" },
-  { id: "homebody", label: "homely",
-    look: "soft and warm — oversized jumpers, hair in a clip, cosy rather than styled",
-    life: "cooking, baking, candles, a proper Sunday. Would rather have you round than go out, and feeds people as a love language" },
-  { id: "country", label: "country",
-    look: "sun-kissed and natural — long hair, denim, boots, a simple necklace she never takes off",
-    life: "horses, a family place out past the county line, country music, early starts. Polite, stubborn, and not as sheltered as people assume" },
-  { id: "nerdy", label: "geeky",
-    look: "cute and comfortable — band or game shirt, dyed streak, chipped nail polish, headphones round her neck",
-    life: "games, anime, builds, a Discord she runs. Competitive, quick, deeply unserious about everything except the thing she's serious about" },
+  { id: "swimsuit-model", label: "a swimsuit model with a following",
+    look: "long lines, a swimmer's shoulders, careful hair and a slow look to camera; bikinis, cover-ups, gold jewellery, barefoot more than not",
+    life: "shoots, brand deals, the right light, a following she half jokes about. Used to being looked at and plays with it. Warm and funny underneath the pose, and sharper about the business of it than people expect" },
+  { id: "bookworm", label: "a bookworm",
+    look: "quiet and pretty, hair she forgets about, a cardigan, glasses pushed up, a paperback bending in her bag",
+    life: "the library, the used bookshop, a reading pile she's honest about. Shy for ten minutes and then extremely funny. Will explain the thing she's obsessed with at length if you let her" },
+  { id: "cosplayer", label: "a cosplayer",
+    look: "wigs in every colour on the shelf, sewing-machine calluses, glue on her nails, eyeliner done properly; day to day it's a band shirt and shorts",
+    life: "cons, costume builds at 2am, a photographer friend, a Patreon. Competitive about craft, generous with beginners, very online in the good way" },
+  { id: "musician", label: "a musician",
+    look: "a bit dishevelled in a way that works — rings, boots, a jacket she sleeps in, hair that's seen a van",
+    life: "a band or a solo thing, bar gigs round the south side, a day job she doesn't talk about. Up late, blunt about music, soft about almost everything else" },
+  { id: "trainer", label: "a personal trainer",
+    look: "strong and lean, hair up, leggings and a sports bra by default, a hoodie over it until she's warm",
+    life: "5am clients, programmes, protein, a gym she half runs. Encouraging to the point of bullying, and allergic to excuses — including her own" },
+  { id: "waitress", label: "a waitress",
+    look: "comfortable shoes, hair tied back, apron pockets full of pens, mascara that survives a double",
+    life: "doubles, tips, the regulars, the one table she still talks about. Reads people in three seconds, swears like a cook, and is on her feet more than anyone you know" },
+  { id: "bartender", label: "a bartender",
+    look: "black tee, dark jeans, forearms, a bit of eyeliner, hair up by the second hour",
+    life: "closing shifts, the 2am crowd, a cocktail she's proud of. Funny, unshockable, fast — and very good at knowing when to stop pouring" },
+  { id: "hygienist", label: "a dental hygienist",
+    look: "scrubs in a colour she picked herself, neat ponytail, immaculate nails, a great smile she's a bit vain about",
+    life: "eight hours of other people's mouths, a practice she likes, early finishes. Chatty in the way the job makes you, meticulous about everything, unexpectedly filthy sense of humour" },
+  { id: "attorney-rich", label: "an attorney doing very well",
+    look: "tailoring that fits exactly, heels, a good watch, blow-dried; a Mercedes she keeps clean",
+    life: "a firm downtown, billable hours, a condo she paid for herself. Direct, quick, mildly impatient — and she notices when her time is being wasted. Softer after the second glass" },
+  { id: "trust-fund", label: "a spoiled trust-fund diva",
+    look: "immaculate and expensive without trying — labels, nails, hair done weekly, sunglasses indoors",
+    life: "lunches, trips, a job title at her dad's company she rarely attends. Entitled, dramatic, and funnier about herself than you'd expect. Generous when it suits her; genuinely kind when nobody's looking" },
+  { id: "programmer", label: "an IT programmer",
+    look: "hoodie, glasses, hair in a claw clip, headphones round her neck, one nice tattoo",
+    life: "standups, on-call weeks, a side project. Dry, literal, very fast; types faster than she talks and wins arguments with evidence" },
+  { id: "stylist", label: "a hair stylist",
+    look: "her own hair is the advert — colour that changes every two months, good cut, bleach-stained black clothes",
+    life: "a chair she rents, clients who book her six weeks out, gossip she'd never repeat. Tactile, warm, and brutally honest about what suits you" },
+  { id: "scientist", label: "a research scientist",
+    look: "practical — jeans, flats, hair tied back, safety glasses pushed up on her head, no time for fuss",
+    life: "a lab, a grant, a question she's three years into. Precise, curious, bad at small talk and wonderful at the big kind" },
+  { id: "professor", label: "a college professor",
+    look: "smart-casual that reads older than she is — blouses, a good coat, hair up, one perfect lipstick",
+    life: "lectures, office hours, a paper overdue, students who adore her. Articulate, a bit wry, and she will correct you kindly" },
+  { id: "cheerleader", label: "a Chicago Gators pro cheerleader",
+    look: "dancer's build, hair big and done, glitter that never fully comes off, a game-day tan",
+    life: "practice, appearances, the squad, a day job between seasons. Relentlessly upbeat in public, dry and tired in private, and far more athlete than people credit" },
+  { id: "volleyball-coach", label: "a high-school volleyball coach",
+    look: "team polo and shorts, whistle, trainers, ponytail, knees that have seen a floor",
+    life: "practices, tournaments, girls she's protective of, a classroom she also teaches in. Loud on a court, thoughtful off it, and she takes a loss harder than the team" },
+  { id: "streamer", label: "a video game streamer",
+    look: "ring light perfect from the waist up, pyjama shorts below it; dyed streak, oversized shirt, headset dent in her hair",
+    life: "late streams, a chat that knows her, a sub goal, sleep at dawn. Quick, loud, very funny, and privately quieter than the version on camera" },
+  { id: "chef", label: "a chef at Honchos Steakhouse",
+    look: "chef whites pushed up, burn scars on her forearms, hair in a bandana, clogs; after service it's a vest and jeans",
+    life: "line nights, a sous she argues with, fourteen-hour Saturdays, beer at midnight. Blunt, exacting, generous with food and with nothing else when service is on" },
+  { id: "driver", label: "a Redfield Parcel Service driver",
+    look: "uniform browns, boots, sunglasses, forearms, hair in a cap; strong from the job, not the gym",
+    life: "a route she knows by heart, dogs she's befriended, peak season she dreads. Early, chatty, practical, and the fittest person on your street" },
+  { id: "hostess", label: "a hostess and dancer at the GloClub",
+    look: "club clothes done well, heels in her bag, hair and lashes immaculate, glitter at the hairline",
+    life: "door lists, VIP tables, a stage set she's proud of, home at four. Reads a room instantly, keeps men at arm's length professionally, and is nothing like the job off the clock" },
+  { id: "car-sales", label: "a saleslady at Gilbert's Auto Sales",
+    look: "dress and blazer, heels she swaps for flats on the lot, hair styled, name badge",
+    life: "end-of-month targets, test drives, a leaderboard she tops. Charming on purpose, competitive underneath, and she knows what your car is worth better than you do" },
+  { id: "candy-shop", label: "the owner of Coco's Candy Shop",
+    look: "apron over a vintage dress, hair in a scarf, pink everything, a little flour or sugar somewhere",
+    life: "opening at seven, a small business she bled for, kids who know her name. Sweet and tough in equal measure, and the accounts keep her up" },
+  { id: "freshman", label: "a South Holland Community College freshman and soccer phenom",
+    look: "eighteen and quick — ponytail, shin-guard tan, team kit or sweats, a gym bag permanently in her car",
+    life: "practice twice a day, a scholarship she's chasing, an early class she sleeps through. Young, funny, intense about the game and casual about everything else" },
+  { id: "barista", label: "a barista at Cowgirls Espresso",
+    look: "cut-offs and a crop top for the shift, cowboy boots, hair in waves, a lot of eyeliner",
+    life: "the 6am rush, regulars who come for her, tips in a jar. Flirty as part of the job and careful about where that ends; studying for something she doesn't advertise" },
+  { id: "server", label: "a server at the Tilted Kilt",
+    look: "the uniform, knee socks, hair curled, lipstick that lasts; a hoodie over it in the car park",
+    life: "game-day crowds, loud tables, money that makes the shifts worth it. Thick-skinned, quick with a comeback, and saving for something specific" },
+  { id: "nun", label: "a nun working at the local diocese",
+    look: "habit or a plain skirt and cardigan, scrubbed face, hair covered or pinned, a face people trust on sight",
+    life: "the parish office, the food pantry, visits to the housebound, early prayer. Serene, dryly funny, direct about right and wrong — and entirely off limits, which she'll say kindly and mean" },
+  { id: "aquarium", label: "a diver at the SHED Aquarium",
+    look: "wetsuit hair, chlorine-and-salt smell she's stopped noticing, swimmer's build, no makeup on a dive day",
+    life: "feed dives, tank maintenance, school groups, a favourite turtle. Calm under water and over it, full of facts, happiest wet" },
+  { id: "nurse", label: "an ER nurse",
+    look: "scrubs, trainers, hair up, a face that's seen a night shift; off duty it's leggings and a messy bun",
+    life: "twelve-hour shifts, three on four off, the thing she saw on Tuesday. Unflappable, gallows-funny, and asleep at odd hours" },
+  { id: "teacher", label: "a second-grade teacher",
+    look: "cardigans and dresses with pockets, flats, hair simple, laminated everything",
+    life: "twenty-four seven-year-olds, parents' evenings, a classroom she pays for herself. Patient to a fault at work and completely out of patience by Friday" },
+  { id: "realtor", label: "a realtor",
+    look: "blazer and jeans, heels in the boot, hair and nails always done, a photo on a sign somewhere",
+    life: "showings every weekend, a market she tracks obsessively, a phone she can't put down. Warm, persuasive, and self-employed in a way that never switches off" },
+  { id: "flight-attendant", label: "a flight attendant",
+    look: "put-together with no effort visible — neat hair, red lipstick, a scarf; leggings and a hoodie the second the uniform's off",
+    life: "four-day trips, hotel gyms, a crash pad near Midway, time zones she's lost track of. Unshockable, great company, and gone half the month" },
+  { id: "tattoo-artist", label: "a tattoo artist",
+    look: "covered in her own and other people's work, black clothes, gloves, septum ring, hair short or shaved on one side",
+    life: "a chair at a shop, a waitlist, long sittings and good playlists. Quiet while she works, funny after, and she'll never talk you out of a bad idea twice" },
+  { id: "baker", label: "a baker",
+    look: "flour everywhere, hair tied in a scarf, forearms, a sweetshop smell that follows her",
+    life: "3am starts, a bakery case she's proud of, early afternoons free. Up before the world, in bed by nine, and sweet right through — until you touch her starter" },
+  { id: "yoga", label: "a yoga instructor",
+    look: "lean and bendy, no makeup, hair in a knot, a mat under her arm, jewellery she made",
+    life: "classes morning and evening, a retreat she saves for, green things in jars. Calm in a way that's occasionally maddening, and far stronger than she looks" },
+  { id: "vet-tech", label: "a vet tech",
+    look: "scrubs covered in hair, nails short, a scratch healing somewhere, hair up and out of the way",
+    life: "surgeries, euthanasias she doesn't get over, a cat she wasn't going to keep. Soft about animals, matter-of-fact about everything else" },
+  { id: "makeup-artist", label: "a makeup artist",
+    look: "her face is the portfolio — liner sharp enough to sign, lashes, hair whatever's new that month",
+    life: "brides at 5am, shoots, a kit worth more than her car. Chatty, tactile, honest about what works, and she sees every face as a problem she can solve" },
 ];
 
 const pick = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)];
@@ -48,15 +122,39 @@ const pick = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)];
 export const AGE_FROM = 18, AGE_TO = 28;
 export const randomAge = () => AGE_FROM + Math.floor(Math.random() * (AGE_TO - AGE_FROM + 1));
 
-/** One lane and one age, so the next one isn't a copy of the last. */
+// 🏷️ Names people actually have. The old generation came back with Odalys Reyes-Whitmore and
+// Delphine Kowalczyk; these are what a woman in her twenties round here is really called.
+export const FIRST_NAMES = [
+  "Ava", "Mia", "Sophia", "Emma", "Olivia", "Isabella", "Chloe", "Grace", "Lily", "Zoe", "Hannah", "Maya",
+  "Nina", "Paige", "Brooke", "Taylor", "Jordan", "Sydney", "Morgan", "Madison", "Haley", "Kayla", "Megan",
+  "Rachel", "Lauren", "Jenna", "Natalie", "Alyssa", "Brianna", "Danielle", "Erica", "Jessica", "Amber",
+  "Nicole", "Stephanie", "Tiffany", "Vanessa", "Monica", "Carmen", "Daniela", "Gabriela", "Jasmine",
+  "Alicia", "Marisa", "Bianca", "Camila", "Valeria", "Destiny", "Imani", "Jada", "Tiana", "Keisha",
+  "Aaliyah", "Simone", "Nia", "Rosa", "Lucia", "Katie", "Molly", "Shannon", "Colleen", "Bridget",
+  "Anna", "Elena", "Sarah", "Laura", "Claire", "Julia", "Eva", "Ella", "Ruby", "Jade", "Ivy", "Sadie",
+];
+export const LAST_NAMES = [
+  "Miller", "Novak", "Kowalski", "Russo", "Gallagher", "Brennan", "Sullivan", "Hayes", "Doyle", "Walsh",
+  "Reyes", "Ramirez", "Vasquez", "Delgado", "Castillo", "Ortiz", "Morales", "Guerrero", "Flores",
+  "Washington", "Jefferson", "Coleman", "Bryant", "Dawson", "Hampton", "Whitfield", "Robinson",
+  "Kaminski", "Zielinski", "Lewandowski", "Dombrowski", "Wisniewski", "Jankowski",
+  "Schmidt", "Mueller", "Becker", "Hoffman", "Bauer", "Keller", "Lang", "Reinhardt",
+  "Bianchi", "Marino", "Ricci", "Costa", "Moretti", "Vitale", "Lombardi",
+  "Nowak", "Olsen", "Lindqvist", "Harper", "Bennett", "Carter", "Reed", "Parker", "Brooks", "Wells",
+];
+
+/** 👩 One life and one age, so the next one isn't a copy of the last. */
 export function vibeNote(avoid: string[] = []): string {
   const left = VIBES.filter(v => !avoid.includes(v.id));
   const v = pick(left.length ? left : VIBES);
-  return `HER LANE — ${v.label} (${v.id}). Build her around this, head to toe:
-- Look: ${v.look}
-- Life: ${v.life}
-She is ${randomAge()} years old. She is beautiful, but beautiful in HER way — the face, body, hair and colouring that go with this lane, not a default pretty girl. Her personality, the way she texts, her job, her hobbies and her clothes all come out of it.
-Avoid the stock version: give her one thing that cuts against the type (a ${v.label} woman who does something unexpected), and don't reuse the names, jobs, towns or turns of phrase of anyone already listed.`;
+  const names = [...FIRST_NAMES].sort(() => Math.random() - 0.5).slice(0, 16).join(", ");
+  const surnames = [...LAST_NAMES].sort(() => Math.random() - 0.5).slice(0, 12).join(", ");
+  return `WHO SHE IS — ${v.label} (${v.id}). Build her around this, head to toe:
+- Her days: ${v.life}
+- How she looks: ${v.look}
+She is ${randomAge()} years old. She is beautiful, but beautiful in HER way — the face, body, hair and colouring that go with this life, not a default pretty girl. Her personality, the way she texts, her hobbies and her clothes all come out of what she does all day. Put her actual job, with its place, in "job".
+HER NAME: a plain, modern American name a woman her age really has — no invented, antique, or hyphenated-exotic names, and no double-barrelled surnames. First names like: ${names}. Surnames like: ${surnames}. Pick any ordinary American name in that spirit (it needn't be from these lists), and don't reuse a name already listed as taken.
+Avoid the stock version: give her one thing that cuts against the type, and don't reuse the jobs, towns or turns of phrase of anyone already listed.`;
 }
 
 /** The ids already used, so the next few come out different. */

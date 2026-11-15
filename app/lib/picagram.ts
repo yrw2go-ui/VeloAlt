@@ -13,6 +13,7 @@ import { randomComments } from "./picaComments";
 import { vibeNote, rollLesbian } from "./vibes";
 import { localNote } from "./local";
 import { makeCharacter } from "./makeCharacter";
+import { noteMentions } from "./characters";
 import { homeOf, homeText, livesNote, FAR_CHANCE } from "./where";
 
 const rand = (a: number, b: number) => a + Math.floor(Math.random() * (b - a + 1));
@@ -308,21 +309,52 @@ export async function picaPost(userId: string, caption: string, photo: string, u
   const [post] = await sql()`insert into pica_posts (user_id, author_id, kind, caption, photo, media_id, likes_target, seen_at) values (${userId}, null, ${media ? "image" : "text"}, ${cap}, ${media ? desc : ""}, ${media?.id || null}, ${rand(10, 300)}, now()) returning id`;
   for (const s of randomComments(`${cap} ${desc}`, media ? "image" : "text", rand(1, 4)))
     await sql()`insert into pica_comments (post_id, user_id, name, text, created_at) values (${post.id}, ${userId}, ${s.name}, ${s.text}, ${new Date(now + rand(3, 240) * 60_000).toISOString()})`;
-  // 👥 People they talk to most notice it: some like it, some comment — and they remember.
+  // 🏷️ Who's in it and who it's about: the one in the picture with you, and anyone you named in
+  // the caption or the photo. They all hear about it, whether or not you talk to them much.
+  const all = (await sql()`select id, name, personality from chat_characters where owner_id is null or owner_id = ${userId}`) as { id: string; name: string; personality: string }[];
+  const named = (text: string) => all.filter(c => String(c.name).trim().length > 2
+    && new RegExp(`(^|[^\\p{L}])${String(c.name).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=$|[^\\p{L}])`, "iu").test(text));
+  const mentioned = named(`${cap} ${desc}`);
+  const inIt = her ? all.filter(c => String(c.id) === String(her.id)) : [];
+  // 👥 And the people they talk to most notice it, as before.
   const close = await sql()`select c.id, c.name, c.personality, count(*)::int as n from velo_messages m join chat_characters c on c.id = m.character_id
     where m.user_id = ${userId} and m.created_at > now() - interval '30 days' group by c.id, c.name, c.personality order by n desc limit 4`;
-  const fans = close.filter(() => Math.random() < 0.75);
+  const seen = new Set<string>();
+  // A post with another woman in it, or about one, is the sort everybody notices — so the people
+  // you talk to all see that one. An ordinary post is still hit and miss, as before.
+  const notable = inIt.length > 0 || mentioned.length > 0;
+  const fans = [...inIt, ...mentioned, ...(close as typeof all).filter(() => notable || Math.random() < 0.75)]
+    .filter(f => (seen.has(String(f.id)) ? false : (seen.add(String(f.id)), true)));
   if (fans.length) {
-    const raw = await writeText("", `People who know ${u.name} react to ${u.name}'s new Picagram post. For each person, write a short comment in their own voice (or "" if they'd just like it). JSON only: {"comments":[{"from":"Name","text":"..."}]}`,
-      `POST: ${cap}${desc ? ` (photo: ${desc})` : ""}\nPEOPLE:\n${fans.map(f => `- ${f.name}: ${String(f.personality || "").slice(0, 200)}`).join("\n")}`, 800).catch(() => "");
+    // 🗣️ Who she'd name to whom: the woman in the photo is named to anyone who's heard of her, and
+    // to anyone the caption names outright. To everyone else she's a woman they don't know.
+    const heard = new Set((await sql()`select knower_id, known_id from chat_acquaintances where user_id = ${userId}`).map(r => `${r.knower_id}:${r.known_id}`));
+    const knows = (knower: string, known: { id: string; name: string }) =>
+      knower === String(known.id) || heard.has(`${knower}:${known.id}`) || named(cap).some(c => String(c.id) === String(known.id));
+    const others = (knower: string) => [...inIt, ...mentioned].filter(c => String(c.id) !== knower)
+      .map(c => (knows(knower, c) ? String(c.name) : "a woman I don't know"));
+    const who = (f: { id: string }) => {
+      const me = inIt.some(c => String(c.id) === String(f.id));
+      const rest = [...new Set(others(String(f.id)))];
+      const withThem = rest.length ? ` with ${rest.join(" and ")}` : "";
+      return media
+        ? me ? `a photo of the two of us${rest.length ? ` and ${rest.join(" and ")}` : ""}` : `a photo of himself${withThem}`
+        : rest.length ? `something about ${rest.join(" and ")}` : "";
+    };
+    const raw = await writeText("", `People who know ${u.name} react to ${u.name}'s new Picagram post. For each person, write a short comment in their own voice (or "" if they'd just like it). Someone who is IN the photo reacts to being in it; someone who sees another woman in it reacts the way she would — pleased, curious, teasing, or a little stung — never cruel. JSON only: {"comments":[{"from":"Name","text":"..."}]}`,
+      `POST: ${cap}${desc ? ` (photo: ${desc})` : ""}\nPEOPLE:\n${fans.map(f => `- ${f.name}${inIt.some(c => String(c.id) === String(f.id)) ? " (SHE IS IN THIS PHOTO with him)" : ""}${mentioned.some(c => String(c.id) === String(f.id)) && !inIt.some(c => String(c.id) === String(f.id)) ? " (the post is about her)" : ""}: ${String(f.personality || "").slice(0, 200)}`).join("\n")}`, 1000).catch(() => "");
     let cs: { from: string; text: string }[] = [];
     try { cs = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]).comments || []; } catch { /* likes only */ }
     await sql()`update pica_posts set liked_by = ${fans.map(f => String(f.name))}, liker_secs = ${fans.map(() => rand(10, 900))} where id = ${post.id}`;
     for (const f of fans) {
       const text = scrub(String(cs.find(x => String(x.from).toLowerCase() === String(f.name).toLowerCase())?.text || "")).slice(0, 300);
       if (text) await sql()`insert into pica_comments (post_id, user_id, author_id, text, created_at) values (${post.id}, ${userId}, ${f.id}, ${text}, ${new Date(now + rand(2, 90) * 60_000).toISOString()})`;
-      await sql()`insert into velo_memories (user_id, character_id, kind, text) values (${userId}, ${f.id}, 'fact', ${`${u.name} posted on Picagram: "${cap.slice(0, 160)}"${desc ? ` (a photo: ${desc.slice(0, 160)})` : ""}. I liked it${text ? ` and commented "${text.slice(0, 120)}"` : ""}.`.slice(0, 600)})`;
+      const what = who(f);
+      await sql()`insert into velo_memories (user_id, character_id, kind, text) values (${userId}, ${f.id}, 'fact',
+        ${`${u.name} posted on Picagram${what ? ` — ${what}` : ""}: "${cap.slice(0, 160)}"${desc ? ` (a photo: ${desc.slice(0, 160)})` : ""}. I liked it${text ? ` and commented "${text.slice(0, 120)}"` : ""}.`.slice(0, 600)})`;
     }
+    // 🧠 Seeing her in his post counts as hearing of her, so she's someone they know of from now on.
+    for (const f of fans) for (const c of [...inIt, ...mentioned]) if (String(c.id) !== String(f.id)) await noteMentions(userId, String(f.id), String(c.name)).catch(() => {});
   }
   return String(post.id);
 }
@@ -392,7 +424,7 @@ async function newAccount(userId: string): Promise<Record<string, unknown> | nul
   for (let go = 0; go < 3; go++) {
     const raw = await writeText("", `Invent ONE woman who posts on Picagram (a social photo app like Instagram).
 ${vibeNote()}
-${intoWomen ? "⚢ SHE IS A LESBIAN — into women, not men. Let her bio say so the way a real profile would (a flag, \"she/her 🏳️‍🌈\", \"girls only\", a line about her girlfriend or ex-girlfriend) without making it the whole bio, and keep the rest of her exactly as the lane says.\n" : ""}She must be clearly NOT one of the people listed as taken: a different first name, a different surname and a different handle from every one of them — not a variation on one (no "chloehart" when "Chloe Hart" is taken, no adding numbers). Fictional, never a real person.${where} JSON only: {"name":"First Last","handle":"lowercase_handle","bio":"short bio with emojis","look":"one detailed sentence for an image generator: age, face, hair, eyes, skin, build, usual style","lives":"City, State","followers":12000}`,
+${intoWomen ? "⚢ SHE IS A LESBIAN — into women, not men. Let her bio say so the way a real profile would (a flag, \"she/her 🏳️‍🌈\", \"girls only\", a line about her girlfriend or ex-girlfriend) without making it the whole bio, and keep the rest of her exactly as the lane says.\n" : ""}She must be clearly NOT one of the people listed as taken: a different first name, a different surname and a different handle from every one of them — not a variation on one (no "chloehart" when "Chloe Hart" is taken, no adding numbers). Fictional, never a real person.${where} JSON only: {"name":"First Last (a plain modern American name, as described above)","handle":"lowercase_handle (from her name, like ava.miller or mia_russo — no made-up words)","bio":"short bio with emojis","look":"one detailed sentence for an image generator: age, face, hair, eyes, skin, build, usual style","lives":"City, State","followers":12000}`,
       `${names.length ? `ALREADY TAKEN — avoid these names, surnames and handles entirely:\n${names.slice(-60).join(", ")}` : "(nobody yet)"}${clash ? `\n\nYour last try clashed with ${clash} — pick a completely different name.` : ""}`, 1600).catch(() => "");
     let a: { name?: string; handle?: string; bio?: string; look?: string; lives?: string; followers?: number } = {};
     try { a = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); } catch { continue; }
