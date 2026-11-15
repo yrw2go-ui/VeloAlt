@@ -15,7 +15,7 @@ ok(VIBES.length >= 30, `plus more besides, so they don't cycle (${VIBES.length})
 ok(new Set(VIBES.map(v => v.id)).size === VIBES.length, "none of them twice");
 ok(VIBES.every(v => v.look.length > 40 && v.life.length > 60), "each one says what she does all day AND how that makes her look");
 // The named places you gave come through by name.
-const places = ["Honchos Steakhouse", "Redfield Parcel", "GloClub", "Gilbert's Auto Sales", "Coco's Candy Shop", "South Holland Community College", "Cowgirls Espresso", "Tilted Kilt", "SHED Aquarium", "Chicago Gators"];
+const places = ["Honchos Steakhouse", "Redfield Parcel", "GloClub", "Gilbert's Auto Sales", "Coco's Candy Shop", "South Holland Community College", "Cowgirls Espresso", "Tilted Kilt", "SHED Aquarium", "Chicago Gators", "HomeBuy Realty"];
 for (const p of places) if (!VIBES.some(v => `${v.label} ${v.life} ${v.look}`.includes(p))) { ok(false, `${p} is missing`); break; }
 ok(true, "and the places you named are named");
 
