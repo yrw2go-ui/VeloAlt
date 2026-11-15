@@ -399,7 +399,20 @@ function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: 
               )}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 800 }}>{data.account.name}{data.account.married && <span data-testid="pica-ring" title="Married" aria-label="married" style={{ marginLeft: 4 }}>💍</span>}</div>
+              <div className="row" style={{ gap: 4, fontWeight: 800 }}>
+                {data.account.character_id
+                  ? <span>{data.account.name}</span>
+                  : <div style={{ flex: 1, minWidth: 0 }}>
+                      <EditableBio value={data.account.name} testid="pica-name" placeholder="Her name" max={60}
+                        onSave={async t => {
+                          const name = t.trim();
+                          if (!name) return;
+                          setData(d => (d ? { ...d, account: { ...d.account, name } } : d));
+                          await api("/api/pica", { action: "name.set", id, name: hideSecrets(name).text }).catch(e => setErr(e instanceof Error ? e.message : "Couldn't rename her."));
+                        }} />
+                    </div>}
+                {data.account.married && <span data-testid="pica-ring" title="Married" aria-label="married" style={{ marginLeft: 4 }}>💍</span>}
+              </div>
               <div className="muted" style={{ fontSize: 13 }}><b style={{ color: "var(--text)" }}>{data.photos.length}</b> posts · <b style={{ color: "var(--text)" }}>{fmt(data.account.followers)}</b> followers</div>
               <EditableBio value={data.account.bio} testid="pica-bio" placeholder="No bio yet — click to write one"
                 onSave={async t => { setData(d => (d ? { ...d, account: { ...d.account, bio: t } } : d)); await api("/api/pica", { action: "bio.set", id, bio: hideSecrets(t).text }).catch(() => {}); }} />
@@ -905,7 +918,7 @@ function EditableBio({ value, onSave, testid, placeholder = "No bio yet", max = 
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
   if (!editing) return (
     <div onClick={() => setEditing(true)} data-testid={testid} title="Click to edit"
-      style={{ fontSize: 13, marginTop: 4, whiteSpace: "pre-wrap", cursor: "text", minHeight: 18 }}>
+      style={{ fontSize: max <= 60 ? 15 : 13, fontWeight: max <= 60 ? 800 : 400, marginTop: max <= 60 ? 0 : 4, whiteSpace: "pre-wrap", cursor: "text", minHeight: 18 }}>
       {text || <span className="muted">{placeholder}</span>}
       {saved && <span className="muted" data-testid={`${testid}-saved`} style={{ marginLeft: 6, fontSize: 11 }}>✓ Saved</span>}
     </div>

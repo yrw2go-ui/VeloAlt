@@ -741,6 +741,17 @@ JSON only: {"personality":"...","traits":{${TRAITS.map(t => `"${t.key}":5`).join
     where id = ${a.id} and user_id = ${userId} and coalesce(personality, '') = ''`;
 }
 
+/** ✍️ Her name, yours to change — not once she's a character (that's her character card's). */
+export async function picaName(userId: string, accountId: string, name: string): Promise<string | "friend" | null> {
+  const [a] = await sql()`select id, character_id from pica_accounts where id = ${accountId} and user_id = ${userId}`;
+  if (!a) return null;
+  if (a.character_id) return "friend";
+  const text = scrub(name).replace(/\s+/g, " ").trim().slice(0, 60);
+  if (!text) return null;
+  await sql()`update pica_accounts set name = ${text} where id = ${a.id} and user_id = ${userId}`;
+  return text;
+}
+
 /** 📍 Where she lives, yours to change — the same rule as her personality: not once she's a character. */
 export async function picaLives(userId: string, accountId: string, lives: string): Promise<string | "friend" | null> {
   const [a] = await sql()`select id, character_id from pica_accounts where id = ${accountId} and user_id = ${userId}`;
