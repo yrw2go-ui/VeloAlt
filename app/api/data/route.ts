@@ -5,6 +5,7 @@ import { peekAt, draftPeek, draftIcu } from "../../lib/peek";
 import { inPersonFor, startInPerson, endInPerson } from "../../lib/inPerson";
 import { canShe, sickFor, type Answer } from "../../lib/life";
 import { setHome, isHome } from "../../lib/inPerson";
+import { redoDraft, redoMake } from "../../lib/redo";
 // 🎲 In tests the coin is pinned (set in the test environment only); in the app it's a real coin.
 const luckOf = (b: Record<string, unknown>): "yes" | "no" | undefined =>
   (process.env.VELO_TEST_LUCK === "1" ? (b.luck === "ask" ? undefined : b.luck === "no" ? "no" : "yes") : undefined);
@@ -328,6 +329,17 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: false, say: her.say, message: { id: String(row.id), role: "assistant", content: her.say } });
       }
       // 🧍 Together in person (not a scene): she talks face to face, and 👁️ ICU works.
+      // ↻ Redo a picture from the prompt that made it: her headshot, her gallery, a photo in a chat.
+      case "redo.draft": {
+        if (!UUID.test(id)) return bad("Unknown picture.");
+        const d = await redoDraft(me, id);
+        return d ? NextResponse.json(d) : bad("That picture can't be redone.");
+      }
+      case "redo": {
+        if (!UUID.test(id)) return bad("Unknown picture.");
+        if (!allow(`redo:${me}`, [{ ms: 60_000, max: 4 }, { ms: 86_400_000, max: 60 }])) return bad("Slow down a little — try again in a bit.");
+        return NextResponse.json({ media: await redoMake(me, id, String(b.prompt || "")) });
+      }
       // 💭 Written straight into her feelings: anything you type in [brackets] in her chat.
       case "feelings.set": {
         const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;

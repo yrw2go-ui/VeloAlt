@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { data } from "./lib/api";
 import { confirmAsk } from "./lib/dialog";
 import { Viewer, VideoTile } from "./media";
+import { RedoSheet } from "./redo";
 
 type Item = { id: string; kind: "image" | "video"; kept: boolean; created_at: string; url: string; thumb: string | null };
 
@@ -14,6 +15,9 @@ export default function Gallery({ characterId, name, onClose }: { characterId: s
   const [more, setMore] = useState(false);
   const [open, setOpen] = useState<Item | null>(null);
   const [onlyKept, setOnlyKept] = useState(false);
+  // ↻ Redo: the picture being replaced, and a note while the new one is on its way.
+  const [redo, setRedo] = useState<string | null>(null);
+  const [redoing, setRedoing] = useState("");
   const [err, setErr] = useState("");
   const thread = characterId ? { characterId } : {};
   const load = useCallback(async (before: string | null) => {
@@ -68,9 +72,13 @@ export default function Gallery({ characterId, name, onClose }: { characterId: s
       {open && (
         <Viewer m={open} onClose={() => setOpen(null)}>
           <button className="btn" onClick={() => keep(open)} data-testid="gallery-keep" style={{ padding: "10px 16px" }}>{open.kept ? "⭐ Kept" : "☆ Keep"}</button>
+          {open.kind === "image" && <button className="ghost" onClick={() => { setRedo(open.id); setOpen(null); }} data-testid="gallery-redo" style={{ padding: "10px 16px", background: "rgba(0,0,0,.4)" }}>↻ Redo</button>}
           <button className="ghost" onClick={() => remove(open)} data-testid="gallery-delete" style={{ padding: "10px 16px", color: "var(--bad)", background: "rgba(0,0,0,.4)" }}>Delete</button>
         </Viewer>
       )}
+      {redo && <RedoSheet mediaId={redo} who={name} where="/api/data" onClose={() => setRedo(null)}
+        onGoing={() => { setRedo(null); setRedoing("↻ Making the new one — about a minute. It takes the old one's place when it lands, and the old one goes."); setTimeout(() => { setRedoing(""); load(null); }, 60_000); }} />}
+      {redoing && <div data-testid="gallery-redoing" className="muted" style={{ position: "absolute", bottom: 12, left: 12, right: 12, padding: "8px 12px", borderRadius: 12, background: "rgba(236,72,153,.18)", border: "1px solid rgba(236,72,153,.45)", fontSize: 12, textAlign: "center" }}>{redoing}</div>}
     </div>
   );
 }
