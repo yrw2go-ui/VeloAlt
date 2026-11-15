@@ -122,7 +122,10 @@ export default function Picagram({ name, onChat, openProfile, onProfileOpened }:
         <button className="btn" onClick={() => setComposing(true)} data-testid="pica-new" style={{ padding: "8px 14px" }}>＋ Post</button>
       </div>
       {posts && !posts.length && !loading && <div className="muted" style={{ textAlign: "center", padding: 32 }}>No posts yet — check back soon 📸</div>}
-      {note && <div data-testid="pica-note" onClick={() => setNote("")} style={{ margin: "8px 14px", padding: "10px 12px", borderRadius: 12, background: "rgba(245,158,11,.15)", border: "1px solid rgba(245,158,11,.4)", fontSize: 13 }}>⚠️ {note}</div>}
+      {note && (() => { const good = note.startsWith("✨"); return (
+        <div data-testid="pica-note" onClick={() => setNote("")} style={{ margin: "8px 14px", padding: "10px 12px", borderRadius: 12, fontSize: 13, cursor: "pointer",
+          background: good ? "rgba(236,72,153,.14)" : "rgba(245,158,11,.15)", border: `1px solid ${good ? "rgba(236,72,153,.4)" : "rgba(245,158,11,.4)"}` }}>{good ? "" : "⚠️ "}{note}</div>
+      ); })()}
       {(posts || []).map(p => <PostCard key={p.id} p={p} me={name} obs={seenObs.current} onChange={f => update(p.id, f)} onProfile={setProfile} onFollow={setFollowed} onNote={setNote} onRemoved={id => setPosts(ps => (ps || []).filter(x => x.id !== id))} />)}
       <div ref={sentinel} style={{ height: 1 }} />
       {loading && <div className="muted" style={{ textAlign: "center", padding: 18 }} data-testid="pica-loading">Loading…</div>}
@@ -131,7 +134,8 @@ export default function Picagram({ name, onChat, openProfile, onProfileOpened }:
       {profile && <Profile id={profile} onClose={() => setProfile(null)} onFollow={setFollowed} onChat={onChat} onMessage={id => { setProfile(null); setThread(id); }} onDeleted={id => setPosts(ps => (ps || []).filter(p => p.author.account?.id !== id))} />}
       {inbox && <Inbox onClose={() => setInbox(false)} onOpen={id => setThread(id)} />}
       {thread && <Thread id={thread} onClose={() => setThread(null)} onProfile={id => { setThread(null); setInbox(false); setProfile(id); }} />}
-      {followingOpen && <Following onClose={() => setFollowingOpen(false)} onUnfollow={acc => setFollowed(acc, false)} onOpen={id => { setFollowingOpen(false); setProfile(id); }} />}
+      {followingOpen && <Following onClose={() => setFollowingOpen(false)} onUnfollow={acc => setFollowed(acc, false)} onOpen={id => { setFollowingOpen(false); setProfile(id); }}
+        onNewFaces={names => { setFollowingOpen(false); setNote(`✨ ${names.join(", ")} just posted — have a look.`); load(true); }} />}
       {savedOpen && <Saved onClose={() => setSavedOpen(false)} />}
       {composing && <Composer onClose={() => setComposing(false)} onPosted={() => { setComposing(false); load(true); }} />}
       {mine && <MyProfile name={name} onClose={() => setMine(false)} />}
@@ -411,7 +415,7 @@ function Saved({ onClose }: { onClose: () => void }) {
 }
 
 /** 👥 Who you follow (up to 70) — unfollow some to make room for new ones. */
-function Following({ onClose, onUnfollow, onOpen }: { onClose: () => void; onUnfollow: (id: string) => void; onOpen: (id: string) => void }) {
+function Following({ onClose, onUnfollow, onOpen, onNewFaces }: { onClose: () => void; onUnfollow: (id: string) => void; onOpen: (id: string) => void; onNewFaces?: (names: string[]) => void }) {
   const [list, setList] = useState<{ id: string; handle: string; name: string; avatar: string | null; friend: boolean; character_id: string | null; married?: boolean }[] | null>(null);
   // 🙈 Your characters: hide their posts without them ever knowing (unlike unfollowing).
   const [chars, setChars] = useState<{ id: string; name: string; portrait: string | null; hidden: boolean }[] | null>(null);
@@ -423,10 +427,12 @@ function Following({ onClose, onUnfollow, onOpen }: { onClose: () => void; onUnf
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState("");
   const newFaces = async () => {
-    setBusy(true); setSaid("");
+    setBusy(true); setSaid("✨ Bringing three new people in — a moment…");
     try {
       const r = await api<{ made: number; names: string[] }>("/api/pica", { action: "newfaces", count: 3 });
-      setSaid(`✨ ${r.names.join(", ")} just posted — pull down the feed to see them.`);
+      // 👀 Straight to the feed with their posts on top — a line of text here is easy to miss.
+      if (r.made && onNewFaces) { onNewFaces(r.names); return; }
+      setSaid(r.made ? `✨ ${r.names.join(", ")} just posted — pull down the feed to see them.` : "Couldn't bring anyone new in just now — try again in a moment.");
     } catch (e) { setSaid(e instanceof Error ? e.message : "Couldn't bring anyone new in."); }
     setBusy(false);
   };

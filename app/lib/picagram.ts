@@ -393,7 +393,7 @@ async function newAccount(userId: string): Promise<Record<string, unknown> | nul
     const raw = await writeText("", `Invent ONE woman who posts on Picagram (a social photo app like Instagram).
 ${vibeNote()}
 ${intoWomen ? "⚢ SHE IS A LESBIAN — into women, not men. Let her bio say so the way a real profile would (a flag, \"she/her 🏳️‍🌈\", \"girls only\", a line about her girlfriend or ex-girlfriend) without making it the whole bio, and keep the rest of her exactly as the lane says.\n" : ""}She must be clearly NOT one of the people listed as taken: a different first name, a different surname and a different handle from every one of them — not a variation on one (no "chloehart" when "Chloe Hart" is taken, no adding numbers). Fictional, never a real person.${where} JSON only: {"name":"First Last","handle":"lowercase_handle","bio":"short bio with emojis","look":"one detailed sentence for an image generator: age, face, hair, eyes, skin, build, usual style","lives":"City, State","followers":12000}`,
-      `${names.length ? `ALREADY TAKEN — avoid these names, surnames and handles entirely:\n${names.slice(-60).join(", ")}` : "(nobody yet)"}${clash ? `\n\nYour last try clashed with ${clash} — pick a completely different name.` : ""}`, 600).catch(() => "");
+      `${names.length ? `ALREADY TAKEN — avoid these names, surnames and handles entirely:\n${names.slice(-60).join(", ")}` : "(nobody yet)"}${clash ? `\n\nYour last try clashed with ${clash} — pick a completely different name.` : ""}`, 1600).catch(() => "");
     let a: { name?: string; handle?: string; bio?: string; look?: string; lives?: string; followers?: number } = {};
     try { a = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); } catch { continue; }
     const handle = String(a.handle || a.name || "").toLowerCase().replace(/[^a-z0-9._]/g, "").slice(0, 28);
@@ -488,7 +488,7 @@ export async function putUpUploads(userId: string, a: Record<string, unknown>, m
   const order = mediaIds.map(id => rows.find(r => String(r.id) === id)).filter((r): r is NonNullable<typeof r> => !!r);
   // One go at captions for all of them, in her voice.
   const raw = await writeText("", `Write a short Picagram caption for each numbered photo below, in the voice of @${a.handle} (${a.name}): ${a.bio}. Natural and brief, emojis and hashtags fine, no quotes around them. JSON only: {"captions":[{"n":1,"caption":"..."}]}`,
-    order.map((r, i) => `${i + 1}. ${String(r.prompt || "a photo of her")}`).join("\n"), 600).catch(() => "");
+    order.map((r, i) => `${i + 1}. ${String(r.prompt || "a photo of her")}`).join("\n"), 1000).catch(() => "");
   let caps: { n?: number; caption?: string }[] = [];
   try { caps = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]).captions || []; } catch { /* "✨" will do */ }
   for (const [i, r] of order.entries()) {
@@ -523,7 +523,7 @@ async function postFor(userId: string, a: Record<string, unknown>, u: U, at: num
   let caption = scrub(String(plan?.caption || "")).slice(0, 600), photo = scrub(String(plan?.photo || "")).slice(0, 600);
   if (!photo) {
     const raw = await writeText("", `Today is ${when}. Write ONE Picagram post for @${a.handle} (${a.name}): ${a.bio} — a photo of her in her everyday life or her niche, with a short caption (emojis/hashtags okay). ${u.adult ? "Flattering, flirty and confident is fine (PG-13); never nudity, lingerie or anything sexual." : "Family-friendly, fully clothed."} "photo" describes exactly what the picture shows (where, outfit, pose, light) in 1–2 sentences. JSON only: {"caption":"...","photo":"..."}`,
-      `She looks like: ${a.look}`, 600).catch(() => "");
+      `She looks like: ${a.look}`, 1000).catch(() => "");
     try { const j = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); caption = scrub(String(j.caption || "✨")).slice(0, 600); photo = scrub(String(j.photo || "")).slice(0, 600); } catch { /* fall back below */ }
   }
   if (!photo) photo = `${a.name} candid lifestyle photo, natural light`;
