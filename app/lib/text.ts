@@ -40,5 +40,14 @@ export function stripScaffolding(t: string): string {
     .replace(/[ \t]{2,}/g, " ").replace(/^[ \t]+|[ \t]+$/gm, "");
   return /[\p{L}\p{N}]/u.test(out) ? cleanTags(out) : "";
 }
-/** Everything a reply goes through before it's shown: stray HTML, leaked tool calls, stage directions. */
-export const cleanReply = (t: string) => dropMeta(stripScaffolding(cleanTags(t)));
+// 💭 Some models write their thoughts out in square brackets — "[She wonders if he means it]",
+// "[I should play this cool]". Those are never something she'd say out loud, so they never show.
+// Brackets the PERSON types are a different thing entirely (stepping out of a scene); this is only
+// ever applied to what a model sends back.
+const THOUGHT = /\[[^\]\n]{0,300}\]/g;
+export function dropThoughts(t: string): string {
+  return t.replace(THOUGHT, " ").replace(/[ \t]{2,}/g, " ").replace(/^[ \t]+|[ \t]+$/gm, "").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/** Everything a reply goes through before it's shown: stray HTML, leaked tool calls, stage directions, thoughts. */
+export const cleanReply = (t: string) => dropThoughts(dropMeta(stripScaffolding(cleanTags(t))));
