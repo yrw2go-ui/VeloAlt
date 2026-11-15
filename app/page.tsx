@@ -329,19 +329,19 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   return (
     <div style={{ height: "100dvh", display: "flex", flexDirection: "column", maxWidth: 720, margin: "0 auto" }}>
       {calling && callMini && <div aria-hidden style={{ height: "calc(max(8px, env(safe-area-inset-top)) + 50px)", flexShrink: 0 }} />}
-      <header className="row" style={{ padding: "max(12px, env(safe-area-inset-top)) 16px 12px", borderBottom: "1px solid var(--border)" }}>
-        <VeloLogo size={40} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 800, fontSize: 18 }}>Velo</div>
-          <div className="muted" style={{ fontSize: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name ? `Here for you, ${name.split(" ")[0]}` : "Your assistant & companion"}</div>
+      <header className="row" style={{ gap: 8, padding: "max(6px, env(safe-area-inset-top)) 12px 6px", borderBottom: "1px solid var(--border)" }}>
+        <VeloLogo size={26} />
+        <div className="row" style={{ flex: 1, minWidth: 0, gap: 6, alignItems: "baseline" }}>
+          <div style={{ fontWeight: 800, fontSize: 15 }}>Velo</div>
+          <div className="muted" style={{ fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name ? `Here for you, ${name.split(" ")[0]}` : "Your assistant & companion"}</div>
         </div>
         {canCallVelo() && !calling && tab === "chat" && !inGroup && (
           <button className="ghost" onClick={continueCall} disabled={continuing || historyCount < CONTINUE_MIN} data-testid="continue-call"
             title={historyCount < CONTINUE_MIN ? `Chat a little more first (${historyCount}/${CONTINUE_MIN} messages)` : "Call and pick up where the chat left off"}
-            aria-label={`Continue the chat in a call with ${withChar ? withChar.name : "Velo"}`} style={{ borderRadius: 999, padding: "6px 9px", fontSize: 12, lineHeight: 1.1, whiteSpace: "nowrap", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
-            {continuing ? "…" : <><span style={{ fontSize: 15 }}>📞↩</span><span>Continue</span></>}</button>
+            aria-label={`Continue the chat in a call with ${withChar ? withChar.name : "Velo"}`} style={{ borderRadius: 999, padding: "4px 10px", fontSize: 12, lineHeight: 1.1, whiteSpace: "nowrap", flexShrink: 0 }}>
+            {continuing ? "…" : "📞↩ Continue"}</button>
         )}
-        {canCallVelo() && !calling && !inGroup && <button className="btn" onClick={startCall} disabled={ringing} aria-label={`Call ${tab === "chat" && withChar ? withChar.name : "Velo"}`} data-testid="call-velo" style={{ borderRadius: 999, padding: "10px 16px" }}>{ringing ? "📞 …" : "📞 Call"}</button>}
+        {canCallVelo() && !calling && !inGroup && <button className="btn" onClick={startCall} disabled={ringing} aria-label={`Call ${tab === "chat" && withChar ? withChar.name : "Velo"}`} data-testid="call-velo" style={{ borderRadius: 999, padding: "6px 14px", fontSize: 14 }}>{ringing ? "📞 …" : "📞 Call"}</button>}
       </header>
 
       <UpdateBanner />

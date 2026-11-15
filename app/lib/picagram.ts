@@ -15,6 +15,8 @@ import { vibeNote, rollLesbian } from "./vibes";
 import { localNote } from "./local";
 import { makeCharacter } from "./makeCharacter";
 import { noteMentions, PLAIN_WORDS } from "./characters";
+import { TONES, hash, shotFor, toneFor } from "./shots";
+import { FOLKS, type Folk, folkNote, folkMemory, FOLK_SUGGESTIVE } from "./folks";
 import { noJargon } from "./text";
 import { homeOf, homeText, livesNote, FAR_CHANCE } from "./where";
 
@@ -99,17 +101,19 @@ async function generateDay(userId: string, day: string, isToday: boolean): Promi
   if (!charN) return true;
   const authors = shuffle(chars).slice(0, charN);
   const links = new Map<string, { knows: string[]; knownBy: string[] }>();
-  const info = await Promise.all(authors.map(async c => {
+  const info = await Promise.all(authors.map(async (c, i) => {
     // Only characters linked in their character cards: who she knows (could be in her photo), and who knows her (could comment).
     const knows = (await sql()`select known_id from chat_character_links where knower_id = ${c.id}`).map(r => chars.find(x => x.id === String(r.known_id))?.name).filter((n): n is string => !!n).slice(0, 6);
     const knownBy = (await sql()`select knower_id from chat_character_links where known_id = ${c.id}`).map(r => chars.find(x => x.id === String(r.knower_id))?.name).filter((n): n is string => !!n).slice(0, 6);
     links.set(c.id, { knows, knownBy });
     const friends = knows;
     const away = await awayFor(userId, c.id);
-    return `- ${c.name}: ${c.job || "no job listed"}; hobbies: ${c.hobbies || "—"}; style: ${c.casual_wear || "—"}${c.work_attire ? `; at work: ${c.work_attire}` : ""}; about: ${(c.backstory || c.personality || "").slice(0, 300)}${friends.length ? `; friends (could be in her photo): ${friends.join(", ")}` : ""}${links.get(c.id)?.knownBy.length ? `; people who know her (could comment): ${links.get(c.id)!.knownBy.join(", ")}` : "; nobody she knows comments"}${romanticFor(c, u.adult) ? "; romantic/flirty allowed (PG-13)" : "; keep family-friendly"}${away ? `; ✈️ CURRENTLY OUT OF TOWN at ${away.place} until ${away.until} — post from there` : ""}`;
+    return `- ${c.name}: ${c.job || "no job listed"}; hobbies: ${c.hobbies || "—"}; style: ${c.casual_wear || "—"}${c.work_attire ? `; at work: ${c.work_attire}` : ""}; about: ${(c.backstory || c.personality || "").slice(0, 300)}${friends.length ? `; friends (could be in her photo): ${friends.join(", ")}` : ""}${links.get(c.id)?.knownBy.length ? `; people who know her (could comment): ${links.get(c.id)!.knownBy.join(", ")}` : "; nobody she knows comments"}${romanticFor(c, u.adult) ? "; romantic/flirty allowed (PG-13)" : "; keep family-friendly"}${away ? `; ✈️ CURRENTLY OUT OF TOWN at ${away.place} until ${away.until} — post from there` : ""}
+  THIS POST'S SHOT: ${shotFor(`${c.id}:${day}`, i)}
+  THIS POST'S TONE: ${TONES[toneFor(c.id, Number(new Date(`${day}T00:00:00Z`).getUTCDate()), Number(c.traits?.suggestive || 0), romanticFor(c, u.adult))]}`;
   }));
   const weekday = new Date(`${day}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" });
-  const raw = await writeText("", `You plan one day of posts on Picagram (a social photo app like Instagram) for these characters. ${weekday}. Write ${authors.length} posts, one per character listed, in their own voice: everyday life — at the gym (a confident or sensual gym selfie is fine, PG-13), at home in whatever they're wearing, at work, with their pet if they have one, with a friend or a parent, food, a walk, the beach, a pool or waterpark, a night out, a hobby. At least ${Math.min(authors.length, rand(2, 3))} must be photos ("image"); the rest can be text posts (thoughts, jokes, little updates). Time off should be RARE (most days none, never more than one): only then add "vacation" with how many days it lasts (1–7) and either a place she's travelling to, or "home": true for a staycation — a week off spent at home having fun locally (the lake, day trips, the pool, friends, finally sorting the garden) or just resting. For photos, "photo" describes exactly what the picture shows (who, where, outfit, pose, light) in 1–2 sentences — the character is in it unless it's clearly a picture of something else; "with" names ONE friend from their list who's in the photo, or "". Captions are short and natural (emojis/hashtags okay). ${PLAIN_WORDS} Now and then (not every post) add ONE "friend_comments" entry from someone in "people who know her"; never anyone else — if that list is empty, leave it empty. Everything PG-13 at most: flattering and flirty is fine, never nudity, lingerie or anything sexual; family-friendly characters stay fully clothed. For characters marked "romantic/flirty allowed", now and then (roughly one photo in four) make it a closer, flattering shot with some cleavage showing — a low-cut top, a close-up selfie from a little above, a sports bra at the gym — confident and tasteful, not overt. Reply with JSON only: {"posts":[{"author":"Name","kind":"image"|"text","caption":"...","photo":"...","with":"","vacation":null|{"place":"...","days":3}|{"home":true,"days":5},"friend_comments":[{"from":"Name","text":"..."}]}]}`,
+  const raw = await writeText("", `You plan one day of posts on Picagram (a social photo app like Instagram) for these characters. ${weekday}. Write ${authors.length} posts, one per character listed, in their own voice: everyday life — at the gym (a confident or sensual gym selfie is fine, PG-13), at home in whatever they're wearing, at work, with their pet if they have one, with a friend or a parent, food, a walk, the beach, a pool or waterpark, a night out, a hobby. At least ${Math.min(authors.length, rand(2, 3))} must be photos ("image"); the rest can be text posts (thoughts, jokes, little updates). Time off should be RARE (most days none, never more than one): only then add "vacation" with how many days it lasts (1–7) and either a place she's travelling to, or "home": true for a staycation — a week off spent at home having fun locally (the lake, day trips, the pool, friends, finally sorting the garden) or just resting. For photos, "photo" describes exactly what the picture shows (who, where, outfit, pose, light) in 1–2 sentences — the character is in it unless it's clearly a picture of something else. Each character is given THIS POST'S SHOT (the angle and how it was taken) and THIS POST'S TONE (how dressed-up it is): follow both, word for word in the photo, so two posts from the same woman never look like the same picture again. Change the place, the outfit, the pose and the expression from her last post too; "with" names ONE friend from their list who's in the photo, or "". Captions are short and natural (emojis/hashtags okay). ${PLAIN_WORDS} Now and then (not every post) add ONE "friend_comments" entry from someone in "people who know her"; never anyone else — if that list is empty, leave it empty. Everything PG-13 at most: flattering and flirty is fine, never nudity, lingerie or anything sexual; family-friendly characters stay fully clothed. Reply with JSON only: {"posts":[{"author":"Name","kind":"image"|"text","caption":"...","photo":"...","with":"","vacation":null|{"place":"...","days":3}|{"home":true,"days":5},"friend_comments":[{"from":"Name","text":"..."}]}]}`,
     `CHARACTERS:\n${info.join("\n")}`, 2500).catch(() => "");
   let plan: Planned[] = [];
   try { plan = (JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]).posts || []) as Planned[]; } catch { /* fall back below */ }
@@ -433,9 +437,48 @@ function tooClose(handle: string, name: string, taken: { handle: string; name: s
   return "";
 }
 
+/** 🏡 One of the six ordinary people, tied to someone real where her brief says so. */
+async function newFolk(userId: string, f: Folk): Promise<Record<string, unknown> | null> {
+  // Who she's connected to: one of your characters, or you.
+  const [tied] = f.tie === "character"
+    ? await sql()`select id, name from chat_characters where (owner_id is null or owner_id = ${userId}) order by random() limit 1`
+    : [];
+  if (f.tie === "character" && !tied) return null; // nobody to be the sister of yet
+  const taken = (await sql()`select handle, name from pica_accounts where user_id = ${userId}`).map(r => ({ handle: String(r.handle), name: String(r.name) }))
+    .concat((await sql()`select name from chat_characters where owner_id is null or owner_id = ${userId}`).map(r => ({ handle: "", name: String(r.name) })));
+  const home = await homeOf(userId);
+  const near = home ? ` ${localNote(homeText(home))} Put that town in "lives" as "Town, ST".` : "";
+  const raw = await writeText("", `Invent ONE woman who posts on Picagram (a social photo app like Instagram).
+${folkNote(f, tied ? String(tied.name) : "")}
+She must be clearly NOT one of the people already taken: a different first name, surname and handle. Fictional, never a real person.${near} JSON only: {"name":"First Last (a plain modern American name)","handle":"lowercase_handle from her name","bio":"short bio, the way a small ordinary account reads","look":"one detailed sentence for an image generator: age, face, hair, eyes, skin, build, everyday style — no glamour","lives":"City, State"}`,
+    `ALREADY TAKEN — avoid these entirely:\n${taken.map(t => t.name).slice(-60).join(", ") || "(nobody yet)"}`, 1200).catch(() => "");
+  let a: { name?: string; handle?: string; bio?: string; look?: string; lives?: string } = {};
+  try { a = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); } catch { return null; }
+  const name = scrub(String(a.name || "")).replace(/\s+/g, " ").trim().slice(0, 60);
+  let handle = String(a.handle || name).toLowerCase().replace(/[^a-z0-9._]/g, "").slice(0, 28);
+  if (!name || handle.length < 2 || tooClose(handle, name, taken)) return null;
+  while (taken.some(t => t.handle === handle)) handle = `${handle}${rand(1, 99)}`.slice(0, 28);
+  const [row] = await sql()`insert into pica_accounts (user_id, handle, name, bio, look, lives, followers, folk)
+    values (${userId}, ${handle}, ${name}, ${scrub(String(a.bio || "")).slice(0, 300)}, ${scrub(String(a.look || "")).slice(0, 600)},
+      ${scrub(String(a.lives || (home ? homeText(home) : ""))).slice(0, 120) || null}, ${rand(f.followers[0], f.followers[1])}, ${f.key}) returning *`;
+  // 🧠 The one she's tied to knows her, and knows she's on Picagram.
+  if (tied) {
+    await sql()`insert into velo_memories (user_id, character_id, kind, text) values (${userId}, ${tied.id}, 'fact', ${folkMemory(f, name, handle, String(tied.name)).slice(0, 600)})`;
+  }
+  return row || null;
+}
+
 async function newAccount(userId: string): Promise<Record<string, unknown> | null> {
   const [{ all }] = await sql()`select count(*)::int as all from pica_accounts where user_id = ${userId} and character_id is null`;
   if (all >= MAX_ACCOUNTS) return null;
+  // 🏡 Now and then the new face is an ordinary person rather than another influencer: a sister,
+  // a cousin, the neighbour. Each of the six turns up once.
+  const used = new Set((await sql()`select folk from pica_accounts where user_id = ${userId} and folk is not null`).map(r => String(r.folk)));
+  const left = FOLKS.filter(f => !used.has(f.key));
+  if (left.length && Math.random() < 0.4) {
+    const made = await newFolk(userId, left[Math.floor(Math.random() * left.length)]).catch(e => { console.error("pica: ordinary person", e instanceof Error ? e.message : e); return null; });
+    if (made) return made;
+  }
   // Everyone already in their life: the women they follow and their own characters.
   const accounts = (await sql()`select handle, name from pica_accounts where user_id = ${userId}`).map(r => ({ handle: String(r.handle), name: String(r.name) }));
   const chars = (await sql()`select name from chat_characters where owner_id is null or owner_id = ${userId}`).map(r => ({ handle: "", name: String(r.name) }));
@@ -492,8 +535,10 @@ async function accountPosts(userId: string, day: string, isToday: boolean, u: U,
   for (let i = 0; pool.length && who.length < want; i++) who.push(pool[i % pool.length]);
   if (!who.length) return;
   const when = new Date(`${day}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
-  const raw = await writeText("", `Today is ${when}: fit the day of the week, the season and any holiday (weekend brunch, a weekday at work, summer at the beach, winter cozy…). Write one Picagram post for each numbered line below (the same woman can appear twice — then make her two posts clearly different: a different time of day, place and outfit): a photo of her in her everyday life or her niche — gym, beach, pool, brunch, travel, a night out, at home, an outfit — with a short caption (emojis/hashtags okay). ${u.adult ? "Flattering, flirty and confident is fine (PG-13): swimwear at the beach or pool is okay, and now and then (about one post in four) a closer, flattering shot with some cleavage showing — a low-cut top, a close-up selfie from a little above — confident and tasteful, not overt; never nudity, lingerie or anything sexual." : "Keep it family-friendly, fully clothed."} "photo" describes exactly what the picture shows (where, outfit, pose, light) in 1–2 sentences. ${PLAIN_WORDS} JSON only: {"posts":[{"n":1,"caption":"...","photo":"..."}]}`,
-    who.map((a, i) => `${i + 1}. @${a.handle} (${a.name}): ${a.bio} — looks: ${a.look}`).join("\n"), 2500).catch(() => "");
+  const raw = await writeText("", `Today is ${when}: fit the day of the week, the season and any holiday (weekend brunch, a weekday at work, summer at the beach, winter cozy…). Write one Picagram post for each numbered line below (the same woman can appear twice — then make her two posts clearly different: a different time of day, place and outfit): a photo of her in her everyday life or her niche — gym, beach, pool, brunch, travel, a night out, at home, an outfit — with a short caption (emojis/hashtags okay). ${u.adult ? "Flattering, flirty and confident is fine (PG-13): swimwear at the beach or pool is okay; never nudity, lingerie or anything sexual." : "Keep it family-friendly, fully clothed."} "photo" describes exactly what the picture shows (where, outfit, pose, light) in 1–2 sentences. Each woman is given a SHOT (the angle and how it was taken) and a TONE (how dressed-up it is): follow both exactly, so no two of her photos look like the same picture — and change the place, the outfit and the expression from her last one as well. ${PLAIN_WORDS} JSON only: {"posts":[{"n":1,"caption":"...","photo":"..."}]}`,
+    who.map((a, i) => `${i + 1}. @${a.handle} (${a.name}): ${a.bio} — looks: ${a.look}
+   SHOT: ${shotFor(`${a.id}:${day}`, i)}
+   TONE: ${TONES[toneFor(String(a.id), i, a.folk ? FOLK_SUGGESTIVE : hash(`${a.id}:how`) % 9, u.adult)]}`).join("\n"), 2500).catch(() => "");
   let plan: { n?: number; handle?: string; caption?: string; photo?: string }[] = [];
   try { plan = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]).posts || []; } catch { /* skip today */ }
   const now = Date.now();
@@ -584,7 +629,7 @@ async function postFor(userId: string, a: Record<string, unknown>, u: U, at: num
   const when = new Date(at).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: u.tz });
   let caption = scrub(String(plan?.caption || "")).slice(0, 600), photo = scrub(String(plan?.photo || "")).slice(0, 600);
   if (!photo) {
-    const raw = await writeText("", `Today is ${when}. Write ONE Picagram post for @${a.handle} (${a.name}): ${a.bio} — a photo of her in her everyday life or her niche, with a short caption (emojis/hashtags okay). ${u.adult ? "Flattering, flirty and confident is fine (PG-13); never nudity, lingerie or anything sexual." : "Family-friendly, fully clothed."} "photo" describes exactly what the picture shows (where, outfit, pose, light) in 1–2 sentences. ${PLAIN_WORDS} JSON only: {"caption":"...","photo":"..."}`,
+    const raw = await writeText("", `Today is ${when}. Write ONE Picagram post for @${a.handle} (${a.name}): ${a.bio} — a photo of her in her everyday life or her niche, with a short caption (emojis/hashtags okay). ${u.adult ? "Flattering, flirty and confident is fine (PG-13); never nudity, lingerie or anything sexual." : "Family-friendly, fully clothed."} "photo" describes exactly what the picture shows (where, outfit, pose, light) in 1–2 sentences, and follows this SHOT and TONE exactly so it doesn't look like her last one — SHOT: ${shotFor(`${a.id}:${when}`, rand(0, 9))}; TONE: ${TONES[toneFor(String(a.id), rand(0, 5), a.folk ? FOLK_SUGGESTIVE : hash(`${a.id}:how`) % 9, u.adult)]}. ${PLAIN_WORDS} JSON only: {"caption":"...","photo":"..."}`,
       `She looks like: ${a.look}`, 1000).catch(() => "");
     try { const j = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); caption = scrub(String(j.caption || "✨")).slice(0, 600); photo = scrub(String(j.photo || "")).slice(0, 600); } catch { /* fall back below */ }
   }
