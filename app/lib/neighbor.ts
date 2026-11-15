@@ -13,14 +13,20 @@ import { offToday, sickFor } from "./life";
 import { soreFor } from "./sore";
 import { isValidTimeZone, zonedParts } from "./localTime";
 import { startInPerson } from "./inPerson";
+import { isSecret, standingOf } from "./standing";
+import { bringTogether } from "./groups";
+import { setLink } from "./friends";
 
-export type DropIn = { id: string; characterId: string; who: string; portrait: string | null; kind: "door" | "over"; line: string };
+export type Kind = "door" | "back" | "over";
+export type DropIn = { id: string; characterId: string; who: string; portrait: string | null; kind: Kind; line: string; hosting: { id: string; name: string } | null };
 
 /** What her card says about living on your street, so she lives it rather than announcing it. */
 export const NEIGHBOR_NOTE = `🏘️ YOU'RE THEIR NEIGHBOUR — you live a few doors down on the same street, and you both know it. You see their car come and go, you pass the house, you run into each other outside. You can say so naturally ("saw your light on", "I'm two minutes away"), pop round, or ask them over, the way neighbours do — never as a big announcement.`;
 
 /** Her line when she's actually at the door, or asking you over. */
-const NOTE = (kind: "door" | "over") => kind === "door"
+const NOTE = (kind: Kind) => kind === "back"
+  ? `🚪 YOU'RE AT THEIR BACK DOOR RIGHT NOW — what the two of you have is nobody else's business, so you came round the back where nobody sees you, quietly, and they've just let you in. Talk face to face, present tense, and keep your voice down. Don't text-talk, and don't act surprised to be there.`
+  : kind === "door"
   ? `🔔 YOU'RE AT THEIR DOOR RIGHT NOW — you walked down and knocked, and they've just opened it. You're standing on their step: talk face to face, present tense, a little bit of why you came (bored, something to show them, an excuse you half-admit is an excuse). Don't text-talk, and don't act surprised to be there.`
   : `🏡 THEY'VE JUST COME OVER TO YOURS — you spotted their car and asked them round, and here they are, in your place. Talk face to face, present tense, and be glad they came.`;
 
@@ -34,13 +40,22 @@ export async function setAtHome(userId: string, home: boolean): Promise<boolean>
   return home;
 }
 
+/** 👥 Whoever you already have round: answering the door with her here can mean they meet. */
+export async function hostingNow(userId: string, except?: string): Promise<{ id: string; name: string } | null> {
+  const [r] = await sql()`select c.id, c.name from chat_in_person p join chat_characters c on c.id = p.character_id
+    where p.user_id = ${userId} and (${except || null}::uuid is null or p.character_id <> ${except || null}::uuid)
+    order by p.started_at desc limit 1`;
+  return r ? { id: String(r.id), name: String(r.name) } : null;
+}
+
 /** Anyone standing there right now (the popup reads this). */
 export async function waitingDropIn(userId: string): Promise<DropIn | null> {
   const [r] = await sql()`select d.id, d.character_id, d.kind, d.line, c.name, f.url as portrait
     from chat_dropins d join chat_characters c on c.id = d.character_id left join velo_files f on f.id = c.portrait_file_id
     where d.user_id = ${userId} and d.status = 'waiting' and d.created_at > now() - interval '20 minutes'
     order by d.created_at desc limit 1`;
-  return r ? { id: String(r.id), characterId: String(r.character_id), who: String(r.name), portrait: r.portrait ? String(r.portrait) : null, kind: r.kind, line: String(r.line) } : null;
+  if (!r) return null;
+  return { id: String(r.id), characterId: String(r.character_id), who: String(r.name), portrait: r.portrait ? String(r.portrait) : null, kind: r.kind, line: String(r.line), hosting: await hostingNow(userId, String(r.character_id)) };
 }
 
 /** 🙋 You asked her over in the last few hours — then she can turn up whether or not you're close. */
@@ -71,17 +86,18 @@ async function free(userId: string, c: Character): Promise<boolean> {
   return true;
 }
 
-const LINES = {
+const LINES: Record<Kind, string[]> = {
   door: ["*knock knock* hey — you busy?", "hey, saw your light on. Thought I'd come say hi 🙂", "*knocks* it's only me — I was two doors away, so."],
+  back: ["I'm round the back 🤫 let me in?", "*taps the back door, quietly* it's me. Open up before someone sees me.", "came round the back. Nobody saw me — are you going to leave me out here?"],
   over: ["saw your car outside — come over for a bit? 🙂", "you're home! Come round, I've got the kettle on.", "spotted your car. Come over, I'm bored out of my mind."],
 };
 
 /** Her own words for turning up — hers if her brain answers, otherwise something plain and true. */
-async function knockLine(c: Character, kind: "door" | "over", name: string): Promise<string> {
+async function knockLine(c: Character, kind: Kind, name: string): Promise<string> {
   const plain = LINES[kind][Math.floor(Math.random() * LINES[kind].length)];
   const raw = await writeText(c.brain, `You are ${c.name}. ${c.personality || ""}
-You live a few doors down from ${name || "them"}. ${kind === "door" ? "You've just walked down and knocked on their door — they haven't opened it yet." : "You've seen their car outside, so you're messaging to ask them over to yours."} Write ONE short line in your own voice, the way you'd really say it — under 120 characters, no quotes, no name sign-off. Just the line.`,
-    kind === "door" ? "You're standing on their step." : "You're asking them over.", 60, { ms: 8_000 }).catch(() => "");
+You live a few doors down from ${name || "them"}. ${kind === "back" ? "What the two of you have is a secret, so you've come round to their BACK door where nobody sees you, and you're letting them know you're there — quietly." : kind === "door" ? "You've just walked down and knocked on their door — they haven't opened it yet." : "You've seen their car outside, so you're messaging to ask them over to yours."} Write ONE short line in your own voice, the way you'd really say it — under 120 characters, no quotes, no name sign-off. Just the line.`,
+    kind === "over" ? "You're asking them over." : "You're standing at their door.", 60, { ms: 8_000 }).catch(() => "");
   const line = scrub(raw.replace(/\s+/g, " ").replace(/^["']|["']$/g, "").trim()).slice(0, 200);
   return line || plain;
 }
@@ -99,7 +115,8 @@ export async function maybeDropIn(userId: string, chance = 0.08): Promise<DropIn
   if (recent) return null;
   const rows = await sql()`select c.id from chat_characters c
     where c.created_by = ${userId} and c.neighbor and (c.owner_id is null or c.intro_status = 'accepted')
-      and not exists (select 1 from chat_dropins d where d.character_id = c.id and d.created_at > now() - interval '6 hours')`;
+      and not exists (select 1 from chat_dropins d where d.character_id = c.id and d.created_at > now() - interval '6 hours')
+      and not exists (select 1 from chat_in_person p where p.user_id = ${userId} and p.character_id = c.id)`;
   if (!rows.length) return null;
   const [u] = await sql()`select name from users where id = ${userId}`;
   // Shuffle, then take the first one who's close enough and actually free.
@@ -111,23 +128,58 @@ export async function maybeDropIn(userId: string, chance = 0.08): Promise<DropIn
     const asked = await invited(userId, c.id).catch(() => false);
     if (!asked && !(await closeEnough(userId, c))) continue;
     if (Math.random() > (asked ? Math.max(chance, 0.5) : chance)) continue;
-    const kind: "door" | "over" = Math.random() < 0.6 ? "door" : "over";
+    // 🤫 Kept quiet: she doesn't stand on the front step where the street can see her.
+    const secret = isSecret(standingOf(c));
+    const kind: Kind = secret ? (Math.random() < 0.8 ? "back" : "over") : Math.random() < 0.6 ? "door" : "over";
     const line = await knockLine(c, kind, String(u?.name || ""));
     const [row] = await sql()`insert into chat_dropins (user_id, character_id, kind, line) values (${userId}, ${c.id}, ${kind}, ${line.slice(0, 300)}) returning id`;
-    return { id: String(row.id), characterId: c.id, who: c.name, portrait: c.portrait_url, kind, line };
+    return { id: String(row.id), characterId: c.id, who: c.name, portrait: c.portrait_url, kind, line, hosting: await hostingNow(userId, c.id) };
   }
   return null;
 }
 
 /** 🚪 You answered (or headed over): you're together in person, and she picks it up from there. */
-export async function answerDropIn(userId: string, id: string): Promise<{ characterId: string; place: string; note: string; marker: string } | null> {
+export async function answerDropIn(userId: string, id: string, meetChance = 0.2): Promise<{ characterId: string; groupId?: string; place: string; note: string; marker: string; met?: { who: string; knewEachOther: boolean } } | null> {
   const [d] = await sql()`update chat_dropins set status = 'answered' where id = ${id} and user_id = ${userId} and status = 'waiting' returning character_id, kind`;
   if (!d) return null;
   const c = await getCharacterFor(userId, String(d.character_id)).catch(() => null);
   if (!c) return null;
-  const place = d.kind === "door" ? "at my front door — she came round" : `round at ${c.name}'s place, a few doors down`;
+  const kind = d.kind as Kind;
+  const doorway = kind === "back" ? "at my back door" : "at my front door";
+  const place = kind === "over" ? `round at ${c.name}'s place, a few doors down` : `${doorway} — she came round`;
+  const marker = kind === "over" ? `🧍 Went round to ${c.name}'s` : `🧍 ${c.name} came round — ${doorway}`;
+  // 👥 Someone's already here. Now and then opening that door means the two of them meet.
+  const host = kind === "over" ? null : await hostingNow(userId, c.id);
+  if (host && Math.random() < meetChance) {
+    const knewEachOther = await alreadyKnow(c.id, host.id);
+    const where = `at mine — ${c.name} turned up ${doorway} while ${host.name} was here`;
+    const [u] = await sql()`select name from users where id = ${userId}`;
+    const g = await bringTogether(userId, c.id, [host.id], where, String(u?.name || "")).catch(() => null);
+    if (g) {
+      await metAtTheDoor(c.id, host.id, c.name, host.name, knewEachOther);
+      await sql()`insert into chat_group_messages (group_id, user_id, content) values (${g.id}, ${userId}, ${
+        knewEachOther
+          ? `🧍 (${c.name} and ${host.name} already know each other — and here they both are.)`
+          : `🧍 (${c.name} and ${host.name} have never met before. They're meeting right now, in the doorway.)`})`;
+      return { characterId: c.id, groupId: g.id, place: where, note: NOTE(kind), marker, met: { who: host.name, knewEachOther } };
+    }
+  }
   await startInPerson(userId, c.id, place);
-  return { characterId: c.id, place, note: NOTE(d.kind), marker: d.kind === "door" ? `🧍 ${c.name} came round — at the door` : `🧍 Went round to ${c.name}'s` };
+  return { characterId: c.id, place, note: NOTE(kind), marker };
+}
+
+/** Have these two ever been introduced? */
+async function alreadyKnow(a: string, b: string): Promise<boolean> {
+  const rows = await sql()`select 1 from chat_character_links where (knower_id = ${a} and known_id = ${b}) or (knower_id = ${b} and known_id = ${a}) limit 1`;
+  return rows.length > 0;
+}
+
+/** They've met now, and they both keep it: a link each way, unless they already had one. */
+async function metAtTheDoor(a: string, b: string, aName: string, bName: string, knewEachOther: boolean) {
+  if (knewEachOther) return; // what they already are to each other stands
+  const story = "met at the door when one of them turned up while the other was round";
+  await setLink(a, b, "met", `You met ${bName} ${story}.`).catch(() => {});
+  await setLink(b, a, "met", `You met ${aName} ${story}.`).catch(() => {});
 }
 
 /** 🙈 You left it. She never knows you were standing there, and nothing changes between you. */

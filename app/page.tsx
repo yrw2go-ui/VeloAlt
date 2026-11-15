@@ -8,7 +8,7 @@ import { confirmAsk, currentAsk, subscribeAsk } from "./lib/dialog";
 import { VeloLogo, VeloLookPicker, applyVeloLook, useVeloLook } from "./avatar";
 import VeloCall, { canCallVelo, primeSpeech } from "./call";
 import Chat, { type ChatAdd } from "./chat";
-type DropIn = { id: string; characterId: string; who: string; portrait: string | null; kind: "door" | "over"; line: string };
+type DropIn = { id: string; characterId: string; who: string; portrait: string | null; kind: "door" | "back" | "over"; line: string; hosting: { id: string; name: string } | null };
 import { CallMedia, type Media } from "./media";
 import Picagram from "./picagram";
 import { CharacterStrip, CharacterEditor, CharacterFace, NewCharacterSheet, type Character } from "./characters";
@@ -242,9 +242,12 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   const answerDoor = async () => {
     if (!dropIn) return;
     const d = dropIn; setDropIn(null);
-    const r = await data<{ characterId: string }>("dropin.answer", { id: d.id }).catch(() => null);
+    const r = await data<{ characterId: string; groupId?: string }>("dropin.answer", { id: d.id }).catch(() => null);
     if (!r) return;
-    setTab("chat"); setGroupId(null); setWithId(r.characterId); setChatTick(t => t + 1);
+    setTab("chat");
+    // 👥 The two of them met in the doorway: everyone carries on together.
+    if (r.groupId) { bump(); setWithId(null); setGroupId(r.groupId); return; }
+    setGroupId(null); setWithId(r.characterId); setChatTick(t => t + 1);
   };
   const leaveIt = async () => {
     const d = dropIn; setDropIn(null);
@@ -363,14 +366,19 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
                 ? <img src={dropIn.portrait} alt="" width={52} height={52} style={{ width: 52, height: 52, borderRadius: "50%", objectFit: "cover" }} />
                 : <span style={{ fontSize: 34 }}>{dropIn.kind === "door" ? "🔔" : "🏡"}</span>}
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 800, fontSize: 17 }}>{dropIn.kind === "door" ? `${dropIn.who} is at your door` : `${dropIn.who} saw your car`}</div>
-                <div className="muted" style={{ fontSize: 12 }}>{dropIn.kind === "door" ? "She lives a few doors down." : "She's asking you over."}</div>
+                <div style={{ fontWeight: 800, fontSize: 17 }}>{dropIn.kind === "over" ? `${dropIn.who} saw your car` : dropIn.kind === "back" ? `${dropIn.who} is at your back door` : `${dropIn.who} is at your door`}</div>
+                <div className="muted" style={{ fontSize: 12 }}>{dropIn.kind === "over" ? "She's asking you over." : dropIn.kind === "back" ? "Round the back, where nobody sees her." : "She lives a few doors down."}</div>
               </div>
             </div>
             <div data-testid="dropin-line" style={{ fontSize: 15, padding: "10px 12px", borderRadius: 12, background: "var(--surface2)" }}>{dropIn.line}</div>
+            {dropIn.hosting && dropIn.kind !== "over" && (
+              <div data-testid="dropin-hosting" style={{ fontSize: 12, padding: "8px 10px", borderRadius: 10, background: "rgba(245,158,11,.15)", border: "1px solid rgba(245,158,11,.45)" }}>
+                ⚠️ {dropIn.hosting.name} is here with you. Open that door and they might end up meeting.
+              </div>
+            )}
             <div className="row" style={{ gap: 8 }}>
               <button className="ghost" onClick={leaveIt} data-testid="dropin-no" style={{ flex: 1, padding: "10px 14px" }}>Not right now</button>
-              <button className="btn" onClick={answerDoor} data-testid="dropin-yes" style={{ flex: 1, padding: "10px 14px" }}>{dropIn.kind === "door" ? "🚪 Answer the door" : "🚶 Head over"}</button>
+              <button className="btn" onClick={answerDoor} data-testid="dropin-yes" style={{ flex: 1, padding: "10px 14px" }}>{dropIn.kind === "over" ? "🚶 Head over" : "🚪 Answer the door"}</button>
             </div>
             <div className="muted" style={{ fontSize: 11, textAlign: "center" }}>Leaving it is fine — she never knows you were standing there.</div>
           </div>

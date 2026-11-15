@@ -378,8 +378,10 @@ export async function POST(req: NextRequest) {
       case "dropin.check": return NextResponse.json({ dropIn: await maybeDropIn(me, typeof b.chance === "number" ? Math.max(0, Math.min(1, b.chance)) : undefined) });
       case "dropin.ignore": return NextResponse.json({ ok: await ignoreDropIn(me, String(b.id || "")) });
       case "dropin.answer": {
-        const r = await answerDropIn(me, String(b.id || ""));
+        const r = await answerDropIn(me, String(b.id || ""), typeof b.meetChance === "number" ? Math.max(0, Math.min(1, b.meetChance)) : undefined);
         if (!r) return bad("Nobody's at the door.");
+        // 👥 They met in the doorway: it carries on in their group chat, so the one-on-one just gets the note.
+        if (r.groupId) return NextResponse.json({ characterId: r.characterId, groupId: r.groupId, met: r.met });
         const [row] = await db`insert into velo_messages (user_id, role, content, character_id) values (${me}, 'user', ${r.marker}, ${r.characterId}) returning id`;
         return NextResponse.json({ characterId: r.characterId, marker: { id: String(row.id), role: "user", content: r.marker } });
       }
