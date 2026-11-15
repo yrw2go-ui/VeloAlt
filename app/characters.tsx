@@ -617,7 +617,7 @@ function ReferencePicker({ characterId, value, onChange, refresh, onPortrait }: 
 }
 
 /** 🎚️ Nine temperament sliders (0–10). Their mix makes each character unique; Flirty and Suggestive only count when Romantic is on. */
-function TraitSliders({ value, romantic, onChange }: { value: Record<TraitKey, number>; romantic: boolean; onChange: (k: TraitKey, v: number) => void }) {
+export function TraitSliders({ value, romantic, onChange }: { value: Record<TraitKey, number>; romantic: boolean; onChange: (k: TraitKey, v: number) => void }) {
   return (
     <div data-testid="trait-sliders" style={{ fontSize: 13, fontWeight: 700 }}>
       Temperament <span className="muted" style={{ fontWeight: 500 }}>· tendencies, not a script — the personality text still leads</span>

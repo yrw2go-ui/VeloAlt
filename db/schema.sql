@@ -775,3 +775,7 @@ alter table chat_dropins drop constraint if exists chat_dropins_kind_check;
 alter table chat_dropins add constraint chat_dropins_kind_check check (kind in ('door', 'back', 'over'));
 -- 🏡 Ordinary people on Picagram: which of the six this account is (so each turns up once).
 alter table pica_accounts add column if not exists folk text check (folk is null or char_length(folk) <= 40);
+-- 🎭 Picagram people get a personality of their own: a description and the nine sliders,
+-- yours to edit, and they go with her if you befriend her.
+alter table pica_accounts add column if not exists personality text check (personality is null or char_length(personality) <= 2000);
+alter table pica_accounts add column if not exists traits jsonb not null default '{}'::jsonb;

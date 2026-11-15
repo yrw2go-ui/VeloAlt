@@ -8,7 +8,7 @@ import { scrub } from "./secrets";
 import { listCharacters, referenceUrls, type Character } from "./characters";
 import { startMedia, deleteMedia, whenMediaReady, MediaError, type Media } from "./media";
 import { swapIn } from "./redo";
-import { allowsSuggestive, mediaMood } from "./traits";
+import { allowsSuggestive, mediaMood, cleanTraits, DEFAULT_TRAITS, TRAITS } from "./traits";
 import { isValidTimeZone, localDate, zonedParts, zonedToUtc } from "./localTime";
 import { randomComments } from "./picaComments";
 import { vibeNote, rollLesbian } from "./vibes";
@@ -465,6 +465,7 @@ She must be clearly NOT one of the people already taken: a different first name,
   if (tied) {
     await sql()`insert into velo_memories (user_id, character_id, kind, text) values (${userId}, ${tied.id}, 'fact', ${folkMemory(f, name, handle, String(tied.name)).slice(0, 600)})`;
   }
+  if (row) await ensurePersona(userId, String(row.id)).catch(() => {});
   return row || null;
 }
 
@@ -508,6 +509,7 @@ ${intoWomen ? "⚢ SHE IS A LESBIAN — into women, not men. Let her bio say so 
     if (clash) { console.warn(`pica: ${name} (@${handle}) is too close to ${clash} — trying again`); continue; }
     const lives = scrub(String(a.lives || (home && !far ? homeText(home) : ""))).replace(/\s+/g, " ").trim().slice(0, 120);
     const [row] = await sql()`insert into pica_accounts (user_id, handle, name, bio, look, lives, followers, lesbian) values (${userId}, ${handle}, ${name}, ${scrub(String(a.bio || "")).slice(0, 300)}, ${scrub(String(a.look || "")).slice(0, 600)}, ${lives || null}, ${Math.max(2000, Math.min(900000, Number(a.followers) || rand(5000, 200000)))}, ${intoWomen}) returning *`;
+    if (row) await ensurePersona(userId, String(row.id)).catch(() => {});
     return row || null;
   }
   return null;
@@ -536,7 +538,7 @@ async function accountPosts(userId: string, day: string, isToday: boolean, u: U,
   if (!who.length) return;
   const when = new Date(`${day}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
   const raw = await writeText("", `Today is ${when}: fit the day of the week, the season and any holiday (weekend brunch, a weekday at work, summer at the beach, winter cozy…). Write one Picagram post for each numbered line below (the same woman can appear twice — then make her two posts clearly different: a different time of day, place and outfit): a photo of her in her everyday life or her niche — gym, beach, pool, brunch, travel, a night out, at home, an outfit — with a short caption (emojis/hashtags okay). ${u.adult ? "Flattering, flirty and confident is fine (PG-13): swimwear at the beach or pool is okay; never nudity, lingerie or anything sexual." : "Keep it family-friendly, fully clothed."} "photo" describes exactly what the picture shows (where, outfit, pose, light) in 1–2 sentences. Each woman is given a SHOT (the angle and how it was taken) and a TONE (how dressed-up it is): follow both exactly, so no two of her photos look like the same picture — and change the place, the outfit and the expression from her last one as well. ${PLAIN_WORDS} JSON only: {"posts":[{"n":1,"caption":"...","photo":"..."}]}`,
-    who.map((a, i) => `${i + 1}. @${a.handle} (${a.name}): ${a.bio} — looks: ${a.look}
+    who.map((a, i) => `${i + 1}. @${a.handle} (${a.name}): ${a.bio} — looks: ${a.look}${a.personality ? `\n   WHO SHE IS: ${String(a.personality).slice(0, 400)}` : ""}
    SHOT: ${shotFor(`${a.id}:${day}`, i)}
    TONE: ${TONES[toneFor(String(a.id), i, a.folk ? FOLK_SUGGESTIVE : hash(`${a.id}:how`) % 9, u.adult)]}`).join("\n"), 2500).catch(() => "");
   let plan: { n?: number; handle?: string; caption?: string; photo?: string }[] = [];
@@ -584,6 +586,7 @@ export async function picaCreateAccount(userId: string, spec: { name: string; ha
   // Then one she takes herself, so she's live from the moment you make her.
   const posted = await postFor(userId, row, u, Date.now() - rand(2, 20) * 60_000)
     .catch(e => { console.error("pica: made her post", e instanceof Error ? e.message : e); return false; });
+  await ensurePersona(userId, String(row.id)).catch(() => {});
   return { id: String(row.id), posted };
 }
 
@@ -629,7 +632,7 @@ async function postFor(userId: string, a: Record<string, unknown>, u: U, at: num
   const when = new Date(at).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: u.tz });
   let caption = scrub(String(plan?.caption || "")).slice(0, 600), photo = scrub(String(plan?.photo || "")).slice(0, 600);
   if (!photo) {
-    const raw = await writeText("", `Today is ${when}. Write ONE Picagram post for @${a.handle} (${a.name}): ${a.bio} — a photo of her in her everyday life or her niche, with a short caption (emojis/hashtags okay). ${u.adult ? "Flattering, flirty and confident is fine (PG-13); never nudity, lingerie or anything sexual." : "Family-friendly, fully clothed."} "photo" describes exactly what the picture shows (where, outfit, pose, light) in 1–2 sentences, and follows this SHOT and TONE exactly so it doesn't look like her last one — SHOT: ${shotFor(`${a.id}:${when}`, rand(0, 9))}; TONE: ${TONES[toneFor(String(a.id), rand(0, 5), a.folk ? FOLK_SUGGESTIVE : hash(`${a.id}:how`) % 9, u.adult)]}. ${PLAIN_WORDS} JSON only: {"caption":"...","photo":"..."}`,
+    const raw = await writeText("", `Today is ${when}. Write ONE Picagram post for @${a.handle} (${a.name}): ${a.bio}${a.personality ? ` — who she is: ${String(a.personality).slice(0, 400)}` : ""} — a photo of her in her everyday life or her niche, with a short caption (emojis/hashtags okay). ${u.adult ? "Flattering, flirty and confident is fine (PG-13); never nudity, lingerie or anything sexual." : "Family-friendly, fully clothed."} "photo" describes exactly what the picture shows (where, outfit, pose, light) in 1–2 sentences, and follows this SHOT and TONE exactly so it doesn't look like her last one — SHOT: ${shotFor(`${a.id}:${when}`, rand(0, 9))}; TONE: ${TONES[toneFor(String(a.id), rand(0, 5), a.folk ? FOLK_SUGGESTIVE : hash(`${a.id}:how`) % 9, u.adult)]}. ${PLAIN_WORDS} JSON only: {"caption":"...","photo":"..."}`,
       `She looks like: ${a.look}`, 1000).catch(() => "");
     try { const j = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); caption = scrub(String(j.caption || "✨")).slice(0, 600); photo = scrub(String(j.photo || "")).slice(0, 600); } catch { /* fall back below */ }
   }
@@ -686,16 +689,23 @@ export async function accountFor(userId: string, characterId: string): Promise<s
   const [acc] = await sql()`insert into pica_accounts (user_id, handle, name, bio, look, followers, followed, character_id, avatar_media_id)
     values (${userId}, ${handle}, ${String(c.name).slice(0, 60)}, ${scrub(String(c.job || "")).slice(0, 300)}, '', ${c.big_following ? rand(40000, 400000) : rand(400, 9000)}, true, ${c.id}, ${av?.id || null}) returning id`;
   await sql()`update pica_posts set account_id = ${acc.id} where user_id = ${userId} and author_id = ${c.id} and account_id is null`;
+  await ensurePersona(userId, String(acc.id)).catch(() => {});
   return String(acc.id);
 }
 
 export async function picaProfile(userId: string, accountId: string) {
-  const [a] = await sql()`select a.id, a.handle, a.name, a.bio, a.followers, a.followed, a.character_id, a.lives, a.mine, a.ref_media_ids, a.avatar_media_id, f.url as avatar, coalesce(ch.pica_hidden, false) as hidden, ch.attached
+  const [a] = await sql()`select a.id, a.handle, a.name, a.bio, a.personality, a.traits, a.followers, a.followed, a.character_id, a.lives, a.mine, a.ref_media_ids, a.avatar_media_id, f.url as avatar, coalesce(ch.pica_hidden, false) as hidden, ch.attached
     , pf.url as portrait
     from pica_accounts a left join velo_media m on m.id = a.avatar_media_id left join velo_files f on f.id = m.file_id left join chat_characters ch on ch.id = a.character_id
       left join velo_files pf on pf.id = ch.portrait_file_id
     where a.id = ${accountId} and a.user_id = ${userId}`;
   if (!a) return null;
+  // 🎭 No description yet: she's given one now, and it's yours to change.
+  if (!a.character_id && !String(a.personality || "").trim()) {
+    await ensurePersona(userId, String(a.id)).catch(e => console.error("pica: personality", e instanceof Error ? e.message : e));
+    const [again] = await sql()`select personality, traits from pica_accounts where id = ${a.id}`;
+    if (again) { a.personality = again.personality; a.traits = again.traits; }
+  }
   // 🖼️ One you made yourself: make sure the pictures you gave her are up as posts (older ones weren't).
   if (a.mine && Array.isArray(a.ref_media_ids) && a.ref_media_ids.length)
     await putUpUploads(userId, a, (a.ref_media_ids as string[]).map(String), await userInfo(userId)).catch(e => console.error("pica: catch up her pictures", e instanceof Error ? e.message : e));
@@ -703,8 +713,46 @@ export async function picaProfile(userId: string, accountId: string) {
     from pica_posts p join velo_media m on m.id = p.media_id join velo_files f on f.id = m.file_id left join velo_files t on t.id = m.thumb_file_id
     where p.user_id = ${userId} and (p.account_id = ${accountId} or (${a.character_id || null}::uuid is not null and p.author_id = ${a.character_id || null}::uuid))
       and p.created_at <= now() and m.status = 'done' order by p.created_at desc limit 60`;
-  return { account: { id: String(a.id), handle: String(a.handle), name: String(a.name), bio: String(a.bio), followers: Number(a.followers), followed: !!a.followed, avatar: a.avatar ? String(a.avatar) : a.portrait ? String(a.portrait) : null, avatar_media_id: a.avatar_media_id ? String(a.avatar_media_id) : null, character_id: a.character_id ? String(a.character_id) : null, lives: a.lives ? String(a.lives) : "", hidden: !!a.hidden, married: a.attached === "married" },
+  return { account: { id: String(a.id), handle: String(a.handle), name: String(a.name), bio: String(a.bio),
+      personality: String(a.personality || ""), traits: cleanTraits(a.traits && Object.keys(a.traits).length ? a.traits : DEFAULT_TRAITS), followers: Number(a.followers), followed: !!a.followed, avatar: a.avatar ? String(a.avatar) : a.portrait ? String(a.portrait) : null, avatar_media_id: a.avatar_media_id ? String(a.avatar_media_id) : null, character_id: a.character_id ? String(a.character_id) : null, lives: a.lives ? String(a.lives) : "", hidden: !!a.hidden, married: a.attached === "married" },
     photos: posts.map(r => ({ media_id: String(r.media_id), url: String(r.url), thumb: r.thumb ? String(r.thumb) : null, caption: String(r.caption || ""), saved: !!r.saved })) };
+}
+
+/**
+ * 🎭 Everyone gets one. A woman on Picagram who has no description yet is given one — written from
+ * her bio, her look and where she lives — the first time you open her, and it's yours to edit from
+ * then on. Someone you've befriended is skipped: hers live on her character card.
+ */
+export async function ensurePersona(userId: string, accountId: string): Promise<void> {
+  const [a] = await sql()`select id, name, handle, bio, look, lives, personality, character_id, folk from pica_accounts
+    where id = ${accountId} and user_id = ${userId}`;
+  if (!a || a.character_id || String(a.personality || "").trim()) return;
+  const raw = await writeText("", `Write the personality of ONE woman who posts on Picagram, from her profile below — the way her owner would write it for a companion app.
+"personality": 2–4 sentences on how she talks and acts: her manner, what she's like to message, what she talks about, what she's guarded about. Specific and human, not a list of adjectives.
+"traits": a number 0–10 for each of ${TRAITS.map(t => t.key).join(", ")} — fit them to her (suggestive at most 4, language at most 3).
+${a.folk ? "She's an ordinary person rather than an influencer: keep her plain and real, and keep suggestive at 0 or 1." : ""}
+JSON only: {"personality":"...","traits":{${TRAITS.map(t => `"${t.key}":5`).join(",")}}}`,
+    `@${a.handle} (${a.name})\nBio: ${a.bio || "(none)"}\nLooks: ${a.look || "(not said)"}${a.lives ? `\nLives: ${a.lives}` : ""}`, 900).catch(() => "");
+  let j: { personality?: string; traits?: unknown } = {};
+  try { j = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); } catch { return; }
+  const text = scrub(String(j.personality || "")).replace(/\s+/g, " ").trim().slice(0, 2000);
+  if (text.length < 10) return;
+  await sql()`update pica_accounts set personality = ${text}, traits = ${JSON.stringify(cleanTraits(j.traits))}::jsonb
+    where id = ${a.id} and user_id = ${userId} and coalesce(personality, '') = ''`;
+}
+
+/**
+ * 🎭 Her personality: a description and the nine sliders, yours to write. Never for someone you've
+ * befriended — she's a character now, so hers live on her character card.
+ */
+export async function picaPersona(userId: string, accountId: string, personality: string, traits: unknown): Promise<{ personality: string; traits: Record<string, number> } | "friend" | null> {
+  const [a] = await sql()`select id, character_id from pica_accounts where id = ${accountId} and user_id = ${userId}`;
+  if (!a) return null;
+  if (a.character_id) return "friend";
+  const text = scrub(personality).slice(0, 2000);
+  const t = cleanTraits(traits);
+  await sql()`update pica_accounts set personality = ${text}, traits = ${JSON.stringify(t)}::jsonb where id = ${a.id} and user_id = ${userId}`;
+  return { personality: text, traits: t };
 }
 
 /**
@@ -798,7 +846,11 @@ export async function picaBefriend(userId: string, accountId: string): Promise<s
   const [av] = a.avatar_media_id ? await sql()`select file_id from velo_media where id = ${a.avatar_media_id} and status = 'done'` : [];
   const names = (await sql()`select name from chat_characters where owner_id is null or owner_id = ${userId}`).map(r => String(r.name));
   const first = String(a.name).split(/\s+/)[0];
-  const d = await makeCharacter({ name: names.includes(first) ? String(a.name) : first, vibe: `She posts on Picagram as @${a.handle}: "${a.bio}". Looks: ${a.look}. You two just became friends after you followed her on Picagram.`, romantic: u.adult, male: false, avoidNames: [], lives: a.lives ? `WHERE SHE LIVES: ${a.lives} — keep it exactly.` : livesNote(await homeOf(userId)), lesbian: !!a.lesbian });
+  const d0 = await makeCharacter({ name: names.includes(first) ? String(a.name) : first, vibe: `She posts on Picagram as @${a.handle}: "${a.bio}". Looks: ${a.look}. You two just became friends after you followed her on Picagram.`, romantic: u.adult, male: false, avoidNames: [], lives: a.lives ? `WHERE SHE LIVES: ${a.lives} — keep it exactly.` : livesNote(await homeOf(userId)), lesbian: !!a.lesbian });
+  // 🎭 Her personality and her sliders are yours — whatever you wrote on her Picagram page wins.
+  const yours = String(a.personality || "").trim();
+  const hadTraits = a.traits && Object.keys(a.traits as object).length > 0;
+  const d = { ...d0, personality: yours || d0.personality, traits: hadTraits ? cleanTraits(a.traits) : d0.traits };
   const [c] = await sql()`insert into chat_characters (created_by, owner_id, intro_status, name, personality, backstory, relation, appearance, job, casual_wear, hobbies, voice, voice_name, voice_kind, romantic, romance_arc, traits, birthday, time_zone, work_attire, work_days, work_start, work_end, part_time, lesbian, lesbian_personality, portrait_file_id, reference_ids)
     values (${userId}, ${userId}, 'accepted', ${d.name}, ${d.personality}, ${d.backstory}, ${scrub(`Someone you met on Picagram (@${a.handle}) — you followed her and became friends`)}, ${scrub(String(a.look || d.appearance)).slice(0, 600)}, ${d.job}, ${d.casual_wear}, ${d.hobbies}, ${d.voice}, ${d.voice_name}, ${d.voice_kind}, ${d.romantic}, ${d.romance_arc}, ${JSON.stringify(d.traits)}::jsonb, ${d.birthday}, '',
       ${d.work_attire}, ${d.work_days}::int[], ${d.work_start}, ${d.work_end}, ${d.part_time}, ${!!d.lesbian}, ${d.lesbian_personality || ""}, ${av?.file_id || photos[0]?.file_id || null}, ${photos.map(p => String(p.id))}::uuid[]) returning id`;

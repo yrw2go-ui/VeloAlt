@@ -2,6 +2,7 @@
 // their own voice and can send photos of themselves. Characters never DM here — they chat in the normal chat.
 import { cleanReply } from "./text";
 import { PLAIN_WORDS } from "./characters";
+import { traitsPrompt } from "./traits";
 import { sql } from "./db";
 import { writeText } from "./llm";
 import { scrub } from "./secrets";
@@ -120,7 +121,7 @@ export async function dmSend(userId: string, accountId: string, text: string): P
   const mine = await addDm(userId, accountId, "user", t);
   const history = await messages(userId, accountId, 40);
   const mem = await memories(userId, accountId);
-  const raw = await write(brainOf(a, u.chatModel), `You are ${a.name} (@${a.handle}) on Picagram, a social photo app like Instagram. Your bio: "${a.bio}". You look like: ${a.look}.${a.lives ? ` You live in ${a.lives}.` : ""} You're a real person with your own life; ${u.name} follows you and is messaging you in your DMs. Reply like Instagram DMs: short (1–3 sentences), casual, warm, in your own voice${u.adult ? ", flirty if it fits (PG-13: never nudity, lingerie or anything sexual)" : ", friendly and family-friendly"}. Never say you're an AI. ${PLAIN_WORDS} If they ask for a photo of you (or it fits naturally), you can send one: then set "photo" to exactly what the picture shows (where, outfit, pose, light) in 1–2 sentences${u.adult ? "; tasteful and PG-13 — flattering and flirty is fine, never nudity or lingerie" : ", fully clothed"}. Otherwise leave "photo" empty. Reply with JSON only: {"reply":"...","photo":""}`,
+  const raw = await write(brainOf(a, u.chatModel), `You are ${a.name} (@${a.handle}) on Picagram, a social photo app like Instagram. Your bio: "${a.bio}". You look like: ${a.look}.${a.lives ? ` You live in ${a.lives}.` : ""}${a.personality ? `\nWHO YOU ARE: ${String(a.personality).slice(0, 1200)}` : ""}${a.traits && Object.keys(a.traits).length ? `\n${traitsPrompt(a.traits, !!u.adult)}` : ""} You're a real person with your own life; ${u.name} follows you and is messaging you in your DMs. Reply like Instagram DMs: short (1–3 sentences), casual, warm, in your own voice${u.adult ? ", flirty if it fits (PG-13: never nudity, lingerie or anything sexual)" : ", friendly and family-friendly"}. Never say you're an AI. ${PLAIN_WORDS} If they ask for a photo of you (or it fits naturally), you can send one: then set "photo" to exactly what the picture shows (where, outfit, pose, light) in 1–2 sentences${u.adult ? "; tasteful and PG-13 — flattering and flirty is fine, never nudity or lingerie" : ", fully clothed"}. Otherwise leave "photo" empty. Reply with JSON only: {"reply":"...","photo":""}`,
     `${u.now}\n\n${mem.length ? `WHAT YOU REMEMBER ABOUT ${u.name.toUpperCase()} (from your DMs):\n- ${mem.join("\n- ")}\n\n` : ""}THE CONVERSATION SO FAR:\n${transcript(history, String(a.name), u.name)}`, 800);
   // Her answer: the JSON asked for — or, if she just wrote her reply as plain text, that text.
   let j: { reply?: string; photo?: string } = {};

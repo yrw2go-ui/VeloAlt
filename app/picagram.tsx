@@ -6,6 +6,8 @@ import { hideSecrets } from "./lib/secrets";
 import { noJargon } from "./lib/text";
 import { MediaView, type Media } from "./media";
 import { RedoSheet } from "./redo";
+import { TraitSliders } from "./characters";
+import { cleanTraits, DEFAULT_TRAITS, type TraitKey } from "./lib/traits";
 import { stamp } from "./lib/when";
 import { confirmAsk } from "./lib/dialog";
 
@@ -322,7 +324,7 @@ function Grid({ photos, onOpen }: { photos: Photo[]; onOpen: (p: Photo) => void 
 
 /** 👤 Her profile: bio, followers, Follow, and all her photos. */
 function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: string; onClose: () => void; onFollow: (account: string, on: boolean) => void; onChat?: (characterId: string) => void; onMessage?: (id: string) => void; onDeleted?: (id: string) => void }) {
-  const [data, setData] = useState<{ account: { id: string; handle: string; name: string; bio: string; followers: number; followed: boolean; avatar: string | null; avatar_media_id?: string | null; character_id: string | null; lives: string; hidden: boolean; married: boolean }; photos: Photo[] } | null>(null);
+  const [data, setData] = useState<{ account: { id: string; handle: string; name: string; bio: string; personality: string; traits: Record<string, number>; followers: number; followed: boolean; avatar: string | null; avatar_media_id?: string | null; character_id: string | null; lives: string; hidden: boolean; married: boolean }; photos: Photo[] } | null>(null);
   const [err, setErr] = useState("");
   const [befriending, setBefriending] = useState(false);
   // 🤝 She becomes a character (filled in from her profile; her photos are her headshot and references).
@@ -354,6 +356,8 @@ function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: 
   // 🖼️ Her profile picture on its own: one of her photos, or one you upload just for it.
   const pic = useRef<HTMLInputElement>(null);
   const [picBusy, setPicBusy] = useState("");
+  // 🎭 Her description and sliders, in a tab of her own.
+  const [persona, setPersona] = useState(false);
   const reload = () => api<NonNullable<typeof data>>("/api/pica", { action: "profile", id }).then(d => { setData(d); setHidden(d.account.hidden); }).catch(() => {});
   const setAvatar = async (mediaId: string) => {
     setErr(""); setPicBusy("…");
@@ -412,6 +416,9 @@ function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: 
                 </>}
           </div>
           <div className="row" style={{ padding: "0 16px 10px", gap: 10 }}>
+            {!data.account.character_id && (
+              <button className="ghost" onClick={() => setPersona(true)} data-testid="pica-persona-open" style={{ padding: "4px 12px", fontSize: 13 }}>🎭 Personality</button>
+            )}
             {data.account.character_id
               ? <button className="ghost" onClick={hideHer} data-testid="pica-profile-hide" style={{ padding: "4px 12px", fontSize: 13 }}>{hidden ? "👁 Show her posts again" : "🙈 Hide her posts"}</button>
               : <button className="ghost" onClick={remove} data-testid="pica-profile-delete" style={{ padding: "4px 12px", fontSize: 13, color: "var(--bad)" }}>🗑 Delete this account</button>}
@@ -425,8 +432,57 @@ function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: 
       )}
       {view && <Viewer photo={view} onClose={() => setView(null)} onRedo={m => { setView(null); setRedo(m); }} onAvatar={m => { setView(null); setAvatar(m); }}
         onSaved={on => setData(d => (d ? { ...d, photos: d.photos.map(x => (x.media_id === view.media_id ? { ...x, saved: on } : x)) } : d))} />}
+      {persona && data && (
+        <PersonaSheet who={data.account.name} personality={data.account.personality} traits={data.account.traits}
+          onClose={() => setPersona(false)}
+          onSave={async (personality, traits) => {
+            setData(d => (d ? { ...d, account: { ...d.account, personality, traits } } : d));
+            await api("/api/pica", { action: "persona.set", id, personality: hideSecrets(personality).text, traits }).catch(e => setErr(e instanceof Error ? e.message : "Couldn't save her."));
+          }} />
+      )}
       {redo && <RedoSheet mediaId={redo} who={data?.account.name || "her"} onClose={() => setRedo(null)}
         onGoing={() => { setRedo(null); setRedoing("↻ Making the new one — about a minute. It takes this one's place when it lands."); setTimeout(reload, 60_000); }} />}
+    </div>
+  );
+}
+
+/**
+ * 🎭 Who she is, and the nine sliders — the same ones a character has. It saves itself three
+ * seconds after you stop, like her bio. Someone you've befriended doesn't have this: she's a
+ * character, so hers are on her character card.
+ */
+function PersonaSheet({ who, personality, traits, onSave, onClose }: {
+  who: string; personality: string; traits: Record<string, number>;
+  onSave: (personality: string, traits: Record<TraitKey, number>) => Promise<void>; onClose: () => void;
+}) {
+  const [text, setText] = useState(personality);
+  const [t, setT] = useState<Record<TraitKey, number>>(cleanTraits(traits && Object.keys(traits).length ? traits : DEFAULT_TRAITS));
+  const [saved, setSaved] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const save = async (p: string, tr: Record<TraitKey, number>) => { await onSave(p, tr); setSaved(true); setTimeout(() => setSaved(false), 1600); };
+  const later = (p: string, tr: Record<TraitKey, number>) => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => save(p, tr), 3000);
+  };
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  const close = () => { if (timer.current) clearTimeout(timer.current); save(text, t); onClose(); };
+  return (
+    <div role="dialog" aria-modal="true" data-testid="pica-persona" style={{ position: "fixed", inset: 0, background: "var(--bg)", zIndex: 2700, overflowY: "auto" }}>
+      <div className="row" style={{ padding: "10px 14px", gap: 8, position: "sticky", top: 0, background: "var(--bg)", borderBottom: "1px solid var(--border)" }}>
+        <button className="ghost" onClick={close} aria-label="Back" style={{ padding: "4px 10px" }}>←</button>
+        <b style={{ flex: 1 }}>🎭 {who}</b>
+        <span className="muted" style={{ fontSize: 12 }} data-testid="pica-persona-saved">{saved ? "✓ Saved" : "Saves itself"}</span>
+      </div>
+      <div style={{ maxWidth: 560, margin: "0 auto", padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+        <div>
+          <label style={{ fontSize: 13, fontWeight: 700, display: "block", marginBottom: 4 }}>Who she is <span className="muted" style={{ fontWeight: 500 }}>· how she talks and acts, in your words</span></label>
+          <textarea value={text} onChange={e => { setText(e.target.value); later(e.target.value, t); }} maxLength={2000} data-testid="pica-persona-text"
+            placeholder="Dry, a bit guarded, warms up once she trusts you. Talks about her dog more than herself."
+            style={{ width: "100%", minHeight: 120, resize: "vertical", padding: "8px 10px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--card)", color: "var(--text)", fontSize: 14 }} />
+        </div>
+        <TraitSliders value={t} romantic onChange={(k, v) => { const next = { ...t, [k]: v }; setT(next); later(text, next); }} />
+        <div className="muted" style={{ fontSize: 12 }}>This is hers on Picagram — her DMs, her posts and her captions. If you befriend her, it all comes with her onto her character card.</div>
+      </div>
     </div>
   );
 }
