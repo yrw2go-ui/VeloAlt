@@ -65,7 +65,7 @@ export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdi
 }) {
   if (activeGroup) active = "__group";
   return (
-    <div data-testid="character-strip" style={{ display: "flex", gap: 8, overflowX: "auto", padding: "12px 12px 8px", borderBottom: "1px solid var(--border)" }}>
+    <div data-testid="character-strip" style={{ display: "flex", flexWrap: "wrap", alignContent: "flex-start", gap: 8, maxHeight: 136, overflowY: "auto", padding: "12px 12px 8px", borderBottom: "1px solid var(--border)" }}>
       <button style={{ ...chip(active === null), position: "relative" }} onClick={() => onPick(null)} aria-pressed={active === null}><VeloAvatar size={26} /> Velo<Badge n={active === null ? 0 : unread.velo} /></button>
       {characters.map(c => (
         <button key={c.id} style={{ ...chip(active === c.id, c.busy, c.home), position: "relative" }} aria-pressed={active === c.id} data-busy={c.busy || undefined} data-ditched={c.ditched ? "yes" : undefined} data-home={c.home ? "yes" : undefined}

@@ -709,6 +709,13 @@ export async function picaMe(userId: string) {
 }
 
 /** ✍️ Your Picagram bio, in your own words. */
+/** ✍️ Her bio, as you want it — yours to write for anyone on your Picagram. */
+export async function picaBio(userId: string, accountId: string, bio: string): Promise<string | null> {
+  const text = scrub(bio).slice(0, 300);
+  const rows = await sql()`update pica_accounts set bio = ${text} where id = ${accountId} and user_id = ${userId} returning id`;
+  return rows.length ? text : null;
+}
+
 export async function picaMeBio(userId: string, bio: string): Promise<string> {
   const text = scrub(bio).slice(0, 300);
   await sql()`update users set pica_bio = ${text}, updated_at = now() where id = ${userId}`;

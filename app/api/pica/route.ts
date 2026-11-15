@@ -4,7 +4,7 @@ import { allow } from "../../lib/rateLimit";
 import { sql } from "../../lib/db";
 import { MediaError, mediaReady } from "../../lib/media";
 import { dmThreads, dmUnread, dmOpen, dmSend, dmSendPhoto, dmBrain, dmMyPhotoDraft, dmMyPhoto, DmError } from "../../lib/picaDm";
-import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSetAvatar, picaSavedList, picaFollowing, picaBefriend, picaCounts, picaDeletePost, picaCreateAccount, picaPictureAbout, picaRedoDraft, picaRedo, picaWithMe, picaMe, picaMeBio, picaCharacters, picaHide, accountFor, picaNew, picaFromPhoto, myPhotoDraft, newFaces, picaDeleteAccount, PicaLimit } from "../../lib/picagram";
+import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSetAvatar, picaSavedList, picaFollowing, picaBefriend, picaCounts, picaDeletePost, picaCreateAccount, picaPictureAbout, picaRedoDraft, picaRedo, picaWithMe, picaMe, picaMeBio, picaBio, picaCharacters, picaHide, accountFor, picaNew, picaFromPhoto, myPhotoDraft, newFaces, picaDeleteAccount, PicaLimit } from "../../lib/picagram";
 
 // 📸 Picagram. POST { action, ... }:
 //   feed { before? } → { posts }   (a few at a time; today's and missed days' posts are made as needed)
@@ -122,6 +122,11 @@ export async function POST(req: NextRequest) {
       }
       case "follow": return UUID.test(id) && (await picaFollow(me, id, b.on === true)) ? NextResponse.json({ ok: true }) : bad("Unknown account.");
       // 🖼️ Her profile picture, on its own — one of her photos, or one you uploaded for it.
+      case "bio.set": {
+        if (!UUID.test(id)) return bad("Unknown account.");
+        const bio = await picaBio(me, id, String(b.bio || ""));
+        return bio === null ? bad("Unknown account.") : NextResponse.json({ bio });
+      }
       case "avatar.set": {
         if (!UUID.test(id) || !UUID.test(String(b.mediaId || ""))) return bad("Unknown account.");
         const url = await picaSetAvatar(me, id, String(b.mediaId));

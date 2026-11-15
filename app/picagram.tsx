@@ -397,7 +397,8 @@ function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: 
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 800 }}>{data.account.name}{data.account.married && <span data-testid="pica-ring" title="Married" aria-label="married" style={{ marginLeft: 4 }}>💍</span>}</div>
               <div className="muted" style={{ fontSize: 13 }}><b style={{ color: "var(--text)" }}>{data.photos.length}</b> posts · <b style={{ color: "var(--text)" }}>{fmt(data.account.followers)}</b> followers</div>
-              <div style={{ fontSize: 13, marginTop: 4, whiteSpace: "pre-wrap" }}>{data.account.bio}</div>
+              <EditableBio value={data.account.bio} testid="pica-bio" placeholder="No bio yet — click to write one"
+                onSave={async t => { setData(d => (d ? { ...d, account: { ...d.account, bio: t } } : d)); await api("/api/pica", { action: "bio.set", id, bio: hideSecrets(t).text }).catch(() => {}); }} />
               {data.account.lives && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>📍 {data.account.lives}</div>}
             </div>
           </div>
@@ -774,24 +775,60 @@ function MakeHer({ onClose, onMade }: { onClose: () => void; onMade: (id: string
   );
 }
 
+/**
+ * ✍️ A bio you just click and type in. It saves itself three seconds after you stop typing
+ * (and when you tap away), so there's no Save button to remember.
+ */
+function EditableBio({ value, onSave, testid, placeholder = "No bio yet" }: { value: string; onSave: (t: string) => Promise<void>; testid: string; placeholder?: string }) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(value);
+  const [saved, setSaved] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const last = useRef(value);
+  useEffect(() => { if (!editing) { setText(value); last.current = value; } }, [value, editing]);
+  const save = async (t: string) => {
+    if (t === last.current) return;
+    last.current = t;
+    await onSave(t);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1600);
+  };
+  const typed = (t: string) => {
+    setText(t);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => save(t), 3000);
+  };
+  const done = () => {
+    if (timer.current) clearTimeout(timer.current);
+    setEditing(false);
+    save(text);
+  };
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  if (!editing) return (
+    <div onClick={() => setEditing(true)} data-testid={testid} title="Click to edit"
+      style={{ fontSize: 13, marginTop: 4, whiteSpace: "pre-wrap", cursor: "text", minHeight: 18 }}>
+      {text || <span className="muted">{placeholder}</span>}
+      {saved && <span className="muted" data-testid={`${testid}-saved`} style={{ marginLeft: 6, fontSize: 11 }}>✓ Saved</span>}
+    </div>
+  );
+  return (
+    <div style={{ marginTop: 4 }}>
+      <textarea value={text} onChange={e => typed(e.target.value)} onBlur={done} autoFocus maxLength={300} data-testid={`${testid}-box`}
+        style={{ width: "100%", minHeight: 64, resize: "vertical", padding: "8px 10px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--card)", color: "var(--text)", fontSize: 13 }} placeholder={placeholder} />
+      <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{saved ? "✓ Saved" : "Saves itself a few seconds after you stop typing"}</div>
+    </div>
+  );
+}
+
 /** 🙋 Your own Picagram: your picture, your bio, and everything you've posted. */
 function MyProfile({ name, onClose }: { name: string; onClose: () => void }) {
   type Me = { name: string; bio: string; avatar: string | null; posts: number; following: number; photos: (Photo & { at: string })[] };
   const [me, setMe] = useState<Me | null>(null);
-  const [bio, setBio] = useState("");
-  const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const [view, setView] = useState<Photo | null>(null);
   const pic = useRef<HTMLInputElement>(null);
-  useEffect(() => { api<Me>("/api/pica", { action: "me" }).then(m => { setMe(m); setBio(m.bio); }).catch(() => onClose()); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const saveBio = async () => {
-    setBusy("Saving…"); setErr("");
-    try { const r = await api<{ bio: string }>("/api/pica", { action: "me.bio", bio: hideSecrets(bio).text }); setMe(m => (m ? { ...m, bio: r.bio } : m)); setBio(r.bio); setEditing(false); }
-    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't save your bio."); }
-    setBusy("");
-  };
+  useEffect(() => { api<Me>("/api/pica", { action: "me" }).then(m => setMe(m)).catch(() => onClose()); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const changePic = async (f: File | undefined) => {
     if (!f) return;
     setBusy("Uploading…"); setErr("");
@@ -817,18 +854,8 @@ function MyProfile({ name, onClose }: { name: string; onClose: () => void }) {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 800 }}>{me.name}</div>
               <div className="muted" style={{ fontSize: 13 }}><b style={{ color: "var(--text)" }}>{me.posts}</b> posts · <b style={{ color: "var(--text)" }}>{me.following}</b> following</div>
-              {editing
-                ? <>
-                    <textarea value={bio} onChange={e => setBio(e.target.value)} maxLength={300} data-testid="pica-me-bio" style={{ width: "100%", marginTop: 6, minHeight: 64, resize: "vertical", padding: "8px 10px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--card)", color: "var(--text)", fontSize: 13 }} placeholder="A line or two about you" />
-                    <div className="row" style={{ gap: 8, marginTop: 6 }}>
-                      <button className="btn" onClick={saveBio} disabled={!!busy} data-testid="pica-me-bio-save" style={{ padding: "4px 12px", fontSize: 13 }}>{busy || "Save"}</button>
-                      <button className="ghost" onClick={() => { setBio(me.bio); setEditing(false); }} style={{ padding: "4px 12px", fontSize: 13 }}>Cancel</button>
-                    </div>
-                  </>
-                : <>
-                    <div style={{ fontSize: 13, marginTop: 4, whiteSpace: "pre-wrap" }}>{me.bio || <span className="muted">No bio yet</span>}</div>
-                    <button className="ghost" onClick={() => setEditing(true)} data-testid="pica-me-edit" style={{ marginTop: 6, padding: "4px 12px", fontSize: 13 }}>✍️ Edit bio</button>
-                  </>}
+              <EditableBio value={me.bio} testid="pica-me-bio" placeholder="No bio yet — click to write one"
+                onSave={async t => { setMe(m => (m ? { ...m, bio: t } : m)); await api("/api/pica", { action: "me.bio", bio: hideSecrets(t).text }).catch(() => setErr("Couldn't save your bio.")); }} />
             </div>
           </div>
           {err && <div style={{ color: "var(--bad)", padding: "0 16px 10px", fontSize: 13 }} data-testid="pica-me-err">⚠️ {err}</div>}
