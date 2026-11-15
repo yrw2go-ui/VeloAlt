@@ -625,6 +625,23 @@ export async function picaProfile(userId: string, accountId: string) {
     photos: posts.map(r => ({ media_id: String(r.media_id), url: String(r.url), thumb: r.thumb ? String(r.thumb) : null, caption: String(r.caption || ""), saved: !!r.saved })) };
 }
 
+/**
+ * 🖼️ Her profile picture, on its own. Any picture of hers — one of her posts, or one you upload
+ * just for this — becomes her avatar without touching her posts or deleting anything.
+ */
+export async function picaSetAvatar(userId: string, accountId: string, mediaId: string): Promise<string | null> {
+  const [a] = await sql()`select id, ref_media_ids, mine from pica_accounts where id = ${accountId} and user_id = ${userId}`;
+  if (!a) return null;
+  const [m] = await sql()`select m.id, f.url from velo_media m join velo_files f on f.id = m.file_id
+    where m.id = ${mediaId} and m.user_id = ${userId} and m.kind = 'image' and m.status = 'done'`;
+  if (!m) return null;
+  await sql()`update pica_accounts set avatar_media_id = ${m.id} where id = ${a.id} and user_id = ${userId}`;
+  // 🪪 One you made by hand keeps her face steady from her own pictures: the new one joins them.
+  if (a.mine && !((a.ref_media_ids || []) as string[]).includes(String(m.id)))
+    await sql()`update pica_accounts set ref_media_ids = (coalesce(ref_media_ids, '{}'::uuid[]) || ${m.id}::uuid)[1:6] where id = ${a.id}`;
+  return String(m.url);
+}
+
 /** 🔖 Their own Picagram gallery: pictures they saved. */
 export async function picaSave(userId: string, mediaId: string, on: boolean): Promise<boolean> {
   const [m] = await sql()`select 1 from pica_posts where user_id = ${userId} and media_id = ${mediaId} limit 1`;

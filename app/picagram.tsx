@@ -291,7 +291,7 @@ function Composer({ onClose, onPosted }: { onClose: () => void; onPosted: () => 
 type Photo = { media_id: string; url: string; thumb: string | null; caption?: string; saved: boolean; at?: string };
 
 /** 🖼️ A picture, full screen, with Save. */
-function Viewer({ photo, onClose, onSaved, onRedo }: { photo: Photo; onClose: () => void; onSaved: (on: boolean) => void; onRedo?: (mediaId: string) => void }) {
+function Viewer({ photo, onClose, onSaved, onRedo, onAvatar }: { photo: Photo; onClose: () => void; onSaved: (on: boolean) => void; onRedo?: (mediaId: string) => void; onAvatar?: (mediaId: string) => void }) {
   const [saved, setSaved] = useState(photo.saved);
   const toggle = async () => { const on = !saved; setSaved(on); onSaved(on); await api("/api/pica", { action: "save", id: photo.media_id, on }).catch(() => { setSaved(!on); onSaved(!on); }); };
   return (
@@ -301,6 +301,7 @@ function Viewer({ photo, onClose, onSaved, onRedo }: { photo: Photo; onClose: ()
       <When at={photo.at} align="center" />
       <div className="row" style={{ gap: 10 }} onClick={e => e.stopPropagation()}>
         <button className={saved ? "ghost" : "btn"} onClick={toggle} data-testid="pica-viewer-save">{saved ? "🔖 Saved" : "📑 Save"}</button>
+        {onAvatar && <button className="ghost" onClick={() => onAvatar(photo.media_id)} data-testid="pica-viewer-avatar">🖼 Profile picture</button>}
         {onRedo && <button className="ghost" onClick={() => onRedo(photo.media_id)} data-testid="pica-viewer-redo">↻ Redo</button>}
         <button className="ghost" onClick={onClose}>Close</button>
       </div>
@@ -350,7 +351,24 @@ function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: 
   // ↻ Redo: the picture being replaced, and a note while the new one is on its way.
   const [redo, setRedo] = useState<string | null>(null);
   const [redoing, setRedoing] = useState("");
+  // 🖼️ Her profile picture on its own: one of her photos, or one you upload just for it.
+  const pic = useRef<HTMLInputElement>(null);
+  const [picBusy, setPicBusy] = useState("");
   const reload = () => api<NonNullable<typeof data>>("/api/pica", { action: "profile", id }).then(d => { setData(d); setHidden(d.account.hidden); }).catch(() => {});
+  const setAvatar = async (mediaId: string) => {
+    setErr(""); setPicBusy("…");
+    try {
+      const r = await api<{ avatar: string }>("/api/pica", { action: "avatar.set", id, mediaId });
+      setData(d => (d ? { ...d, account: { ...d.account, avatar: r.avatar, avatar_media_id: mediaId } } : d));
+    } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't change her profile picture."); }
+    setPicBusy("");
+  };
+  const uploadAvatar = async (f: File | undefined) => {
+    if (!f) return;
+    setErr(""); setPicBusy("…");
+    try { const up = await uploadPicaPicture(f); await setAvatar(up.mediaId); }
+    catch (e) { setErr(e instanceof Error ? e.message : "That picture didn't upload."); setPicBusy(""); }
+  };
   useEffect(() => { api<NonNullable<typeof data>>("/api/pica", { action: "profile", id }).then(d => { setData(d); setHidden(d.account.hidden); }).catch(() => onClose()); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
   const follow = async () => {
     if (!data) return;
@@ -370,8 +388,10 @@ function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: 
           <div className="row" style={{ gap: 16, padding: 16 }}>
             <div style={{ textAlign: "center" }}>
               <Avatar name={data.account.name} url={data.account.avatar} size={76} />
+              <button className="ghost" onClick={() => pic.current?.click()} disabled={!!picBusy} data-testid="pica-avatar-change" style={{ display: "block", marginTop: 6, padding: "3px 8px", fontSize: 11 }}>{picBusy || "Change"}</button>
+              <input ref={pic} type="file" accept="image/jpeg,image/png,image/webp" hidden data-testid="pica-avatar-file" onChange={e => uploadAvatar(e.target.files?.[0])} />
               {data.account.avatar_media_id && (
-                <button className="ghost" onClick={() => setRedo(data.account.avatar_media_id!)} data-testid="pica-redo-avatar" style={{ display: "block", marginTop: 6, padding: "3px 8px", fontSize: 11 }}>↻ Redo</button>
+                <button className="ghost" onClick={() => setRedo(data.account.avatar_media_id!)} data-testid="pica-redo-avatar" style={{ display: "block", marginTop: 4, padding: "3px 8px", fontSize: 11 }}>↻ Redo</button>
               )}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -402,7 +422,7 @@ function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: 
           {!data.photos.length && <div className="muted" style={{ textAlign: "center", padding: 24 }}>No photos yet</div>}
         </div>
       )}
-      {view && <Viewer photo={view} onClose={() => setView(null)} onRedo={m => { setView(null); setRedo(m); }}
+      {view && <Viewer photo={view} onClose={() => setView(null)} onRedo={m => { setView(null); setRedo(m); }} onAvatar={m => { setView(null); setAvatar(m); }}
         onSaved={on => setData(d => (d ? { ...d, photos: d.photos.map(x => (x.media_id === view.media_id ? { ...x, saved: on } : x)) } : d))} />}
       {redo && <RedoSheet mediaId={redo} who={data?.account.name || "her"} onClose={() => setRedo(null)}
         onGoing={() => { setRedo(null); setRedoing("↻ Making the new one — about a minute. It takes this one's place when it lands."); setTimeout(reload, 60_000); }} />}
