@@ -105,7 +105,9 @@ const ASKED_FOR_MEDIA = /\b(send|show|share|snap|take|got|get|see|want|wanna|mak
 const YES = /^\s*(yes|yeah|yep|yup|ya|sure|ok(ay)?|please|pls|plz|of course|absolutely|definitely|do it|go ahead|i'?d love (that|one|to)|send it|why not|try (it |that )?again|retry|resend)\b/i;
 const MENTIONS_MEDIA = /\b(phone|pics?|pictures?|photos?|selfies?|videos?|vids?|clips?|snaps?|show you|send you)\b/i;
 
-export interface AskResult { reply: string; changed: boolean; drafts: Draft[]; media: Media[]; saved?: boolean; react?: string; by?: "claude" | "alt"; note?: string }
+/** 📸 A picture they asked for, waiting on them: they see the prompt, then send it, change it or drop it. */
+export type PhotoAsk = { kind: "image" | "video"; description: string; with_me: boolean; with_them: boolean; of_person: string; same_moment: boolean };
+export interface AskResult { reply: string; changed: boolean; drafts: Draft[]; media: Media[]; saved?: boolean; react?: string; ask?: PhotoAsk; by?: "claude" | "alt"; note?: string }
 
 // 😮 Reactions (shown as a little badge on their message, like a text-message tapback).
 import { REACTIONS as REACTION_LIST } from "./reactions";
@@ -329,6 +331,8 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
   // Runs one of Velo's own tools (the same for every model). (`name` here is the tool's name —
   // the person's own name is kept as theirName, since it's needed for a picture of the two of them.)
   const theirName = name;
+  // 📸 The picture they asked for, waiting on them to send it.
+  let ask: { kind: "image" | "video"; description: string; with_me: boolean; with_them: boolean; of_person: string; same_moment: boolean } | undefined;
   const runTool = async (name: string, input: unknown): Promise<{ content: string; isError?: boolean }> => {
     try {
       const out = name === "send_media" && canSend ? await (async () => {
@@ -344,6 +348,21 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
             const mine = await myRefs(caller.userId).catch(() => []);
             if (!mine.length) throw new MediaError(`There's no photo of ${theirName || "them"} to work from. Say you'd need a picture of them first (Settings → About you) and offer one of just you instead.`);
             other = { name: theirName || "them", refs: mine, appearance: String(u?.bio_photo_note || "") };
+          }
+          // 📸 Asked for: they see exactly what's going to the picture service, and send it (or
+          // change it, or drop it) themselves — the same two steps as a peek. Her own idea is
+          // still just an offer.
+          if (asked && mode === "chat") {
+            const i = input as { kind?: unknown; description?: unknown; with_me?: unknown; with_them?: unknown; of_person?: unknown; same_moment?: unknown };
+            ask = {
+              kind: i.kind === "video" ? "video" : "image",
+              description: scrubText(String(i.description || "")).replace(/\s+/g, " ").trim().slice(0, 1500),
+              with_me: i.with_me !== false, with_them: i.with_them === true,
+              of_person: typeof i.of_person === "string" ? i.of_person.slice(0, 60) : "",
+              same_moment: i.same_moment === true,
+            };
+            if (!ask.description) { ask = undefined; throw new MediaError("Say what the picture shows first."); }
+            return { ok: true, tell_them: `They'll see exactly what you're sending and send it off themselves — say you're sending it (${ask.kind === "image" ? "a photo" : "a short video"}) and keep the conversation going.` };
           }
           const m = await startMedia(caller.userId, input, { characterId: cid, who: ch?.name || "Velo", appearance: ch?.appearance || "", refs, romantic, mood: ch ? mediaMood(ch.traits) : "", offer: !asked, other });
           media.push(m);
@@ -421,7 +440,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
         if (out.isError) note = out.content.replace(/ Tell them[\s\S]*$/, "").slice(0, 200);
       }
     } catch (e) { console.error("velo: send the pic", e instanceof Error ? e.message : e); note = "Couldn't send it right now — try again in a moment."; }
-    return { reply: "", changed: false, drafts, media, ...(note ? { note } : {}) };
+    return { reply: "", changed: false, drafts, media, ...(ask ? { ask } : {}), ...(note ? { note } : {}) };
   }
   let answered = false;
   const tryOrder = herChain.length ? herChain : alt ? [alt] : [];
@@ -542,7 +561,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; mode:
   reply = cleanReply(reply);
   const onlyThoughts = !reply && thoughtsOnly;
   if (!reply && media?.length) reply = media.some(m => m.kind === "video") ? "Here you go 😊" : "Here you go — what do you think? 😊";
-  return { reply: reply || ((react || onlyThoughts) && mode === "chat" ? "" : errand ? "Sorry, could you say that again?" : "Sorry, I lost my train of thought — could you say that again?"), changed, drafts, media, ...(mode === "chat" && react ? { react } : {}), by: answeredByAlt ? "alt" : "claude" };
+  return { reply: reply || ((react || onlyThoughts) && mode === "chat" ? "" : errand ? "Sorry, could you say that again?" : "Sorry, I lost my train of thought — could you say that again?"), changed, drafts, media, ...(ask ? { ask } : {}), ...(mode === "chat" && react ? { react } : {}), by: answeredByAlt ? "alt" : "claude" };
 }
 
 // 🔎 For Qwen / DeepSeek: web search is a tool they call, answered by Claude with

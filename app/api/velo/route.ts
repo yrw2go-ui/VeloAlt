@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
       await sql()`insert into velo_messages (user_id, role, content, media_id, character_id, created_at)
         values (${caller.userId}, 'assistant', ${mediaNote(m.kind, m.status, m.description, null, m.subject)}, ${m.id}, ${character?.id || null}, now() + ${`${2000 + i} milliseconds`}::interval)`;
     }
-    return NextResponse.json({ reply: r.reply, ...(replyId ? { replyId } : {}), ...(r.changed ? { changed: true } : {}), ...(r.drafts.length ? { drafts: r.drafts } : {}), ...(r.media.length ? { media: r.media } : {}), ...(r.react ? { react: r.react } : {}), ...(r.by ? { by: r.by } : {}), ...(r.note ? { note: r.note } : {}) });
+    return NextResponse.json({ reply: r.reply, ...(replyId ? { replyId } : {}), ...(r.changed ? { changed: true } : {}), ...(r.drafts.length ? { drafts: r.drafts } : {}), ...(r.media.length ? { media: r.media } : {}), ...(r.ask ? { ask: r.ask } : {}), ...(r.react ? { react: r.react } : {}), ...(r.by ? { by: r.by } : {}), ...(r.note ? { note: r.note } : {}) });
   } catch (e) {
     if (e instanceof CharacterGone) return NextResponse.json({ error: "That character was deleted." }, { status: 404 });
     const { error, status } = aiError(e);

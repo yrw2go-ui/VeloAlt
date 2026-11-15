@@ -403,7 +403,15 @@ function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: 
               <div className="muted" style={{ fontSize: 13 }}><b style={{ color: "var(--text)" }}>{data.photos.length}</b> posts · <b style={{ color: "var(--text)" }}>{fmt(data.account.followers)}</b> followers</div>
               <EditableBio value={data.account.bio} testid="pica-bio" placeholder="No bio yet — click to write one"
                 onSave={async t => { setData(d => (d ? { ...d, account: { ...d.account, bio: t } } : d)); await api("/api/pica", { action: "bio.set", id, bio: hideSecrets(t).text }).catch(() => {}); }} />
-              {data.account.lives && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>📍 {data.account.lives}</div>}
+              {data.account.character_id
+                ? data.account.lives && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>📍 {data.account.lives}</div>
+                : <div className="row" style={{ gap: 4, fontSize: 12, marginTop: 2 }}>
+                    <span className="muted">📍</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <EditableBio value={data.account.lives} testid="pica-lives" placeholder="Where she lives" max={120}
+                        onSave={async t => { setData(d => (d ? { ...d, account: { ...d.account, lives: t } } : d)); await api("/api/pica", { action: "lives.set", id, lives: hideSecrets(t).text }).catch(() => {}); }} />
+                    </div>
+                  </div>}
             </div>
           </div>
           <div className="row" style={{ padding: "0 16px 12px", gap: 8 }}>
@@ -631,11 +639,24 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
     const tmp: DmMsg = { id: `tmp-${Date.now()}`, role: "user", content: t, created_at: new Date().toISOString(), media: null };
     setMsgs(m => [...(m || []), tmp]);
     try {
-      const r = await api<{ added: DmMsg[]; note?: string }>("/api/pica", { action: "dm.send", id, text: t });
+      const r = await api<{ added: DmMsg[]; note?: string; ask?: string }>("/api/pica", { action: "dm.send", id, text: t });
       setMsgs(m => [...(m || []).filter(x => x !== tmp), ...r.added]);
       if (r.note) setErr(r.note);
+      if (r.ask) setAsk(r.ask);
     } catch (e) { setErr(e instanceof Error ? e.message : "Didn't send."); setMsgs(m => (m || []).filter(x => x !== tmp)); setText(t); }
     setBusy(false);
+  };
+  // 📸 Her photo: you see exactly what's going to the picture service, and send it yourself.
+  const [ask, setAsk] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
+  const sendAsk = async (description: string) => {
+    setAsking(true); setErr("");
+    try {
+      const r = await api<{ added: DmMsg[]; note?: string }>("/api/pica", { action: "dm.photo.make", id, description });
+      setAsk(null);
+      if (r.added.length) setMsgs(m => [...(m || []), ...r.added]); else setErr(r.note || "Couldn't send it.");
+    } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't send it."); setAsk(null); }
+    setAsking(false);
   };
   // 📸 She said she's sending a photo but none came through.
   const last = (msgs || []).at(-1);
@@ -643,7 +664,7 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
     && /\b(pic|pics|picture|photo|selfie|snap)\b/i.test(last.content) && /\b(send|sending|sent|here'?s|here you go|coming|on (its|it's) way|incoming|let me)\b/i.test(last.content);
   const sendPic = async () => {
     setBusy(true); setErr("");
-    try { const r = await api<{ added: DmMsg[]; note?: string }>("/api/pica", { action: "dm.photo", id }); if (r.added.length) setMsgs(m => [...(m || []), ...r.added]); else setErr(r.note || "Couldn't send it."); }
+    try { const r = await api<{ added: DmMsg[]; note?: string; ask?: string }>("/api/pica", { action: "dm.photo", id }); if (r.ask) setAsk(r.ask); else if (r.added.length) setMsgs(m => [...(m || []), ...r.added]); else setErr(r.note || "Couldn't send it."); }
     catch (e) { setErr(e instanceof Error ? e.message : "Couldn't send it."); }
     setBusy(false);
   };
@@ -675,6 +696,7 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
         {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
         <div ref={end} />
       </div>
+      {ask !== null && <DmAskSheet who={acc?.name || "She"} description={ask} busy={asking} onChange={setAsk} onSend={sendAsk} onClose={() => setAsk(null)} />}
       {mySheet && <MyPhotoSheet title={`Send ${acc?.name || "her"} a photo of you`} draft={a => api<{ description: string }>("/api/pica", { action: "dm.me.draft", id, about: a }).then(r => r.description)}
         onMake={async d => { const r = await api<{ added: DmMsg[] }>("/api/pica", { action: "dm.me.photo", id, description: d }); setMsgs(m => [...(m || []), ...r.added]); setMySheet(false); }} onClose={() => setMySheet(false)} />}
       {pendingPic && <div style={{ padding: "0 12px 6px" }}><button className="ghost" onClick={sendPic} data-testid="dm-send-pic" style={{ padding: "6px 12px", fontSize: 13, borderColor: "#ec4899" }}>📸 {acc?.name || "She"} didn&apos;t send it — send the pic</button></div>}
@@ -688,6 +710,27 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
 }
 
 /** 📸 A photo of you: the description first (like a peek), then exactly that — with your photos as reference. */
+/** 📸 A photo she's about to send: the prompt first, the same as a peek. */
+function DmAskSheet({ who, description, busy, onChange, onSend, onClose }: { who: string; description: string; busy: boolean; onChange: (d: string) => void; onSend: (d: string) => void; onClose: () => void }) {
+  return (
+    <div role="dialog" aria-modal="true" data-testid="dm-ask-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2700 }} onClick={onClose}>
+      <div className="card" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          <div style={{ fontWeight: 800, fontSize: 17 }}>📸 {who}&apos;s photo</div>
+          <button type="button" className="ghost" onClick={onClose} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
+        </div>
+        <div className="muted" style={{ fontSize: 12 }}>This goes to the picture service exactly as it reads. Change anything you like, or send it as it is.</div>
+        <textarea value={description} onChange={e => onChange(e.target.value)} maxLength={1500} autoFocus data-testid="dm-ask-prompt"
+          style={{ width: "100%", minHeight: 110, resize: "vertical", padding: "8px 10px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--card)", color: "var(--text)", fontSize: 14 }} />
+        <div className="row" style={{ gap: 8 }}>
+          <button type="button" className="ghost" onClick={onClose} disabled={busy} data-testid="dm-ask-cancel" style={{ padding: "10px 14px" }}>Cancel</button>
+          <button type="button" className="btn" onClick={() => onSend(description)} disabled={busy || description.trim().length < 5} data-testid="dm-ask-send" style={{ flex: 1, padding: "10px 14px" }}>{busy ? "…" : "Send it"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MyPhotoSheet({ title, draft, onMake, onClose }: { title: string; draft: (about: string) => Promise<string>; onMake: (d: string) => Promise<void>; onClose: () => void }) {
   const [about, setAbout] = useState("");
   const [desc, setDesc] = useState("");
@@ -835,7 +878,7 @@ function MakeHer({ onClose, onMade }: { onClose: () => void; onMade: (id: string
  * ✍️ A bio you just click and type in. It saves itself three seconds after you stop typing
  * (and when you tap away), so there's no Save button to remember.
  */
-function EditableBio({ value, onSave, testid, placeholder = "No bio yet" }: { value: string; onSave: (t: string) => Promise<void>; testid: string; placeholder?: string }) {
+function EditableBio({ value, onSave, testid, placeholder = "No bio yet", max = 300 }: { value: string; onSave: (t: string) => Promise<void>; testid: string; placeholder?: string; max?: number }) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(value);
   const [saved, setSaved] = useState(false);
@@ -869,8 +912,8 @@ function EditableBio({ value, onSave, testid, placeholder = "No bio yet" }: { va
   );
   return (
     <div style={{ marginTop: 4 }}>
-      <textarea value={text} onChange={e => typed(e.target.value)} onBlur={done} autoFocus maxLength={300} data-testid={`${testid}-box`}
-        style={{ width: "100%", minHeight: 64, resize: "vertical", padding: "8px 10px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--card)", color: "var(--text)", fontSize: 13 }} placeholder={placeholder} />
+      <textarea value={text} onChange={e => typed(e.target.value)} onBlur={done} autoFocus maxLength={max} data-testid={`${testid}-box`}
+        style={{ width: "100%", minHeight: max > 150 ? 64 : 34, resize: "vertical", padding: "8px 10px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--card)", color: "var(--text)", fontSize: 13 }} placeholder={placeholder} />
       <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{saved ? "✓ Saved" : "Saves itself a few seconds after you stop typing"}</div>
     </div>
   );

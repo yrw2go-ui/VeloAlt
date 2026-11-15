@@ -741,6 +741,16 @@ JSON only: {"personality":"...","traits":{${TRAITS.map(t => `"${t.key}":5`).join
     where id = ${a.id} and user_id = ${userId} and coalesce(personality, '') = ''`;
 }
 
+/** 📍 Where she lives, yours to change — the same rule as her personality: not once she's a character. */
+export async function picaLives(userId: string, accountId: string, lives: string): Promise<string | "friend" | null> {
+  const [a] = await sql()`select id, character_id from pica_accounts where id = ${accountId} and user_id = ${userId}`;
+  if (!a) return null;
+  if (a.character_id) return "friend";
+  const text = scrub(lives).replace(/\s+/g, " ").trim().slice(0, 120);
+  await sql()`update pica_accounts set lives = ${text || null} where id = ${a.id} and user_id = ${userId}`;
+  return text;
+}
+
 /**
  * 🎭 Her personality: a description and the nine sliders, yours to write. Never for someone you've
  * befriended — she's a character now, so hers live on her character card.

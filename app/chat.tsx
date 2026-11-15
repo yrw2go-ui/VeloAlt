@@ -233,7 +233,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     const me = retry ? turn.current : ++turn.current;
     if (!retry || retry === 1) { setBusy(true); setErr(""); }
     try {
-      const r = await api<{ reply: string; replyId?: string; changed?: boolean; drafts?: Draft[]; media?: Media[]; react?: string; brainDown?: boolean; by?: "claude" | "alt" }>("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name, ...thread, saveReply: true, ...(myId ? { replyTo: myId } : {}), ...(retry ? { retry: true } : {}) });
+      const r = await api<{ reply: string; replyId?: string; changed?: boolean; drafts?: Draft[]; media?: Media[]; react?: string; ask?: { kind: "image" | "video"; description: string; with_me: boolean; with_them: boolean; of_person: string; same_moment: boolean }; brainDown?: boolean; by?: "claude" | "alt" }>("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name, ...thread, saveReply: true, ...(myId ? { replyTo: myId } : {}), ...(retry ? { retry: true } : {}) });
       if (turn.current !== me) return;
       if (r.brainDown) {
         setBusy(false);
@@ -254,6 +254,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
         if (r.by === "alt" && lastMark === "⏰") await marker("back");
       }
       if (r.react) setMsgs(list => (list || []).map(x => (x.id && x.id === myId ? { ...x, theirReaction: r.react } : x)));
+      if (r.ask) setAsk(r.ask);
       // 🎨 Photos/videos being made show up right under the reply and fill in when ready.
       const sent: ChatMsg[] = (r.media || []).filter(x => x.status !== "failed").map(media => ({ at: new Date().toISOString(), role: "assistant", content: mediaNote(media), media }));
       // A reaction on its own (no words): the badge on their message is the whole answer.
@@ -278,6 +279,20 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   // 🧍 Together in person (not a scene): she talks face to face, and 👁️ ICU works.
   type InPerson = { place: string; started_at: string };
   const [inPerson, setInPerson] = useState<InPerson | null>(null);
+  // 📸 A picture you asked for: the prompt comes to you first, like a peek.
+  const [ask, setAsk] = useState<{ kind: "image" | "video"; description: string; with_me: boolean; with_them: boolean; of_person: string; same_moment: boolean } | null>(null);
+  const [asking, setAsking] = useState(false);
+  const sendAsk = async (description: string) => {
+    if (!ask) return;
+    setAsking(true);
+    try {
+      const r = await data<{ media: Media; messageId: string }>("photo.make", { ...ask, description, ...thread });
+      setAsk(null);
+      setMsgs(list => [...(list || []), { id: r.messageId, at: new Date().toISOString(), role: "assistant", content: mediaNote(r.media), media: r.media }]);
+    } catch (e) { setErr(e instanceof Error ? e.message : "That picture didn't go through."); setAsk(null); }
+    setAsking(false);
+  };
+
   const [togetherSheet, setTogetherSheet] = useState<{ place: string; busy: boolean; error?: string } | null>(null);
   const startTogether = async (place: string) => {
     setTogetherSheet(t => (t ? { ...t, busy: true, error: undefined } : t));
@@ -415,7 +430,9 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   const sendPic = async () => {
     setPicBusy(true); setErr("");
     try {
-      const r = await api<{ media?: Media[]; note?: string }>("/api/velo", { mode: "chat", messages: realMsgs(msgsRef.current), timeZone: timeZone(), name, ...thread, sendPhoto: true });
+      const r = await api<{ media?: Media[]; note?: string; ask?: typeof ask }>("/api/velo", { mode: "chat", messages: realMsgs(msgsRef.current), timeZone: timeZone(), name, ...thread, sendPhoto: true });
+      // 📸 The prompt comes to you first, the same as any photo you asked for.
+      if (r.ask) { setAsk(r.ask); setPicBusy(false); return; }
       const sent: ChatMsg[] = (r.media || []).filter(x => x.status !== "failed").map(media => ({ role: "assistant", content: mediaNote(media), media }));
       if (sent.length) setMsgs(m => [...(m || []), ...sent]);
       else setErr(r.note || `${who} couldn't send it — try again in a moment.`);
@@ -654,6 +671,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
           </form>
         </div>
       )}
+      {ask && <AskSheet who={who} ask={ask} busy={asking} onChange={d => setAsk(a => (a ? { ...a, description: d } : a))} onSend={sendAsk} onClose={() => setAsk(null)} />}
       {peekSheet && character && <PeekSheet who={character.name} sheet={peekSheet} brains={brains} theirs={character.brain === "claude" ? "" : character.brain || ""} onChange={d => setPeekSheet(p => (p ? { ...p, description: d } : p))} onWriter={w => setPeekSheet(p => (p ? { ...p, writer: w } : p))} onRewrite={rewritePeek} onSend={sendPeek} onClose={() => setPeekSheet(null)} />}
       {sceneSheet && character && <SceneSheet key={fromPlan?.id || "new"} who={character.name} plan={fromPlan} onClose={() => { setSceneSheet(false); setFromPlan(null); }} onStart={startScene} />}
       <div data-testid="chat-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -855,6 +873,33 @@ export function FileThumb({ f, size }: { f: { url: string; thumb?: string | null
 /** 🎬 Set up a scene: play it out now, or say it already happened. */
 /** 👀 The peek, before it's made: it opens empty — ↻ Write has an AI (hers by default) write what
  *  you'd see, ↻ again rewrites it — and you can type or fix anything yourself before it's made. */
+/**
+ * 📸 A picture you asked her for: you see exactly what's going to the picture service first, the
+ * same as a peek. Send it as it is, change a line, or drop it.
+ */
+function AskSheet({ who, ask, busy, onChange, onSend, onClose }: {
+  who: string; ask: { kind: "image" | "video"; description: string }; busy: boolean;
+  onChange: (d: string) => void; onSend: (d: string) => void; onClose: () => void;
+}) {
+  return (
+    <div role="dialog" aria-modal="true" data-testid="ask-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }} onClick={onClose}>
+      <div className="card" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          <div style={{ fontWeight: 800, fontSize: 17 }}>📸 {who}&apos;s {ask.kind === "image" ? "photo" : "video"}</div>
+          <button type="button" className="ghost" onClick={onClose} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
+        </div>
+        <div className="muted" style={{ fontSize: 12 }}>This goes to the picture service exactly as it reads. Change anything you like, or send it as it is.</div>
+        <textarea value={ask.description} onChange={e => onChange(e.target.value)} maxLength={1500} autoFocus data-testid="ask-prompt"
+          style={{ width: "100%", minHeight: 110, resize: "vertical", padding: "8px 10px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--card)", color: "var(--text)", fontSize: 14 }} />
+        <div className="row" style={{ gap: 8 }}>
+          <button type="button" className="ghost" onClick={onClose} disabled={busy} data-testid="ask-cancel" style={{ padding: "10px 14px" }}>Cancel</button>
+          <button type="button" className="btn" onClick={() => onSend(ask.description)} disabled={busy || ask.description.trim().length < 5} data-testid="ask-send" style={{ flex: 1, padding: "10px 14px" }}>{busy ? "…" : "Send it"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PeekSheet({ who, sheet, brains, theirs, onChange, onWriter, onRewrite, onSend, onClose }: { who: string; sheet: { description: string; loading: boolean; error?: string; icu?: boolean; writer: string }; brains: string[]; theirs: string; onChange: (d: string) => void; onWriter: (w: string) => void; onRewrite: () => void; onSend: (d: string) => void; onClose: () => void }) {
   // Who can write it: Claude, plus the Atlas brains this server has set up. Hers is the default.
   const options = [{ id: "", label: "Claude (same as Velo)" }, ...BRAIN_OPTIONS.filter(o => o.atlas && (brains.includes(o.id) || o.id === theirs)).map(o => ({ id: o.id as string, label: o.label as string }))];

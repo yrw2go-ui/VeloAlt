@@ -3,8 +3,8 @@ import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import { sql } from "../../lib/db";
 import { MediaError, mediaReady } from "../../lib/media";
-import { dmThreads, dmUnread, dmOpen, dmSend, dmSendPhoto, dmBrain, dmMyPhotoDraft, dmMyPhoto, DmError } from "../../lib/picaDm";
-import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSetAvatar, picaSavedList, picaFollowing, picaBefriend, picaCounts, picaDeletePost, picaCreateAccount, picaPictureAbout, picaRedoDraft, picaRedo, picaWithMe, picaMe, picaMeBio, picaBio, picaPersona, picaCharacters, picaHide, accountFor, picaNew, picaFromPhoto, myPhotoDraft, newFaces, picaDeleteAccount, PicaLimit } from "../../lib/picagram";
+import { dmThreads, dmUnread, dmOpen, dmSend, dmSendPhoto, dmPhotoMake, dmBrain, dmMyPhotoDraft, dmMyPhoto, DmError } from "../../lib/picaDm";
+import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSetAvatar, picaSavedList, picaFollowing, picaBefriend, picaCounts, picaDeletePost, picaCreateAccount, picaPictureAbout, picaRedoDraft, picaRedo, picaWithMe, picaMe, picaMeBio, picaBio, picaPersona, picaLives, picaCharacters, picaHide, accountFor, picaNew, picaFromPhoto, myPhotoDraft, newFaces, picaDeleteAccount, PicaLimit } from "../../lib/picagram";
 
 // 📸 Picagram. POST { action, ... }:
 //   feed { before? } → { posts }   (a few at a time; today's and missed days' posts are made as needed)
@@ -61,6 +61,11 @@ export async function POST(req: NextRequest) {
         if (!UUID.test(id)) return bad("Unknown account.");
         if (!allow(`pica-dm:${me}`, [{ ms: 60_000, max: 15 }, { ms: 86_400_000, max: 600 }])) return bad("Slow down a little — try again in a bit.", 429);
         return NextResponse.json(b.action === "dm.photo" ? await dmSendPhoto(me, id) : await dmSend(me, id, String(b.text || "")));
+      }
+      // 📸 Her photo in the DMs, sent the way a peek is: exactly what you've got in front of you.
+      case "dm.photo.make": {
+        if (!UUID.test(id)) return bad("Unknown account.");
+        return NextResponse.json(await dmPhotoMake(me, id, String(b.description || "")));
       }
       case "new": return NextResponse.json({ n: await picaNew(me), dms: await dmUnread(me) });
       // ✨ New women, posting right now (on top of the ones who show up on their own each day).
@@ -128,6 +133,12 @@ export async function POST(req: NextRequest) {
         const r = await picaPersona(me, id, String(b.personality || ""), b.traits);
         if (r === "friend") return bad("She's one of your characters now — change her in her character card.");
         return r ? NextResponse.json(r) : bad("Unknown account.");
+      }
+      case "lives.set": {
+        if (!UUID.test(id)) return bad("Unknown account.");
+        const r = await picaLives(me, id, String(b.lives || ""));
+        if (r === "friend") return bad("She's one of your characters now — change where she lives in her character card.");
+        return r === null ? bad("Unknown account.") : NextResponse.json({ lives: r });
       }
       case "bio.set": {
         if (!UUID.test(id)) return bad("Unknown account.");

@@ -90,9 +90,9 @@ export async function dmOpen(userId: string, accountId: string) {
     messages: await messages(userId, accountId) };
 }
 
-async function sendPhotoOf(userId: string, a: Record<string, unknown>, description: string, adult: boolean): Promise<Media> {
+async function sendPhotoOf(userId: string, a: Record<string, unknown>, description: string, adult: boolean, raw = false): Promise<Media> {
   return startMedia(userId, { kind: "image", with_me: true, they_asked: true, description },
-    { characterId: null, who: String(a.name), appearance: String(a.look || ""), refs: await refsOf(a), romantic: adult, offer: false, other: null, pica: true });
+    { characterId: null, who: String(a.name), appearance: String(a.look || ""), refs: await refsOf(a), romantic: adult, offer: false, other: null, pica: true, ...(raw ? { raw: true } : {}) });
 }
 async function addDm(userId: string, accountId: string, role: "user" | "assistant", content: string, mediaId: string | null = null, delayMs = 0): Promise<Dm> {
   const [r] = await sql()`insert into pica_dms (user_id, account_id, role, content, media_id, created_at, read_at)
@@ -113,7 +113,7 @@ async function describePhoto(a: Record<string, unknown>, u: { name: string; now:
 }
 
 /** 💬 They send a DM; she answers in her own voice (and sometimes with a photo of herself). */
-export async function dmSend(userId: string, accountId: string, text: string): Promise<{ added: Dm[]; note?: string }> {
+export async function dmSend(userId: string, accountId: string, text: string): Promise<{ added: Dm[]; note?: string; ask?: string }> {
   const a = await account(userId, accountId);
   const t = scrub(text).trim().slice(0, 2000);
   if (!t) throw new DmError("Say something first.");
@@ -139,25 +139,34 @@ export async function dmSend(userId: string, accountId: string, text: string): P
   if (!(j.photo && String(j.photo).trim()) && CLAIMS_PHOTO.test(reply) && !REFUSES_PHOTO.test(reply)) {
     j.photo = await describePhoto(a, u, [...history, added[1]]).catch(e => { console.warn("pica dm: describe", e instanceof Error ? e.message : e); return ""; });
   }
-  if (j.photo && String(j.photo).trim()) {
-    try { const m = await sendPhotoOf(userId, a, scrub(String(j.photo)).slice(0, 600), u.adult); added.push({ ...(await addDm(userId, accountId, "assistant", "", m.id, 5)), media: m }); }
-    catch (e) { note = e instanceof MediaError ? e.message.replace(/ Tell them[\s\S]*$/, "") : "Her photo didn't go through."; console.warn("pica dm: photo", e instanceof Error ? e.message : e); }
-  }
+  // 📸 She's sending a photo: you see exactly what's going to the picture service first, and send
+  // it yourself — the same two steps as a peek.
+  const ask = j.photo && String(j.photo).trim() ? scrub(String(j.photo)).replace(/\s+/g, " ").trim().slice(0, 600) : "";
   await sql()`update pica_dms set read_at = now() where user_id = ${userId} and account_id = ${accountId} and read_at is null`;
   // 🧠 Every few messages she files away what matters (it goes with her if you befriend her).
   const [{ n }] = await sql()`select count(*)::int as n from pica_dms where user_id = ${userId} and account_id = ${accountId} and role = 'user'`;
   if (n % 4 === 0) await remember(userId, a, [...history, ...added.slice(1)], u.name, mem, brainOf(a, u.chatModel), u.now, u.today).catch(e => console.error("pica dm: remember", e instanceof Error ? e.message : e));
-  return { added, ...(note ? { note } : {}) };
+  return { added, ...(note ? { note } : {}), ...(ask ? { ask } : {}) };
 }
 
 /** 📸 "Send the pic": she said she'd send a photo but none came — she sends it now. */
-export async function dmSendPhoto(userId: string, accountId: string): Promise<{ added: Dm[]; note?: string }> {
+export async function dmSendPhoto(userId: string, accountId: string): Promise<{ added: Dm[]; note?: string; ask?: string }> {
   const a = await account(userId, accountId);
   const u = await userInfo(userId);
   const history = await messages(userId, accountId, 30);
-  const photo = scrub((await describePhoto(a, u, history).catch(() => "")) || `${a.name} taking a selfie, smiling at the camera`).slice(0, 600);
+  const photo = scrub((await describePhoto(a, u, history).catch(() => "")) || `${a.name} taking a selfie, smiling at the camera`).replace(/\s+/g, " ").trim().slice(0, 600);
+  // 📸 You see what she's sending before it's made, and send it yourself.
+  return { added: [], ask: photo };
+}
+
+/** 📸 Send it: exactly what you've got in front of you goes to the picture service, like a peek. */
+export async function dmPhotoMake(userId: string, accountId: string, description: string): Promise<{ added: Dm[]; note?: string }> {
+  const a = await account(userId, accountId);
+  const u = await userInfo(userId);
+  const photo = scrub(description).replace(/\s+/g, " ").trim().slice(0, 1500);
+  if (photo.length < 5) throw new DmError("Say what the picture shows.");
   try {
-    const m = await sendPhotoOf(userId, a, photo, u.adult);
+    const m = await sendPhotoOf(userId, a, photo, u.adult, true);
     const d = await addDm(userId, accountId, "assistant", "", m.id);
     await sql()`update pica_dms set read_at = now() where id = ${d.id}`;
     return { added: [{ ...d, media: m }] };

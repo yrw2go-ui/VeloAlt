@@ -25,9 +25,11 @@ import { BIO_SECTIONS, BIO_MAX } from "../../lib/bioSections";
 import { availableModels, availableBrains, CHAT_MODELS, MODEL_INFO, type ChatModel } from "../../lib/models";
 import { PERSONALITIES } from "../../lib/persona";
 import { deleteFile, ownFile } from "../../lib/files";
-import { getCharacterFor, trustFor, happyFor, loveFor, activeScene, saveFeelings } from "../../lib/characters";
+import { getCharacterFor, trustFor, happyFor, loveFor, activeScene, saveFeelings, referenceUrls, pictureOf } from "../../lib/characters";
 import { US_STATES } from "../../lib/states";
-import { acceptMedia, declineMedia, mediaNote, checkMedia, sweepMedia, getMedia, listGallery, deleteMedia, VIDEO_MODELS, DEFAULT_VIDEO_MODEL, mediaReady, MediaError } from "../../lib/media";
+import { mediaMood, allowsSuggestive } from "../../lib/traits";
+import { myRefs } from "../../lib/picagram";
+import { acceptMedia, declineMedia, mediaNote, startMedia, checkMedia, sweepMedia, getMedia, listGallery, deleteMedia, VIDEO_MODELS, DEFAULT_VIDEO_MODEL, mediaReady, MediaError } from "../../lib/media";
 
 // 📦 Everything the app reads and changes, for the signed-in person only.
 // POST { action, ...args } → { ... }. Every query is scoped to their user_id.
@@ -384,6 +386,31 @@ export async function POST(req: NextRequest) {
         if (r.groupId) return NextResponse.json({ characterId: r.characterId, groupId: r.groupId, met: r.met });
         const [row] = await db`insert into velo_messages (user_id, role, content, character_id) values (${me}, 'user', ${r.marker}, ${r.characterId}) returning id`;
         return NextResponse.json({ characterId: r.characterId, marker: { id: String(row.id), role: "user", content: r.marker } });
+      }
+      // 📸 The picture they asked her for: they've seen the prompt (and maybe changed it), so it
+      // goes to the picture service exactly as it stands, like a peek.
+      case "photo.make": {
+        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
+        if (b.characterId && !ch) return bad("That character wasn't found.");
+        const text = scrub(String(b.description || "")).replace(/\s+/g, " ").trim().slice(0, 1500);
+        if (text.length < 5) return bad("Say what the picture shows.");
+        const [u2] = await db`select adult_confirmed_at, name, bio_photo_note from users where id = ${me}`;
+        const adult = !!u2?.adult_confirmed_at;
+        let other: { name: string; refs: string[]; appearance: string } | null = null;
+        if (b.with_them === true) {
+          const mine = await myRefs(me).catch(() => []);
+          if (!mine.length) return bad("There's no photo of you to work from — add one in Settings → About you.");
+          other = { name: String(u2?.name || "them"), refs: mine, appearance: String(u2?.bio_photo_note || "") };
+        } else if (typeof b.of_person === "string" && b.of_person.trim()) {
+          const who = await pictureOf(me, ch?.id || null, String(b.of_person));
+          if (typeof who === "string") return bad(who);
+          other = who;
+        }
+        const media = await startMedia(me, { kind: b.kind === "video" ? "video" : "image", with_me: b.with_me !== false, they_asked: true, description: text, same_moment: b.same_moment === true },
+          { characterId: ch?.id || null, who: ch?.name || "Velo", appearance: ch?.appearance || "", refs: ch ? await referenceUrls(ch) : [], romantic: adult && !!ch?.romantic && allowsSuggestive(ch?.traits), mood: ch ? mediaMood(ch.traits) : "", offer: false, other, raw: true });
+        const sc = ch ? await activeScene(me, ch.id).catch(() => null) : null;
+        const [row] = await db`insert into velo_messages (user_id, role, content, media_id, character_id, scene_id) values (${me}, 'assistant', ${mediaNote(media.kind, media.status, media.description, null, media.subject)}, ${media.id}, ${ch?.id || null}, ${sc?.id || null}) returning id`;
+        return NextResponse.json({ media, messageId: String(row.id) });
       }
       case "inperson.get":
       case "inperson.start":
