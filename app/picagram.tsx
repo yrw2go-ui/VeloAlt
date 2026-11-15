@@ -489,7 +489,14 @@ function PersonaSheet({ who, personality, traits, onSave, onClose }: {
   const [t, setT] = useState<Record<TraitKey, number>>(cleanTraits(traits && Object.keys(traits).length ? traits : DEFAULT_TRAITS));
   const [saved, setSaved] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const save = async (p: string, tr: Record<TraitKey, number>) => { await onSave(p, tr); setSaved(true); setTimeout(() => setSaved(false), 1600); };
+  const last = useRef(JSON.stringify({ personality, traits: cleanTraits(traits && Object.keys(traits).length ? traits : DEFAULT_TRAITS) }));
+  const save = async (p: string, tr: Record<TraitKey, number>) => {
+    const now = JSON.stringify({ personality: p, traits: tr });
+    if (now === last.current) return; // nothing changed — don't touch the server
+    last.current = now;
+    await onSave(p, tr);
+    setSaved(true); setTimeout(() => setSaved(false), 1600);
+  };
   const later = (p: string, tr: Record<TraitKey, number>) => {
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => save(p, tr), 3000);
