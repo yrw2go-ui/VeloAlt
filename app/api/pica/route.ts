@@ -4,7 +4,7 @@ import { allow } from "../../lib/rateLimit";
 import { sql } from "../../lib/db";
 import { MediaError, mediaReady } from "../../lib/media";
 import { dmThreads, dmUnread, dmOpen, dmSend, dmSendPhoto, dmBrain, dmMyPhotoDraft, dmMyPhoto, DmError } from "../../lib/picaDm";
-import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSavedList, picaFollowing, picaBefriend, picaCounts, picaDeletePost, picaCreateAccount, picaPictureAbout, picaWithMe, picaMe, picaMeBio, picaCharacters, picaHide, picaNew, picaFromPhoto, myPhotoDraft, newFaces, picaDeleteAccount, PicaLimit } from "../../lib/picagram";
+import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSavedList, picaFollowing, picaBefriend, picaCounts, picaDeletePost, picaCreateAccount, picaPictureAbout, picaRedoDraft, picaRedo, picaWithMe, picaMe, picaMeBio, picaCharacters, picaHide, picaNew, picaFromPhoto, myPhotoDraft, newFaces, picaDeleteAccount, PicaLimit } from "../../lib/picagram";
 
 // 📸 Picagram. POST { action, ... }:
 //   feed { before? } → { posts }   (a few at a time; today's and missed days' posts are made as needed)
@@ -86,6 +86,18 @@ export async function POST(req: NextRequest) {
       // 🙈 Characters whose posts you'd rather not see (she can't tell).
       case "characters": return NextResponse.json({ characters: await picaCharacters(me) });
       case "hide": return UUID.test(id) && (await picaHide(me, id, b.on === true)) ? NextResponse.json({ ok: true }) : bad("Unknown character.");
+      // ↻ Redo one of her pictures: the prompt that made it, then exactly what you send.
+      case "redo.draft": {
+        if (!UUID.test(id)) return bad("Unknown picture.");
+        const d = await picaRedoDraft(me, id);
+        return d ? NextResponse.json(d) : bad("That picture isn't one of hers.");
+      }
+      case "redo": {
+        if (!UUID.test(id)) return bad("Unknown picture.");
+        if (!mediaReady()) return bad("Photos aren't set up yet.");
+        if (!allow(`pica-redo:${me}`, [{ ms: 60_000, max: 4 }, { ms: 86_400_000, max: 60 }])) return bad("Slow down a little — try again in a bit.", 429);
+        return NextResponse.json({ media: await picaRedo(me, id, String(b.prompt || "")) });
+      }
       // 💬 What's in a picture you uploaded, in your words — her followers comment on this.
       case "picture.about": {
         if (!UUID.test(id)) return bad("Unknown picture.");

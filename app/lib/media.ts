@@ -260,6 +260,11 @@ export async function getMedia(userId: string, id: string): Promise<Row | null> 
 }
 
 /** Checks one photo/video and, once Atlas has it, saves it to Blob. Safe to call as often as you like. */
+// 🔁 Something to run the moment a picture is ready (a redo taking an old one's place). Set once
+// at startup rather than imported, so media.ts stays free of Picagram.
+let onReady: ((userId: string, mediaId: string) => Promise<unknown>) | null = null;
+export const whenMediaReady = (f: typeof onReady) => { onReady = f; };
+
 export async function checkMedia(userId: string, id: string): Promise<Media | null> {
   const r = await getMedia(userId, id);
   if (!r) return null;
@@ -321,6 +326,8 @@ export async function checkMedia(userId: string, id: string): Promise<Media | nu
     const thumb = t ? await saveFile(userId, t, "image/webp", "thumb.webp") : null;
     const [doneRow] = await sql()`update velo_media set status = 'done', file_id = ${full.id}, thumb_file_id = ${thumb?.id || null}, done_at = now(), error = null, claimed_at = null
       where id = ${id} and status = 'working' returning id`;
+    // ↻ A redo: it takes the old picture's place now it exists, and the old one is deleted.
+    if (doneRow) await onReady?.(userId, id).catch(e => console.error("media: swap in", e instanceof Error ? e.message : e));
     // 💬 …and says something about it in the chat it was sent to.
     if (doneRow && r.caption) await sql()`insert into velo_messages (user_id, role, content, character_id, created_at)
       select ${userId}, 'assistant', ${r.caption}, ${r.character_id}, greatest(now(), max(created_at) + interval '1 millisecond') from velo_messages where media_id = ${id} having count(*) > 0`;

@@ -6,7 +6,7 @@ import { sql } from "./db";
 import { writeText } from "./llm";
 import { scrub } from "./secrets";
 import { listCharacters, referenceUrls, type Character } from "./characters";
-import { startMedia, deleteMedia, MediaError, type Media } from "./media";
+import { startMedia, deleteMedia, whenMediaReady, MediaError, type Media } from "./media";
 import { allowsSuggestive, mediaMood } from "./traits";
 import { isValidTimeZone, localDate, zonedParts, zonedToUtc } from "./localTime";
 import { randomComments } from "./picaComments";
@@ -266,6 +266,55 @@ export async function picaComment(userId: string, postId: string, text: string):
 }
 
 /** 📝 Their own post: text, and/or a photo of them made from a description (their own pictures as reference, if they want). */
+// ↻ Redo one of her pictures. Step 1 hands back the exact prompt that made it, to send as it is or
+// tweak; step 2 sends that to Atlas unaltered, like a peek. When the new one is ready it takes the
+// old one's place — her profile picture, her post, her references — and the old one is deleted.
+
+/** Which of her pictures this is, and the prompt that made it. */
+export async function picaRedoDraft(userId: string, mediaId: string): Promise<{ prompt: string; what: "avatar" | "post" } | null> {
+  const [m] = await sql()`select m.id, m.prompt,
+      exists(select 1 from pica_accounts a where a.user_id = ${userId} and a.avatar_media_id = m.id) as is_avatar,
+      exists(select 1 from pica_posts p where p.user_id = ${userId} and p.media_id = m.id and p.account_id is not null) as is_post
+    from velo_media m where m.id = ${mediaId} and m.user_id = ${userId} and m.status = 'done'`;
+  if (!m || !(m.is_avatar || m.is_post)) return null;
+  return { prompt: String(m.prompt || ""), what: m.is_avatar ? "avatar" : "post" };
+}
+
+/** Make the replacement. Her own pictures are the references, and the prompt goes as written. */
+export async function picaRedo(userId: string, mediaId: string, prompt: string): Promise<Media> {
+  const [a] = await sql()`select a.*, m.id as old from pica_accounts a join velo_media m on m.user_id = ${userId}
+      and (m.id = a.avatar_media_id or exists(select 1 from pica_posts p where p.media_id = m.id and p.account_id = a.id))
+    where a.user_id = ${userId} and m.id = ${mediaId}`;
+  if (!a) throw new MediaError("That picture isn't one of hers.");
+  const text = scrub(prompt.replace(/\s+/g, " ").trim()).slice(0, 1500);
+  if (text.length < 10) throw new MediaError("Say a little more about the picture.");
+  const u = await userInfo(userId);
+  // The other pictures of her lead it, so the face stays the same — never the one being replaced.
+  const refs = (await refsOf(a)).filter(r => !!r);
+  const media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: text },
+    { characterId: null, who: String(a.name), appearance: String(a.look || ""), refs, romantic: u.adult, offer: false, other: null, pica: true, raw: true });
+  await sql()`update velo_media set replaces = ${mediaId} where id = ${media.id}`;
+  return media;
+}
+
+// Told once, when this module loads, so a picture that's ready swaps itself in.
+whenMediaReady((userId, mediaId) => picaSwapIn(userId, mediaId));
+
+/** 🔁 The new one is ready: it takes the old one's place everywhere, and the old one goes. */
+export async function picaSwapIn(userId: string, newId: string): Promise<boolean> {
+  const [m] = await sql()`select replaces from velo_media where id = ${newId} and user_id = ${userId} and status = 'done' and replaces is not null`;
+  if (!m) return false;
+  const old = String(m.replaces);
+  await sql()`update pica_accounts set avatar_media_id = ${newId} where user_id = ${userId} and avatar_media_id = ${old}`;
+  await sql()`update pica_accounts set ref_media_ids = array_replace(ref_media_ids, ${old}::uuid, ${newId}::uuid) where user_id = ${userId} and ${old}::uuid = any(ref_media_ids)`;
+  await sql()`update pica_posts set media_id = ${newId} where user_id = ${userId} and media_id = ${old}`;
+  await sql()`delete from pica_saved where user_id = ${userId} and media_id = ${old}`;
+  await sql()`update velo_media set replaces = null where id = ${newId}`;
+  // 🗑 Gone for good: the row, the file and the picture itself.
+  await deleteMedia(userId, old).catch(e => console.error("pica: redo delete", e instanceof Error ? e.message : e));
+  return true;
+}
+
 /** 💬 Say what's in a picture you uploaded for her. It's what the comments are about. */
 export async function picaPictureAbout(userId: string, mediaId: string, about: string): Promise<boolean> {
   const text = scrub(about).replace(/\s+/g, " ").trim().slice(0, 400);
@@ -588,7 +637,7 @@ export async function picaFollow(userId: string, accountId: string, on: boolean)
 
 /** 👤 Someone's profile: who she is and her photos. */
 export async function picaProfile(userId: string, accountId: string) {
-  const [a] = await sql()`select a.id, a.handle, a.name, a.bio, a.followers, a.followed, a.character_id, a.lives, a.mine, a.ref_media_ids, f.url as avatar, coalesce(ch.pica_hidden, false) as hidden, ch.attached
+  const [a] = await sql()`select a.id, a.handle, a.name, a.bio, a.followers, a.followed, a.character_id, a.lives, a.mine, a.ref_media_ids, a.avatar_media_id, f.url as avatar, coalesce(ch.pica_hidden, false) as hidden, ch.attached
     from pica_accounts a left join velo_media m on m.id = a.avatar_media_id left join velo_files f on f.id = m.file_id left join chat_characters ch on ch.id = a.character_id
     where a.id = ${accountId} and a.user_id = ${userId}`;
   if (!a) return null;
@@ -598,7 +647,7 @@ export async function picaProfile(userId: string, accountId: string) {
   const posts = await sql()`select p.id, p.caption, p.created_at::text as at, m.id as media_id, f.url, t.url as thumb, exists(select 1 from pica_saved s where s.user_id = p.user_id and s.media_id = m.id) as saved
     from pica_posts p join velo_media m on m.id = p.media_id join velo_files f on f.id = m.file_id left join velo_files t on t.id = m.thumb_file_id
     where p.user_id = ${userId} and p.account_id = ${accountId} and p.created_at <= now() and m.status = 'done' order by p.created_at desc limit 60`;
-  return { account: { id: String(a.id), handle: String(a.handle), name: String(a.name), bio: String(a.bio), followers: Number(a.followers), followed: !!a.followed, avatar: a.avatar ? String(a.avatar) : null, character_id: a.character_id ? String(a.character_id) : null, lives: a.lives ? String(a.lives) : "", hidden: !!a.hidden, married: a.attached === "married" },
+  return { account: { id: String(a.id), handle: String(a.handle), name: String(a.name), bio: String(a.bio), followers: Number(a.followers), followed: !!a.followed, avatar: a.avatar ? String(a.avatar) : null, avatar_media_id: a.avatar_media_id ? String(a.avatar_media_id) : null, character_id: a.character_id ? String(a.character_id) : null, lives: a.lives ? String(a.lives) : "", hidden: !!a.hidden, married: a.attached === "married" },
     photos: posts.map(r => ({ media_id: String(r.media_id), url: String(r.url), thumb: r.thumb ? String(r.thumb) : null, caption: String(r.caption || ""), saved: !!r.saved })) };
 }
 
