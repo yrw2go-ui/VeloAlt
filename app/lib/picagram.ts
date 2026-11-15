@@ -328,8 +328,12 @@ export async function picaPost(userId: string, caption: string, photo: string, u
   const all = (await sql()`select id, name, personality from chat_characters where owner_id is null or owner_id = ${userId}`) as { id: string; name: string; personality: string }[];
   const named = (text: string) => all.filter(c => String(c.name).trim().length > 2
     && new RegExp(`(^|[^\\p{L}])${String(c.name).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=$|[^\\p{L}])`, "iu").test(text));
-  const mentioned = named(`${cap} ${desc}`);
-  const inIt = her ? all.filter(c => String(c.id) === String(her.id)) : [];
+  // 🖼️ In the picture: the one you picked, and anyone the photo itself names ("me and Allie at the
+  // lake"). Named in the caption only is talk about her, not a picture of her.
+  const inPhoto = named(desc);
+  const inIt = [...(her ? all.filter(c => String(c.id) === String(her.id)) : []), ...inPhoto]
+    .filter((c, i, a) => a.findIndex(x => String(x.id) === String(c.id)) === i);
+  const mentioned = named(`${cap} ${desc}`).filter(c => !inIt.some(x => String(x.id) === String(c.id)));
   // 👥 And the people they talk to most notice it, as before.
   const close = await sql()`select c.id, c.name, c.personality, count(*)::int as n from velo_messages m join chat_characters c on c.id = m.character_id
     where m.user_id = ${userId} and m.created_at > now() - interval '30 days' group by c.id, c.name, c.personality order by n desc limit 4`;
@@ -355,8 +359,11 @@ export async function picaPost(userId: string, caption: string, photo: string, u
         ? me ? `a photo of the two of us${rest.length ? ` and ${rest.join(" and ")}` : ""}` : `a photo of himself${withThem}`
         : rest.length ? `something about ${rest.join(" and ")}` : "";
     };
-    const raw = await writeText("", `People who know ${u.name} react to ${u.name}'s new Picagram post. For each person, write a short comment in their own voice (or "" if they'd just like it). Someone who is IN the photo reacts to being in it; someone who sees another woman in it reacts the way she would — pleased, curious, teasing, or a little stung — never cruel. JSON only: {"comments":[{"from":"Name","text":"..."}]}`,
-      `POST: ${cap}${desc ? ` (photo: ${desc})` : ""}\nPEOPLE:\n${fans.map(f => `- ${f.name}${inIt.some(c => String(c.id) === String(f.id)) ? " (SHE IS IN THIS PHOTO with him)" : ""}${mentioned.some(c => String(c.id) === String(f.id)) && !inIt.some(c => String(c.id) === String(f.id)) ? " (the post is about her)" : ""}: ${String(f.personality || "").slice(0, 200)}`).join("\n")}`, 1000).catch(() => "");
+    const isIn = (id: string) => inIt.some(c => String(c.id) === String(id));
+    const raw = await writeText("", `People who know ${u.name} react to ${u.name}'s new Picagram post. For each person, write a short comment in their own voice (or "" if they'd just like it).
+A person marked IN THIS PHOTO is the woman in it: she was there when it was taken, it's her own face and body in the picture, and ${u.name} has just put it up for everyone to see. She comments as herself from inside it — how she feels about being up there, what the two of them were doing, teasing him about the pose, being pleased or shy or smug about it. She NEVER talks about the woman in the photo as if she were someone else ("you two look great together", "who's she?") — that would make no sense, because it's her.
+Anyone else sees another woman in it and reacts the way she would — pleased, curious, teasing, or a little stung — never cruel. JSON only: {"comments":[{"from":"Name","text":"..."}]}`,
+      `POST: ${cap}${desc ? ` (photo: ${desc})` : ""}${inIt.length ? `\nTHE WOMAN IN THE PHOTO WITH HIM IS ${inIt.map(c => c.name).join(" and ")} — wherever the photo says "her" or "a woman", that is ${inIt.map(c => c.name).join(" / ")}.` : ""}\nPEOPLE:\n${fans.map(f => `- ${f.name}${isIn(String(f.id)) ? " (IN THIS PHOTO — this is her, with him; she was there)" : ""}${mentioned.some(c => String(c.id) === String(f.id)) ? " (the post is about her)" : ""}: ${String(f.personality || "").slice(0, 200)}`).join("\n")}`, 1000).catch(() => "");
     let cs: { from: string; text: string }[] = [];
     try { cs = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]).comments || []; } catch { /* likes only */ }
     await sql()`update pica_posts set liked_by = ${fans.map(f => String(f.name))}, liker_secs = ${fans.map(() => rand(10, 900))} where id = ${post.id}`;
