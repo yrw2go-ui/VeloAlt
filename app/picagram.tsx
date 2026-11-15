@@ -671,18 +671,20 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
       const r = await api<{ added: DmMsg[]; note?: string; ask?: string }>("/api/pica", { action: "dm.send", id, text: t });
       setMsgs(m => [...(m || []).filter(x => x !== tmp), ...r.added]);
       if (r.note) setErr(r.note);
-      if (r.ask) setAsk(r.ask);
+      if (r.ask) { setAsk(r.ask); setHiddenAsk(null); }
     } catch (e) { setErr(e instanceof Error ? e.message : "Didn't send."); setMsgs(m => (m || []).filter(x => x !== tmp)); setText(t); }
     setBusy(false);
   };
   // 📸 Her photo: you see exactly what's going to the picture service, and send it yourself.
   const [ask, setAsk] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
+  // 📸 Put away, not lost.
+  const [hiddenAsk, setHiddenAsk] = useState<string | null>(null);
   const sendAsk = async (description: string) => {
     setAsking(true); setErr("");
     try {
       const r = await api<{ added: DmMsg[]; note?: string }>("/api/pica", { action: "dm.photo.make", id, description });
-      setAsk(null);
+      setAsk(null); setHiddenAsk(null);
       if (r.added.length) setMsgs(m => [...(m || []), ...r.added]); else setErr(r.note || "Couldn't send it.");
     } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't send it."); setAsk(null); }
     setAsking(false);
@@ -693,7 +695,7 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
     && /\b(pic|pics|picture|photo|selfie|snap)\b/i.test(last.content) && /\b(send|sending|sent|here'?s|here you go|coming|on (its|it's) way|incoming|let me)\b/i.test(last.content);
   const sendPic = async () => {
     setBusy(true); setErr("");
-    try { const r = await api<{ added: DmMsg[]; note?: string; ask?: string }>("/api/pica", { action: "dm.photo", id }); if (r.ask) setAsk(r.ask); else if (r.added.length) setMsgs(m => [...(m || []), ...r.added]); else setErr(r.note || "Couldn't send it."); }
+    try { const r = await api<{ added: DmMsg[]; note?: string; ask?: string }>("/api/pica", { action: "dm.photo", id }); if (r.ask) { setAsk(r.ask); setHiddenAsk(null); } else if (r.added.length) setMsgs(m => [...(m || []), ...r.added]); else setErr(r.note || "Couldn't send it."); }
     catch (e) { setErr(e instanceof Error ? e.message : "Couldn't send it."); }
     setBusy(false);
   };
@@ -725,7 +727,15 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
         {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
         <div ref={end} />
       </div>
-      {ask !== null && <DmAskSheet who={acc?.name || "She"} description={ask} busy={asking} onChange={setAsk} onSend={sendAsk} onClose={() => setAsk(null)} />}
+      {ask !== null && <DmAskSheet who={acc?.name || "She"} description={ask} busy={asking} onChange={setAsk} onSend={sendAsk}
+        onClose={() => { setAsk(null); setHiddenAsk(null); }} onHide={() => { setHiddenAsk(ask); setAsk(null); }} />}
+      {ask === null && hiddenAsk !== null && (
+        <div style={{ padding: "0 12px 6px" }}>
+          <button className="ghost" onClick={() => { setAsk(hiddenAsk); setHiddenAsk(null); }} data-testid="dm-ask-waiting" style={{ padding: "6px 12px", fontSize: 13, borderColor: "#ec4899" }}>
+            📸 {acc?.name || "Her"} photo is waiting on you — look it over
+          </button>
+        </div>
+      )}
       {mySheet && <MyPhotoSheet title={`Send ${acc?.name || "her"} a photo of you`} draft={a => api<{ description: string }>("/api/pica", { action: "dm.me.draft", id, about: a }).then(r => r.description)}
         onMake={async d => { const r = await api<{ added: DmMsg[] }>("/api/pica", { action: "dm.me.photo", id, description: d }); setMsgs(m => [...(m || []), ...r.added]); setMySheet(false); }} onClose={() => setMySheet(false)} />}
       {pendingPic && <div style={{ padding: "0 12px 6px" }}><button className="ghost" onClick={sendPic} data-testid="dm-send-pic" style={{ padding: "6px 12px", fontSize: 13, borderColor: "#ec4899" }}>📸 {acc?.name || "She"} didn&apos;t send it — send the pic</button></div>}
@@ -740,15 +750,15 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
 
 /** 📸 A photo of you: the description first (like a peek), then exactly that — with your photos as reference. */
 /** 📸 A photo she's about to send: the prompt first, the same as a peek. */
-function DmAskSheet({ who, description, busy, onChange, onSend, onClose }: { who: string; description: string; busy: boolean; onChange: (d: string) => void; onSend: (d: string) => void; onClose: () => void }) {
+function DmAskSheet({ who, description, busy, onChange, onSend, onClose, onHide }: { who: string; description: string; busy: boolean; onChange: (d: string) => void; onSend: (d: string) => void; onClose: () => void; onHide: () => void }) {
   return (
-    <div role="dialog" aria-modal="true" data-testid="dm-ask-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2700 }} onClick={onClose}>
+    <div role="dialog" aria-modal="true" data-testid="dm-ask-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2700 }}>
       <div className="card" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 10 }}>
         <div className="row" style={{ justifyContent: "space-between" }}>
           <div style={{ fontWeight: 800, fontSize: 17 }}>📸 {who}&apos;s photo</div>
-          <button type="button" className="ghost" onClick={onClose} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
+          <button type="button" className="ghost" onClick={onHide} aria-label="Later" title="Later" style={{ padding: "4px 10px" }}>✕</button>
         </div>
-        <div className="muted" style={{ fontSize: 12 }}>This goes to the picture service exactly as it reads. Change anything you like, or send it as it is.</div>
+        <div className="muted" style={{ fontSize: 12 }}>This goes to the picture service exactly as it reads. Change anything you like, or send it as it is. ✕ keeps it for later; Cancel drops it.</div>
         <textarea value={description} onChange={e => onChange(e.target.value)} maxLength={1500} autoFocus data-testid="dm-ask-prompt"
           style={{ width: "100%", minHeight: 110, resize: "vertical", padding: "8px 10px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--card)", color: "var(--text)", fontSize: 14 }} />
         <div className="row" style={{ gap: 8 }}>

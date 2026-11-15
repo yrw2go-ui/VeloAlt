@@ -254,7 +254,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
         if (r.by === "alt" && lastMark === "⏰") await marker("back");
       }
       if (r.react) setMsgs(list => (list || []).map(x => (x.id && x.id === myId ? { ...x, theirReaction: r.react } : x)));
-      if (r.ask) setAsk(r.ask);
+      if (r.ask) { setAsk(r.ask); setHidden(null); }
       // 🎨 Photos/videos being made show up right under the reply and fill in when ready.
       const sent: ChatMsg[] = (r.media || []).filter(x => x.status !== "failed").map(media => ({ at: new Date().toISOString(), role: "assistant", content: mediaNote(media), media }));
       // A reaction on its own (no words): the badge on their message is the whole answer.
@@ -282,12 +282,14 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   // 📸 A picture you asked for: the prompt comes to you first, like a peek.
   const [ask, setAsk] = useState<{ kind: "image" | "video"; description: string; with_me: boolean; with_them: boolean; of_person: string; same_moment: boolean } | null>(null);
   const [asking, setAsking] = useState(false);
+  // 📸 Put away, not lost: a bar brings it back so her "sending it now" never hangs.
+  const [hidden, setHidden] = useState<typeof ask>(null);
   const sendAsk = async (description: string) => {
     if (!ask) return;
     setAsking(true);
     try {
       const r = await data<{ media: Media; messageId: string }>("photo.make", { ...ask, description, ...thread });
-      setAsk(null);
+      setAsk(null); setHidden(null);
       setMsgs(list => [...(list || []), { id: r.messageId, at: new Date().toISOString(), role: "assistant", content: mediaNote(r.media), media: r.media }]);
     } catch (e) { setErr(e instanceof Error ? e.message : "That picture didn't go through."); setAsk(null); }
     setAsking(false);
@@ -671,7 +673,15 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
           </form>
         </div>
       )}
-      {ask && <AskSheet who={who} ask={ask} busy={asking} onChange={d => setAsk(a => (a ? { ...a, description: d } : a))} onSend={sendAsk} onClose={() => setAsk(null)} />}
+      {ask && <AskSheet who={who} ask={ask} busy={asking} onChange={d => setAsk(a => (a ? { ...a, description: d } : a))} onSend={sendAsk}
+        onClose={() => { setAsk(null); setHidden(null); }} onHide={() => { setHidden(ask); setAsk(null); }} />}
+      {!ask && hidden && (
+        <div style={{ padding: "0 12px 6px" }}>
+          <button className="ghost" onClick={() => { setAsk(hidden); setHidden(null); }} data-testid="ask-waiting" style={{ padding: "6px 12px", fontSize: 13, borderColor: "#ec4899" }}>
+            📸 {who}&apos;s {hidden.kind === "image" ? "photo" : "video"} is waiting on you — look it over
+          </button>
+        </div>
+      )}
       {peekSheet && character && <PeekSheet who={character.name} sheet={peekSheet} brains={brains} theirs={character.brain === "claude" ? "" : character.brain || ""} onChange={d => setPeekSheet(p => (p ? { ...p, description: d } : p))} onWriter={w => setPeekSheet(p => (p ? { ...p, writer: w } : p))} onRewrite={rewritePeek} onSend={sendPeek} onClose={() => setPeekSheet(null)} />}
       {sceneSheet && character && <SceneSheet key={fromPlan?.id || "new"} who={character.name} plan={fromPlan} onClose={() => { setSceneSheet(false); setFromPlan(null); }} onStart={startScene} />}
       <div data-testid="chat-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -877,18 +887,18 @@ export function FileThumb({ f, size }: { f: { url: string; thumb?: string | null
  * 📸 A picture you asked her for: you see exactly what's going to the picture service first, the
  * same as a peek. Send it as it is, change a line, or drop it.
  */
-function AskSheet({ who, ask, busy, onChange, onSend, onClose }: {
+function AskSheet({ who, ask, busy, onChange, onSend, onClose, onHide }: {
   who: string; ask: { kind: "image" | "video"; description: string }; busy: boolean;
-  onChange: (d: string) => void; onSend: (d: string) => void; onClose: () => void;
+  onChange: (d: string) => void; onSend: (d: string) => void; onClose: () => void; onHide: () => void;
 }) {
   return (
-    <div role="dialog" aria-modal="true" data-testid="ask-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }} onClick={onClose}>
+    <div role="dialog" aria-modal="true" data-testid="ask-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }}>
       <div className="card" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 10 }}>
         <div className="row" style={{ justifyContent: "space-between" }}>
           <div style={{ fontWeight: 800, fontSize: 17 }}>📸 {who}&apos;s {ask.kind === "image" ? "photo" : "video"}</div>
-          <button type="button" className="ghost" onClick={onClose} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
+          <button type="button" className="ghost" onClick={onHide} aria-label="Later" title="Later" style={{ padding: "4px 10px" }}>✕</button>
         </div>
-        <div className="muted" style={{ fontSize: 12 }}>This goes to the picture service exactly as it reads. Change anything you like, or send it as it is.</div>
+        <div className="muted" style={{ fontSize: 12 }}>This goes to the picture service exactly as it reads. Change anything you like, or send it as it is. ✕ keeps it for later; Cancel drops it.</div>
         <textarea value={ask.description} onChange={e => onChange(e.target.value)} maxLength={1500} autoFocus data-testid="ask-prompt"
           style={{ width: "100%", minHeight: 110, resize: "vertical", padding: "8px 10px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--card)", color: "var(--text)", fontSize: 14 }} />
         <div className="row" style={{ gap: 8 }}>
