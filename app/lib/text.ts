@@ -49,5 +49,12 @@ export function dropThoughts(t: string): string {
   return t.replace(THOUGHT, " ").replace(/[ \t]{2,}/g, " ").replace(/^[ \t]+|[ \t]+$/gm, "").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+// 🙊 Caption-speak that no one says out loud. Belt and braces: the prompts say not to, and
+// anything that slips through is put back into plain words before it's shown or saved.
+const GOLDEN = /\bgolden[-\s]?hour\b/gi;
+export function noJargon(t: string): string {
+  return t.replace(GOLDEN, (m, i: number) => (i === 0 || /[.!?]\s+$/.test(t.slice(0, i)) ? "The evening light" : "the evening light"));
+}
+
 /** Everything a reply goes through before it's shown: stray HTML, leaked tool calls, stage directions, thoughts. */
-export const cleanReply = (t: string) => dropThoughts(dropMeta(stripScaffolding(cleanTags(t))));
+export const cleanReply = (t: string) => noJargon(dropThoughts(dropMeta(stripScaffolding(cleanTags(t)))));

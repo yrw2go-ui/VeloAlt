@@ -31,7 +31,7 @@ const WORK = ["Working hard 👏", "Even the work days look good", "Hope the shi
 const COFFEE = ["Coffee is life ☕", "Need one of those", "Same order please", "That latte art tho", "Caffeine twins ☕"];
 const OUTSIDE = ["That view 😍", "Fresh air goals", "Need to get outside like this", "Gorgeous spot", "Taking this hike next weekend"];
 const CAR = ["That car tho 🚗", "Road trip!!", "Where you headed?", "Take me with you", "Drive safe!! "];
-const SUNSET = ["That sky 😍", "Golden hour never misses", "Prettiest light", "Sunset chaser ✨"];
+const SUNSET = ["That sky 😍", "The light in this 😍", "Prettiest light", "Sunset chaser ✨"];
 const DANCE = ["The moves!! 🔥", "Okay go off 💃", "Teach me that", "This is so fun to watch"];
 
 // 👗 What she's wearing: comments that actually name the thing, like a real follower would.

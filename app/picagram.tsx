@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, uploadFile, uploadPicaPicture } from "./lib/api";
 import { hideSecrets } from "./lib/secrets";
+import { noJargon } from "./lib/text";
 import { MediaView, type Media } from "./media";
 import { RedoSheet } from "./redo";
 import { stamp } from "./lib/when";
@@ -210,7 +211,7 @@ function PostCard({ p, me, obs, onChange, onProfile, onFollow, onNote, onRemoved
       {p.media ? (
         <div onDoubleClick={() => { if (!p.liked) like(); }} style={{ display: "flex", justifyContent: "center", background: "#000" }}><MediaView media={p.media} big who={p.author.name} /></div>
       ) : (
-        <div onDoubleClick={() => { if (!p.liked) like(); }} data-testid="pica-text" style={{ margin: "0 14px", padding: "28px 20px", borderRadius: 16, background: GRADS[p.id.charCodeAt(0) % GRADS.length], color: "#fff", fontSize: 18, fontWeight: 700, lineHeight: 1.4, whiteSpace: "pre-wrap", overflowWrap: "anywhere", textAlign: "center" }}>{p.caption}</div>
+        <div onDoubleClick={() => { if (!p.liked) like(); }} data-testid="pica-text" style={{ margin: "0 14px", padding: "28px 20px", borderRadius: 16, background: GRADS[p.id.charCodeAt(0) % GRADS.length], color: "#fff", fontSize: 18, fontWeight: 700, lineHeight: 1.4, whiteSpace: "pre-wrap", overflowWrap: "anywhere", textAlign: "center" }}>{noJargon(p.caption)}</div>
       )}
       <div className="row" style={{ gap: 14, padding: "8px 14px 2px" }}>
         <button onClick={like} aria-label={p.liked ? "Unlike" : "Like"} aria-pressed={p.liked} data-testid="pica-like" style={{ background: "none", border: "none", fontSize: 24, cursor: "pointer", padding: 0 }}>{p.liked ? "❤️" : "🤍"}</button>
@@ -220,11 +221,11 @@ function PostCard({ p, me, obs, onChange, onProfile, onFollow, onNote, onRemoved
       <div style={{ padding: "0 14px", fontSize: 14, fontWeight: 700 }} data-testid="pica-likes">
         {likedBy.length ? <>Liked by {likedBy.slice(0, 2).join(", ")}{p.likes > likedBy.length ? <> and {fmt(p.likes - Math.min(2, likedBy.length))} others</> : null}</> : <>{fmt(p.likes)} likes</>}
       </div>
-      {p.media && p.caption && <div style={{ padding: "4px 14px", fontSize: 14, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}><b>{acc ? acc.handle : p.author.id ? p.author.name : me}</b> {p.caption}</div>}
+      {p.media && p.caption && <div style={{ padding: "4px 14px", fontSize: 14, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}><b>{acc ? acc.handle : p.author.id ? p.author.name : me}</b> {noJargon(p.caption)}</div>}
       <div style={{ padding: "2px 14px 0" }}><When at={p.created_at} /></div>
       {p.comments > list.length && !open && <button onClick={showAll} className="muted" data-testid="pica-all" style={{ background: "none", border: "none", padding: "2px 14px", fontSize: 13, cursor: "pointer" }}>View all {p.comments} comments</button>}
       <div style={{ padding: "2px 14px", display: "grid", gap: 3 }}>
-        {list.map(c => <div key={c.id} data-testid="pica-comment" style={{ fontSize: 13.5, overflowWrap: "anywhere" }}><b style={{ color: c.known ? "var(--text)" : "var(--muted)" }}>{c.me ? me : c.who}</b> {c.text}</div>)}
+        {list.map(c => <div key={c.id} data-testid="pica-comment" style={{ fontSize: 13.5, overflowWrap: "anywhere" }}><b style={{ color: c.known ? "var(--text)" : "var(--muted)" }}>{c.me ? me : c.who}</b> {noJargon(c.text)}</div>)}
       </div>
       <form onSubmit={e => { e.preventDefault(); send(); }} className="row" style={{ gap: 8, padding: "6px 14px 0" }}>
         <input value={text} onChange={e => setText(e.target.value)} placeholder="Add a comment…" aria-label="Add a comment" maxLength={500} style={{ padding: "8px 12px", borderRadius: 999, fontSize: 14 }} />

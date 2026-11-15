@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "./lib/api";
 import { hideSecrets } from "./lib/secrets";
-import { dropThoughts } from "./lib/text";
+import { dropThoughts, noJargon } from "./lib/text";
 import { timeZone } from "./lib/tz";
 import { confirmAsk } from "./lib/dialog";
 import { CharacterFace, type Character } from "./characters";
@@ -213,7 +213,7 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
               <div>
                 <div className="muted" style={{ fontSize: 11, fontWeight: 700, margin: "0 0 2px 6px" }}>{c?.name || "Someone"}{m.private_to ? <span data-testid="group-private-label"> · 🔒 Private, to you</span> : null}</div>
                 <div data-testid={m.private_to ? "group-private-reply" : undefined} onClick={() => setPicking(p => (p === m.id ? null : m.id))} style={{ position: "relative", cursor: "pointer", padding: "10px 14px", borderRadius: 18, background: "var(--surface2)", border: m.private_to ? "1.5px dashed var(--accent)" : undefined, whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 15, lineHeight: 1.45 }}>
-                  {dropThoughts(m.content)}
+                  {noJargon(dropThoughts(m.content))}
                   {m.reaction && <span data-testid="group-reaction" style={{ position: "absolute", bottom: -12, right: -6, fontSize: 15, lineHeight: 1, padding: "3px 5px", borderRadius: 999, background: "var(--surface)", border: "1px solid var(--border)" }}>{m.reaction}</span>}
                 </div>
                 {picking === m.id && <ReactionBar value={m.reaction} onPick={r => react(m.id, r)} />}

@@ -15,7 +15,7 @@ import { useDictation } from "./dictate";
 import { CharacterFace, LinkBackForm } from "./characters";
 import { MediaView, ReactionBar, type Media } from "./media";
 import { isHot } from "./lib/reactions";
-import { dropThoughts } from "./lib/text";
+import { dropThoughts, noJargon } from "./lib/text";
 
 /** Who this chat is with: Velo (no character) or one of their characters. */
 export type ChatWith = { id: string; name: string; portrait_url: string | null; romantic?: boolean; brain?: string; live_in?: boolean; neighbor?: boolean; home?: boolean };
@@ -816,7 +816,7 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
         style={{ position: "relative", cursor: !mine && m.id ? "pointer" : undefined, padding: "10px 14px", borderRadius: 18, borderBottomLeftRadius: mine ? 18 : 4, borderBottomRightRadius: mine ? 4 : 18,
         background: mine ? "linear-gradient(135deg, var(--accent), var(--accent2))" : "var(--surface2)", color: "var(--text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", lineHeight: 1.45, fontSize: 15 }}>
         {m.file && <div style={{ marginBottom: m.content && m.content !== "📎" ? 8 : 0 }}><FileThumb f={m.file} size={180} /></div>}
-        {m.content !== "📎" && styled((mine ? m.content : dropThoughts(m.content)).replace(/\*\*(.+?)\*\*/g, "$1"))}
+        {m.content !== "📎" && styled((mine ? m.content : noJargon(dropThoughts(m.content))).replace(/\*\*(.+?)\*\*/g, "$1"))}
         {mine && m.theirReaction && badge(m.theirReaction, who)}
         {!mine && m.reaction && badge(m.reaction, "You")}
       </div>
