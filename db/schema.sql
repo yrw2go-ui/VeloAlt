@@ -779,3 +779,6 @@ alter table pica_accounts add column if not exists folk text check (folk is null
 -- yours to edit, and they go with her if you befriend her.
 alter table pica_accounts add column if not exists personality text check (personality is null or char_length(personality) <= 2000);
 alter table pica_accounts add column if not exists traits jsonb not null default '{}'::jsonb;
+-- 📍 Where she lives NOW, said plainly, instead of being guessed from her backstory. A card can
+-- say she grew up in Arizona and works in Chicago; only this field says where she is today.
+alter table chat_characters add column if not exists lives_in text not null default '' check (char_length(lives_in) <= 120);

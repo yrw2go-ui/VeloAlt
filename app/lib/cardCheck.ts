@@ -12,7 +12,7 @@ export type Finding = { what: "location" | "job" | "boxes"; note: string };
 
 export type Card = {
   name: string; personality: string; backstory: string; relation: string; appearance: string;
-  job: string; casualWear: string; hobbies: string; workAttire: string; romanceArc: string;
+  job: string; casualWear: string; hobbies: string; workAttire: string; romanceArc: string; livesIn: string;
   workDays: number[]; workStart: string; workEnd: string; partTime: boolean;
   school: string; classDays: number[]; classStart: string; classEnd: string;
   romantic: boolean; liveIn: boolean; neighbor: boolean; local: boolean;
@@ -28,6 +28,7 @@ const yn = (b: boolean) => (b ? "TICKED" : "not ticked");
 function cardText(c: Card, home: string): string {
   return `NAME: ${c.name}
 WHERE THE PERSON THEMSELVES LIVES: ${home || "(they haven't said)"}
+WHERE SHE LIVES NOW (her own field on the card — the only thing that says where she is today): ${c.livesIn || "(blank)"}
 
 WHAT HER CARD SAYS (her own words):
 - Who she is to them: ${c.relation || "(blank)"}
@@ -53,8 +54,8 @@ THE TICKS AND SETTINGS ON THE CARD:
 
 const ASK = `You look over ONE character card in a companion app and check it for three things, and ONLY these three:
 
-1. "location" — where she lives doesn't match the location ticks. 📍 Local means within about an hour of the person; 🏘️ Neighbour means a few doors down on the same street; 🏠 Lives with me means she lives in their house. Say something only when her own words put her somewhere that can't be squared with the ticks (a card that says she's in Austin, Texas with 📍 Local ticked; "we share the back bedroom" with 🏠 not ticked). A card that never says where she lives is fine — say nothing.
-2. "job" — her job doesn't match the rest of the card: her work hours or her work clothes belong to a different job, the backstory has her doing something else, her job is blank but the card is all about her shifts, she's at a school in the job but no classes/hours are set. Only real mismatches.
+1. "location" — WHERE SHE LIVES NOW doesn't match the location ticks. 📍 Local means within about an hour of the person; 🏘️ Neighbour means a few doors down on the same street; 🏠 Lives with me means she lives in their house. Judge this by the WHERE SHE LIVES NOW field and nothing else. Where she grew up, where she was born, where she used to live, where her family is, and where she WORKS are all beside the point: a woman who grew up in Arizona and works in Chicago but lives in Munster, Indiana is local, and saying otherwise is the mistake to avoid. When that field is blank, say nothing about location at all — don't go hunting through her backstory for a town. When it is filled in, speak up only if that place can't be squared with the ticks (Austin, Texas with 📍 Local ticked; or "we share the back bedroom" in her description with 🏠 not ticked).
+2. "job" — her job doesn't match the rest of the card (a job in another town than she lives in is NOT a mismatch — people commute, and plenty of jobs are remote): her work hours or her work clothes belong to a different job, the backstory has her doing something else, her job is blank but the card is all about her shifts, she's at a school in the job but no classes/hours are set. Only real mismatches.
 3. "boxes" — a tick disagrees with her own words: the description says she's married but the setting says single (or the other way round), it says she lives with them but 🏠 isn't ticked, she's at college in the backstory with no school set, she's described as into women but the lesbian tick disagrees, and so on.
 
 Rules: be strict about what counts. Only speak up when the card genuinely contradicts itself — not when something is merely missing, vague or could go either way. Nothing about safety, taste, age or content: that's not your job here. Each note is ONE short sentence naming both sides of the clash, in plain words, no jargon, no advice about what they "should" do.

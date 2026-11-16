@@ -159,9 +159,6 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
     if (fresh) throw new MediaError("You just offered one and they haven't answered yet — wait for that first.");
   }
   if (n >= DAILY[kind]) throw new MediaError(`That's the limit of ${kind === "image" ? "photos" : "videos"} for today. Tell them you'll send more tomorrow.`);
-  // One at a time: if one is still being made in this chat, don't start another.
-  const [busy] = ctx.pica ? [] : await sql()`select kind, extract(epoch from now() - created_at)::int as secs from velo_media where user_id = ${userId} and character_id is not distinct from ${ctx.characterId} and status = 'working' and not peek and not pica and created_at > now() - interval '6 minutes' order by created_at desc limit 1`;
-  if (busy) throw new MediaError(`You already sent a ${busy.kind === "image" ? "photo" : "video"} ${busy.secs < 60 ? `${busy.secs} seconds` : `${Math.round(busy.secs / 60)} min`} ago and it's still on its way (it WILL arrive — photos take about a minute, videos a few). Tell them it's coming; don't make another.`);
   if (!ctx.pica) await sql()`update velo_media set status = 'declined' where user_id = ${userId} and character_id is not distinct from ${ctx.characterId} and status = 'offered'`;
 
   const withMe = a.with_me === true;

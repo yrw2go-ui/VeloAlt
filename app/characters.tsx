@@ -15,7 +15,7 @@ import { BRAIN_OPTIONS } from "./lib/brainOptions";
 
 type VoiceOption = { id: string; name: string; kind: "female" | "male"; about: string; preview: string; owner?: string };
 
-export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; brain?: string; standing?: string; work_attire?: string; work_days?: number[]; work_start?: string; work_end?: string; part_time?: boolean; school?: string; class_days?: number[]; class_start?: string; class_end?: string; poly_ok?: boolean; sapphic?: boolean; live_in?: boolean; neighbor?: boolean; local?: boolean; attached?: "single" | "dating" | "married"; sees_others?: boolean; lesbian?: boolean; lesbian_personality?: string; partner?: string; big_following?: boolean; busy?: "work" | "class" | null; ditched?: boolean; home?: boolean; portrait_url: string | null; portrait_job: string | null };
+export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; brain?: string; standing?: string; work_attire?: string; work_days?: number[]; work_start?: string; work_end?: string; part_time?: boolean; school?: string; class_days?: number[]; class_start?: string; class_end?: string; poly_ok?: boolean; sapphic?: boolean; live_in?: boolean; neighbor?: boolean; local?: boolean; lives_in?: string; attached?: "single" | "dating" | "married"; sees_others?: boolean; lesbian?: boolean; lesbian_personality?: string; partner?: string; big_following?: boolean; busy?: "work" | "class" | null; ditched?: boolean; home?: boolean; portrait_url: string | null; portrait_job: string | null };
 
 /** A character's picture in a circle (their initial until a portrait exists). */
 export function CharacterFace({ c, size }: { c: Pick<Character, "name" | "portrait_url">; size: number }) {
@@ -114,6 +114,7 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
   // 💞🤫 Where it stands: official girlfriend, or together but kept quiet (one or the other).
   const [liveIn, setLiveIn] = useState(!!seed?.live_in);
   const [local, setLocal] = useState(!!seed?.local);
+  const [livesIn, setLivesIn] = useState(seed?.lives_in || "");
   // 🏘️ A few doors down: she knows it, and she can stop by when you're marked home.
   const [neighbor, setNeighbor] = useState(!!seed?.neighbor);
   // 💍 Where else her heart is, and whether she might start something of her own.
@@ -174,7 +175,7 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
   const working = !!c?.portrait_job;
   const dirty = !c || gender !== (c.voice_kind === "male" ? "male" : "female") || name !== c.name || personality !== c.personality || backstory !== c.backstory || relation !== c.relation || appearance !== c.appearance || job !== (c.job || "") || wear !== (c.casual_wear || "") || hobbies !== (c.hobbies || "") || voice.id !== c.voice || JSON.stringify(traits) !== JSON.stringify(cleanTraits(c.traits && Object.keys(c.traits).length ? c.traits : DEFAULT_TRAITS)) || preset !== (c.preset || "") || zone !== (c.time_zone || "") || bday !== (c.birthday || "") || romantic !== !!c.romantic || (romantic ? arc : "") !== (c.romance_arc || "") || refIds.join() !== (c.reference_ids || []).join() || brain !== (c.brain || "")
     || attire !== (c.work_attire || "") || [...workDays].sort().join() !== [...(c.work_days || [])].sort().join() || workStart !== (c.work_start || "") || workEnd !== (c.work_end || "") || partTime !== !!c.part_time || school !== (c.school || "") || [...classDays].sort().join() !== [...(c.class_days || [])].sort().join() || classStart !== (c.class_start || "") || classEnd !== (c.class_end || "")
-    || (romantic ? [gf ? "gf" : "", secret ? "secret" : ""].filter(Boolean).join("+") : "") !== (c.standing || "") || (romantic && polyOk) !== !!c.poly_ok || (romantic && sapphic) !== !!c.sapphic || bigFollowing !== !!c.big_following || liveIn !== !!c.live_in || neighbor !== !!c.neighbor || local !== !!c.local || attached !== (c.attached || "single") || partner !== (c.partner || "") || seesOthers !== !!c.sees_others || lesbian !== !!c.lesbian || lesbianWho !== (c.lesbian_personality || "");
+    || (romantic ? [gf ? "gf" : "", secret ? "secret" : ""].filter(Boolean).join("+") : "") !== (c.standing || "") || (romantic && polyOk) !== !!c.poly_ok || (romantic && sapphic) !== !!c.sapphic || bigFollowing !== !!c.big_following || liveIn !== !!c.live_in || neighbor !== !!c.neighbor || local !== !!c.local || livesIn.trim() !== (c.lives_in || "").trim() || attached !== (c.attached || "single") || partner !== (c.partner || "") || seesOthers !== !!c.sees_others || lesbian !== !!c.lesbian || lesbianWho !== (c.lesbian_personality || "");
 
   // A portrait in progress: check back every few seconds until it's ready.
   useEffect(() => {
@@ -190,14 +191,14 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
 
   const payload = () => ({ name, personality, backstory, relation, appearance, job, casualWear: wear, hobbies, workAttire: attire,
     romantic, romanceArc: romantic ? arc : "", workDays, workStart, workEnd, partTime, school, classDays, classStart, classEnd,
-    liveIn, neighbor, local: local || neighbor, attached, partner, seesOthers, lesbian: romantic && lesbian, bigFollowing,
+    liveIn, neighbor, local: local || neighbor, livesIn: livesIn.trim(), attached, partner, seesOthers, lesbian: romantic && lesbian, bigFollowing,
     gf: romantic && gf, secret: romantic && secret, polyOk: romantic && polyOk, sapphic: romantic && sapphic, timeZone: zone });
 
   const save = async () => {
     setBusy(true); setMsg("");
     try {
       const fields = { name, personality, backstory, relation, appearance, job, casualWear: wear, hobbies, voice: { id: voice.id, name: voice.name, kind: voice.kind, owner: voice.owner }, romantic, romanceArc: romantic ? arc : "", traits, preset, timeZone: zone, birthday: bday, brain,
-        workAttire: attire, workDays, workStart: workStart && workEnd ? workStart : "", workEnd: workStart && workEnd ? workEnd : "", partTime, school, classDays, classStart: classStart && classEnd ? classStart : "", classEnd: classStart && classEnd ? classEnd : "", polyOk: romantic && polyOk, sapphic: romantic && sapphic, bigFollowing, liveIn, neighbor, local: local || neighbor, attached, partner, seesOthers, lesbian: romantic && lesbian, lesbianPersonality: lesbianWho, gf: romantic && gf, secret: romantic && secret };
+        workAttire: attire, workDays, workStart: workStart && workEnd ? workStart : "", workEnd: workStart && workEnd ? workEnd : "", partTime, school, classDays, classStart: classStart && classEnd ? classStart : "", classEnd: classStart && classEnd ? classEnd : "", polyOk: romantic && polyOk, sapphic: romantic && sapphic, bigFollowing, liveIn, neighbor, local: local || neighbor, livesIn: livesIn.trim(), attached, partner, seesOthers, lesbian: romantic && lesbian, lesbianPersonality: lesbianWho, gf: romantic && gf, secret: romantic && secret };
       const r = await api<{ character: Character }>("/api/characters", { action: c ? "update" : "create", id: c?.id, ...fields, referenceIds: refIds });
       // 🖼️ Pictures picked while making a new character: upload them now (first one as headshot), as references.
       if (!c && pending.files.length && pending.fictional) {
@@ -221,7 +222,9 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
     finally { setBusy(false); }
   };
   // 📍 Marked local, but her story puts her somewhere else: say so (a warning, never a block).
-  const clash = local ? localConflict(`${backstory} ${relation} ${job} ${personality}`) : "";
+  // 📍 Where she lives now is its own field: when it's filled in, that alone decides — a backstory
+  // that says she grew up in Arizona and a job in Chicago no longer trip the warning.
+  const clash = local ? localConflict(livesIn.trim() || `${backstory} ${relation} ${job} ${personality}`) : "";
 
   // 💾 Autosave: three seconds after you stop changing things, an existing character saves itself.
   // Every change restarts the clock — typing a sentence saves once, at the end, not halfway through.
@@ -229,7 +232,7 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
   const [saved, setSaved] = useState(false);
   const saving = useRef(false);
   const edited = JSON.stringify([gender, name, personality, backstory, relation, appearance, job, wear, hobbies, voice.id, traits, preset, zone, bday, romantic, arc, refIds, brain,
-    attire, workDays, workStart, workEnd, partTime, school, classDays, classStart, classEnd, gf, secret, polyOk, sapphic, bigFollowing, liveIn, neighbor, local, attached, partner, seesOthers, lesbian, lesbianWho]);
+    attire, workDays, workStart, workEnd, partTime, school, classDays, classStart, classEnd, gf, secret, polyOk, sapphic, bigFollowing, liveIn, neighbor, local, livesIn, attached, partner, seesOthers, lesbian, lesbianWho]);
   useEffect(() => {
     if (!c || !dirty || busy || working || !name.trim()) return;
     const t = setTimeout(async () => {
@@ -373,6 +376,12 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
           </div>
         )}
         <div data-testid="live-in" style={{ padding: "8px 12px", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface2)" }}>
+          <label style={{ display: "block", marginBottom: 10 }}>
+            <span style={{ fontSize: 13, fontWeight: 700 }}>📍 Currently lives in</span>
+            <input value={livesIn} onChange={e => setLivesIn(e.target.value)} data-testid="lives-in" maxLength={120}
+              aria-label="Currently lives in" placeholder="Munster, IN" style={{ width: "100%", marginTop: 4 }} />
+            <span className="muted" style={{ fontSize: 11, display: "block", marginTop: 3 }}>Where she is NOW — not where she grew up or where she works. Everything else reads this.</span>
+          </label>
           <div className="row" style={{ gap: 16, flexWrap: "wrap" }}>
             <label className="row" style={{ gap: 6, fontSize: 13, fontWeight: 700, cursor: "pointer" }} title="She lives with you — when she's home you're in the same house">
               <input type="checkbox" checked={liveIn} data-testid="is-live-in" onChange={e => setLiveIn(e.target.checked)} style={{ width: 20, height: 20 }} />🏠 Lives with me
@@ -386,7 +395,7 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
           </div>
           {local && clash && (
             <div data-testid="local-clash" style={{ marginTop: 6, padding: "6px 10px", borderRadius: 10, background: "rgba(245,158,11,.15)", border: "1px solid rgba(245,158,11,.45)", fontSize: 12, fontWeight: 500 }}>
-              ⚠️ Her card says <b>{clash}</b> — that isn&apos;t within an hour. Change where she lives, or untick Local.
+              ⚠️ {livesIn.trim() ? "She lives in" : "Her card says"} <b>{clash}</b> — that isn&apos;t within an hour. Change where she lives, or untick Local.
             </div>
           )}
           <span className="muted" style={{ fontSize: 11, display: "block", marginTop: 4 }}>
