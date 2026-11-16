@@ -2,6 +2,7 @@
 // Velo — the app shell: sign-in, the four tabs (💬 Chat, ☀️ Today, 🧠 Memory,
 // ⚙️ Settings), the 📞 call screen, and due-reminder pop-ups.
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { readPlace, savePlace, type Place } from "./lib/place";
 import { useBack } from "./lib/back";
 import { api, data } from "./lib/api";
 import { VersionCard, UpdateBanner } from "./version";
@@ -88,15 +89,6 @@ function SignIn({ onIn }: { onIn: (u: User) => void }) {
 
 type DueReminder = { id: string; text: string };
 
-// 📍 Where they are in the app (tab, open chat or group, scroll), so a reload or an update brings them right back.
-type Place = { tab?: Tab; withId?: string | null; groupId?: string | null; scroll?: Partial<Record<Tab, number>> };
-const placeKey = (userId: string) => `velo:place:${userId}`;
-function readPlace(userId: string): Place {
-  try { const p = JSON.parse(localStorage.getItem(placeKey(userId)) || "{}"); return p && typeof p === "object" ? p : {}; } catch { return {}; }
-}
-function savePlace(userId: string, patch: Place) {
-  try { localStorage.setItem(placeKey(userId), JSON.stringify({ ...readPlace(userId), ...patch })); } catch { /* private mode: fine */ }
-}
 const urlParam = (k: string) => (typeof location === "undefined" ? null : new URLSearchParams(location.search).get(k));
 
 function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
@@ -395,7 +387,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
         {tab === "chat" && !inGroup && !(groupId && !groupsLoaded) && <Chat key={`${withChar?.id || "velo"}-${chatTick}`} brains={brains} userId={userId} name={name} onChanged={bump} added={chatAdd} onAdded={() => setChatAdd(null)} character={withChar} adult={!!profile?.adultConfirmed} onAdult={() => setProfileTick(t => t + 1)} onHistory={h => { chatHistory.current = h; setHistoryCount(h.length); }}
           onNewCharacter={() => api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => setChars(r.characters)).catch(() => {})}
           others={chars.map(c => ({ id: c.id, name: c.name }))} onSocial={id => { setPicaOpen(id); setTab("pica"); }} onGroup={g => { setGroups(gs => [g, ...gs.filter(x => x.id !== g.id)]); setGroupId(g.id); }} />}
-        {tab === "pica" && <Picagram name={name} openProfile={picaOpen} onProfileOpened={() => setPicaOpen(null)} onChat={id => api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => { setChars(r.characters); setTab("chat"); pickChat(id); }).catch(() => {})} />}
+        {tab === "pica" && <Picagram name={name} userId={userId} openProfile={picaOpen} onProfileOpened={() => setPicaOpen(null)} onChat={id => api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => { setChars(r.characters); setTab("chat"); pickChat(id); }).catch(() => {})} />}
         {tab === "today" && <Today refresh={refresh} />}
         {tab === "memory" && <Memory refresh={refresh} />}
         {tab === "settings" && <Settings name={name} setName={setName} onOut={onOut} profile={profile} onProfile={() => setProfileTick(t => t + 1)}

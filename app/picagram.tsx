@@ -1,6 +1,7 @@
 "use client";
 // 📸 Picagram: everyone's posts, newest first, a few at a time as you scroll. Like, comment, and post your own.
 import { useCallback, useEffect, useRef, useState } from "react";
+import { readPlace, savePlace } from "./lib/place";
 import { useBack } from "./lib/back";
 import { api, data, uploadFile, uploadPicaPicture } from "./lib/api";
 import { hideSecrets } from "./lib/secrets";
@@ -35,22 +36,27 @@ function Avatar({ name, url, size = 34 }: { name: string; url: string | null; si
   return <span style={{ width: size, height: size, borderRadius: "50%", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: GRADS[0], color: "#fff", fontWeight: 800, fontSize: size * 0.42 }}>{name.slice(0, 1).toUpperCase()}</span>;
 }
 
-export default function Picagram({ name, onChat, openProfile, onProfileOpened }: { name: string; onChat?: (characterId: string) => void; openProfile?: string | null; onProfileOpened?: () => void }) {
+export default function Picagram({ name, userId, onChat, openProfile, onProfileOpened }: { name: string; userId?: string; onChat?: (characterId: string) => void; openProfile?: string | null; onProfileOpened?: () => void }) {
   const [posts, setPosts] = useState<Post[] | null>(null);
   const [more, setMore] = useState(true);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [composing, setComposing] = useState(false);
-  const [profile, setProfile] = useState<string | null>(openProfile || null);
+  // 📍 Back where you were: a refresh (or an update) keeps the screen you had open.
+  const [place] = useState(() => (typeof window === "undefined" || !userId ? {} : readPlace(userId).pica || {}));
+  const [profile, setProfile] = useState<string | null>(openProfile || place.profile || null);
   useEffect(() => { if (openProfile) { setProfile(openProfile); onProfileOpened?.(); } }, [openProfile]); // eslint-disable-line react-hooks/exhaustive-deps
-  const [savedOpen, setSavedOpen] = useState(false);
+  const [savedOpen, setSavedOpen] = useState(!!place.saved);
   const [making, setMaking] = useState(false);
-  const [mine, setMine] = useState(false);
-  const [followingOpen, setFollowingOpen] = useState(false);
+  const [mine, setMine] = useState(!!place.mine);
+  const [followingOpen, setFollowingOpen] = useState(!!place.following);
   // ✉️ DMs with accounts (characters chat in the normal chat).
-  const [inbox, setInbox] = useState(false);
-  const [thread, setThread] = useState<string | null>(null);
+  const [inbox, setInbox] = useState(!!place.inbox);
+  const [thread, setThread] = useState<string | null>(place.thread || null);
   const [dmUnread, setDmUnread] = useState(0);
+  useEffect(() => {
+    if (userId) savePlace(userId, { pica: { inbox, thread, profile, following: followingOpen, saved: savedOpen, mine } });
+  }, [userId, inbox, thread, profile, followingOpen, savedOpen, mine]);
   useEffect(() => {
     const tick = () => api<{ dms?: number }>("/api/pica", { action: "new" }).then(r => setDmUnread(r.dms || 0)).catch(() => {});
     tick(); const t = setInterval(tick, 20000);
