@@ -244,6 +244,25 @@ export const SECTIONS: Section[] = [
     ],
   },
   {
+    key: "arriving",
+    title: "🚗 Turning up when you're not marked home",
+    about: "You two agreed she'd come over, the time came, and your 🏠 Home toggle is off. Rather than wait in silence she says something — on her way, then here and wondering where you are.",
+    slots: [
+      {
+        key: "plan_omw",
+        label: "On her way",
+        about: "Sent when it's time and you're not marked home. One short text, in her voice.",
+        text: "Write ONE short text (under 120 characters) saying you're on your way over to theirs, the way you'd actually text it — warm, ordinary, maybe an emoji. You two agreed on this; don't ask whether it's still on, and don't mention apps, toggles or settings. Just that you're heading over.",
+      },
+      {
+        key: "plan_here",
+        label: "She's arrived",
+        about: "Sent a while later if you're still not marked home. Where are you?",
+        text: "Write ONE short text (under 120 characters) saying you're here — at their place — and asking where they are, in your own voice. Not cross, not dramatic: a little amused, a little impatient at most. Don't mention apps, toggles or settings.",
+      },
+    ],
+  },
+  {
     key: "safety",
     title: "🛡️ Always on",
     about: "These are what the app holds to whatever else is written anywhere — in a character's description, in your wording above, or in anything she's told. They're here to read, not to edit.",

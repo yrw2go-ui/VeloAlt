@@ -799,3 +799,7 @@ alter table chat_characters add column if not exists was_lesbian boolean not nul
 alter table chat_plans add column if not exists kind text not null default 'video' check (kind in ('video', 'person'));
 -- 🔔 The pop-up that asks to start it at the agreed time fires once.
 alter table chat_plans add column if not exists started_at timestamptz;
+-- 🚗 You invited her over and you're not marked home: she says she's on her way, and then that
+-- she's here and wondering where you are. Each happens once per plan.
+alter table chat_plans add column if not exists on_way_at timestamptz;
+alter table chat_plans add column if not exists arrived_at timestamptz;

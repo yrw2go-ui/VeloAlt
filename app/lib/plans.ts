@@ -5,6 +5,11 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { sql } from "./db";
 import { isValidTimeZone, localDate, zonedParts } from "./localTime";
 import { sendPush } from "./push";
+import { atHome } from "./neighbor";
+import { writeText } from "./llm";
+import { cleanReply } from "./text";
+import { scrub } from "./secrets";
+import { talkWords } from "./words";
 
 export type PlanKind = "video" | "person";
 export type Plan = { id: string; title: string; details: string; day: string; time?: string; kind: PlanKind; character_id?: string; who?: string; portrait?: string | null };
@@ -113,4 +118,50 @@ export async function planNow(userId: string, tz: string): Promise<Plan | null> 
 export async function planLater(userId: string, planId: string): Promise<boolean> {
   const rows = await sql()`update chat_plans set started_at = now() where id = ${planId} and user_id = ${userId} and status = 'planned' returning id`;
   return rows.length > 0;
+}
+
+/**
+ * 🚗 She's coming over and you're not marked home. Rather than wait in silence she texts: first
+ * that she's on her way when the time comes, then — if you're still not home a while later —
+ * that she's here and wondering where you are. Each one once, in her own voice.
+ *
+ * Nothing happens when you ARE marked home: you two are together, and the in-person sheet is the
+ * way in.
+ */
+export async function arriving(userId: string): Promise<number> {
+  if (await atHome(userId)) return 0;
+  const [u] = await sql()`select name, time_zone, talk_words from users where id = ${userId}`;
+  const zone = isValidTimeZone(u?.time_zone) ? String(u.time_zone) : "America/Chicago";
+  const today = localDate(Date.now(), zone);
+  const { hour, minute } = zonedParts(Date.now(), zone);
+  const now = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  const w = talkWords(u);
+  const rows = await sql()`select p.id, p.title, p.details, p.at_time, p.on_way_at, p.character_id, c.name, c.personality, c.brain
+    from chat_plans p join chat_characters c on c.id = p.character_id
+    where p.user_id = ${userId} and p.status = 'planned' and p.kind = 'person' and p.day = ${today}::date and p.arrived_at is null limit 3`;
+  let said = 0;
+  for (const r of rows) {
+    const at = String(r.at_time || "");
+    if (at ? now < at : hour < 9) continue;
+    // 🚗 …on my way.
+    if (!r.on_way_at) {
+      await sql()`update chat_plans set on_way_at = now() where id = ${r.id}`;
+      if (await say(userId, r, w.plan_omw, u?.name)) said++;
+      continue;
+    }
+    // 🚪 …still not home twenty minutes later: I'm here, where are you?
+    if (Date.now() - new Date(String(r.on_way_at)).getTime() < 20 * 60_000) continue;
+    await sql()`update chat_plans set arrived_at = now() where id = ${r.id}`;
+    if (await say(userId, r, w.plan_here, u?.name)) said++;
+  }
+  return said;
+}
+
+/** Her text, in her own voice, dropped into their chat. */
+async function say(userId: string, r: Record<string, unknown>, how: string, them: unknown): Promise<boolean> {
+  const text = scrub(cleanReply(await writeText(r.brain, `You are ${r.name}${r.personality ? ` (${String(r.personality).slice(0, 400)})` : ""}, texting ${String(them || "them")}. ${how} Output only the text.`,
+    `WHAT YOU TWO AGREED: ${String(r.title || "")}${r.details ? ` — ${String(r.details)}` : ""}`, 200).catch(() => "")).replace(/\s+/g, " ").trim()).slice(0, 300);
+  if (text.length < 2) return false;
+  await sql()`insert into velo_messages (user_id, character_id, role, content) values (${userId}, ${r.character_id}, 'assistant', ${text})`;
+  return true;
 }

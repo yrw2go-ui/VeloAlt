@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { duePlans, setPlanStatus, planNow, planLater } from "../../lib/plans";
+import { duePlans, setPlanStatus, planNow, planLater, arriving } from "../../lib/plans";
 import { readyIntros, acceptIntro, declineIntro, IntroError } from "../../lib/intros";
 import { peekAt, draftPeek, draftIcu } from "../../lib/peek";
 import { inPersonFor, startInPerson, endInPerson } from "../../lib/inPerson";
@@ -75,6 +75,8 @@ export async function POST(req: NextRequest) {
       // ⏰ A plan whose time has come: the pop-up that starts it.
       case "plan.now": {
         const [u] = await db`select time_zone from users where id = ${me}`;
+        // 🚗 Coming over while you're not marked home: she texts rather than waiting in silence.
+        await arriving(me).catch(e => console.error("plans: arriving", e instanceof Error ? e.message : e));
         return NextResponse.json({ plan: await planNow(me, String(u?.time_zone || "")) });
       }
       case "plan.later": return (await planLater(me, String(b.id || ""))) ? NextResponse.json({ ok: true }) : bad("That plan wasn't found.");
