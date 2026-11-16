@@ -394,6 +394,20 @@ export async function sweepMedia(userId: string, max = 4): Promise<Media[]> {
 }
 
 // 🖼️ Gallery: everything Velo or a character made for them (newest first), a page at a time.
+/**
+ * 🖼️ Particular pictures of theirs, by id — whatever character they belong to and whether or not
+ * they came from Picagram. The gallery only lists one character's recent, non-Picagram pictures,
+ * so a picked reference can sit outside it; this is how the picker still shows it.
+ */
+export async function mediaByIds(userId: string, ids: string[]) {
+  const want = ids.filter(x => /^[0-9a-f-]{36}$/i.test(x)).slice(0, 20);
+  if (!want.length) return [];
+  const rows = await sql()`select m.id, m.kind, m.kept, m.created_at::text, m.poster_url, f.url, t.url as thumb
+    from velo_media m join velo_files f on f.id = m.file_id left join velo_files t on t.id = m.thumb_file_id
+    where m.user_id = ${userId} and m.id = any(${want}::uuid[]) and m.status = 'done'`;
+  return rows.map(r => ({ id: String(r.id), kind: r.kind as "image" | "video", kept: !!r.kept, created_at: String(r.created_at), url: String(r.url), thumb: (r.thumb || r.poster_url || null) as string | null }));
+}
+
 export async function listGallery(userId: string, characterId: string | null, before: string | null, limit = 30) {
   const rows = await sql()`select m.id, m.kind, m.kept, m.created_at::text, m.poster_url, f.url, t.url as thumb
     from velo_media m join velo_files f on f.id = m.file_id left join velo_files t on t.id = m.thumb_file_id

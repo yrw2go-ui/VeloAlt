@@ -3,7 +3,7 @@ import { sql } from "../../lib/db";
 import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import { scrub } from "../../lib/secrets";
-import { listGallery } from "../../lib/media";
+import { listGallery, mediaByIds } from "../../lib/media";
 import { cleanTraits, PRESETS } from "../../lib/traits";
 import { isValidTimeZone, localDate } from "../../lib/localTime";
 import { availableBrains, brainList } from "../../lib/models";
@@ -194,7 +194,12 @@ export async function POST(req: NextRequest) {
       }
       case "gallery": {
         if (!(await getCharacter(id))) return bad("That character wasn't found.");
-        return NextResponse.json({ items: (await listGallery(me, id, null, 60)).filter(x => x.kind === "image") });
+        const mine = (await listGallery(me, id, null, 60)).filter(x => x.kind === "image");
+        // 🖼️ Pictures already picked as hers come too, even when they're not in this list (an
+        // older one, or one from her Picagram days) — so what's picked is always on screen.
+        const want = (Array.isArray(b.ids) ? b.ids.map(String) : []).filter((x: string) => !mine.some(m => m.id === x));
+        const extra = want.length ? (await mediaByIds(me, want)).filter(x => x.kind === "image") : [];
+        return NextResponse.json({ items: [...extra, ...mine] });
       }
 
       // 👭 Friends & family between characters.

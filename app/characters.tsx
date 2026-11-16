@@ -594,8 +594,12 @@ function ReferencePicker({ characterId, value, onChange, refresh, onPortrait }: 
   const [err, setErr] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  // 🖼️ The pictures already picked as hers come with the list, wherever they live, so every one
+  // that's counted is also on screen.
+  const picked = useRef(value);
   useEffect(() => {
-    api<{ items: { id: string; thumb: string | null; url: string }[] }>("/api/characters", { action: "gallery", id: characterId }).then(r => setItems(r.items)).catch(() => setItems([]));
+    api<{ items: { id: string; thumb: string | null; url: string }[] }>("/api/characters", { action: "gallery", id: characterId, ids: picked.current })
+      .then(r => setItems(r.items)).catch(() => setItems([]));
   }, [characterId, refresh, reload]);
   const upload = async (f: File | undefined) => {
     if (!f) return;
@@ -629,10 +633,17 @@ function ReferencePicker({ characterId, value, onChange, refresh, onPortrait }: 
       {err && <div style={{ color: "var(--bad)", fontSize: 12 }}>⚠️ {err}</div>}
     </div>
   );
+  const gone = items ? value.filter(id => !items.some(x => x.id === id)) : [];
   const toggle = (id: string) => onChange(value.includes(id) ? value.filter(x => x !== id) : value.length >= 4 ? value : [...value, id]);
   return (
     <div style={{ fontSize: 13, fontWeight: 700 }}>
-      Reference pictures <span className="muted" style={{ fontWeight: 500 }}>· {value.length}/4 picked (2–4 keeps them looking the same)</span>
+      Reference pictures <span className="muted" style={{ fontWeight: 500 }}>· {items ? value.filter(id => items.some(x => x.id === id)).length : value.length}/4 picked (2–4 keeps them looking the same)</span>
+      {gone.length > 0 && (
+        <div data-testid="refs-gone" style={{ fontWeight: 500, marginTop: 6, padding: "6px 10px", borderRadius: 10, background: "rgba(245,158,11,.15)", border: "1px solid rgba(245,158,11,.45)", fontSize: 12 }}>
+          ⚠️ {gone.length === 1 ? "One of her reference pictures is gone" : `${gone.length} of her reference pictures are gone`} — deleted since they were picked.{" "}
+          <button type="button" className="ghost" data-testid="refs-drop-gone" onClick={() => onChange(value.filter(id => !gone.includes(id)))} style={{ padding: "2px 8px", fontSize: 12 }}>Drop {gone.length === 1 ? "it" : "them"}</button>
+        </div>
+      )}
       {!items ? <div className="muted" style={{ fontWeight: 500, marginTop: 6 }}>Loading…</div>
         : !items.length ? <div className="muted" style={{ fontWeight: 500, marginTop: 6 }}>Upload pictures you made (e.g. in Atlas Cloud), generate a few portraits, or ask them for selfies in chat — then pick the best 2–4 here.</div>
         : (
