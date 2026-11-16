@@ -25,6 +25,7 @@ import { BIO_SECTIONS, BIO_MAX } from "../../lib/bioSections";
 import { availableModels, availableBrains, CHAT_MODELS, MODEL_INFO, type ChatModel } from "../../lib/models";
 import { PERSONALITIES } from "../../lib/persona";
 import { deleteFile, ownFile } from "../../lib/files";
+import { roomForMore } from "../../lib/together";
 import { getCharacterFor, trustFor, happyFor, loveFor, activeScene, saveFeelings, referenceUrls, pictureOf } from "../../lib/characters";
 import { US_STATES } from "../../lib/states";
 import { mediaMood, allowsSuggestive } from "../../lib/traits";
@@ -286,6 +287,9 @@ export async function POST(req: NextRequest) {
         // Started from a plan's "today" card: that plan is done.
         if (b.planId) await setPlanStatus(me, String(b.planId), "done");
         if (action === "scene.start") {
+          // 🧍🎥 Two times together at once is the most — the rest of them carry on texting.
+          const full = await roomForMore(me, ch.name).catch(() => null);
+          if (full) return bad(full);
           const gone = await awayFor(me, ch.id);
           if (gone && b.anyway !== true) return bad(awayText(ch.name, gone));
           // 🙋‍♀️ She has her own evening: now and then she'd rather do it another time, and says so.
@@ -461,6 +465,8 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ ok: true, marker: await note(`🧍 We went our separate ways`) });
         }
         if (await activeScene(me, ch.id)) return bad("End the video chat first.");
+        const full = await roomForMore(me, ch.name).catch(() => null);
+        if (full) return bad(full);
         const gone = await awayFor(me, ch.id);
         if (gone) return bad(awayText(ch.name, gone));
         // 🙋‍♀️ She has to be free (and up for it): at work or in class she usually can't, though she

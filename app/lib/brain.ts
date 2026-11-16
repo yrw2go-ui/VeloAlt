@@ -40,6 +40,8 @@ async function pushedLately(userId: string, sceneId: string): Promise<number> {
 }
 import { soreFor, setSore, mend as mendSore, soreNote, SORE_REMEMBER } from "./sore";
 import { partnerLook, partnerPicNote } from "./partner";
+import { TOGETHER_TIME } from "./together";
+import { timeOfDay } from "./localTime";
 import { attachedNote, lesbianNote, maybeStartDating, maybeEndIt, endedNote, wonOver, cameAround, WON_OVER, type Her } from "./attached";
 import { characterPrompt, feelingsFor, saveFeelings, trustFor, saveTrust, trustNote, happyFor, saveHappy, happyNote, loveFor, saveLove, loveNote, activeScene, sceneNote, noteMentions, acquaintancesNote, referenceUrls, pictureOf, type Character } from "./characters";
 import { talkWords } from "./words";
@@ -206,6 +208,8 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
   // 📸 Every so often (sooner as they get closer), she offers a photo of the moment.
   // 🧍 Together in person (no scene): she talks face to face.
   const together = ch && (mode === "chat" || mode === "talk") && !scene && !group ? await inPersonFor(caller.userId, ch.id).catch(() => null) : null;
+  // 🧍🎥 Are you two actually together right now? (A live-in simply being home isn't a meet-up.)
+  const occasion = !!(scene && scene.kind === "live") || !!(together && !(ch?.live_in && together.place === HOME)) || !!group?.scene;
   const photoMoment = ch && mode === "chat" && canSend && !scene && !group && !together ? await tickPics(caller.userId, ch).catch(() => false) : false;
   // 👋 Every so often (once she's close to them), she wants them to meet someone of hers.
   const introKind = ch && mode === "chat" && !scene && !group ? await tickIntro(caller.userId, ch, !!u?.adult_confirmed_at).catch(e => { console.error("velo: intro", e instanceof Error ? e.message : e); return null; }) : null;
@@ -224,11 +228,14 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
       type: "text",
       text: [
         errand ? "" : name ? `Their first name is ${name}.` : "You don't know their name yet — if it comes up naturally, ask, and remember it.",
-        `Right now it is ${today.label}${errand ? "" : " where they are"}.`,
-        errand ? "" : "The evening runs late: people here are up and talking until around 1am, so don't start winding the conversation down, saying goodnight or telling them to get some sleep just because it's gone eleven — only once it's properly the small hours, and even then only if it fits.",
+        // 🧍🎥 While you're together, the days of real time that pass don't reach her: no dates, no
+        // gaps, no "where have you been". Ordinary time starts again when you two part.
+        occasion ? `Right now it is ${timeOfDay(today.label)}.` : `Right now it is ${today.label}${errand ? "" : " where they are"}.`,
+        occasion ? TOGETHER_TIME : "",
+        errand || occasion ? "" : "The evening runs late: people here are up and talking until around 1am, so don't start winding the conversation down, saying goodnight or telling them to get some sleep just because it's gone eleven — only once it's properly the small hours, and even then only if it fits.",
         chClock,
-        ch ? workNow(ch, chZone || today.tz, Date.now(), skived, ch.id).text : "",
-        errand ? "" : calendarNote(today.date, !!proTools && !ch),
+        ch && !occasion ? workNow(ch, chZone || today.tz, Date.now(), skived, ch.id).text : "",
+        errand || occasion ? "" : calendarNote(today.date, !!proTools && !ch),
         ch?.birthday ? ownBirthdayNote(ch.birthday, chZone ? localNow(chZone).date : today.date) : "",
         about,
         friendNote,

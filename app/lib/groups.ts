@@ -13,6 +13,7 @@ import { startMedia, type Media } from "./media";
 import { allowsSuggestive } from "./traits";
 import { writeText } from "./llm";
 import { sceneFallback } from "./peek";
+import { roomForMore } from "./together";
 import { forgetLines } from "./forget";
 import { sceneClockNote, sceneTime, HHMM } from "./sceneClock";
 import { isValidTimeZone } from "./localTime";
@@ -239,6 +240,11 @@ export async function deleteGroup(userId: string, id: string): Promise<boolean> 
 export async function startGroupScene(userId: string, g: Group, kind: "live" | "past", title: string, details: string, setTime = ""): Promise<GroupMsg> {
   const t = scrub(title).trim().slice(0, 120), d = scrub(details).trim().slice(0, 1000);
   if (!t) throw new GroupError("Give the scene a title.");
+  // 🧍🎥 Two times together at once is the most, this meet-up included.
+  if (kind === "live") {
+    const full = await roomForMore(userId, g.title).catch(() => null);
+    if (full) throw new GroupError(full);
+  }
   const marker = kind === "live" ? `🎥 Group video chat: ${t}${d ? ` — ${d}` : ""}` : `🎬 Something we all did together: ${t}${d ? ` — ${d}` : ""}`;
   const at = HHMM.test(setTime) ? setTime : "";
   if (kind === "live") await sql()`update chat_groups set in_person_place = null, catch_up = '{}'::jsonb, scene_title = ${t}, scene_details = ${d}, scene_clock = ${at ? "set" : "now"}, scene_set_time = ${at}, scene_started_at = now(), updated_at = now() where id = ${g.id} and user_id = ${userId}`;
