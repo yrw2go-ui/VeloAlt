@@ -416,9 +416,21 @@ function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: 
   };
   return (
     <div role="dialog" aria-modal="true" data-testid="pica-profile" style={{ position: "fixed", inset: 0, background: "var(--bg)", zIndex: 2600, overflowY: "auto" }}>
-      <div className="row" style={{ padding: "10px 14px", gap: 8, position: "sticky", top: 0, background: "var(--bg)", borderBottom: "1px solid var(--border)" }}>
+      <div className="row" style={{ padding: "10px 14px", gap: 8, position: "sticky", top: 0, zIndex: 2, background: "var(--bg)", borderBottom: "1px solid var(--border)" }}>
         <button className="ghost" onClick={onClose} aria-label="Back" style={{ padding: "4px 10px" }}>←</button>
-        <b style={{ flex: 1 }}>{data?.account.handle || "…"}</b>
+        {data && !data.account.character_id
+          ? <div style={{ flex: 1, minWidth: 0 }}>
+              <EditableBio value={data.account.handle} testid="pica-handle" placeholder="username" max={28}
+                onSave={async t => {
+                  const handle = t.replace(/^@/, "").replace(/[^A-Za-z0-9._]/g, "").slice(0, 28);
+                  if (handle.length < 2) return;
+                  try {
+                    const r = await api<{ handle: string }>("/api/pica", { action: "handle.set", id, handle });
+                    setData(d => (d ? { ...d, account: { ...d.account, handle: r.handle } } : d));
+                  } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't change her username."); }
+                }} />
+            </div>
+          : <b style={{ flex: 1 }}>{data?.account.handle || "…"}</b>}
       </div>
       {data && (
         <div style={{ maxWidth: 560, margin: "0 auto" }}>
