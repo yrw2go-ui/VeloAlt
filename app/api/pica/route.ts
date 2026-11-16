@@ -3,7 +3,7 @@ import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import { sql } from "../../lib/db";
 import { MediaError, mediaReady } from "../../lib/media";
-import { dmThreads, dmUnread, dmOpen, dmSend, dmSendPhoto, dmPhotoMake, dmBrain, dmMyPhotoDraft, dmMyPhoto, dmSendMine, DmError } from "../../lib/picaDm";
+import { dmThreads, dmUnread, dmOpen, dmSend, dmSendPhoto, dmPhotoMake, dmBrain, dmMyPhotoDraft, dmMyPhoto, dmSendMine, DmError, dmDelete } from "../../lib/picaDm";
 import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSetAvatar, picaRefs, picaSavedList, picaFollowing, picaBefriend, picaCounts, picaDeletePost, picaCreateAccount, picaPictureAbout, picaRedoDraft, picaRedo, picaWithMe, picaMe, picaMeBio, picaBio, picaPersona, picaLives, picaName, picaHandle, picaCaption, picaCharacters, picaHide, accountFor, picaNew, picaFromPhoto, myPhotoDraft, newFaces, picaDeleteAccount, PicaLimit, picaCommentEdit } from "../../lib/picagram";
 
 // 📸 Picagram. POST { action, ... }:
@@ -67,6 +67,12 @@ export async function POST(req: NextRequest) {
         if (!mediaReady()) return bad("Photos aren't set up yet.");
         if (!allow(`pica-dm:${me}`, [{ ms: 60_000, max: 15 }, { ms: 86_400_000, max: 600 }])) return bad("Slow down a little — try again in a bit.", 429);
         return NextResponse.json(await dmMyPhoto(me, id, String(b.description || "")));
+      }
+      // 🗑 Written messages in a thread, gone. Pictures aren't deletable here.
+      case "dm.delete": {
+        if (!UUID.test(id)) return bad("Unknown thread.");
+        const n = await dmDelete(me, id, Array.isArray(b.ids) ? b.ids.map(String) : []);
+        return n ? NextResponse.json({ deleted: n }) : bad("Nothing to delete — pictures stay.");
       }
       case "dm.brain": return UUID.test(id) && (await dmBrain(me, id, String(b.brain ?? ""))) ? NextResponse.json({ ok: true }) : bad("Unknown account.");
       case "dm.send":

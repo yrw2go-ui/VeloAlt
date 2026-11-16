@@ -7,6 +7,7 @@ import { noJargon } from "./lib/text";
 import { MediaView, type Media } from "./media";
 import { RedoSheet } from "./redo";
 import { TraitSliders } from "./characters";
+import { Selectable } from "./chat";
 import { cleanTraits, DEFAULT_TRAITS, type TraitKey } from "./lib/traits";
 import { stamp } from "./lib/when";
 import { confirmAsk } from "./lib/dialog";
@@ -766,6 +767,29 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
   const [err, setErr] = useState("");
   const [mySheet, setMySheet] = useState(false);
   // 🖼️📎 Send her something you already have: from the gallery, or straight off the phone.
+  // 🗑 Long-press a written message to start picking (up to 10). A message with a picture in it
+  // isn't selectable at all, so a long press on a photo stays the phone's own save-and-share.
+  const [selected, setSelected] = useState<Set<string> | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const toggleSelect = (mid: string) => setSelected(sel => {
+    if (!sel) return sel;
+    const next = new Set(sel);
+    if (next.has(mid)) next.delete(mid); else if (next.size < 10) next.add(mid);
+    return next.size ? next : null;
+  });
+  const deleteSelected = async () => {
+    if (!selected?.size) return;
+    const n = selected.size;
+    if (!(await confirmAsk(`Delete ${n === 1 ? "this message" : `these ${n} messages`}? Are you sure?`, { yes: "Delete", danger: true }))) return;
+    setDeleting(true);
+    try {
+      await api("/api/pica", { action: "dm.delete", id, ids: [...selected] });
+      const gone = selected;
+      setMsgs(list => (list || []).filter(m => !gone.has(m.id)));
+      setSelected(null);
+    } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't delete."); }
+    setDeleting(false);
+  };
   const [pick, setPick] = useState(false);
   const [sending, setSending] = useState("");
   const upIn = useRef<HTMLInputElement>(null);
@@ -838,14 +862,20 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: 14, display: "flex", flexDirection: "column", gap: 8, maxWidth: 560, width: "100%", margin: "0 auto" }}>
         {msgs && !msgs.length && <div className="muted" style={{ textAlign: "center", marginTop: 24, fontSize: 14 }}>Say hi to {acc?.name || "her"} 👋</div>}
-        {(msgs || []).map(m => (
-          <div key={m.id} data-testid={m.role === "user" ? "dm-mine" : "dm-hers"} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "80%" }}>
-            {m.media ? <MediaView media={m.media} who={acc?.name || ""} /> : (
-              <div style={{ padding: "9px 13px", borderRadius: 18, background: m.role === "user" ? "linear-gradient(135deg,#8b5cf6,#ec4899)" : "var(--surface2)", color: m.role === "user" ? "#fff" : "var(--text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 15 }}>{m.content}</div>
-            )}
-            <When at={m.created_at} align={m.role === "user" ? "right" : "left"} />
-          </div>
-        ))}
+        {(msgs || []).map(m => {
+          const bubble = (
+            <div key={m.id} data-testid={m.role === "user" ? "dm-mine" : "dm-hers"} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "80%" }}>
+              {m.media ? <MediaView media={m.media} who={acc?.name || ""} /> : (
+                <div style={{ padding: "9px 13px", borderRadius: 18, background: m.role === "user" ? "linear-gradient(135deg,#8b5cf6,#ec4899)" : "var(--surface2)", color: m.role === "user" ? "#fff" : "var(--text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 15 }}>{m.content}</div>
+              )}
+              <When at={m.created_at} align={m.role === "user" ? "right" : "left"} />
+            </div>
+          );
+          // A picture message is never selectable: long-press it and the phone does its own thing.
+          return m.media ? bubble : (
+            <Selectable key={m.id} id={m.id} selecting={selected} onStart={x => setSelected(new Set([x]))} onToggle={toggleSelect}>{bubble}</Selectable>
+          );
+        })}
         {busy && <div className="muted" style={{ fontSize: 13 }}>{acc?.name || "She"} is typing…</div>}
         {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
         <div ref={end} />
@@ -863,7 +893,14 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
       {mySheet && <MyPhotoSheet title={`Send ${acc?.name || "her"} a photo of you`} draft={a => api<{ description: string }>("/api/pica", { action: "dm.me.draft", id, about: a }).then(r => r.description)}
         onMake={async d => { const r = await api<{ added: DmMsg[] }>("/api/pica", { action: "dm.me.photo", id, description: d }); setMsgs(m => [...(m || []), ...r.added]); setMySheet(false); }} onClose={() => setMySheet(false)} />}
       {pendingPic && <div style={{ padding: "0 12px 6px" }}><button className="ghost" onClick={sendPic} data-testid="dm-send-pic" style={{ padding: "6px 12px", fontSize: 13, borderColor: "#ec4899" }}>📸 {acc?.name || "She"} didn&apos;t send it — send the pic</button></div>}
-      <form onSubmit={e => { e.preventDefault(); send(); }} className="row" style={{ padding: "10px 12px", gap: 8, borderTop: "1px solid var(--border)" }}>
+      {selected && (
+        <div data-testid="dm-select-bar" className="row" style={{ padding: "10px 12px", borderTop: "1px solid var(--border)", gap: 8 }}>
+          <span style={{ flex: 1, fontSize: 14 }}><b>{selected.size}</b> selected <span className="muted" style={{ fontSize: 12 }}>(up to 10)</span></span>
+          <button type="button" className="ghost" onClick={() => setSelected(null)} data-testid="dm-select-cancel">Cancel</button>
+          <button type="button" className="btn" onClick={deleteSelected} disabled={deleting} data-testid="dm-select-delete" style={{ background: "var(--bad)" }}>{deleting ? "…" : `🗑 Delete${selected.size > 1 ? ` ${selected.size}` : ""}`}</button>
+        </div>
+      )}
+      <form onSubmit={e => { e.preventDefault(); send(); }} className="row" style={{ padding: "10px 12px", gap: 8, borderTop: "1px solid var(--border)", ...(selected ? { display: "none" } : {}) }}>
         <PicMenu busy={sending} onMine={() => setMySheet(true)} onGallery={() => setPick(true)} onUpload={() => upIn.current?.click()} />
         <input ref={upIn} type="file" accept="image/jpeg,image/png,image/webp" hidden data-testid="dm-upload-file" onChange={e => uploadMine(e.target.files?.[0])} />
         <input value={text} onChange={e => setText(e.target.value)} placeholder={`Message ${acc?.name || ""}…`} aria-label="Message" maxLength={2000} disabled={!msgs} style={{ borderRadius: 999 }} />

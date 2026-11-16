@@ -115,6 +115,19 @@ async function describePhoto(userId: string, a: Record<string, unknown>, u: { na
 }
 
 /** 💬 They send a DM; she answers in her own voice (and sometimes with a photo of herself). */
+/**
+ * 🗑 Delete messages from a DM thread — the written ones only. A message carrying a picture is
+ * left alone: her photos are yours to keep (delete one from the gallery if you want it gone).
+ * Returns how many went.
+ */
+export async function dmDelete(userId: string, accountId: string, ids: string[]): Promise<number> {
+  const want = ids.filter(x => /^[0-9a-f-]{36}$/i.test(x)).slice(0, 50);
+  if (!want.length) return 0;
+  const gone = await sql()`delete from pica_dms where user_id = ${userId} and account_id = ${accountId}
+    and id = any(${want}::uuid[]) and media_id is null returning id`;
+  return gone.length;
+}
+
 export async function dmSend(userId: string, accountId: string, text: string): Promise<{ added: Dm[]; note?: string; ask?: string }> {
   const a = await account(userId, accountId);
   const t = scrub(text).trim().slice(0, 2000);
