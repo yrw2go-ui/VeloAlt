@@ -374,9 +374,13 @@ function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: 
   // 🖼️ Her profile picture on its own: one of her photos, or one you upload just for it.
   const pic = useRef<HTMLInputElement>(null);
   const [picBusy, setPicBusy] = useState("");
+  // 🔖 Whether her current profile picture is one of your saved ones (the viewer's button reads it).
+  const [savedAvatar, setSavedAvatar] = useState(false);
   // 🎭 Her description and sliders, in a tab of her own.
   const [persona, setPersona] = useState(false);
-  const reload = () => api<NonNullable<typeof data>>("/api/pica", { action: "profile", id }).then(d => { setData(d); setHidden(d.account.hidden); }).catch(() => {});
+  const readAvatarSaved = (d: { account: { avatar_media_id?: string | null }; photos: Photo[] }) =>
+    setSavedAvatar(!!d.account.avatar_media_id && d.photos.some(x => x.media_id === d.account.avatar_media_id && x.saved));
+  const reload = () => api<NonNullable<typeof data>>("/api/pica", { action: "profile", id }).then(d => { setData(d); setHidden(d.account.hidden); readAvatarSaved(d); }).catch(() => {});
   const setAvatar = async (mediaId: string) => {
     setErr(""); setPicBusy("…");
     try {
@@ -421,10 +425,15 @@ function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: 
   const uploadAvatar = async (f: File | undefined) => {
     if (!f) return;
     setErr(""); setPicBusy("…");
-    try { const up = await uploadPicaPicture(f); await setAvatar(up.mediaId); }
+    try {
+      const up = await uploadPicaPicture(f);
+      await setAvatar(up.mediaId);
+      // 🔖 Keep it: a picture you picked for her profile is worth keeping, so it lands in your saved ones.
+      await api("/api/pica", { action: "save", id: up.mediaId, on: true }).then(() => setSavedAvatar(true)).catch(() => {});
+    }
     catch (e) { setErr(e instanceof Error ? e.message : "That picture didn't upload."); setPicBusy(""); }
   };
-  useEffect(() => { api<NonNullable<typeof data>>("/api/pica", { action: "profile", id }).then(d => { setData(d); setHidden(d.account.hidden); }).catch(() => onClose()); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { api<NonNullable<typeof data>>("/api/pica", { action: "profile", id }).then(d => { setData(d); setHidden(d.account.hidden); readAvatarSaved(d); }).catch(() => onClose()); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
   const follow = async () => {
     if (!data) return;
     const on = !data.account.followed;
@@ -454,7 +463,13 @@ function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: 
         <div style={{ maxWidth: 560, margin: "0 auto" }}>
           <div className="row" style={{ gap: 16, padding: 16 }}>
             <div style={{ textAlign: "center" }}>
-              <Avatar name={data.account.name} url={data.account.avatar} size={76} />
+              {/* 🔍 Tap her profile picture to see it full size — Save, Redo and the rest are in there. */}
+              <button type="button" onClick={() => { if (data.account.avatar && data.account.avatar_media_id) setView({ media_id: data.account.avatar_media_id, url: data.account.avatar, thumb: null, saved: savedAvatar, caption: `${data.account.name}'s profile picture` }); }}
+                aria-label={data.account.avatar ? `${data.account.name}'s profile picture, tap to see it full size` : `${data.account.name}'s profile picture`}
+                data-testid="pica-avatar-open" disabled={!data.account.avatar || !data.account.avatar_media_id}
+                style={{ all: "unset", cursor: data.account.avatar && data.account.avatar_media_id ? "zoom-in" : "default", display: "block" }}>
+                <Avatar name={data.account.name} url={data.account.avatar} size={76} />
+              </button>
               <button className="ghost" onClick={() => pic.current?.click()} disabled={!!picBusy} data-testid="pica-avatar-change" style={{ display: "block", marginTop: 6, padding: "3px 8px", fontSize: 11 }}>{picBusy || "Change"}</button>
               <input ref={pic} type="file" accept="image/jpeg,image/png,image/webp" hidden data-testid="pica-avatar-file" onChange={e => uploadAvatar(e.target.files?.[0])} />
               {data.account.avatar_media_id && (
@@ -535,7 +550,10 @@ function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: 
       )}
       {view && <Viewer photo={view} onClose={() => setView(null)} onRedo={m => { setView(null); setRedo(m); }} onAvatar={m => { setView(null); setAvatar(m); }}
         {...(data && !data.account.character_id ? { onRef: (m: string) => { toggleRef(m); setView(null); }, isRef: isRef(view.media_id) } : {})}
-        onSaved={on => setData(d => (d ? { ...d, photos: d.photos.map(x => (x.media_id === view.media_id ? { ...x, saved: on } : x)) } : d))} />}
+        onSaved={on => {
+          if (view.media_id === data?.account.avatar_media_id) setSavedAvatar(on);
+          setData(d => (d ? { ...d, photos: d.photos.map(x => (x.media_id === view.media_id ? { ...x, saved: on } : x)) } : d));
+        }} />}
       {persona && data && (
         <PersonaSheet who={data.account.name} personality={data.account.personality} traits={data.account.traits}
           onClose={() => setPersona(false)}

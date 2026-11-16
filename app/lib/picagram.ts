@@ -859,7 +859,9 @@ export async function picaSetAvatar(userId: string, accountId: string, mediaId: 
 
 /** 🔖 Their own Picagram gallery: pictures they saved. */
 export async function picaSave(userId: string, mediaId: string, on: boolean): Promise<boolean> {
-  const [m] = await sql()`select 1 from pica_posts where user_id = ${userId} and media_id = ${mediaId} limit 1`;
+  // 🔖 Any Picagram picture of yours can be kept: one from a post, one she sent you in a DM, or
+  // one you uploaded for her profile. It only has to be yours and finished.
+  const [m] = await sql()`select 1 from velo_media where id = ${mediaId} and user_id = ${userId} and kind = 'image' and status <> 'declined' limit 1`;
   if (!m) return false;
   if (on) await sql()`insert into pica_saved (user_id, media_id) values (${userId}, ${mediaId}) on conflict do nothing`;
   else await sql()`delete from pica_saved where user_id = ${userId} and media_id = ${mediaId}`;
