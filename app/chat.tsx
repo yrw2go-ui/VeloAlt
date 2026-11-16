@@ -46,7 +46,7 @@ const SUGGESTIONS = ["Plan my day", "Remind me to call Mom tomorrow at 6pm", "I 
 /** A message to drop into one chat (a call recap): cid null = Velo's chat. */
 export type ChatAdd = { msg: ChatMsg; cid: string | null };
 
-export default function Chat({ userId, name, onChanged, added, onAdded, character, adult = false, onAdult, onHistory, onNewCharacter, others = [], onGroup, onSocial, brains = [] }: { brains?: string[]; onSocial?: (accountId: string) => void; others?: { id: string; name: string }[]; onGroup?: (g: { id: string; title: string; member_ids: string[]; updated_at: string; in_person_place?: string | null }) => void; userId: string; name: string; onChanged: () => void; added: ChatAdd | null; onAdded?: () => void; character?: ChatWith | null; adult?: boolean; onAdult?: () => void; onHistory?: (m: { role: "user" | "assistant"; content: string }[]) => void; onNewCharacter?: (c: { id: string; name: string; portrait_url: string | null }) => void }) {
+export default function Chat({ userId, name, onChanged, added, onAdded, character, adult = false, onAdult, onHistory, onNewCharacter, others = [], onGroup, onSocial, brains = [], startPlan, onPlanStarted }: { startPlan?: { id: string; kind: "video" | "person"; title: string; details: string } | null; onPlanStarted?: () => void; brains?: string[]; onSocial?: (accountId: string) => void; others?: { id: string; name: string }[]; onGroup?: (g: { id: string; title: string; member_ids: string[]; updated_at: string; in_person_place?: string | null }) => void; userId: string; name: string; onChanged: () => void; added: ChatAdd | null; onAdded?: () => void; character?: ChatWith | null; adult?: boolean; onAdult?: () => void; onHistory?: (m: { role: "user" | "assistant"; content: string }[]) => void; onNewCharacter?: (c: { id: string; name: string; portrait_url: string | null }) => void }) {
   const cid = character?.id || null;
   const thread = cid ? { characterId: cid } : {};
   const who = character?.name || "Velo";
@@ -351,9 +351,17 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     } catch (e) { setPeekSheet(p => (p ? { ...p, loading: false, error: e instanceof Error ? e.message : "Couldn't peek right now." } : p)); }
   };
   // 📅 A hangout/date you two planned for today: set the scene for it.
-  type Plan = { id: string; title: string; details: string; day: string; time?: string };
+  type Plan = { id: string; title: string; details: string; day: string; time?: string; kind?: "video" | "person" };
   const [plans, setPlans] = useState<Plan[]>([]);
   const [fromPlan, setFromPlan] = useState<Plan | null>(null);
+  // ⏰ The pop-up said it's time: open the right thing — the scene sheet for a 🎥 video chat, the
+  // in-person one for 🧍 meeting up — with what you two had already agreed filled in.
+  useEffect(() => {
+    if (!startPlan || !character || character.id !== cid) return;
+    if (startPlan.kind === "person") setTogetherSheet({ place: startPlan.details || startPlan.title, busy: false });
+    else { setFromPlan({ id: startPlan.id, title: startPlan.title, details: startPlan.details, day: "", kind: "video" }); setSceneSheet(true); }
+    onPlanStarted?.();
+  }, [startPlan, character, cid]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!cid) return;
     data<{ scene: { id: string; title: string; details: string } | null }>("scene.active", { characterId: cid }).then(r => setScene(r.scene)).catch(() => {});
@@ -635,10 +643,11 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       )}
       {character && !scene && plans[0] && (
         <div data-testid="plan-card" style={{ margin: "10px 14px 0", padding: "12px 14px", borderRadius: 14, border: "1px solid rgba(236,72,153,.4)", background: "linear-gradient(90deg, rgba(124,140,255,.16), rgba(236,72,153,.14))", display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={{ fontSize: 14 }}>📅 <b>{plans[0].day === todayYmd() ? "Today" : "You had plans"}:</b> {plans[0].title}{plans[0].details ? <span className="muted"> — {plans[0].details}</span> : null}</div>
+          <div style={{ fontSize: 14 }}>{plans[0].kind === "person" ? "🧍" : "🎥"} <b>{plans[0].day === todayYmd() ? "Today" : "You had plans"}:</b> {plans[0].title}{plans[0].details ? <span className="muted"> — {plans[0].details}</span> : null}</div>
           <div className="muted" style={{ fontSize: 12 }}>Describe the scene — where you are, the vibe, what you&apos;re wearing — and play it out with {character.name}.</div>
           <div className="row" style={{ gap: 8 }}>
-            <button className="btn" data-testid="plan-start" disabled={busy || !msgs} onClick={() => { setFromPlan(plans[0]); setSceneSheet(true); }} style={{ padding: "8px 14px", fontSize: 13 }}>🎥 Video chat</button>
+            <button className="btn" data-testid="plan-start" disabled={busy || !msgs}
+              onClick={() => { if (plans[0].kind === "person") setTogetherSheet({ place: plans[0].details || plans[0].title, busy: false }); else { setFromPlan(plans[0]); setSceneSheet(true); } }} style={{ padding: "8px 14px", fontSize: 13 }}>🎥 Video chat</button>
             <button className="ghost" data-testid="plan-skip" onClick={() => skipPlan(plans[0])} style={{ padding: "8px 12px", fontSize: 13 }}>Not today</button>
           </div>
         </div>

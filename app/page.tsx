@@ -234,6 +234,34 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
     document.addEventListener("visibilitychange", onVis);
     return () => { stop = true; clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
   }, [userId, hasNeighbor]);
+  // ⏰ A plan whose time has come: start it here, whichever tab you're on.
+  type PlanNow = { id: string; title: string; details: string; time?: string; kind: "video" | "person"; character_id?: string; who?: string; portrait?: string | null };
+  const [planNow, setPlanNow] = useState<PlanNow | null>(null);
+  useEffect(() => {
+    let stop = false;
+    const check = async () => {
+      const r = await data<{ plan: PlanNow | null }>("plan.now").catch(() => ({ plan: null }));
+      if (!stop && r.plan) setPlanNow(p => p || r.plan);
+    };
+    check();
+    const t = setInterval(check, 60_000);
+    const onVis = () => { if (document.visibilityState === "visible") check(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { stop = true; clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
+  }, [userId]);
+  const startPlan = async () => {
+    const p = planNow; setPlanNow(null);
+    if (!p?.character_id) return;
+    setTab("chat"); setGroupId(null); setWithId(p.character_id); setChatTick(t => t + 1);
+    setStartPlan({ id: p.id, kind: p.kind, title: p.title, details: p.details });
+  };
+  const planLater = async () => {
+    const p = planNow; setPlanNow(null);
+    if (p) await data("plan.later", { id: p.id }).catch(() => {});
+  };
+  // What the chat should open once it's on screen: the scene sheet, or the in-person one.
+  const [startingPlan, setStartPlan] = useState<{ id: string; kind: "video" | "person"; title: string; details: string } | null>(null);
+
   const answerDoor = async () => {
     if (!dropIn) return;
     const d = dropIn; setDropIn(null);
@@ -352,6 +380,20 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
         </div>
       )}
 
+        {planNow && (
+        <div role="dialog" aria-modal="true" data-testid="plan-now" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 4000 }}>
+            <div className="card" style={{ maxWidth: 380, width: "100%", display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ fontWeight: 800, fontSize: 17 }}>{planNow.kind === "person" ? "🧍" : "🎥"} It&apos;s time{planNow.time ? ` — ${planNow.time}` : ""}</div>
+              <div style={{ fontSize: 15 }}>{planNow.title}{planNow.who ? ` with ${planNow.who}` : ""}</div>
+              {planNow.details && <div className="muted" style={{ fontSize: 13 }}>{planNow.details}</div>}
+              <div className="muted" style={{ fontSize: 12 }}>{planNow.kind === "person" ? "You two are meeting up — she'll be there with you." : "You two are getting on a video chat."}</div>
+              <div className="row" style={{ gap: 8 }}>
+                <button className="ghost" onClick={planLater} data-testid="plan-now-later" style={{ flex: 1, padding: "10px 14px" }}>Not now</button>
+                <button className="btn" onClick={startPlan} data-testid="plan-now-start" style={{ flex: 1, padding: "10px 14px" }}>{planNow.kind === "person" ? "Meet up" : "Start the video chat"}</button>
+              </div>
+            </div>
+          </div>
+        )}
       {dropIn && (
         <div role="dialog" aria-modal="true" data-testid="dropin" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 18, zIndex: 2700 }}>
           <div className="card" style={{ width: "100%", maxWidth: 420, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -384,7 +426,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
         {tab === "chat" && <CharacterStrip characters={chars} active={withChar?.id || null} admin={admin} onPick={pickChat} onNew={() => setNewChar(true)} onEdit={setEditing} onGallery={() => setGallery(true)} unread={unread}
           groups={groups} activeGroup={inGroup?.id || null} onPickGroup={setGroupId} onNewGroup={() => setMakingGroup(true)} />}
         {inGroup && <GroupChat key={inGroup.id} group={inGroup} chars={chars} name={name} brains={brains} onDeleted={id => { setGroups(gs => gs.filter(g => g.id !== id)); setGroupId(null); }} />}
-        {tab === "chat" && !inGroup && !(groupId && !groupsLoaded) && <Chat key={`${withChar?.id || "velo"}-${chatTick}`} brains={brains} userId={userId} name={name} onChanged={bump} added={chatAdd} onAdded={() => setChatAdd(null)} character={withChar} adult={!!profile?.adultConfirmed} onAdult={() => setProfileTick(t => t + 1)} onHistory={h => { chatHistory.current = h; setHistoryCount(h.length); }}
+        {tab === "chat" && !inGroup && !(groupId && !groupsLoaded) && <Chat key={`${withChar?.id || "velo"}-${chatTick}`} startPlan={startingPlan} onPlanStarted={() => setStartPlan(null)} brains={brains} userId={userId} name={name} onChanged={bump} added={chatAdd} onAdded={() => setChatAdd(null)} character={withChar} adult={!!profile?.adultConfirmed} onAdult={() => setProfileTick(t => t + 1)} onHistory={h => { chatHistory.current = h; setHistoryCount(h.length); }}
           onNewCharacter={() => api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => setChars(r.characters)).catch(() => {})}
           others={chars.map(c => ({ id: c.id, name: c.name }))} onSocial={id => { setPicaOpen(id); setTab("pica"); }} onGroup={g => { setGroups(gs => [g, ...gs.filter(x => x.id !== g.id)]); setGroupId(g.id); }} />}
         {tab === "pica" && <Picagram name={name} userId={userId} openProfile={picaOpen} onProfileOpened={() => setPicaOpen(null)} onChat={id => api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => { setChars(r.characters); setTab("chat"); pickChat(id); }).catch(() => {})} />}

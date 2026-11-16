@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { duePlans, setPlanStatus } from "../../lib/plans";
+import { duePlans, setPlanStatus, planNow, planLater } from "../../lib/plans";
 import { readyIntros, acceptIntro, declineIntro, IntroError } from "../../lib/intros";
 import { peekAt, draftPeek, draftIcu } from "../../lib/peek";
 import { inPersonFor, startInPerson, endInPerson } from "../../lib/inPerson";
@@ -72,6 +72,12 @@ export async function POST(req: NextRequest) {
         const [after] = await db`select talk_words from users where id = ${me}`;
         return NextResponse.json({ sections: talkSections(talkMerge(after?.talk_words)) });
       }
+      // ⏰ A plan whose time has come: the pop-up that starts it.
+      case "plan.now": {
+        const [u] = await db`select time_zone from users where id = ${me}`;
+        return NextResponse.json({ plan: await planNow(me, String(u?.time_zone || "")) });
+      }
+      case "plan.later": return (await planLater(me, String(b.id || ""))) ? NextResponse.json({ ok: true }) : bad("That plan wasn't found.");
       // 📝 Settings → Photo wording: every standing line that goes on a picture, theirs to edit.
       case "wording.get": {
         const [u] = await db`select prompt_words from users where id = ${me}`;
@@ -494,9 +500,13 @@ export async function POST(req: NextRequest) {
       }
       // 🔴 Unread: messages from Velo / each character since they last looked at that chat.
       case "chats.unread": {
+        // 📸 A picture that lands after you've read the chat counts too: it's new to you even
+        // though the message it came with is older.
         const rows = await db`select m.character_id, count(*)::int as n from velo_messages m
           left join chat_reads r on r.user_id = m.user_id and r.character_id is not distinct from m.character_id
-          where m.user_id = ${me} and m.role = 'assistant' and m.created_at > coalesce(r.read_at, '-infinity'::timestamptz)
+          left join velo_media md on md.id = m.media_id and md.status = 'done'
+          where m.user_id = ${me} and m.role = 'assistant'
+            and greatest(m.created_at, coalesce(md.done_at, m.created_at)) > coalesce(r.read_at, '-infinity'::timestamptz)
           group by m.character_id`;
         return NextResponse.json({ unread: Object.fromEntries(rows.map(r => [r.character_id ? String(r.character_id) : "velo", Number(r.n)])) });
       }
