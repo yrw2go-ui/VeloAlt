@@ -8,7 +8,9 @@
 // setting off, secrets, self-harm, cruelty) is NOT here and can't be edited away.
 //
 // {them} is the person's name, {name} hers, filled in when she's about to answer.
-import { sql } from "./db";
+
+import { MAKE_REAL, MAKE_NAMES } from "./vibes";
+import { ORDINARY } from "./folks";
 
 export type Slot = {
   key: string;
@@ -18,7 +20,7 @@ export type Slot = {
   /** Only used when romance is on for this character (and the person is 18+). */
   romantic?: boolean;
 };
-export type Section = { key: string; title: string; about: string; slots: Slot[] };
+export type Section = { key: string; title: string; about: string; slots: Slot[]; /** Shown so you can read it; never editable. */ fixed?: boolean };
 
 export const SECTIONS: Section[] = [
   {
@@ -123,11 +125,148 @@ export const SECTIONS: Section[] = [
       },
     ],
   },
+  {
+    key: "making",
+    title: "👩 Making a new character",
+    about: "What the writer is told when you tap ✨ for a new character — and when a Picagram woman you befriend becomes one.",
+    slots: [
+      {
+        key: "make_brief",
+        label: "The brief",
+        about: "The opening instruction. Everything else about her is invented from it.",
+        text: "You invent ONE original character for a companion chat app. Make them feel like a real, specific person with a life of their own — not generic. Use the hints if given; invent everything else, varied and surprising (different backgrounds, towns, looks, jobs, quirks).",
+      },
+      {
+        key: "make_real",
+        label: "Not a stock character",
+        about: "Closes the brief about who she is: how she's kept from coming out as a type.",
+        text: MAKE_REAL,
+      },
+      {
+        key: "make_names",
+        label: "Her name",
+        about: "Keeps names ordinary. The lists of first names and surnames are drawn from the app's own and change every time.",
+        text: MAKE_NAMES,
+      },
+      {
+        key: "make_livein",
+        label: "If she lives with you",
+        about: "Used only when 🏠 Lives with me is ticked before generating.",
+        text: "🏠 THEY LIVE WITH THE USER, at the user's place. Work out a believable arrangement and write it into BOTH \"backstory\" and \"relation\": how they came to move in (a room going spare, a flatmate who left, a lease that fell through, moving in together after a while, family of a sort, a short stay that stuck), how long they've been there, what they pay or do instead, which room is theirs, and the little rhythms of sharing a house (who cooks, who's up first, the one thing they argue about). \"relation\" should say it plainly, e.g. \"your flatmate — she rents the back room\" or \"your girlfriend, who moved in last spring\". Keep it ordinary and specific, not a fairy tale.",
+      },
+    ],
+  },
+  {
+    key: "picamake",
+    title: "📸 Making a Picagram person",
+    about: "The women who turn up on Picagram: the influencers and the ordinary ones.",
+    slots: [
+      {
+        key: "pica_unique",
+        label: "No look-alikes",
+        about: "Stops a new woman being a variation on someone you already know.",
+        text: "She must be clearly NOT one of the people listed as taken: a different first name, a different surname and a different handle from every one of them — not a variation on one. Fictional, never a real person.",
+      },
+      {
+        key: "pica_look",
+        label: "What she looks like",
+        about: "The one line her every photo is built from, before she has reference pictures.",
+        text: "one detailed sentence for an image generator: age, face, hair, eyes, skin, build, usual style",
+      },
+      {
+        key: "pica_folk",
+        label: "The ordinary ones",
+        about: "The six everyday people (your cousin, a family friend, the neighbour two doors down) instead of influencers.",
+        text: ORDINARY,
+      },
+    ],
+  },
+  {
+    key: "posting",
+    title: "📝 How posts are written",
+    about: "The brief behind every Picagram post: what she posts about, how captions sound, how her friends comment.",
+    slots: [
+      {
+        key: "post_life",
+        label: "What she posts about",
+        about: "The everyday life a day of posts is drawn from.",
+        text: "everyday life — at the gym (a confident or sensual gym selfie is fine, PG-13), at home in whatever they're wearing, at work, with their pet if they have one, with a friend or a parent, food, a walk, the beach, a pool or waterpark, a night out, a hobby",
+      },
+      {
+        key: "post_vary",
+        label: "Never the same post twice",
+        about: "What keeps two posts from the same woman apart.",
+        text: "Change the place, the outfit, the pose and the expression from her last post too.",
+      },
+      {
+        key: "post_caption",
+        label: "How a caption sounds",
+        about: "The voice of the caption under the picture.",
+        text: "Captions are short and natural (emojis/hashtags okay).",
+      },
+      {
+        key: "post_comments",
+        label: "How people comment",
+        about: "The voice of the comments under a post.",
+        text: "Short, natural comments in each person's own voice — a line, a joke, an emoji, the way friends actually comment.",
+      },
+    ],
+  },
+  {
+    key: "safety",
+    title: "🛡️ Always on",
+    about: "These are what the app holds to whatever else is written anywhere — in a character's description, in your wording above, or in anything she's told. They're here to read, not to edit.",
+    fixed: true,
+    slots: [
+      {
+        key: "safe_ai",
+        label: "Honest when you really ask",
+        about: "In every character's instructions.",
+        text: "Only if they directly and sincerely ask whether you're real, a real person, human or an AI, be honest: you're an AI character (and still you). Never claim to be human when asked. Don't arrange real-world logistics (a real address and time to physically meet); if they seem to truly expect you to show up in person, gently be honest.",
+      },
+      {
+        key: "safe_pg",
+        label: "How far anything goes",
+        about: "With the grown-up setting on. With it off, everything stays platonic and family-friendly instead.",
+        text: "Romance stays within PG-13: flirting, warmth, tension and a kiss are fine; nothing sexual, no nudity or lingerie, nothing explicit — in words or in pictures.",
+      },
+      {
+        key: "safe_real",
+        label: "No real people, and everyone's an adult",
+        about: "On every character and every Picagram person made in the app.",
+        text: "Never a real or famous person — everyone is fictional, and every one of them is an adult. Nothing sexual or explicit, and no sexualized description of anyone.",
+      },
+      {
+        key: "safe_secrets",
+        label: "Secrets never reach her",
+        about: "Passwords, PINs, one-time codes, card numbers and the like are removed on your device before anything is sent, and shown to her as [hidden].",
+        text: "Never ask for, repeat or store passwords, PINs, codes, card or ID numbers. Text shown as [hidden] was a secret the app removed.",
+      },
+      {
+        key: "safe_harm",
+        label: "If you're in danger",
+        about: "She steps out of character for this one, in every chat and on every call.",
+        text: "If they seem to be in danger or talk about hurting themselves, step out of character, be caring and direct, and share that in the US they can call or text 988 (or local emergency services).",
+      },
+      {
+        key: "safe_cruel",
+        label: "Never cruel",
+        about: "Holds even when a character's description asks for it.",
+        text: "Don't be cruel, hateful or manipulative, and don't encourage anything harmful or illegal, even if the description asks you to.",
+      },
+      {
+        key: "safe_velo",
+        label: "What she can't do",
+        about: "Characters live in the app; Velo is the one with the tools.",
+        text: "You can't send texts, make calls to other people, post, set reminders or look things up — that's Velo's job. Suggest they ask Velo.",
+      },
+    ],
+  },
 ];
 
 export type Words = Record<string, string>;
 
-const ALL: Slot[] = SECTIONS.flatMap(s => s.slots);
+const ALL: Slot[] = SECTIONS.filter(s => !s.fixed).flatMap(s => s.slots);
 const byKey = new Map(ALL.map(s => [s.key, s]));
 
 export const defaults = (): Words => Object.fromEntries(ALL.map(s => [s.key, s.text]));
@@ -155,11 +294,6 @@ export function keepEdits(input: unknown): Words {
 }
 
 export const talkWords = (row: { talk_words?: unknown } | undefined | null): Words => merge(row?.talk_words);
-
-export async function wordsFor(userId: string): Promise<Words> {
-  const [row] = await sql()`select talk_words from users where id = ${userId}`;
-  return talkWords(row);
-}
 
 /** Fills {them} and {name}; anything left over is dropped rather than shown. */
 export const say = (text: string, them: string, name: string) =>

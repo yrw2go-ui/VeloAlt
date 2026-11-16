@@ -10,6 +10,7 @@ import { availableBrains, brainList } from "../../lib/models";
 import { makeCharacter } from "../../lib/makeCharacter";
 import { listLinks, setLink, removeLink, writeStory, linkSuggestions } from "../../lib/friends";
 import { checkCard } from "../../lib/cardCheck";
+import { wordsFor } from "../../lib/wordsDb";
 import { MAX_CHARACTERS, DAILY_PORTRAITS, isAdmin, listCharacters, getCharacter, screenCharacter, startPortrait, checkPortrait, deleteCharacter, portraitsReady, chooseVoice, VoiceError } from "../../lib/characters";
 import { setHome } from "../../lib/inPerson";
 import { localNote } from "../../lib/local";
@@ -179,7 +180,7 @@ export async function POST(req: NextRequest) {
       // ✨ A whole new character from a few hints — only a draft for the editor (nothing is saved).
       case "generate": {
         if (!allow(`chargen:${me}`, [{ ms: 60_000, max: 6 }, { ms: 86_400_000, max: 100 }])) return bad("That's a lot of new characters — give it a minute.", 429);
-        try { return NextResponse.json({ draft: { local: b.local === true, ...await makeCharacter({ name: String(b.name || ""), vibe: String(b.vibe || ""), job: String(b.job || ""), romantic: b.romantic === true, male: b.male === true, liveIn: b.liveIn === true, local: b.local === true, lives: b.local === true ? localNote(await homeSaid(me)) : livesNote(await homeOf(me)) }) } }); }
+        try { return NextResponse.json({ draft: { local: b.local === true, ...await makeCharacter({ name: String(b.name || ""), vibe: String(b.vibe || ""), job: String(b.job || ""), romantic: b.romantic === true, male: b.male === true, liveIn: b.liveIn === true, local: b.local === true, words: await wordsFor(me), lives: b.local === true ? localNote(await homeSaid(me)) : livesNote(await homeOf(me)) }) } }); }
         catch (e) { return bad(e instanceof Error ? e.message : "Couldn't come up with one — try again.", 502); }
       }
       // Make one of her gallery pictures the main headshot.

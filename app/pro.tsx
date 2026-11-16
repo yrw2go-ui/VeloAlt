@@ -422,7 +422,7 @@ export function WordingCard() {
 }
 
 type TalkSlot = { key: string; label: string; about: string; text: string; fallback: string; romantic: boolean };
-type TalkSection = { key: string; title: string; about: string; slots: TalkSlot[] };
+type TalkSection = { key: string; title: string; about: string; slots: TalkSlot[]; fixed?: boolean };
 
 /**
  * 🛠️ Settings → Admin → Messaging & wording. Every standing line that shapes how a character
@@ -438,13 +438,13 @@ export function AdminCard() {
   const load = (b: { sections?: TalkSection[] }) => {
     const list = b.sections || [];
     setSections(list);
-    setDraft(Object.fromEntries(list.flatMap(s => s.slots.map(x => [x.key, x.text]))));
+    setDraft(Object.fromEntries(list.filter(s => !s.fixed).flatMap(s => s.slots.map(x => [x.key, x.text]))));
   };
   useEffect(() => {
     if (!open || sections) return;
     data("talk.get").then(b => load(b as { sections?: TalkSection[] })).catch(e => { setErr(e instanceof Error ? e.message : "Couldn't open it."); setSections([]); });
   }, [open, sections]);
-  const all = (sections || []).flatMap(s => s.slots);
+  const all = (sections || []).filter(s => !s.fixed).flatMap(s => s.slots);
   // 🔒 House rule: saving only ever happens when something actually changed.
   const dirty = all.some(x => (draft[x.key] ?? "").trim() !== x.text.trim());
   const changed = all.filter(x => (draft[x.key] ?? "").trim() !== x.fallback.trim()).length;
@@ -476,7 +476,13 @@ export function AdminCard() {
               <div style={{ fontWeight: 700, fontSize: 14 }}>{sec.title}</div>
               <div className="muted" style={{ fontSize: 12, margin: "2px 0 10px" }}>{sec.about}</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                {sec.slots.map(x => {
+                {sec.fixed ? sec.slots.map(x => (
+                  <div key={x.key} data-testid="talk-fixed">
+                    <div style={{ fontWeight: 600, fontSize: 13.5 }}>🔒 {x.label}</div>
+                    <div className="muted" style={{ fontSize: 12, margin: "2px 0 6px" }}>{x.about}</div>
+                    <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: 8, fontSize: 13, whiteSpace: "pre-wrap", opacity: 0.85 }}>{x.text}</div>
+                  </div>
+                )) : sec.slots.map(x => {
                   const edited = (draft[x.key] ?? "").trim() !== x.fallback.trim();
                   return (
                     <div key={x.key}>

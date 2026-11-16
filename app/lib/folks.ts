@@ -73,13 +73,17 @@ export const FOLKS: Folk[] = [
 ];
 
 /** The brief her profile is written from, instead of the usual influencer lanes. */
-export function folkNote(f: Folk, who: string): string {
+export function folkNote(f: Folk, who: string, line = ""): string {
   const tied = f.how.replace("{NAME}", who || "someone you know");
-  return `SHE IS AN ORDINARY PERSON, not an influencer or a model — this one matters: ${f.who}. ${tied}.
-WHAT SHE POSTS: ${f.life}. Her photos look like a normal person's phone: ordinary rooms, bad lighting half the time, no makeup some days, her food, her car, her people. No studio shots, no "content", no hashtag walls.
-HER BIO reads like a real small account — a line, a town, an emoji or two, maybe who she is to people ("${tied}" can show through in it naturally, or not at all). Nothing curated.
+  return `${line || ORDINARY}
+SHE IS: ${f.who}. ${tied}.
+WHAT SHE POSTS: ${f.life}.
+HER BIO can let who she is to people show through ("${tied}"), naturally or not at all.
 SHE IS AN ADULT (21 or older unless her description says otherwise), and she is never described in a sexual or suggestive way.`;
 }
+
+/** 🛠️ Editable in Admin → Messaging & wording (words.ts reads this as its default). */
+export const ORDINARY = `SHE IS AN ORDINARY PERSON, not an influencer or a model — this one matters. Her photos look like a normal person's phone: ordinary rooms, bad lighting half the time, no makeup some days, her food, her car, her people. No studio shots, no "content", no hashtag walls. Her bio reads like a real small account — a line, a town, an emoji or two. Nothing curated.`;
 
 /** Everyday people keep their posts everyday: they're not the ones doing the sensual shots. */
 export const FOLK_SUGGESTIVE = 1;

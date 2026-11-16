@@ -160,7 +160,11 @@ export const LAST_NAMES = [
 ];
 
 /** 👩 One life and one age, so the next one isn't a copy of the last. */
-export function vibeNote(avoid: string[] = []): string {
+/** 🛠️ Editable in Admin → Messaging & wording (words.ts reads these as its defaults). */
+export const MAKE_REAL = `She is beautiful, but beautiful in HER way — the face, body, hair and colouring that go with this life, not a default pretty girl. Her personality, the way she texts, her hobbies and her clothes all come out of what she does all day. Put her actual job, with its place, in "job". Avoid the stock version: give her one thing that cuts against the type, and don't reuse the jobs, towns or turns of phrase of anyone already listed.`;
+export const MAKE_NAMES = `HER NAME: a plain, modern American name a woman her age really has — no invented, antique, or hyphenated-exotic names, and no double-barrelled surnames.`;
+
+export function vibeNote(avoid: string[] = [], w: { make_real?: string; make_names?: string } = {}): string {
   const left = VIBES.filter(v => !avoid.includes(v.id));
   const v = pick(left.length ? left : VIBES);
   const names = [...FIRST_NAMES].sort(() => Math.random() - 0.5).slice(0, 16).join(", ");
@@ -168,9 +172,8 @@ export function vibeNote(avoid: string[] = []): string {
   return `WHO SHE IS — ${v.label} (${v.id}). Build her around this, head to toe:
 - Her days: ${v.life}
 - How she looks: ${v.look}
-She is ${randomAge()} years old. She is beautiful, but beautiful in HER way — the face, body, hair and colouring that go with this life, not a default pretty girl. Her personality, the way she texts, her hobbies and her clothes all come out of what she does all day. Put her actual job, with its place, in "job".
-HER NAME: a plain, modern American name a woman her age really has — no invented, antique, or hyphenated-exotic names, and no double-barrelled surnames. First names like: ${names}. Surnames like: ${surnames}. Pick any ordinary American name in that spirit (it needn't be from these lists), and don't reuse a name already listed as taken.
-Avoid the stock version: give her one thing that cuts against the type, and don't reuse the jobs, towns or turns of phrase of anyone already listed.`;
+She is ${randomAge()} years old. ${w.make_real || MAKE_REAL}
+${w.make_names || MAKE_NAMES} First names like: ${names}. Surnames like: ${surnames}. Pick any ordinary American name in that spirit (it needn't be from these lists), and don't reuse a name already listed as taken.`;
 }
 
 /** The ids already used, so the next few come out different. */

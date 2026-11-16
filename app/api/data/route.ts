@@ -641,5 +641,5 @@ const withDefaults = (mine: Record<string, string>) =>
 
 /** 🛠️ Each section as the Admin tab shows it: their wording, and the default to put back. */
 const talkSections = (mine: Record<string, string>) =>
-  TALK_SECTIONS.map(sec => ({ key: sec.key, title: sec.title, about: sec.about,
-    slots: sec.slots.map(x => ({ key: x.key, label: x.label, about: x.about, text: mine[x.key], fallback: x.text, romantic: !!x.romantic })) }));
+  TALK_SECTIONS.map(sec => ({ key: sec.key, title: sec.title, about: sec.about, fixed: !!sec.fixed,
+    slots: sec.slots.map(x => ({ key: x.key, label: x.label, about: x.about, text: sec.fixed ? x.text : mine[x.key], fallback: x.text, romantic: !!x.romantic })) }));
