@@ -782,3 +782,6 @@ alter table pica_accounts add column if not exists traits jsonb not null default
 -- 📍 Where she lives NOW, said plainly, instead of being guessed from her backstory. A card can
 -- say she grew up in Arizona and works in Chicago; only this field says where she is today.
 alter table chat_characters add column if not exists lives_in text not null default '' check (char_length(lives_in) <= 120);
+-- 📝 Settings → Photo wording: their own version of the standing wording on every picture.
+-- Only the lines they actually changed are kept, so a reworded default still reaches them.
+alter table users add column if not exists prompt_words jsonb not null default '{}'::jsonb;

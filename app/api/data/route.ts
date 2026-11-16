@@ -29,6 +29,7 @@ import { getCharacterFor, trustFor, happyFor, loveFor, activeScene, saveFeelings
 import { US_STATES } from "../../lib/states";
 import { mediaMood, allowsSuggestive } from "../../lib/traits";
 import { myRefs } from "../../lib/picagram";
+import { BITS, merge, keepEdits } from "../../lib/wording";
 import { acceptMedia, declineMedia, mediaNote, startMedia, checkMedia, sweepMedia, getMedia, listGallery, deleteMedia, VIDEO_MODELS, DEFAULT_VIDEO_MODEL, mediaReady, MediaError } from "../../lib/media";
 
 // 📦 Everything the app reads and changes, for the signed-in person only.
@@ -57,6 +58,16 @@ export async function POST(req: NextRequest) {
     const needId = () => UUID.test(id);
 
     switch (String(b.action || "")) {
+      // 📝 Settings → Photo wording: every standing line that goes on a picture, theirs to edit.
+      case "wording.get": {
+        const [u] = await db`select prompt_words from users where id = ${me}`;
+        return NextResponse.json({ bits: withDefaults(merge(u?.prompt_words)) });
+      }
+      case "wording.set": {
+        await db`update users set prompt_words = ${JSON.stringify(keepEdits(b.words))}::jsonb, updated_at = now() where id = ${me}`;
+        const [u] = await db`select prompt_words from users where id = ${me}`;
+        return NextResponse.json({ bits: withDefaults(merge(u?.prompt_words)) });
+      }
       case "profile.get": {
         const [u] = await db`select name, look, time_zone, plan, phone, phone_verified_at, chat_model, personality, adult_confirmed_at, video_model, reply_length, checkins, bio, birthday::text, age, home_town, home_state, (select url from velo_files where id = users.bio_photo_file_id) as bio_photo, (select thumb_url from velo_files where id = users.bio_photo_file_id) as bio_thumb, bio_photo_note, bio_more from users where id = ${me}`;
         const [{ n }] = await db`select count(*)::int as n from velo_memories where user_id = ${me} and kind = 'call' and character_id is null`;
@@ -608,3 +619,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Something went wrong. Please try again." }, { status: 500 });
   }
 }
+
+/** 📝 Each standing line as Settings shows it: their wording, and the default to put back. */
+const withDefaults = (mine: Record<string, string>) =>
+  BITS.map(x => ({ key: x.key, label: x.label, about: x.about, text: mine[x.key], fallback: x.text }));

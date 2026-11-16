@@ -5,6 +5,7 @@ import { PLAIN_WORDS } from "./characters";
 import { traitsPrompt } from "./traits";
 import { sql } from "./db";
 import { writeText } from "./llm";
+import { wordingFor } from "./wording";
 import { scrub } from "./secrets";
 import { startMedia, MediaError, type Media } from "./media";
 import { availableBrains } from "./models";
@@ -106,7 +107,8 @@ const CLAIMS_PHOTO = /\b(send(ing)?|sent|here'?s|here you go|snapp(ing|ed)|takin
 const REFUSES_PHOTO = /\b(can'?t|cannot|won'?t|not (going to|gonna)|no (pics?|photos?|selfies?)|maybe later|not right now)\b/i;
 
 /** What photo she meant to send, from the conversation (used when she says one's coming but picks none). */
-async function describePhoto(a: Record<string, unknown>, u: { name: string; now: string; adult: boolean; chatModel: string }, history: Dm[]): Promise<string> {
+async function describePhoto(userId: string, a: Record<string, unknown>, u: { name: string; now: string; adult: boolean; chatModel: string }, history: Dm[]): Promise<string> {
+  const w = await wordingFor(userId);
   const raw = await write(brainOf(a, u.chatModel), `You are ${a.name} (@${a.handle}) on Picagram. You told ${u.name} you'd send a photo of yourself, and it hasn't gone out yet. Describe exactly the photo you meant (where, outfit, pose, light) in 1–2 sentences${u.adult ? ", tasteful and PG-13 — flattering and flirty is fine, never nudity or lingerie" : ", fully clothed"}. JSON only: {"photo":"..."}`,
     `${u.now}\nYou look like: ${a.look}\n\nTHE CONVERSATION:\n${transcript(history, String(a.name), u.name)}`, 400);
   try { return String(JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]).photo || ""); } catch { return ""; }
@@ -121,7 +123,8 @@ export async function dmSend(userId: string, accountId: string, text: string): P
   const mine = await addDm(userId, accountId, "user", t);
   const history = await messages(userId, accountId, 40);
   const mem = await memories(userId, accountId);
-  const raw = await write(brainOf(a, u.chatModel), `You are ${a.name} (@${a.handle}) on Picagram, a social photo app like Instagram. Your bio: "${a.bio}". You look like: ${a.look}.${a.lives ? ` You live in ${a.lives}.` : ""}${a.personality ? `\nWHO YOU ARE: ${String(a.personality).slice(0, 1200)}` : ""}${a.traits && Object.keys(a.traits).length ? `\n${traitsPrompt(a.traits, !!u.adult)}` : ""} You're a real person with your own life; ${u.name} follows you and is messaging you in your DMs. Reply like Instagram DMs: short (1–3 sentences), casual, warm, in your own voice${u.adult ? ", flirty if it fits (PG-13: never nudity, lingerie or anything sexual)" : ", friendly and family-friendly"}. Never say you're an AI. ${PLAIN_WORDS} If they ask for a photo of you (or it fits naturally), you can send one: then set "photo" to exactly what the picture shows (where, outfit, pose, light) in 1–2 sentences — never your face, hair, eyes, skin, age, height or build, which the reference photos of you already carry${u.adult ? "; tasteful and PG-13 — flattering and flirty is fine, never nudity or lingerie" : ", fully clothed"}. Otherwise leave "photo" empty. Reply with JSON only: {"reply":"...","photo":""}`,
+  const w = await wordingFor(userId);
+  const raw = await write(brainOf(a, u.chatModel), `You are ${a.name} (@${a.handle}) on Picagram, a social photo app like Instagram. Your bio: "${a.bio}". You look like: ${a.look}.${a.lives ? ` You live in ${a.lives}.` : ""}${a.personality ? `\nWHO YOU ARE: ${String(a.personality).slice(0, 1200)}` : ""}${a.traits && Object.keys(a.traits).length ? `\n${traitsPrompt(a.traits, !!u.adult)}` : ""} You're a real person with your own life; ${u.name} follows you and is messaging you in your DMs. Reply like Instagram DMs: short (1–3 sentences), casual, warm, in your own voice${u.adult ? ", flirty if it fits (PG-13: never nudity, lingerie or anything sexual)" : ", friendly and family-friendly"}. Never say you're an AI. ${PLAIN_WORDS} If they ask for a photo of you (or it fits naturally), you can send one: then set "photo" to exactly what the picture shows (where, outfit, pose, light) in 1–2 sentences${u.adult ? "; tasteful and PG-13 — flattering and flirty is fine, never nudity or lingerie" : ", fully clothed"}. ${w.no_looks} Otherwise leave "photo" empty. Reply with JSON only: {"reply":"...","photo":""}`,
     `${u.now}\n\n${mem.length ? `WHAT YOU REMEMBER ABOUT ${u.name.toUpperCase()} (from your DMs):\n- ${mem.join("\n- ")}\n\n` : ""}THE CONVERSATION SO FAR:\n${transcript(history, String(a.name), u.name)}`, 800);
   // Her answer: the JSON asked for — or, if she just wrote her reply as plain text, that text.
   let j: { reply?: string; photo?: string } = {};
@@ -137,7 +140,7 @@ export async function dmSend(userId: string, accountId: string, text: string): P
   // 📸 She said a photo was coming but didn't actually pick one: work out what she meant and send it,
   // so what she says and what arrives always match (the same as in the normal chat).
   if (!(j.photo && String(j.photo).trim()) && CLAIMS_PHOTO.test(reply) && !REFUSES_PHOTO.test(reply)) {
-    j.photo = await describePhoto(a, u, [...history, added[1]]).catch(e => { console.warn("pica dm: describe", e instanceof Error ? e.message : e); return ""; });
+    j.photo = await describePhoto(userId, a, u, [...history, added[1]]).catch(e => { console.warn("pica dm: describe", e instanceof Error ? e.message : e); return ""; });
   }
   // 📸 She's sending a photo: you see exactly what's going to the picture service first, and send
   // it yourself — the same two steps as a peek.
@@ -154,7 +157,7 @@ export async function dmSendPhoto(userId: string, accountId: string): Promise<{ 
   const a = await account(userId, accountId);
   const u = await userInfo(userId);
   const history = await messages(userId, accountId, 30);
-  const photo = scrub((await describePhoto(a, u, history).catch(() => "")) || `${a.name} taking a selfie, smiling at the camera`).replace(/\s+/g, " ").trim().slice(0, 600);
+  const photo = scrub((await describePhoto(userId, a, u, history).catch(() => "")) || `${a.name} taking a selfie, smiling at the camera`).replace(/\s+/g, " ").trim().slice(0, 600);
   // 📸 You see what she's sending before it's made, and send it yourself.
   return { added: [], ask: photo };
 }

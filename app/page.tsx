@@ -19,7 +19,7 @@ import CheckinsCard from "./notify";
 import Today from "./today";
 import Memory from "./memory";
 import { timeZone } from "./lib/tz";
-import ProCard, { BrainCard, PersonalityCard, ReplyLengthCard, VideoCard, type Profile } from "./pro";
+import ProCard, { BrainCard, PersonalityCard, ReplyLengthCard, VideoCard, WordingCard, type Profile } from "./pro";
 
 type Tab = "chat" | "pica" | "today" | "memory" | "settings";
 const TABS: { id: Tab; icon: string; label: string }[] = [
@@ -468,6 +468,7 @@ function Settings({ name, setName, onOut, profile, onProfile, chars = [], admin 
       {profile && <BrainCard profile={profile} onChange={onProfile} chars={chars} admin={admin} brains={brains} brainModels={brainModels} onCharChange={onCharChange} />}
       {profile && <ReplyLengthCard profile={profile} onChange={onProfile} />}
       {profile && <VideoCard profile={profile} onChange={onProfile} />}
+      <WordingCard />
       {profile && <ProCard profile={profile} onChange={onProfile} />}
       <button className="ghost" onClick={() => api("/api/auth", { action: "signout" }).finally(onOut)}>Sign out</button>
       <VersionCard />

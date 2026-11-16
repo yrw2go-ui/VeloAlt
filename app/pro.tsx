@@ -358,3 +358,65 @@ export function PersonalityCard({ profile, onChange }: { profile: Profile; onCha
     </div>
   );
 }
+
+type WordBit = { key: string; label: string; about: string; text: string; fallback: string };
+
+/** 📝 Settings → Photo wording: every standing line that goes on every picture, theirs to edit. */
+export function WordingCard() {
+  const [open, setOpen] = useState(false);
+  const [bits, setBits] = useState<WordBit[] | null>(null);
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const load = (b: { bits?: WordBit[] }) => {
+    const list = b.bits || [];
+    setBits(list);
+    setDraft(Object.fromEntries(list.map(x => [x.key, x.text])));
+  };
+  useEffect(() => {
+    if (!open || bits) return;
+    data("wording.get").then(b => load(b as { bits?: WordBit[] })).catch(() => setBits([]));
+  }, [open, bits]);
+  // 🔒 House rule: saving only ever happens when something actually changed.
+  const dirty = !!bits && bits.some(b => (draft[b.key] ?? "").trim() !== b.text.trim());
+  const save = async () => {
+    if (!dirty) return;
+    setBusy(true);
+    const ok = await data("wording.set", { words: draft }).then(b => { load(b as { bits?: WordBit[] }); return true; }, () => false);
+    setBusy(false);
+    if (ok) { setSaved(true); setTimeout(() => setSaved(false), 1500); }
+  };
+  return (
+    <div className="card" data-testid="wording">
+      <button onClick={() => setOpen(o => !o)} style={{ all: "unset", cursor: "pointer", display: "flex", width: "100%", alignItems: "center", justifyContent: "space-between" }}>
+        <span>
+          <span style={{ fontWeight: 700 }}>📝 Photo wording</span>
+          <span className="muted" style={{ fontSize: 13, display: "block", margin: "2px 0 0" }}>The lines put on every picture your characters and the Picagram people send — edit any of them for better results.</span>
+        </span>
+        <span aria-hidden style={{ marginLeft: 10 }}>{open ? "▾" : "▸"}</span>
+      </button>
+      {open && (bits === null ? <div className="muted" style={{ marginTop: 12, fontSize: 13 }}>Loading…</div> : (
+        <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 14 }}>
+          <div className="muted" style={{ fontSize: 12 }}>{"{her}, {other}, {who} are filled in with the names when the picture is made — keep them."}</div>
+          {bits.map(b => {
+            const changed = (draft[b.key] ?? "") .trim() !== b.fallback.trim();
+            return (
+              <div key={b.key}>
+                <div style={{ fontWeight: 600, fontSize: 14 }}>{b.label}{changed ? " ·  edited" : ""}</div>
+                <div className="muted" style={{ fontSize: 12, margin: "2px 0 6px" }}>{b.about}</div>
+                <textarea value={draft[b.key] ?? ""} aria-label={b.label} rows={3} maxLength={700}
+                  onChange={e => setDraft(d => ({ ...d, [b.key]: e.target.value }))}
+                  style={{ width: "100%", background: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 10, padding: 8, fontSize: 13, fontFamily: "inherit" }} />
+                {changed && <button className="ghost" style={{ marginTop: 4, fontSize: 12, padding: "4px 10px" }}
+                  onClick={() => setDraft(d => ({ ...d, [b.key]: b.fallback }))}>Put the default back</button>}
+              </div>
+            );
+          })}
+          <div className="row" style={{ justifyContent: "flex-end" }}>
+            <button className="btn" disabled={!dirty || busy} onClick={save}>{saved ? "Saved ✓" : "Save"}</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}

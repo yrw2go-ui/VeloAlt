@@ -12,6 +12,7 @@ import { put, del } from "@vercel/blob";
 import sharp from "sharp";
 import { randomUUID } from "node:crypto";
 import { sql } from "./db";
+import { wordsOf, fill } from "./wording";
 import { scrub } from "./secrets";
 import { sendPush } from "./push";
 
@@ -161,6 +162,8 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
   if (n >= DAILY[kind]) throw new MediaError(`That's the limit of ${kind === "image" ? "photos" : "videos"} for today. Tell them you'll send more tomorrow.`);
   if (!ctx.pica) await sql()`update velo_media set status = 'declined' where user_id = ${userId} and character_id is not distinct from ${ctx.characterId} and status = 'offered'`;
 
+  const [u] = await sql()`select video_model, prompt_words from users where id = ${userId}`;
+  const w = wordsOf(u); // 📝 Settings → Photo wording: theirs if they changed it, else the default.
   const withMe = a.with_me === true;
   // 👥 Someone else they know of can be in it (her references first), with or without them.
   const o = ctx.other;
@@ -181,26 +184,23 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
   const groupSubject = people ? `${people.length} people in this picture: ${people.map(p => p.name).join(", ")}. ` + people.map((p, i) => {
     const n = Math.min(per[i].length, Math.max(0, 4 - at)); const from = at + 1; at += n;
     return n ? `Reference image${n > 1 ? `s ${from}–${from + n - 1} show` : ` ${from} shows`} ${p.name}; keep her face and look the same.` : p.appearance ? `${p.name}: ${p.appearance}.` : "";
-  }).filter(Boolean).join(" ") + " Each person appears exactly once. " : "";
+  }).filter(Boolean).join(" ") + ` ${fill(w.group, {})} ` : "";
+  const many = refs.length > 1, mine = meRefs.length > 1, theirs = oRefs.length > 1;
+  const both = fill(w.ref_both, { her: ctx.who, s: mine ? "s" : "", s_v: mine ? "" : "s" });
   const subject = people ? groupSubject : o
-    ? (oRefs.length ? `The first ${oRefs.length > 1 ? `${oRefs.length} reference images show` : "reference image shows"} ${o.name}; keep their face and look the same. ` : o.appearance ? `${o.name}: ${o.appearance}. ` : `${o.name}. `)
-      + (withMe ? (meRefs.length ? `The other reference image${meRefs.length > 1 ? "s show" : " shows"} ${ctx.who}; keep their face and look the same too. ` : ctx.appearance ? `With ${ctx.who}: ${ctx.appearance}. ` : "") : "")
-    : prev ? `The FIRST reference image is ${ctx.who}'s previous photo from this same moment${prev.description ? ` ("${String(prev.description).slice(0, 160)}")` : ""}: keep the exact same outfit, accessories, hair and makeup, and the same place, background and lighting — only the pose, angle and expression change, plus anything the description below says changed. ${meRefs.length ? `The other reference image${meRefs.length > 1 ? "s show" : " shows"} ${ctx.who}'s face and look; keep them the same. ` : ""}`
-    : withMe ? (ref ? `The person in the reference image${refs.length > 1 ? "s" : ""} is ${ctx.who}; keep their face, hair, body and look exactly the same. ` : ctx.appearance ? `${ctx.who}: ${ctx.appearance}. ` : "") : "";
-  const style = ctx.romantic ? "Tasteful and PG-13: flattering and flirty, no nudity, nothing explicit" : "Family-friendly, everyone fully clothed";
+    ? (oRefs.length ? `${fill(w.ref_other, { other: o.name, s_other: theirs ? "s" : "", s_other_v: theirs ? "" : "s" })} ` : o.appearance ? `${o.name}: ${o.appearance}. ` : `${o.name}. `)
+      + (withMe ? (meRefs.length ? `${both} ` : ctx.appearance ? `With ${ctx.who}: ${ctx.appearance}. ` : "") : "")
+    : prev ? `${fill(w.same_moment, { her: ctx.who, prev: prev.description ? ` ("${String(prev.description).slice(0, 160)}")` : "" })} ${meRefs.length ? `${both} ` : ""}`
+    : withMe ? (ref ? `${fill(w.ref, { her: ctx.who, s: many ? "s" : "" })} ` : ctx.appearance ? `${ctx.who}: ${ctx.appearance}. ` : "") : "";
+  const style = ctx.romantic ? w.style_romantic : w.style_family;
   // 🤳 No stray hands or phones: only a mirror selfie shows the phone; otherwise the shot IS the camera.
   const mirror = /\bmirror\b/i.test(desc), selfie = /\bselfie\b/i.test(desc), shooter = o && !withMe ? o.name : ctx.who;
   // 🔁 Nothing twice: when the description already says where the phone is, don't restate it.
   const saidPhone = /\b(phone|camera)\b/i.test(desc);
-  const framing = !(withMe || o) ? "" : (saidPhone ? "" : mirror
-    ? `A mirror selfie: ${shooter} holds a phone in one hand, seen only in the reflection. `
-    : selfie
-      ? `An arm's-length selfie from the camera's own point of view: the phone is NOT visible, and at most ${shooter}'s own arm reaches toward the camera. `
-      : "A photo taken by someone else or on a timer: no phone or camera visible, nobody holding one. ")
-    + "Natural anatomy: every person has exactly two arms and two hands — no extra, floating or disembodied hands or arms in the frame. ";
+  const framing = !(withMe || o) ? "" : (saidPhone ? "" : `${fill(mirror ? w.mirror : selfie ? w.selfie : w.taken, { who: shooter })} `)
+    + `${fill(w.anatomy, {})} `;
   // A group peek keeps the one line saying which reference picture is who, so faces don't get mixed up.
-  const prompt = ctx.raw ? (people ? `${groupSubject}${desc}` : desc) : `${subject}${desc}. ${framing}${withMe && !o && !people && ctx.mood ? `${ctx.mood} ` : ""}${style}, natural and realistic${kind === "image" ? " photo, candid and natural" : " video, smooth natural motion"}.`.slice(0, 1500);
-  const [u] = await sql()`select video_model from users where id = ${userId}`;
+  const prompt = ctx.raw ? (people ? `${groupSubject}${desc}` : desc) : `${subject}${desc}. ${framing}${withMe && !o && !people && ctx.mood ? `${ctx.mood} ` : ""}${style}, ${kind === "image" ? w.tail_image : w.tail_video}.`.slice(0, 1500);
   const model = kind === "image" ? (ref ? EDIT_MODEL() : IMAGE_MODEL()) : videoModel(String(u?.video_model || DEFAULT_VIDEO_MODEL), !!ref);
   const sendRefs = kind === "image" ? refs : ref ? [ref] : [];
   const who = people ? null : o ? (withMe ? `me+${o.name}` : o.name) : withMe ? "me" : "none";
