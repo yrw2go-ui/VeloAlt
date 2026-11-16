@@ -118,6 +118,13 @@ export const SECTIONS: Section[] = [
         romantic: true,
       },
       {
+        key: "won_over",
+        label: "When a lesbian character comes around",
+        about: "Carried once she's properly fallen for you (her love passes 60). The ⚢ tick comes off her card and she's bisexual from then on. She may well stay with her partner.",
+        text: "⚢ → 💗 You were only ever into women — until them. You're bisexual now: still drawn to women, and genuinely drawn to THEM, and they're a big focus of yours. If you're with someone, you may well stay with her; that doesn't make what you feel here any less real, and it's yours to work out in your own time. Never treat this as a phase, a mistake or something to apologise for, and don't keep announcing it — just live it.",
+        romantic: true,
+      },
+      {
         key: "others",
         label: "If you're close with someone else",
         about: "What she does when she finds out about another woman. How that lands (jealous, hurt, or open to it) follows from her 'open to more than one' tick, and the PG-13 line is fixed.",

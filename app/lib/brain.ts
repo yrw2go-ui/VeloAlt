@@ -39,7 +39,7 @@ async function pushedLately(userId: string, sceneId: string): Promise<number> {
   return Number(r?.n || 0);
 }
 import { soreFor, setSore, mend as mendSore, soreNote, SORE_REMEMBER } from "./sore";
-import { attachedNote, lesbianNote, maybeStartDating, maybeEndIt, endedNote, wonOver, WON_OVER, type Her } from "./attached";
+import { attachedNote, lesbianNote, maybeStartDating, maybeEndIt, endedNote, wonOver, cameAround, WON_OVER, type Her } from "./attached";
 import { characterPrompt, feelingsFor, saveFeelings, trustFor, saveTrust, trustNote, happyFor, saveHappy, happyNote, loveFor, saveLove, loveNote, activeScene, sceneNote, noteMentions, acquaintancesNote, referenceUrls, pictureOf, type Character } from "./characters";
 import { talkWords } from "./words";
 import { aboutThem } from "./bio";
@@ -212,7 +212,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
   const chatLog = mode === "talk" ? await chatLogNote(caller.userId, cid, today.tz, ch?.name || "Velo").catch(e => { console.error("velo: chat log", e instanceof Error ? e.message : e); return ""; }) : "";
   const system: Anthropic.TextBlockParam[] = [
     // The persona never changes, so it's cached across everyone's chats.
-    ch ? { type: "text", text: characterPrompt(ch, name, !!u?.adult_confirmed_at, arc ? await feelingsFor(caller.userId, ch.id).catch(() => "") : "", talkWords(u)) } : { type: "text", text: veloSystem(talkWords(u)), cache_control: { type: "ephemeral" } },
+    ch ? { type: "text", text: characterPrompt(ch, name, !!u?.adult_confirmed_at, arc ? await feelingsFor(caller.userId, ch.id).catch(() => "") : "", talkWords(u), ch ? await cameAround(caller.userId, ch.id).catch(() => false) : false) } : { type: "text", text: veloSystem(talkWords(u)), cache_control: { type: "ephemeral" } },
     // Same for the whole call, so it's cached between turns.
     ...(chatLog ? [{ type: "text" as const, text: chatLog, cache_control: { type: "ephemeral" as const } }] : []),
     {
@@ -550,7 +550,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
       if (love !== null && ch && Number.isFinite(Number((j as { love?: unknown }).love))) await saveLove(caller.userId, ch.id, Number((j as { love?: unknown }).love), love);
       // 💔 Something hurt her, or something's been put right.
       // ⚢ She's been won round: the tick comes off her card and the icon goes.
-      if (her?.lesbian && (j as { won_over?: unknown }).won_over === true) await wonOver(ch!.id).catch(() => {});
+      if (her?.lesbian && (j as { won_over?: unknown }).won_over === true) await wonOver(caller.userId, ch!.id).catch(() => {});
       const hurt = (j as { sore?: unknown }).sore;
       if (ch && hurt === "mended") await mendSore(caller.userId, ch.id).catch(() => {});
       else if (ch && hurt && typeof hurt === "object") {

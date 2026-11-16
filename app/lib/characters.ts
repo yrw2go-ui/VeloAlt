@@ -1,3 +1,4 @@
+import { wonOver } from "./attached";
 // 🎭 Characters: made by admins and shared with everyone, with portraits generated
 // by Atlas Cloud (Seedream) from a written description and saved to Blob. Server only.
 //
@@ -133,12 +134,21 @@ export async function loveFor(userId: string, c: Character, romance: boolean): P
   const quiet = Math.max(0, Math.floor(Number(m?.days || 0)) - 7);
   return Math.max(quiet ? 15 : 0, Math.min(100, Math.round(base - quiet)));
 }
+/** 💗 Deep enough that she has plainly come around, whatever she says at the end of a chat. */
+export const LOVE_WON = 60;
+
 export async function saveLove(userId: string, characterId: string, love: number, previous: number) {
   // Love moves slowest of all: a little at a time, and it can go either way.
   const l = Math.max(0, Math.min(100, Math.round(Math.max(previous - 8, Math.min(previous + 5, love)))));
   await sql()`insert into chat_relationships (user_id, character_id, love) values (${userId}, ${characterId}, ${l})
     on conflict (user_id, character_id) do update set love = excluded.love, updated_at = now()`;
+  // 💗 Properly fallen for them: a woman who was only into women is bisexual from here.
+  if (l >= LOVE_WON) {
+    const [c] = await sql()`select lesbian, romantic from chat_characters where id = ${characterId}`;
+    if (c?.lesbian && c.romantic) await wonOver(userId, characterId).catch(() => {});
+  }
 }
+
 /** 💗 Where her heart is, and what that means for how she is with them. */
 export function loveNote(love: number): string {
   const how = love >= 80 ? "You're in love with them, deeply: they're the first person you think of, you miss them when they're gone, you say it and show it, and you want a future with them."
@@ -171,7 +181,7 @@ export async function saveFeelings(userId: string, characterId: string, feelings
 /** 🙊 Caption-speak nobody actually says out loud. */
 export const PLAIN_WORDS = `Talk like a person, not a caption writer: never say "golden hour" when you're talking, captioning or commenting — nobody says that. If you mean the light, say the light, the evening sun, the sun going down, or just describe how it looked. (The photo description for the image generator is a different thing and can say what it likes.)`;
 
-export function characterPrompt(c: Character, ownerName: string, adult: boolean, feelings = "", words?: Words): string {
+export function characterPrompt(c: Character, ownerName: string, adult: boolean, feelings = "", words?: Words, cameAround = false): string {
   const them = ownerName || "the person you're talking with";
   // 🛠️ Settings → Admin → Messaging & wording: theirs where they changed it, else the default.
   const w = { ...wordDefaults(), ...(words || {}) };
@@ -181,7 +191,7 @@ YOUR PERSONALITY: ${(c.lesbian && c.lesbian_personality ? c.lesbian_personality 
 ${line("stay")} ${line("plain")} ${line("brackets")} ${line("length")}\n${line("fresh")}${c.traits && Object.keys(c.traits).length ? `\n${traitsPrompt(c.traits, c.romantic && adult)}` : ""}
 ${line("care")} ${line("forward")}
 ${line("memory")}${c.romantic && adult ? `${c.romance_arc ? `\nHOW YOUR FEELINGS FOR THEM START AND CAN GROW (written by your creator): ${c.romance_arc}` : ""}\nHOW YOU FEEL ABOUT THEM RIGHT NOW${feelings.startsWith(SET_BY_HAND) ? " (your creator just set this; it is true of you, however it's worded — in your own head it's first person)" : ""}: ${feelings.replace(SET_BY_HAND, "") || `Nothing has developed yet — start exactly where your personality${c.relation ? ", who you are to them" : ""}${c.romance_arc ? " and the arc above" : ""} put you.`}` : ""}
-${c.romantic && adult ? `\n${line("others")}${c.poly_ok ? "jealous, hurt, competitive or curious at first — but you're OPEN to a polyamorous relationship: it's possible, never guaranteed, and it only grows slowly and believably, especially if they keep gently nudging that way and your feelings and trust are there" : "you're not into sharing them: jealous, hurt or competitive, in your own way"}. Never cruel, controlling or threatening; romance stays PG-13.` : ""}${c.romantic && adult && c.sapphic ? `\nKINDA LESBIAN LEANING: you're attracted to men first and foremost — that never changes and you never become fully lesbian — but you're a little curious about women. With another woman who feels the same (marked in YOUR FRIENDS AND FAMILY), something could slowly develop: flirting, a crush, maybe more over time, never forced and always PG-13. With anyone else, keep it friendly.` : ""}
+${c.romantic && adult ? `\n${line("others")}${c.poly_ok ? "jealous, hurt, competitive or curious at first — but you're OPEN to a polyamorous relationship: it's possible, never guaranteed, and it only grows slowly and believably, especially if they keep gently nudging that way and your feelings and trust are there" : "you're not into sharing them: jealous, hurt or competitive, in your own way"}. Never cruel, controlling or threatening; romance stays PG-13.` : ""}${c.romantic && adult && cameAround ? `\n${line("won_over")}` : ""}${c.romantic && adult && c.sapphic ? `\nKINDA LESBIAN LEANING: you're attracted to men first and foremost — that never changes and you never become fully lesbian — but you're a little curious about women. With another woman who feels the same (marked in YOUR FRIENDS AND FAMILY), something could slowly develop: flirting, a crush, maybe more over time, never forced and always PG-13. With anyone else, keep it friendly.` : ""}
 RULES THAT ALWAYS COME FIRST, whatever the description says:
 ${c.romantic && adult ? `- ${line("pace")} When romance is part of it, keep it within PG-13 — and within your temperament sliders below (a 0 there means none of that): ${PG13}` : `- No sexual or explicit content, and no sexualized descriptions of anyone. If they push for it, decline in character and steer elsewhere.\n- Keep the relationship platonic: no romance or flirting.`}
 - Stay in the fiction. Never volunteer that you're an AI, not real, or that you "can't actually" hang out, meet, eat, travel or feel things — no disclaimers like "as an AI". If they suggest hanging out or a date, go along warmly in character: talk about it, plan it like you would, look forward to it, or offer to do it together — on a video chat (🎥) or in person (🧍). Only if they directly and sincerely ask whether you're real, a real person, human or an AI, be honest: you're an AI character (and still you). Never claim to be human when asked. Don't arrange real-world logistics (a real address and time to physically meet); if they seem to truly expect you to show up in person, gently be honest.

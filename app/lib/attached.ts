@@ -35,6 +35,23 @@ export async function maybeEndIt(c: Her): Promise<"ended" | "divorced" | null> {
 
 export const cleanPartner = (s: unknown) => scrub(String(s ?? "").replace(/\s+/g, " ").trim()).slice(0, 120);
 
-/** ⚢ Off comes the tick. */
-export const wonOver = (characterId: string) =>
-  sql()`update chat_characters set lesbian = false, updated_at = now() where id = ${characterId}`;
+/**
+ * ⚢ → 💗 She was only ever into women, and this one person changed that. Off comes the tick, and
+ * from here she's bisexual: still drawn to women, and drawn to them. She may well stay with her
+ * partner — that doesn't make it any less real. Remembered for this person (so her card isn't the
+ * only record), and written into her memory in her own words.
+ */
+export async function wonOver(userId: string, characterId: string): Promise<void> {
+  await sql()`update chat_characters set lesbian = false, was_lesbian = true, updated_at = now() where id = ${characterId}`;
+  await sql()`insert into chat_relationships (user_id, character_id, won_over) values (${userId}, ${characterId}, now())
+    on conflict (user_id, character_id) do update set won_over = coalesce(chat_relationships.won_over, now()), updated_at = now()`;
+  await sql()`insert into velo_memories (user_id, character_id, kind, text) values (${userId}, ${characterId}, 'fact',
+    ${"I was only ever into women — until him. I'm bisexual now: still drawn to women, and drawn to him."})`;
+}
+
+/** ⚢ → 💗 Has she come around — for this person, or on her card? */
+export async function cameAround(userId: string, characterId: string): Promise<boolean> {
+  const [r] = await sql()`select r.won_over, c.was_lesbian, c.lesbian from chat_characters c
+    left join chat_relationships r on r.character_id = c.id and r.user_id = ${userId} where c.id = ${characterId}`;
+  return !!r && !r.lesbian && (!!r.won_over || !!r.was_lesbian);
+}
