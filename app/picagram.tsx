@@ -302,7 +302,7 @@ function Composer({ onClose, onPosted }: { onClose: () => void; onPosted: () => 
 type Photo = { media_id: string; url: string; thumb: string | null; caption?: string; saved: boolean; at?: string };
 
 /** 🖼️ A picture, full screen, with Save. */
-function Viewer({ photo, onClose, onSaved, onRedo, onAvatar }: { photo: Photo; onClose: () => void; onSaved: (on: boolean) => void; onRedo?: (mediaId: string) => void; onAvatar?: (mediaId: string) => void }) {
+function Viewer({ photo, onClose, onSaved, onRedo, onAvatar, onRef, isRef }: { photo: Photo; onClose: () => void; onSaved: (on: boolean) => void; onRedo?: (mediaId: string) => void; onAvatar?: (mediaId: string) => void; onRef?: (mediaId: string) => void; isRef?: boolean }) {
   const [saved, setSaved] = useState(photo.saved);
   const toggle = async () => { const on = !saved; setSaved(on); onSaved(on); await api("/api/pica", { action: "save", id: photo.media_id, on }).catch(() => { setSaved(!on); onSaved(!on); }); };
   return (
@@ -313,6 +313,7 @@ function Viewer({ photo, onClose, onSaved, onRedo, onAvatar }: { photo: Photo; o
       <div className="row" style={{ gap: 10 }} onClick={e => e.stopPropagation()}>
         <button className={saved ? "ghost" : "btn"} onClick={toggle} data-testid="pica-viewer-save">{saved ? "🔖 Saved" : "📑 Save"}</button>
         {onAvatar && <button className="ghost" onClick={() => onAvatar(photo.media_id)} data-testid="pica-viewer-avatar">🖼 Profile picture</button>}
+        {onRef && <button className="ghost" onClick={() => onRef(photo.media_id)} data-testid="pica-viewer-ref">{isRef ? "✓ Her picture" : "＋ Use as hers"}</button>}
         {onRedo && <button className="ghost" onClick={() => onRedo(photo.media_id)} data-testid="pica-viewer-redo">↻ Redo</button>}
         <button className="ghost" onClick={onClose}>Close</button>
       </div>
@@ -333,7 +334,7 @@ function Grid({ photos, onOpen }: { photos: Photo[]; onOpen: (p: Photo) => void 
 
 /** 👤 Her profile: bio, followers, Follow, and all her photos. */
 function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: string; onClose: () => void; onFollow: (account: string, on: boolean) => void; onChat?: (characterId: string) => void; onMessage?: (id: string) => void; onDeleted?: (id: string) => void }) {
-  const [data, setData] = useState<{ account: { id: string; handle: string; name: string; bio: string; personality: string; traits: Record<string, number>; followers: number; followed: boolean; avatar: string | null; avatar_media_id?: string | null; character_id: string | null; lives: string; hidden: boolean; married: boolean }; photos: Photo[] } | null>(null);
+  const [data, setData] = useState<{ refs?: { media_id: string; url: string }[]; account: { id: string; handle: string; name: string; bio: string; personality: string; traits: Record<string, number>; followers: number; followed: boolean; avatar: string | null; avatar_media_id?: string | null; character_id: string | null; lives: string; hidden: boolean; married: boolean }; photos: Photo[] } | null>(null);
   const [err, setErr] = useState("");
   const [befriending, setBefriending] = useState(false);
   // 🤝 She becomes a character (filled in from her profile; her photos are her headshot and references).
@@ -374,6 +375,29 @@ function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: 
       const r = await api<{ avatar: string }>("/api/pica", { action: "avatar.set", id, mediaId });
       setData(d => (d ? { ...d, account: { ...d.account, avatar: r.avatar, avatar_media_id: mediaId } } : d));
     } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't change her profile picture."); }
+    setPicBusy("");
+  };
+  // 🖼️ Her reference pictures: what every new photo of her is built from.
+  const refs = data?.refs || [];
+  const isRef = (mediaId: string) => refs.some(r => r.media_id === mediaId);
+  const setRefs = async (ids: string[]) => {
+    setErr("");
+    try {
+      const r = await api<{ refs: { media_id: string; url: string }[] }>("/api/pica", { action: "refs.set", id, mediaIds: ids });
+      setData(d => (d ? { ...d, refs: r.refs } : d));
+    } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't save her pictures."); }
+  };
+  const toggleRef = (mediaId: string) => {
+    if (isRef(mediaId)) return setRefs(refs.filter(r => r.media_id !== mediaId).map(r => r.media_id));
+    if (refs.length >= 4) { setErr("Four pictures is the most — take one out first."); return; }
+    return setRefs([...refs.map(r => r.media_id), mediaId]);
+  };
+  const refIn = useRef<HTMLInputElement>(null);
+  const uploadRef = async (f: File | undefined) => {
+    if (!f) return;
+    setErr(""); setPicBusy("…");
+    try { const up = await uploadPicaPicture(f); await setRefs([...refs.map(r => r.media_id), up.mediaId].slice(-4)); }
+    catch (e) { setErr(e instanceof Error ? e.message : "That picture didn't upload."); }
     setPicBusy("");
   };
   const uploadAvatar = async (f: File | undefined) => {
@@ -445,6 +469,25 @@ function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: 
                   <button className="ghost" onClick={befriend} disabled={befriending} data-testid="pica-befriend" style={{ flex: 1 }}>{befriending ? "Making her profile…" : "🤝 Befriend"}</button>
                 </>}
           </div>
+          {!data.account.character_id && (
+            <div style={{ padding: "0 16px 10px" }}>
+              <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>🖼️ Her pictures <span style={{ opacity: 0.8 }}>· what every new photo of her is built from (up to 4)</span></div>
+              <div className="row" style={{ gap: 6, flexWrap: "wrap" }} data-testid="pica-refs">
+                {refs.map(r => (
+                  <span key={r.media_id} style={{ position: "relative" }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={r.url} alt="" data-testid="pica-ref" style={{ width: 54, height: 54, borderRadius: 10, objectFit: "cover", objectPosition: "top" }} />
+                    <button onClick={() => toggleRef(r.media_id)} aria-label="Take this one out" data-testid="pica-ref-out"
+                      style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: 999, border: "1px solid var(--border)", background: "var(--card)", color: "var(--text)", fontSize: 11, lineHeight: 1, cursor: "pointer", padding: 0 }}>✕</button>
+                  </span>
+                ))}
+                <button className="ghost" onClick={() => refIn.current?.click()} disabled={!!picBusy || refs.length >= 4} data-testid="pica-ref-add"
+                  style={{ width: 54, height: 54, borderRadius: 10, borderStyle: "dashed", fontSize: 18, padding: 0 }}>＋</button>
+                <input ref={refIn} type="file" accept="image/jpeg,image/png,image/webp" hidden data-testid="pica-ref-file" onChange={e => uploadRef(e.target.files?.[0])} />
+              </div>
+              {!refs.length && <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>None picked — her profile picture is used instead. Tap any photo of hers to use it, or ＋ to upload one.</div>}
+            </div>
+          )}
           <div className="row" style={{ padding: "0 16px 10px", gap: 10 }}>
             {!data.account.character_id && (
               <button className="ghost" onClick={() => setPersona(true)} data-testid="pica-persona-open" style={{ padding: "4px 12px", fontSize: 13 }}>🎭 Personality</button>
@@ -461,6 +504,7 @@ function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: 
         </div>
       )}
       {view && <Viewer photo={view} onClose={() => setView(null)} onRedo={m => { setView(null); setRedo(m); }} onAvatar={m => { setView(null); setAvatar(m); }}
+        {...(data && !data.account.character_id ? { onRef: (m: string) => { toggleRef(m); setView(null); }, isRef: isRef(view.media_id) } : {})}
         onSaved={on => setData(d => (d ? { ...d, photos: d.photos.map(x => (x.media_id === view.media_id ? { ...x, saved: on } : x)) } : d))} />}
       {persona && data && (
         <PersonaSheet who={data.account.name} personality={data.account.personality} traits={data.account.traits}

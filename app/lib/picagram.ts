@@ -713,7 +713,10 @@ export async function picaProfile(userId: string, accountId: string) {
     from pica_posts p join velo_media m on m.id = p.media_id join velo_files f on f.id = m.file_id left join velo_files t on t.id = m.thumb_file_id
     where p.user_id = ${userId} and (p.account_id = ${accountId} or (${a.character_id || null}::uuid is not null and p.author_id = ${a.character_id || null}::uuid))
       and p.created_at <= now() and m.status = 'done' order by p.created_at desc limit 60`;
-  return { account: { id: String(a.id), handle: String(a.handle), name: String(a.name), bio: String(a.bio),
+  const refIds = ((a.ref_media_ids || []) as string[]).map(String).filter(Boolean);
+  const refRows = refIds.length ? await sql()`select m.id, f.url from velo_media m join velo_files f on f.id = m.file_id where m.id = any(${refIds}::uuid[]) and m.user_id = ${userId}` : [];
+  return { refs: refIds.map(id => refRows.find(r => String(r.id) === id)).filter(Boolean).map(r => ({ media_id: String(r!.id), url: String(r!.url) })),
+    account: { id: String(a.id), handle: String(a.handle), name: String(a.name), bio: String(a.bio),
       personality: String(a.personality || ""), traits: cleanTraits(a.traits && Object.keys(a.traits).length ? a.traits : DEFAULT_TRAITS), followers: Number(a.followers), followed: !!a.followed, avatar: a.avatar ? String(a.avatar) : a.portrait ? String(a.portrait) : null, avatar_media_id: a.avatar_media_id ? String(a.avatar_media_id) : null, character_id: a.character_id ? String(a.character_id) : null, lives: a.lives ? String(a.lives) : "", hidden: !!a.hidden, married: a.attached === "married" },
     photos: posts.map(r => ({ media_id: String(r.media_id), url: String(r.url), thumb: r.thumb ? String(r.thumb) : null, caption: String(r.caption || ""), saved: !!r.saved })) };
 }
@@ -757,6 +760,25 @@ export async function picaName(userId: string, accountId: string, name: string):
   if (!text) return null;
   await sql()`update pica_accounts set name = ${text} where id = ${a.id} and user_id = ${userId}`;
   return text;
+}
+
+/**
+ * 🖼️ Her reference pictures: the ones every new picture of her is built from, so her face stays
+ * hers. Pick from her own photos or upload your own, the same as a character's. Not for someone
+ * you've befriended — hers live on her character card.
+ */
+export async function picaRefs(userId: string, accountId: string, mediaIds: string[]): Promise<{ refs: { media_id: string; url: string }[] } | "friend" | null> {
+  const [a] = await sql()`select id, character_id from pica_accounts where id = ${accountId} and user_id = ${userId}`;
+  if (!a) return null;
+  if (a.character_id) return "friend";
+  const want = [...new Set(mediaIds.filter(x => /^[0-9a-f-]{36}$/i.test(x)))].slice(0, 4);
+  const rows = want.length
+    ? await sql()`select m.id, f.url from velo_media m join velo_files f on f.id = m.file_id
+        where m.id = any(${want}::uuid[]) and m.user_id = ${userId} and m.kind = 'image' and m.status = 'done'`
+    : [];
+  const keep = want.filter(id => rows.some(r => String(r.id) === id));
+  await sql()`update pica_accounts set ref_media_ids = ${keep}::uuid[] where id = ${a.id} and user_id = ${userId}`;
+  return { refs: keep.map(id => ({ media_id: id, url: String(rows.find(r => String(r.id) === id)!.url) })) };
 }
 
 /** 📍 Where she lives, yours to change — the same rule as her personality: not once she's a character. */
