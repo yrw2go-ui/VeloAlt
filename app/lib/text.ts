@@ -58,3 +58,11 @@ export function noJargon(t: string): string {
 
 /** Everything a reply goes through before it's shown: stray HTML, leaked tool calls, stage directions, thoughts. */
 export const cleanReply = (t: string) => noJargon(dropThoughts(dropMeta(stripScaffolding(cleanTags(t)))));
+
+/**
+ * 💭 Thoughts you plant. Anything the person types in [square brackets] isn't something they said
+ * out loud — it's a thought, a feeling or a fact about her world that she takes as true and acts
+ * on. The same rule in her chats and in her Picagram DMs, so it behaves the same everywhere.
+ */
+export const BRACKETS = (them: string) =>
+  `💭 Anything ${them} puts in [square brackets] is NOT something they said out loud. It's a thought, a feeling, a memory or a turn of events — take it as true about you and your world, let it land, and act on it from then on. Reply only to what they actually said out loud; if the brackets were all they sent, say whatever that makes you say or do, as if the thought had just come to you. Never repeat the bracketed words back, never put brackets around your own thoughts, and never mention or ask about the brackets themselves.`;
