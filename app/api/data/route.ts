@@ -504,11 +504,11 @@ export async function POST(req: NextRequest) {
       // 🖼️ Every picture they have (from any chat, peeks, Picagram), newest first — to attach one to a message.
       case "gallery.pick": {
         const before = typeof b.before === "string" && !Number.isNaN(Date.parse(b.before)) ? b.before : null;
-        const rows = await db`select f.id, f.url, f.name, f.content_type, m.created_at::text as at, t.url as thumb, c.name as who, m.pica
+        const rows = await db`select f.id, m.id as media_id, f.url, f.name, f.content_type, m.created_at::text as at, t.url as thumb, c.name as who, m.pica
           from velo_media m join velo_files f on f.id = m.file_id and f.user_id = m.user_id left join velo_files t on t.id = m.thumb_file_id left join chat_characters c on c.id = m.character_id
           where m.user_id = ${me} and m.kind = 'image' and m.status = 'done' and (${before}::timestamptz is null or m.created_at < ${before}::timestamptz)
           order by m.created_at desc limit 30`;
-        return NextResponse.json({ items: rows.map(r => ({ id: String(r.id), url: String(r.url), thumb: r.thumb ? String(r.thumb) : null, name: String(r.name || "photo.jpg"), type: String(r.content_type || "image/jpeg"), at: String(r.at), from: r.pica ? "Picagram" : r.who ? String(r.who) : "Velo" })) });
+        return NextResponse.json({ items: rows.map(r => ({ id: String(r.id), mediaId: String(r.media_id), url: String(r.url), thumb: r.thumb ? String(r.thumb) : null, name: String(r.name || "photo.jpg"), type: String(r.content_type || "image/jpeg"), at: String(r.at), from: r.pica ? "Picagram" : r.who ? String(r.who) : "Velo" })) });
       }
       case "gallery.keep":
         if (!needId()) return bad("Unknown picture.");

@@ -194,6 +194,28 @@ export async function dmMyPhotoDraft(userId: string, accountId: string, about: s
   const history = await messages(userId, accountId, 12);
   return myPhotoDraft(userId, about, `a DM to ${a.name} (@${a.handle}). Recent messages:\n${transcript(history, String(a.name), u.name)}`);
 }
+/**
+ * 🖼️ A picture you already have — one from your gallery, or one you've just uploaded from the
+ * phone — sent to her in the DMs. She sees it and says something back, same as one you had made.
+ */
+export async function dmSendMine(userId: string, accountId: string, mediaId: string): Promise<{ added: Dm[]; note?: string }> {
+  const a = await account(userId, accountId);
+  const u = await userInfo(userId);
+  const [m] = await sql()`select m.id, m.kind, m.status, m.description, f.url, t.url as thumb from velo_media m join velo_files f on f.id = m.file_id
+    left join velo_files t on t.id = m.thumb_file_id where m.id = ${mediaId} and m.user_id = ${userId} and m.kind = 'image' and m.status = 'done'`;
+  if (!m) throw new DmError("That picture wasn't found.");
+  const media: Media = { id: String(m.id), kind: "image", status: "done", url: String(m.url), thumb: m.thumb ? String(m.thumb) : null, description: m.description ? String(m.description) : null };
+  const mine = { ...(await addDm(userId, accountId, "user", "", media.id)), media };
+  const history = await messages(userId, accountId, 40);
+  const raw = await write(brainOf(a, u.chatModel), `You are ${a.name} (@${a.handle}) on Picagram. ${u.name} just sent you a photo in your DMs. React in your own voice — short (1–2 sentences), warm${u.adult ? ", flirty if it fits (PG-13)" : ""}. Never say you're an AI. ${PLAIN_WORDS} Reply with only your message.`,
+    `${u.now}\n\nTHE PHOTO THEY SENT: ${scrub(String(media.description || "a photo from their gallery")).slice(0, 400)}\n\nTHE CONVERSATION:\n${transcript(history, String(a.name), u.name)}`, 400).catch(() => "");
+  const reply = scrub(raw.replace(/^```(json)?|```$/g, "").replace(/\s+/g, " ").trim()).slice(0, 2000);
+  const added: Dm[] = [mine];
+  if (reply) added.push(await addDm(userId, accountId, "assistant", reply));
+  await sql()`update pica_dms set read_at = now() where user_id = ${userId} and account_id = ${accountId} and read_at is null`;
+  return { added };
+}
+
 export async function dmMyPhoto(userId: string, accountId: string, description: string): Promise<{ added: Dm[]; note?: string }> {
   const a = await account(userId, accountId);
   const u = await userInfo(userId);

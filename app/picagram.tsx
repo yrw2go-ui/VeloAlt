@@ -1,7 +1,7 @@
 "use client";
 // 📸 Picagram: everyone's posts, newest first, a few at a time as you scroll. Like, comment, and post your own.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, uploadFile, uploadPicaPicture } from "./lib/api";
+import { api, data, uploadFile, uploadPicaPicture } from "./lib/api";
 import { hideSecrets } from "./lib/secrets";
 import { noJargon } from "./lib/text";
 import { MediaView, type Media } from "./media";
@@ -568,6 +568,40 @@ function PersonaSheet({ who, personality, traits, onSave, onClose }: {
   );
 }
 
+/** 🖼️ Pick a picture you already have — anything in the app's gallery — to send her. */
+function PickFromGallery({ onClose, onPick }: { onClose: () => void; onPick: (mediaId: string) => void }) {
+  type Item = { id: string; mediaId: string; url: string; thumb: string | null; at: string; from: string };
+  const [items, setItems] = useState<Item[] | null>(null);
+  const [more, setMore] = useState(true);
+  const load = async (before: string | null) => {
+    const r = await data<{ items: Item[] }>("gallery.pick", before ? { before } : {}).catch(() => ({ items: [] as Item[] }));
+    setItems(l => [...(before ? l || [] : []), ...r.items]); setMore(r.items.length >= 30);
+  };
+  useEffect(() => { load(null); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <div role="dialog" aria-modal="true" data-testid="dm-pick" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2700 }} onClick={onClose}>
+      <div className="card" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, maxHeight: "80dvh", overflowY: "auto", borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          <div style={{ fontWeight: 800, fontSize: 17 }}>🖼️ Send a picture</div>
+          <button className="ghost" onClick={onClose} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
+        </div>
+        {items && !items.length && <div className="muted" style={{ textAlign: "center", padding: 20 }}>No pictures yet</div>}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4 }}>
+          {(items || []).map(it => (
+            <button key={it.id} type="button" onClick={() => onPick(it.mediaId)} data-testid="dm-pick-item" title={it.from}
+              style={{ position: "relative", padding: 0, border: "none", background: "var(--surface2)", cursor: "pointer", aspectRatio: "1", borderRadius: 8, overflow: "hidden" }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={it.thumb || it.url} alt={`From ${it.from}`} loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+              <span style={{ position: "absolute", left: 4, bottom: 4, fontSize: 10, padding: "1px 6px", borderRadius: 999, background: "rgba(0,0,0,.6)", color: "#fff" }}>{it.from}</span>
+            </button>
+          ))}
+        </div>
+        {items && more && <button className="ghost" onClick={() => load(items.at(-1)?.at || null)}>Show more</button>}
+      </div>
+    </div>
+  );
+}
+
 /** 🔖 Their own Picagram gallery: pictures they saved. */
 function Saved({ onClose }: { onClose: () => void }) {
   const [items, setItems] = useState<(Photo & { at: string })[] | null>(null);
@@ -702,6 +736,22 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [mySheet, setMySheet] = useState(false);
+  // 🖼️📎 Send her something you already have: from the gallery, or straight off the phone.
+  const [pick, setPick] = useState(false);
+  const [sending, setSending] = useState("");
+  const upIn = useRef<HTMLInputElement>(null);
+  const sendMine = async (mediaId: string) => {
+    setSending("…"); setErr("");
+    try { const r = await api<{ added: DmMsg[] }>("/api/pica", { action: "dm.me.send", id, mediaId }); setMsgs(m => [...(m || []), ...r.added]); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't send it."); }
+    setSending("");
+  };
+  const uploadMine = async (f: File | undefined) => {
+    if (!f) return;
+    setSending("…"); setErr("");
+    try { const up = await uploadPicaPicture(f); await sendMine(up.mediaId); }
+    catch (e) { setErr(e instanceof Error ? e.message : "That picture didn't upload."); setSending(""); }
+  };
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => { api<{ account: DmAccount; messages: DmMsg[]; brains?: { id: string; label: string }[] }>("/api/pica", { action: "dm.open", id }).then(r => { setAcc(r.account); setMsgs(r.messages); setBrains(r.brains || []); }).catch(e => setErr(e instanceof Error ? e.message : "Couldn't open it.")); }, [id]);
   useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [msgs, busy]);
@@ -780,11 +830,15 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
           </button>
         </div>
       )}
+      {pick && <PickFromGallery onClose={() => setPick(false)} onPick={m => { setPick(false); sendMine(m); }} />}
       {mySheet && <MyPhotoSheet title={`Send ${acc?.name || "her"} a photo of you`} draft={a => api<{ description: string }>("/api/pica", { action: "dm.me.draft", id, about: a }).then(r => r.description)}
         onMake={async d => { const r = await api<{ added: DmMsg[] }>("/api/pica", { action: "dm.me.photo", id, description: d }); setMsgs(m => [...(m || []), ...r.added]); setMySheet(false); }} onClose={() => setMySheet(false)} />}
       {pendingPic && <div style={{ padding: "0 12px 6px" }}><button className="ghost" onClick={sendPic} data-testid="dm-send-pic" style={{ padding: "6px 12px", fontSize: 13, borderColor: "#ec4899" }}>📸 {acc?.name || "She"} didn&apos;t send it — send the pic</button></div>}
       <form onSubmit={e => { e.preventDefault(); send(); }} className="row" style={{ padding: "10px 12px", gap: 8, borderTop: "1px solid var(--border)" }}>
         <button type="button" className="ghost" onClick={() => setMySheet(true)} aria-label="Send a photo of you" data-testid="dm-my-photo" style={{ flexShrink: 0, padding: "8px 10px", fontSize: 18 }}>📸</button>
+        <button type="button" className="ghost" onClick={() => setPick(true)} aria-label="Send a picture from your gallery" data-testid="dm-pick-open" style={{ flexShrink: 0, padding: "8px 10px", fontSize: 18 }}>🖼️</button>
+        <button type="button" className="ghost" onClick={() => upIn.current?.click()} disabled={!!sending} aria-label="Upload a picture" data-testid="dm-upload-open" style={{ flexShrink: 0, padding: "8px 10px", fontSize: 18 }}>{sending || "📎"}</button>
+        <input ref={upIn} type="file" accept="image/jpeg,image/png,image/webp" hidden data-testid="dm-upload-file" onChange={e => uploadMine(e.target.files?.[0])} />
         <input value={text} onChange={e => setText(e.target.value)} placeholder={`Message ${acc?.name || ""}…`} aria-label="Message" maxLength={2000} disabled={!msgs} style={{ borderRadius: 999 }} />
         <button className="btn" disabled={!text.trim() || busy || !msgs} style={{ borderRadius: 999, padding: "10px 16px" }}>Send</button>
       </form>

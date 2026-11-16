@@ -3,7 +3,7 @@ import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import { sql } from "../../lib/db";
 import { MediaError, mediaReady } from "../../lib/media";
-import { dmThreads, dmUnread, dmOpen, dmSend, dmSendPhoto, dmPhotoMake, dmBrain, dmMyPhotoDraft, dmMyPhoto, DmError } from "../../lib/picaDm";
+import { dmThreads, dmUnread, dmOpen, dmSend, dmSendPhoto, dmPhotoMake, dmBrain, dmMyPhotoDraft, dmMyPhoto, dmSendMine, DmError } from "../../lib/picaDm";
 import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSetAvatar, picaRefs, picaSavedList, picaFollowing, picaBefriend, picaCounts, picaDeletePost, picaCreateAccount, picaPictureAbout, picaRedoDraft, picaRedo, picaWithMe, picaMe, picaMeBio, picaBio, picaPersona, picaLives, picaName, picaCaption, picaCharacters, picaHide, accountFor, picaNew, picaFromPhoto, myPhotoDraft, newFaces, picaDeleteAccount, PicaLimit } from "../../lib/picagram";
 
 // 📸 Picagram. POST { action, ... }:
@@ -49,6 +49,11 @@ export async function POST(req: NextRequest) {
       // 📸 A photo of you: the description to check (step 1), then exactly that (step 2).
       case "me.draft": return NextResponse.json({ description: await myPhotoDraft(me, String(b.about || ""), String(b.context || "")) });
       case "dm.me.draft": return UUID.test(id) ? NextResponse.json({ description: await dmMyPhotoDraft(me, id, String(b.about || "")) }) : bad("Unknown account.");
+      // 🖼️ One you already have: from your gallery, or just uploaded from the phone.
+      case "dm.me.send": {
+        if (!UUID.test(id) || !UUID.test(String(b.mediaId || ""))) return bad("Unknown account.");
+        return NextResponse.json(await dmSendMine(me, id, String(b.mediaId)));
+      }
       case "dm.me.photo": {
         if (!UUID.test(id)) return bad("Unknown account.");
         if (!mediaReady()) return bad("Photos aren't set up yet.");
