@@ -405,6 +405,7 @@ export async function POST(req: NextRequest) {
         if (b.characterId && !ch) return bad("That character wasn't found.");
         const text = scrub(String(b.description || "")).replace(/\s+/g, " ").trim().slice(0, 1500);
         if (text.length < 5) return bad("Say what the picture shows.");
+        if (!allow(`photo:${me}`, [{ ms: 60_000, max: 6 }, { ms: 86_400_000, max: 200 }])) return NextResponse.json({ error: "Slow down a little — try again in a bit." }, { status: 429 });
         const [u2] = await db`select adult_confirmed_at, name, bio_photo_note from users where id = ${me}`;
         const adult = !!u2?.adult_confirmed_at;
         let other: { name: string; refs: string[]; appearance: string } | null = null;

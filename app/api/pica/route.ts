@@ -47,11 +47,19 @@ export async function POST(req: NextRequest) {
       case "dm.threads": return NextResponse.json({ threads: await dmThreads(me) });
       case "dm.open": return UUID.test(id) ? NextResponse.json(await dmOpen(me, id)) : bad("Unknown account.");
       // 📸 A photo of you: the description to check (step 1), then exactly that (step 2).
-      case "me.draft": return NextResponse.json({ description: await myPhotoDraft(me, String(b.about || ""), String(b.context || "")) });
-      case "dm.me.draft": return UUID.test(id) ? NextResponse.json({ description: await dmMyPhotoDraft(me, id, String(b.about || "")) }) : bad("Unknown account.");
+      case "me.draft": {
+        if (!allow(`pica-draft:${me}`, [{ ms: 60_000, max: 15 }, { ms: 86_400_000, max: 300 }])) return bad("Slow down a little — try again in a bit.", 429);
+        return NextResponse.json({ description: await myPhotoDraft(me, String(b.about || ""), String(b.context || "")) });
+      }
+      case "dm.me.draft": {
+        if (!UUID.test(id)) return bad("Unknown account.");
+        if (!allow(`pica-draft:${me}`, [{ ms: 60_000, max: 15 }, { ms: 86_400_000, max: 300 }])) return bad("Slow down a little — try again in a bit.", 429);
+        return NextResponse.json({ description: await dmMyPhotoDraft(me, id, String(b.about || "")) });
+      }
       // 🖼️ One you already have: from your gallery, or just uploaded from the phone.
       case "dm.me.send": {
         if (!UUID.test(id) || !UUID.test(String(b.mediaId || ""))) return bad("Unknown account.");
+        if (!allow(`pica-dm:${me}`, [{ ms: 60_000, max: 15 }, { ms: 86_400_000, max: 600 }])) return bad("Slow down a little — try again in a bit.", 429);
         return NextResponse.json(await dmSendMine(me, id, String(b.mediaId)));
       }
       case "dm.me.photo": {
@@ -70,6 +78,7 @@ export async function POST(req: NextRequest) {
       // 📸 Her photo in the DMs, sent the way a peek is: exactly what you've got in front of you.
       case "dm.photo.make": {
         if (!UUID.test(id)) return bad("Unknown account.");
+        if (!allow(`pica-dm:${me}`, [{ ms: 60_000, max: 15 }, { ms: 86_400_000, max: 600 }])) return bad("Slow down a little — try again in a bit.", 429);
         return NextResponse.json(await dmPhotoMake(me, id, String(b.description || "")));
       }
       case "new": return NextResponse.json({ n: await picaNew(me), dms: await dmUnread(me) });
