@@ -8,7 +8,7 @@ import { cleanTraits, PRESETS } from "../../lib/traits";
 import { isValidTimeZone, localDate } from "../../lib/localTime";
 import { availableBrains, brainList } from "../../lib/models";
 import { makeCharacter } from "../../lib/makeCharacter";
-import { listLinks, setLink, removeLink, writeStory, linkSuggestions } from "../../lib/friends";
+import { listLinks, setLink, removeLink, writeStory, linkSuggestions, screenStory } from "../../lib/friends";
 import { checkCard } from "../../lib/cardCheck";
 import { wordsFor } from "../../lib/wordsDb";
 import { MAX_CHARACTERS, DAILY_PORTRAITS, isAdmin, listCharacters, getCharacter, screenCharacter, startPortrait, checkPortrait, deleteCharacter, portraitsReady, chooseVoice, VoiceError } from "../../lib/characters";
@@ -217,7 +217,9 @@ export async function POST(req: NextRequest) {
         // Linking back: their shared history is already written from the other side.
         if (!story) story = String((await sql()`select story from chat_character_links where knower_id = ${other} and known_id = ${id}`)[0]?.story || "");
         if (!story) story = await writeStory(a, o, kind);
-        if (story && (await screenCharacter({ name: `${a.name} & ${o.name}`, personality: "", backstory: story, relation: "", appearance: "" }))) return bad("That story isn't allowed — try different wording.");
+        // 🛡️ Checked as what it is — a note about the two of them, not a character card.
+        const no = story ? await screenStory(a.name, o.name, kind, story, !!(a.romantic && o.romantic)).catch(() => null) : null;
+        if (no) return bad(no);
         await setLink(id, other, kind, story);
         return NextResponse.json(await listLinks(id));
       }
