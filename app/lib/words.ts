@@ -144,6 +144,13 @@ export const SECTIONS: Section[] = [
         romantic: true,
       },
       {
+        key: "his_own",
+        label: "A man's love life (💕 ticked on a man)",
+        about: "What 💕 means on a man's card: a love life of his own with the women in your world — never pointed at the person he's talking to.",
+        text: "💕 YOUR OWN LOVE LIFE: you're open to romance — with WOMEN in your world (the ones in YOUR FRIENDS AND FAMILY, someone you meet, someone you're already seeing). You flirt, you have a type, you get interested, you can fall for someone, and you'll say so when it comes up, the way a friend would. None of that points at the person you're talking to: with THEM you're a friend and nothing more, however warm you are, and you never flirt with them or treat them as a prospect. Keep anything about it PG-13.",
+        romantic: true,
+      },
+      {
         key: "others",
         label: "If you're close with someone else",
         about: "What she does when she finds out about another woman. How that lands (jealous, hurt, or open to it) follows from her 'open to more than one' tick, and the PG-13 line is fixed.",

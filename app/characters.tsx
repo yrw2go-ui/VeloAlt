@@ -191,7 +191,7 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
     return () => clearInterval(t);
   }, [c?.id, c?.portrait_job]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const payload = () => ({ name, personality, backstory, relation, appearance, job, casualWear: wear, hobbies, workAttire: attire,
+  const payload = () => ({ gender, name, personality, backstory, relation, appearance, job, casualWear: wear, hobbies, workAttire: attire,
     romantic, romanceArc: romantic ? arc : "", workDays, workStart, workEnd, partTime, school, classDays, classStart, classEnd,
     liveIn, neighbor, local: local || neighbor, livesIn: livesIn.trim(), attached, partner, seesOthers, lesbian: romantic && lesbian, bigFollowing,
     gf: romantic && gf, secret: romantic && secret, polyOk: romantic && polyOk, sapphic: romantic && sapphic, timeZone: zone });
@@ -462,7 +462,9 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
         <VoicePicker value={voice} onChange={setVoice} only={gender} />
         <label className="row" style={{ gap: 10, fontSize: 13, fontWeight: 700, alignItems: "flex-start" }}>
           <input type="checkbox" checked={romantic} onChange={e => setRomantic(e.target.checked)} aria-label="Romantic" style={{ width: 20, height: 20, marginTop: 1, flexShrink: 0 }} />
-          <span>💕 Romantic (PG-13) <span className="muted" style={{ fontWeight: 500, display: "block" }}>Romance becomes possible with adults who confirmed they&apos;re 18+ (never explicit) — but their personality still leads. Others get a friendly, platonic version.</span></span>
+          <span>💕 Romantic (PG-13) <span className="muted" style={{ fontWeight: 500, display: "block" }}>{gender === "male"
+            ? "He can have a love life of his own: flirting, dating and falling for the women in your world. It never points at you — with you he stays a friend."
+            : "Romance becomes possible with adults who confirmed they\u2019re 18+ (never explicit) — but their personality still leads. Others get a friendly, platonic version."}</span></span>
         </label>
         {romantic && (
           <label style={{ fontSize: 13, fontWeight: 700 }}>💕 Romance arc

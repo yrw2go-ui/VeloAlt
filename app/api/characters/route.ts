@@ -150,6 +150,7 @@ export async function POST(req: NextRequest) {
           attached: clean(b.attached, 20) || "single", partner: clean(b.partner, 80), seesOthers: b.seesOthers === true,
           lesbian: b.lesbian === true, bigFollowing: b.bigFollowing === true, gf: b.gf === true, secret: b.secret === true,
           polyOk: b.polyOk === true, sapphic: b.sapphic === true, timeZone: clean(b.timeZone, 60),
+          man: clean(b.gender, 10) === "male",
         }, home ? homeText(home) : "");
         return NextResponse.json({ findings });
       }
