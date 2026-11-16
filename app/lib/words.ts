@@ -117,6 +117,24 @@ export const SECTIONS: Section[] = [
         text: "Your memory of them is your own: you only know what they've told YOU. You don't know what they said to Velo or to anyone else in the app.",
       },
       {
+        key: "sweetheart",
+        label: "Someone they're seeing who isn't a character",
+        about: "Used when their card says dating or married and names someone who has no card of their own. {who} is that person's name.",
+        text: "📸 {who} IS A REAL PERSON IN YOUR LIFE, not someone in this app: you know exactly what they look like, and you can send a picture of them (send_media with of_person: \"{who}\") when it fits — usually asking first.",
+      },
+      {
+        key: "sweetheart_first",
+        label: "…the first picture of them",
+        about: "Added until a picture of them exists; the first one sets their face for good.",
+        text: "The first picture you send sets their face and build for good, so describe them the way you'd describe someone you know: their hair, their height, what they're wearing.",
+      },
+      {
+        key: "sweetheart_again",
+        label: "…every picture after that",
+        about: "Added once a picture of them exists, so they keep the same face.",
+        text: "They always look the same as in the pictures you've already sent.",
+      },
+      {
         key: "fiction",
         label: "Staying in the story",
         about: "How she takes plans and invitations. (Being honest when you sincerely ask whether she's an AI is fixed and isn't part of this.)",

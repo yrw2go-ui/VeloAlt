@@ -13,6 +13,7 @@ import sharp from "sharp";
 import { randomUUID } from "node:crypto";
 import { sql } from "./db";
 import { wordsOf, fill } from "./wording";
+import { rememberPartnerPic } from "./partner";
 import { scrub } from "./secrets";
 import { sendPush } from "./push";
 
@@ -99,7 +100,7 @@ export const SEND_MEDIA_TOOL = (who: string, romantic = false): Anthropic.Tool =
       kind: { type: "string", enum: ["image", "video"] },
       with_me: { type: "boolean", description: `true if you (${who}) are in it (a selfie or a shot of you)` },
       with_them: { type: "boolean", description: "true if the person you're talking to is in it WITH you — only when you're actually together (in person, or at home if you live with them), or it's a photo from a time you were. Never when you're apart." },
-      of_person: { type: "string", description: "Name of one of the other people in their life you know of (from OTHER PEOPLE IN THEIR LIFE YOU KNOW OF), if they're in it — e.g. a pic of her when she comes up. Only them; never real people." },
+      of_person: { type: "string", description: "Name of one of the other people in their life you know of (from OTHER PEOPLE IN THEIR LIFE YOU KNOW OF, or the person you're seeing), if they're in it — e.g. a pic of her when she comes up. Only them; never real people." },
       they_asked: { type: "boolean", description: "true only if their latest message asked you for a photo/video" },
       same_moment: { type: "boolean", description: "true if this follows on from your LAST photo the same day — same place, same class/outing, same outfit (just a new pose, angle or expression). Your outfit, hair and setting then stay exactly the same; describe only what changed (e.g. 'jacket now half off one shoulder, head tilted, peace sign')." },
       description: { type: "string", description: "What's in it: the scene, setting, action, mood, framing (e.g. 'on a sailboat at sunset, wind in my hair, big smile, shot from the deck'). Max ~300 characters." },
@@ -335,6 +336,11 @@ export async function checkMedia(userId: string, id: string): Promise<Media | nu
     const thumb = t ? await saveFile(userId, t, "image/webp", "thumb.webp") : null;
     const [doneRow] = await sql()`update velo_media set status = 'done', file_id = ${full.id}, thumb_file_id = ${thumb?.id || null}, done_at = now(), error = null, claimed_at = null
       where id = ${id} and status = 'working' returning id`;
+    // 💑 A picture of the person they're seeing who isn't a character here: their face is kept,
+    // so every later picture of them matches it.
+    if (doneRow && r.character_id && r.subject && r.subject !== "me" && r.subject !== "none")
+      await rememberPartnerPic(userId, r.character_id, r.subject.replace(/^me\+/, ""), full.url, r.description || "")
+        .catch(e => console.error("media: partner look", e instanceof Error ? e.message : e));
     // ↻ A redo: it takes the old picture's place now it exists, and the old one is deleted.
     if (doneRow) await onReady?.(userId, id).catch(e => console.error("media: swap in", e instanceof Error ? e.message : e));
     // 💬 …and says something about it in the chat it was sent to.

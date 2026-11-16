@@ -39,6 +39,7 @@ async function pushedLately(userId: string, sceneId: string): Promise<number> {
   return Number(r?.n || 0);
 }
 import { soreFor, setSore, mend as mendSore, soreNote, SORE_REMEMBER } from "./sore";
+import { partnerLook, partnerPicNote } from "./partner";
 import { attachedNote, lesbianNote, maybeStartDating, maybeEndIt, endedNote, wonOver, cameAround, WON_OVER, type Her } from "./attached";
 import { characterPrompt, feelingsFor, saveFeelings, trustFor, saveTrust, trustNote, happyFor, saveHappy, happyNote, loveFor, saveLove, loveNote, activeScene, sceneNote, noteMentions, acquaintancesNote, referenceUrls, pictureOf, type Character } from "./characters";
 import { talkWords } from "./words";
@@ -197,6 +198,9 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
     if (ended) { her.attached = "single"; }
     else if (await maybeStartDating(caller.userId, her).catch(() => false)) her.attached = "dating";
   }
+  // 💑 Their sweetheart who isn't a character here: their look, kept so pictures of them match.
+  const sweetheart = ch && !errand && mode !== "remember" && mode !== "memo"
+    ? await partnerLook(caller.userId, ch.id, her || {}).catch(() => null) : null;
   // 🎬 A scene (date/outing) being played out right now with this character.
   const scene = ch && (mode === "chat" || mode === "talk") && !group ? await activeScene(caller.userId, ch.id).catch(() => null) : null;
   // 📸 Every so often (sooner as they get closer), she offers a photo of the moment.
@@ -263,6 +267,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
         sore && mode !== "remember" && mode !== "memo" ? soreNote(sore, name) : "",
         her && her.attached !== "single" && mode !== "remember" && mode !== "memo" ? attachedNote({ ...her, romantic }, name) : "",
         ended && her ? endedNote(ended, String(her.partner || "")) : "",
+        sweetheart && !ended ? partnerPicNote(sweetheart, talkWords(u)) : "",
         her?.lesbian && romantic && mode !== "remember" && mode !== "memo" ? lesbianNote(her, name, !!ch?.poly_ok) : "",
         ch && mode !== "remember" && mode !== "memo" ? lifeNote(unwell, trip, stay) : "",
         ch && mode !== "remember" && mode !== "memo" ? WANTS : "",

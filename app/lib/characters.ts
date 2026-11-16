@@ -1,4 +1,5 @@
 import { wonOver } from "./attached";
+import { partnerLook } from "./partner";
 // 🎭 Characters: made by admins and shared with everyone, with portraits generated
 // by Atlas Cloud (Seedream) from a written description and saved to Blob. Server only.
 //
@@ -349,6 +350,12 @@ export async function pictureOf(userId: string, knowerId: string | null, name: s
     const f = me ? (await friendsOf(me, userId)).find(x => x.name.trim().toLowerCase() === n && (x.level ?? 3) >= 2) : null;
     const fc = f ? await getCharacter(f.id) : null;
     if (fc) return { name: fc.name, refs: await referenceUrls(fc), appearance: fc.appearance };
+  }
+  // 💑 The person they're seeing who isn't a character here: their own remembered look.
+  if (knowerId) {
+    const me = await getCharacter(knowerId);
+    const p = me ? await partnerLook(userId, knowerId, me) : null;
+    if (p && p.name.toLowerCase() === n) return { name: p.name, refs: p.refs, appearance: p.look };
   }
   const [row] = await sql()`select c.id, a.mentions, extract(epoch from now() - a.first_at) / 86400 as days
     from chat_acquaintances a join chat_characters c on c.id = a.known_id
