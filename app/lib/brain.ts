@@ -8,7 +8,7 @@
 //   "errand"    — a turn on a call Velo is making FOR the owner to someone else
 //   "errandsum" — a short report to the owner after that call
 import { CLAIMS_MEDIA, MENTIONS_MEDIA } from "./mediaWords";
-import { cleanReply, isMeta } from "./text";
+import { cleanReply, isMeta, writtenCall } from "./text";
 
 // 💭 She wrote something, but it was all thoughts in brackets: nothing to say out loud.
 const nothingButThoughts = (t: string) => /[\p{L}\p{N}]/u.test(t) && !cleanReply(t);
@@ -508,6 +508,16 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
     }));
     messages.push({ role: "user", content: results });
     if (round === 5) reply = "";
+  }
+  // 🧰 She wrote the tool call out as words — "(send_media(kind='image', description='…'))" —
+  // instead of making it. Read it, make that picture, and the words themselves never show (they're
+  // cut from her reply by cleanReply).
+  const written = canSend && reply ? writtenCall(reply) : null;
+  if (written && !media.some(m => m.status !== "failed")) {
+    try {
+      const out = await runTool("send_media", { kind: written.kind, description: written.description, with_me: written.with_me, with_them: written.with_them, they_asked: true });
+      if (out.isError) console.warn("velo: written-out call", out.content.slice(0, 200));
+    } catch (e) { if (!(e instanceof HandledRetry)) console.error("velo: written-out call", e instanceof Error ? e.message : e); }
   }
   // 📸 She said a photo/video is on its way but never actually sent one (the model skipped the tool):
   // send it now, as she described — so what she says and what arrives always match.

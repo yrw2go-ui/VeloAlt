@@ -1,6 +1,6 @@
 // ✉️ Picagram DMs: private chats with Picagram accounts (people who aren't characters). They answer in
 // their own voice and can send photos of themselves. Characters never DM here — they chat in the normal chat.
-import { cleanReply, BRACKETS } from "./text";
+import { cleanReply, BRACKETS, writtenCall } from "./text";
 import { PLAIN_WORDS } from "./characters";
 import { traitsPrompt } from "./traits";
 import { sql } from "./db";
@@ -169,6 +169,9 @@ export async function dmSend(userId: string, accountId: string, text: string): P
   let note: string | undefined;
   // 📸 She said a photo was coming but didn't actually pick one: work out what she meant and send it,
   // so what she says and what arrives always match (the same as in the normal chat).
+  // 🧰 She wrote the call out as words instead of filling in "photo": take the description from it.
+  const written = writtenCall(String(j.reply || ""));
+  if (!(j.photo && String(j.photo).trim()) && written) j.photo = written.description;
   if (!(j.photo && String(j.photo).trim()) && CLAIMS_PHOTO.test(reply) && !REFUSES_PHOTO.test(reply)) {
     j.photo = await describePhoto(userId, a, u, [...history, added[1]]).catch(e => { console.warn("pica dm: describe", e instanceof Error ? e.message : e); return ""; });
   }

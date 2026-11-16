@@ -33,6 +33,39 @@ export function isMeta(t: string): boolean {
 // "<function_calls>", a ```json block. None of that is a message, so it never reaches the chat.
 const CALL_TAGS = /<\/?\s*(invoke|antml:invoke|function_calls|antml:function_calls|function_results|tool_use|tool_call|parameter|antml:parameter|thinking|antml:thinking)\b[^>]*>/gi;
 const FENCE = /```[a-z]*\s*|```/gi;
+/**
+ * 📸 …and some write the call out the way code would — "(send_media(kind='image',
+ * description='…', with_me=True))" — right in the middle of what she's saying. That's never a
+ * message either: it's read (so the picture can actually be made) and then cut out.
+ */
+const WRITTEN_CALL = /\(?\s*\b(send_media|send_photo|send_image)\s*\(([\s\S]*?)\)\s*\)?/i;
+
+export type WrittenCall = { kind: "image" | "video"; description: string; with_me: boolean; with_them: boolean };
+
+/** The call she wrote out as words, if there is one. */
+export function writtenCall(t: string): WrittenCall | null {
+  const m = WRITTEN_CALL.exec(t || "");
+  if (!m) return null;
+  const args = m[2] || "";
+  const arg = (name: string) => {
+    const a = new RegExp(`\\b${name}\\s*[=:]\\s*(?:'((?:[^'\\\\]|\\\\.)*)'|"((?:[^"\\\\]|\\\\.)*)"|([A-Za-z0-9_]+))`, "i").exec(args);
+    return a ? (a[1] ?? a[2] ?? a[3] ?? "").replace(/\\(['"])/g, "$1") : "";
+  };
+  const yes = (v: string) => /^(true|yes|1)$/i.test(v.trim());
+  // No named description: take the longest quoted run — that's what she meant to send.
+  const quoted = [...args.matchAll(/'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"/g)]
+    .map(q => (q[1] ?? q[2] ?? "").trim())
+    .filter(v => v.length >= 12 && !/^(image|photo|picture|video|vid|clip)$/i.test(v))
+    .sort((a, b) => b.length - a.length);
+  const description = (arg("description") || arg("prompt") || quoted[0] || "").replace(/\s+/g, " ").trim();
+  if (description.length < 12) return null;
+  return { kind: /video/i.test(arg("kind")) ? "video" : "image", description: description.slice(0, 1500), with_me: arg("with_me") === "" ? true : yes(arg("with_me")), with_them: yes(arg("with_them")) };
+}
+
+/** What she said, with that written-out call taken out of it. */
+export const dropWrittenCall = (t: string) =>
+  t.replace(WRITTEN_CALL, " ").replace(/[ \t]{2,}/g, " ").replace(/^[ \t]+|[ \t]+$/gm, "").replace(/\n{3,}/g, "\n\n").trim();
+
 /** Strips tool-call scaffolding and code fences a model leaked into its reply. */
 export function stripScaffolding(t: string): string {
   const out = t.replace(/<\s*(invoke|antml:invoke|function_calls|antml:function_calls|tool_use|parameter|antml:parameter|thinking|antml:thinking)\b[^>]*>[\s\S]*?<\/\s*\1\s*>/gi, " ")
@@ -62,7 +95,7 @@ export function noJargon(t: string): string {
 const SENT_NOTE = /\s*[([](?:(?:i\s+)?(?:just\s+)?(?:sent|sends|sending|attached|attaching|shared)\s+(?:you\s+)?(?:an?\s+|the\s+|my\s+)?(?:pic|picture|photo|image|selfie|video|vid|clip|snap|shot)s?|(?:pic|picture|photo|image|selfie|video|vid|clip|snap|shot)s?\s+(?:sent|attached|shared))\b[^)\]]*[)\]]/gi;
 export const dropSentNote = (t: string) => t.replace(SENT_NOTE, " ").replace(/[ \t]{2,}/g, " ").replace(/^[ \t]+|[ \t]+$/gm, "").replace(/\n{3,}/g, "\n\n").trim();
 
-export const cleanReply = (t: string) => noJargon(dropSentNote(dropThoughts(dropMeta(stripScaffolding(cleanTags(t))))));
+export const cleanReply = (t: string) => noJargon(dropSentNote(dropWrittenCall(dropThoughts(dropMeta(stripScaffolding(cleanTags(t)))))));
 
 /**
  * 💭 Thoughts you plant. Anything the person types in [square brackets] isn't something they said
