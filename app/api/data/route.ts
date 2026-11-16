@@ -30,6 +30,7 @@ import { US_STATES } from "../../lib/states";
 import { mediaMood, allowsSuggestive } from "../../lib/traits";
 import { myRefs } from "../../lib/picagram";
 import { BITS, merge, keepEdits } from "../../lib/wording";
+import { SECTIONS as TALK_SECTIONS, merge as talkMerge, keepEdits as talkKeep } from "../../lib/words";
 import { acceptMedia, declineMedia, mediaNote, startMedia, checkMedia, sweepMedia, getMedia, listGallery, deleteMedia, VIDEO_MODELS, DEFAULT_VIDEO_MODEL, mediaReady, MediaError } from "../../lib/media";
 
 // 📦 Everything the app reads and changes, for the signed-in person only.
@@ -58,6 +59,19 @@ export async function POST(req: NextRequest) {
     const needId = () => UUID.test(id);
 
     switch (String(b.action || "")) {
+      // 🛠️ Settings → Admin → Messaging & wording: every line that shapes how a character talks.
+      case "talk.get": {
+        const [u] = await db`select talk_words, is_admin from users where id = ${me}`;
+        if (!u?.is_admin) return bad("That's for admins.");
+        return NextResponse.json({ sections: talkSections(talkMerge(u?.talk_words)) });
+      }
+      case "talk.set": {
+        const [u] = await db`select is_admin from users where id = ${me}`;
+        if (!u?.is_admin) return bad("That's for admins.");
+        await db`update users set talk_words = ${JSON.stringify(talkKeep(b.words))}::jsonb, updated_at = now() where id = ${me}`;
+        const [after] = await db`select talk_words from users where id = ${me}`;
+        return NextResponse.json({ sections: talkSections(talkMerge(after?.talk_words)) });
+      }
       // 📝 Settings → Photo wording: every standing line that goes on a picture, theirs to edit.
       case "wording.get": {
         const [u] = await db`select prompt_words from users where id = ${me}`;
@@ -624,3 +638,8 @@ export async function POST(req: NextRequest) {
 /** 📝 Each standing line as Settings shows it: their wording, and the default to put back. */
 const withDefaults = (mine: Record<string, string>) =>
   BITS.map(x => ({ key: x.key, label: x.label, about: x.about, text: mine[x.key], fallback: x.text }));
+
+/** 🛠️ Each section as the Admin tab shows it: their wording, and the default to put back. */
+const talkSections = (mine: Record<string, string>) =>
+  TALK_SECTIONS.map(sec => ({ key: sec.key, title: sec.title, about: sec.about,
+    slots: sec.slots.map(x => ({ key: x.key, label: x.label, about: x.about, text: mine[x.key], fallback: x.text, romantic: !!x.romantic })) }));

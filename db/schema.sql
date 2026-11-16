@@ -785,3 +785,6 @@ alter table chat_characters add column if not exists lives_in text not null defa
 -- 📝 Settings → Photo wording: their own version of the standing wording on every picture.
 -- Only the lines they actually changed are kept, so a reworded default still reaches them.
 alter table users add column if not exists prompt_words jsonb not null default '{}'::jsonb;
+-- 🛠️ Settings → Admin → Messaging & wording: their own version of the lines that shape how a
+-- character talks. Only the lines they actually changed are kept.
+alter table users add column if not exists talk_words jsonb not null default '{}'::jsonb;

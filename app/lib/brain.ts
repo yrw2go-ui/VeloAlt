@@ -41,6 +41,7 @@ async function pushedLately(userId: string, sceneId: string): Promise<number> {
 import { soreFor, setSore, mend as mendSore, soreNote, SORE_REMEMBER } from "./sore";
 import { attachedNote, lesbianNote, maybeStartDating, maybeEndIt, endedNote, wonOver, WON_OVER, type Her } from "./attached";
 import { characterPrompt, feelingsFor, saveFeelings, trustFor, saveTrust, trustNote, happyFor, saveHappy, happyNote, loveFor, saveLove, loveNote, activeScene, sceneNote, noteMentions, acquaintancesNote, referenceUrls, pictureOf, type Character } from "./characters";
+import { talkWords } from "./words";
 import { aboutThem } from "./bio";
 import { mediaMood, allowsSuggestive } from "./traits";
 import { CHARACTER_ZONES } from "./states";
@@ -128,7 +129,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
   const cid = ch?.id || null;
   const today = localNow(opts.timeZone);
   const name = String(opts.name || "").trim().split(/\s+/)[0].slice(0, 40);
-  const [u] = await sql()`select plan, chat_model, personality, adult_confirmed_at, look, reply_length from users where id = ${caller.userId}`;
+  const [u] = await sql()`select plan, chat_model, personality, adult_confirmed_at, look, reply_length, talk_words from users where id = ${caller.userId}`;
   // 💬 Their chosen personality (romantic only after the adult confirmation). Calls Velo makes
   // to other people and memory notes always use her plain voice.
   let personality: Personality = PERSONALITIES.includes(u?.personality) ? u.personality : "friend";
@@ -211,7 +212,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
   const chatLog = mode === "talk" ? await chatLogNote(caller.userId, cid, today.tz, ch?.name || "Velo").catch(e => { console.error("velo: chat log", e instanceof Error ? e.message : e); return ""; }) : "";
   const system: Anthropic.TextBlockParam[] = [
     // The persona never changes, so it's cached across everyone's chats.
-    ch ? { type: "text", text: characterPrompt(ch, name, !!u?.adult_confirmed_at, arc ? await feelingsFor(caller.userId, ch.id).catch(() => "") : "") } : { type: "text", text: VELO_SYSTEM, cache_control: { type: "ephemeral" } },
+    ch ? { type: "text", text: characterPrompt(ch, name, !!u?.adult_confirmed_at, arc ? await feelingsFor(caller.userId, ch.id).catch(() => "") : "", talkWords(u)) } : { type: "text", text: VELO_SYSTEM, cache_control: { type: "ephemeral" } },
     // Same for the whole call, so it's cached between turns.
     ...(chatLog ? [{ type: "text" as const, text: chatLog, cache_control: { type: "ephemeral" as const } }] : []),
     {
