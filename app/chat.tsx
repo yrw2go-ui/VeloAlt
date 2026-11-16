@@ -15,7 +15,8 @@ import { useDictation } from "./dictate";
 import { CharacterFace, LinkBackForm } from "./characters";
 import { MediaView, ReactionBar, type Media } from "./media";
 import { isHot } from "./lib/reactions";
-import { dropThoughts, noJargon } from "./lib/text";
+import { dropThoughts, noJargon, dropSentNote } from "./lib/text";
+import { CLAIMS_MEDIA } from "./lib/mediaWords";
 
 /** Who this chat is with: Velo (no character) or one of their characters. */
 export type ChatWith = { id: string; name: string; portrait_url: string | null; romantic?: boolean; brain?: string; live_in?: boolean; neighbor?: boolean; home?: boolean };
@@ -426,8 +427,9 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   // 📸 She said a photo/video was coming but it never showed up: a button to make her actually send it.
   const lastReal = [...(msgs || [])].reverse().find(m => !m.draft && !(m.peek && !m.media));
   const pendingPic = !!character && !busy && !!lastReal && lastReal.role === "assistant" && !lastReal.media
-    && /\b(pic|pics|picture|pictures|photo|photos|image|images|selfie|selfies|snap|video|vid)\b/i.test(lastReal.content)
-    && /\b(send|sending|sent|here'?s|here you go|coming|on (its|it's) way|incoming|attached|uploading|take one|taking one|let me)\b/i.test(lastReal.content);
+    // 📣 The same words the server uses to spot a claim, so the button shows whenever she says
+    // one went out — "here's a sneaky peek…" counts too.
+    && CLAIMS_MEDIA.test(lastReal.content);
   const [picBusy, setPicBusy] = useState(false);
   const sendPic = async () => {
     setPicBusy(true); setErr("");
@@ -846,7 +848,7 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
         style={{ position: "relative", cursor: !mine && m.id ? "pointer" : undefined, padding: "10px 14px", borderRadius: 18, borderBottomLeftRadius: mine ? 18 : 4, borderBottomRightRadius: mine ? 4 : 18,
         background: mine ? "linear-gradient(135deg, var(--accent), var(--accent2))" : "var(--surface2)", color: "var(--text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", lineHeight: 1.45, fontSize: 15 }}>
         {m.file && <div style={{ marginBottom: m.content && m.content !== "📎" ? 8 : 0 }}><FileThumb f={m.file} size={180} /></div>}
-        {m.content !== "📎" && styled((mine ? m.content : noJargon(dropThoughts(m.content)).replace(/\(sent an? (photo|video|picture)[\s\S]*?\)\s*$/i, "").trim()).replace(/\*\*(.+?)\*\*/g, "$1"))}
+        {m.content !== "📎" && styled((mine ? m.content : noJargon(dropSentNote(dropThoughts(m.content))).trim()).replace(/\*\*(.+?)\*\*/g, "$1"))}
         {mine && m.theirReaction && badge(m.theirReaction, who)}
         {!mine && m.reaction && badge(m.reaction, "You")}
       </div>

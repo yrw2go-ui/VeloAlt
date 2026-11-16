@@ -57,7 +57,12 @@ export function noJargon(t: string): string {
 }
 
 /** Everything a reply goes through before it's shown: stray HTML, leaked tool calls, stage directions, thoughts. */
-export const cleanReply = (t: string) => noJargon(dropThoughts(dropMeta(stripScaffolding(cleanTags(t)))));
+// 🙈 Her own scaffolding leaking into her words: "(I sent an image)", "(sent a photo: …)",
+// "[photo sent]". She'd never type it, and the real picture comes as its own message.
+const SENT_NOTE = /\s*[([](?:(?:i\s+)?(?:just\s+)?(?:sent|sends|sending|attached|attaching|shared)\s+(?:you\s+)?(?:an?\s+|the\s+|my\s+)?(?:pic|picture|photo|image|selfie|video|vid|clip|snap|shot)s?|(?:pic|picture|photo|image|selfie|video|vid|clip|snap|shot)s?\s+(?:sent|attached|shared))\b[^)\]]*[)\]]/gi;
+export const dropSentNote = (t: string) => t.replace(SENT_NOTE, " ").replace(/[ \t]{2,}/g, " ").replace(/^[ \t]+|[ \t]+$/gm, "").replace(/\n{3,}/g, "\n\n").trim();
+
+export const cleanReply = (t: string) => noJargon(dropSentNote(dropThoughts(dropMeta(stripScaffolding(cleanTags(t))))));
 
 /**
  * 💭 Thoughts you plant. Anything the person types in [square brackets] isn't something they said

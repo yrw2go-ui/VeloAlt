@@ -676,6 +676,10 @@ function Following({ onClose, onUnfollow, onOpen, onNewFaces }: { onClose: () =>
   };
   useEffect(() => { api<{ accounts: NonNullable<typeof list> }>("/api/pica", { action: "following" }).then(r => setList(r.accounts)).catch(() => setList([])); }, []);
   useEffect(() => { api<{ characters: NonNullable<typeof chars> }>("/api/pica", { action: "characters" }).then(r => setChars(r.characters)).catch(() => setChars([])); }, []);
+  // 🧍 One row per person: a character who's already up there as her own account (🤝) isn't
+  // listed again below — her 🙈 Hide sits on that row instead.
+  const shown = new Set((list || []).map(a => a.character_id).filter(Boolean) as string[]);
+  const mineBelow = (chars || []).filter(c => !shown.has(c.id));
   const unfollow = async (id: string, who: string, friend: boolean) => {
     if (friend && !(await confirmAsk(`Unfollow ${who}? She can see who follows her — she'll notice, and she might bring it up. To just keep her posts out of your feed without her knowing, hide her below instead.`, { yes: "Unfollow" }))) return;
     setList(l => (l || []).filter(x => x.id !== id)); onUnfollow(id);
@@ -705,15 +709,19 @@ function Following({ onClose, onUnfollow, onOpen, onNewFaces }: { onClose: () =>
               <div style={{ fontWeight: 800, fontSize: 14 }}>{a.handle}{a.friend ? " 🤝" : ""}{a.married ? " 💍" : ""}</div>
               <div className="muted" style={{ fontSize: 12 }}>{a.name}</div>
             </div>
+            {a.friend && a.character_id && (() => {
+              const c = (chars || []).find(x => x.id === a.character_id);
+              return c ? <button className="ghost" onClick={() => hide(c.id, !c.hidden)} data-testid="pica-hide" data-hidden={c.hidden ? "yes" : undefined} style={{ padding: "4px 10px", fontSize: 13 }}>{c.hidden ? "Show" : "🙈 Hide"}</button> : null;
+            })()}
             <button className="ghost" onClick={() => unfollow(a.id, a.name, a.friend)} data-testid="pica-unfollow" style={{ padding: "4px 12px", fontSize: 13 }}>Unfollow</button>
             {!a.friend && <button className="ghost" onClick={() => remove(a.id, a.name)} aria-label={`Delete ${a.name}`} data-testid="pica-account-delete" style={{ padding: "4px 10px", fontSize: 15, color: "var(--bad)" }}>🗑</button>}
           </div>
         ))}
         {/* 🙈 Your characters: out of the feed, and she never knows. */}
-        {chars && chars.length > 0 && (
+        {mineBelow.length > 0 && (
           <>
             <div className="muted" style={{ padding: "16px 14px 6px", fontSize: 12, fontWeight: 700 }}>YOUR CHARACTERS ON PICAGRAM<div style={{ fontWeight: 500, marginTop: 2 }}>Hiding keeps her posts out of your feed. She can&apos;t tell — unlike unfollowing her.</div></div>
-            {chars.map(c => (
+            {mineBelow.map(c => (
               <div key={c.id} className="row" data-testid="pica-character-row" style={{ gap: 10, padding: "10px 14px", borderBottom: "1px solid var(--border)", opacity: c.hidden ? 0.55 : 1 }}>
                 <Avatar name={c.name} url={c.portrait} size={40} />
                 <div style={{ flex: 1, minWidth: 0, fontWeight: 700, fontSize: 14 }}>{c.name}{c.hidden ? <span className="muted" style={{ fontWeight: 500 }}> · hidden</span> : ""}</div>

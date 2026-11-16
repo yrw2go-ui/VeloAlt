@@ -433,11 +433,13 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
     let note = "";
     try {
       const input = await photoInput([], nudge);
-      if (!input) note = "She couldn't work out which photo — ask her again.";
-      else {
-        const out = await runTool("send_media", { ...input, they_asked: true });
-        if (out.isError) note = out.content.replace(/ Tell them[\s\S]*$/, "").slice(0, 200);
-      }
+      if (!input) console.warn("velo: send the pic — no brain would write the call; sending the plain one");
+      const out = await runTool("send_media", {
+        kind: "image", with_me: true,
+        description: `A photo of ${ch?.name || "her"} right now, where she is and in what she's wearing, as she just said she was sending.`,
+        ...(input || {}), they_asked: true,
+      });
+      if (out.isError) note = out.content.replace(/ Tell them[\s\S]*$/, "").slice(0, 200);
     } catch (e) { console.error("velo: send the pic", e instanceof Error ? e.message : e); note = "Couldn't send it right now — try again in a moment."; }
     return { reply: "", changed: false, drafts, media, ...(ask ? { ask } : {}), ...(note ? { note } : {}) };
   }
@@ -513,10 +515,12 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
     && (ASKED_FOR_MEDIA.test(String(lastSaid)) || (YES.test(String(lastSaid)) && MENTIONS_MEDIA.test(String(lastHers))) || STRONG_CLAIM.test(reply))) {
     try {
       const input = await photoInput([{ role: "assistant", content: reply }], "(Your photo/video didn't actually go out. Send it now with send_media — exactly what you just told them you're sending.)");
-      if (input) {
-        const out = await runTool("send_media", { ...input, they_asked: true });
-        if (out.isError) console.warn("velo: photo retry", out.content.slice(0, 200));
-      }
+      // 🛟 No brain would write the tool call: send the plain version rather than let her words and
+      // what arrives drift apart. She said one was coming, so one comes.
+      const fallback = { kind: "image", with_me: true, description: `A photo of ${ch?.name || "her"} right now, where she is and in what she's wearing, as she just described sending.` };
+      if (!input) console.warn("velo: photo retry — no brain would write the call; sending the plain one");
+      const out = await runTool("send_media", { ...(input || fallback), they_asked: true });
+      if (out.isError) console.warn("velo: photo retry", out.content.slice(0, 200));
     } catch (e) { if (!(e instanceof HandledRetry)) console.error("velo: photo retry", e instanceof Error ? e.message : e); }
   }
   // Where she found it: up to 3 links under a chat reply, 2 in a text, none spoken on a call.
