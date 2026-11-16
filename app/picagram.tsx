@@ -393,11 +393,21 @@ function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: 
     return setRefs([...refs.map(r => r.media_id), mediaId]);
   };
   const refIn = useRef<HTMLInputElement>(null);
-  const uploadRef = async (f: File | undefined) => {
-    if (!f) return;
-    setErr(""); setPicBusy("…");
-    try { const up = await uploadPicaPicture(f); await setRefs([...refs.map(r => r.media_id), up.mediaId].slice(-4)); }
-    catch (e) { setErr(e instanceof Error ? e.message : "That picture didn't upload."); }
+  const uploadRefs = async (files: FileList | null) => {
+    const picked = [...(files || [])];
+    if (!picked.length) return;
+    setErr("");
+    const room = Math.max(0, 4 - refs.length);
+    if (!room) { setErr("Four pictures is the most — take one out first."); return; }
+    const take = picked.slice(0, room);
+    if (picked.length > room) setErr(`Room for ${room} more — the ${picked.length > room + 1 ? "rest were" : "other was"} left out.`);
+    setPicBusy(take.length > 1 ? `…${take.length}` : "…");
+    const got: string[] = [];
+    for (const f of take) {
+      try { got.push((await uploadPicaPicture(f)).mediaId); }
+      catch (e) { setErr(e instanceof Error ? e.message : "That picture didn't upload."); }
+    }
+    if (got.length) await setRefs([...refs.map(r => r.media_id), ...got].slice(0, 4));
     setPicBusy("");
   };
   const uploadAvatar = async (f: File | undefined) => {
@@ -495,7 +505,7 @@ function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: 
                 ))}
                 <button className="ghost" onClick={() => refIn.current?.click()} disabled={!!picBusy || refs.length >= 4} data-testid="pica-ref-add"
                   style={{ width: 54, height: 54, borderRadius: 10, borderStyle: "dashed", fontSize: 18, padding: 0 }}>＋</button>
-                <input ref={refIn} type="file" accept="image/jpeg,image/png,image/webp" hidden data-testid="pica-ref-file" onChange={e => uploadRef(e.target.files?.[0])} />
+                <input ref={refIn} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden data-testid="pica-ref-file" onChange={e => { uploadRefs(e.target.files); e.target.value = ""; }} />
               </div>
               {!refs.length && <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>None picked — her profile picture is used instead. Tap any photo of hers to use it, or ＋ to upload one.</div>}
             </div>
