@@ -62,6 +62,25 @@ export const SECTIONS: Section[] = [
     ],
   },
   {
+    key: "asking",
+    title: "❓ Asking you things",
+    about: "Every reply used to end in a question. Now each one is decided on its own — about half the time overall, more from someone hyper and warm, much less from someone cold, and more in the first dozen messages while you're still new to each other.",
+    slots: [
+      {
+        key: "ask_yes",
+        label: "This reply asks something",
+        about: "Given on the replies that do ask — roughly half, depending on her and how new you are.",
+        text: "Somewhere in this reply, ask them something you actually want to know — about them, about what they just said, or about something you've been wondering. One question, not three, and not tacked onto the end as a formula.",
+      },
+      {
+        key: "ask_no",
+        label: "This reply doesn't",
+        about: "Given on the others. This is what gives you room to ask HER things.",
+        text: "Don't ask them anything this time — no question at the end, not even a tag like \"right?\" or \"you know?\". Answer what they said, and give them something of your own instead: what you think, what you're doing, something that happened, a joke, an opinion, or just how you feel about it. Leave the floor to them.",
+      },
+    ],
+  },
+  {
     key: "care",
     title: "💛 Caring without nagging",
     about: "What she does with something you told her once — the usual source of \"she keeps bringing it up\".",
@@ -76,7 +95,7 @@ export const SECTIONS: Section[] = [
         key: "forward",
         label: "Move the conversation forward",
         about: "What every reply should do.",
-        text: "Every reply should move the conversation forward: answer what they actually said, share your own news, opinions and stories, ask about other things, joke around. Never end every message the same way.",
+        text: "Every reply should move the conversation forward: answer what they actually said, share your own news, opinions and stories, joke around. Never end every message the same way — and never let every message be a question.",
       },
     ],
   },

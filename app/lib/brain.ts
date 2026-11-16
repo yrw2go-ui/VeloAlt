@@ -42,6 +42,7 @@ import { soreFor, setSore, mend as mendSore, soreNote, SORE_REMEMBER } from "./s
 import { attachedNote, lesbianNote, maybeStartDating, maybeEndIt, endedNote, wonOver, cameAround, WON_OVER, type Her } from "./attached";
 import { characterPrompt, feelingsFor, saveFeelings, trustFor, saveTrust, trustNote, happyFor, saveHappy, happyNote, loveFor, saveLove, loveNote, activeScene, sceneNote, noteMentions, acquaintancesNote, referenceUrls, pictureOf, type Character } from "./characters";
 import { talkWords } from "./words";
+import { askNote, askThisTime } from "./asking";
 import { aboutThem } from "./bio";
 import { mediaMood, allowsSuggestive } from "./traits";
 import { CHARACTER_ZONES } from "./states";
@@ -235,6 +236,9 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
         !ch && (mode === "chat" || mode === "sms" || mode === "talk" || mode === "recap" || mode === "checkin") ? personalityPrompt(talkWords(u))[personality] : "",
         modeText,
         group ? "" : replyLengthNote(mode, u?.reply_length),
+        // ❓ Half the time or so she asks something, half she doesn't — so there's room for you
+        // to ask HER things. Which half depends on who she is and how new you two are.
+        ch && (mode === "chat" || mode === "sms" || mode === "talk") ? askNote(talkWords(u), askThisTime(ch.traits, await saidCount(caller.userId, ch.id).catch(() => 99))) : "",
         scene ? sceneNote(scene) : "",
         together && ch ? (ch.live_in && together.place === HOME ? homeNote(name || "them") : inPersonNote(together, name || "them")) : "",
         ch?.live_in && !together && mode !== "remember" && mode !== "memo" ? `${LIVE_IN_NOTE} Right now you're out — so this is a text to them.` : "",
@@ -623,4 +627,10 @@ export function aiError(e: unknown): { error: string; status: number } {
   if (e instanceof Anthropic.APIError) { console.error("velo: api", e.status, e.message); return { error: "Velo is unavailable right now. Please try again.", status: 502 }; }
   console.error("velo", e);
   return { error: "Something went wrong. Please try again.", status: 500 };
+}
+
+/** How many messages they've exchanged with her — early on she asks more. */
+async function saidCount(userId: string, characterId: string): Promise<number> {
+  const [r] = await sql()`select count(*)::int as n from velo_messages where user_id = ${userId} and character_id = ${characterId}`;
+  return Number(r?.n || 0);
 }
