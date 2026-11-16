@@ -662,10 +662,15 @@ function ReferencePicker({ characterId, value, onChange, refresh, onPortrait }: 
 const CHECK_LABEL: Record<"location" | "job" | "boxes", string> = { location: "📍 Where she lives", job: "💼 Her job", boxes: "☑️ The ticks" };
 
 export function TraitSliders({ value, romantic, onChange }: { value: Record<TraitKey, number>; romantic: boolean; onChange: (k: TraitKey, v: number) => void }) {
+  // 🎚️ Closed to begin with — nine sliders is a wall of them, and most visits don't touch any.
+  const [open, setOpen] = useState(false);
   return (
     <div data-testid="trait-sliders" style={{ fontSize: 13, fontWeight: 700 }}>
-      Temperament <span className="muted" style={{ fontWeight: 500 }}>· tendencies, not a script — the personality text still leads</span>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+      <button type="button" className="ghost" onClick={() => setOpen(o => !o)} aria-expanded={open} data-testid="traits-toggle"
+        style={{ textAlign: "left", fontWeight: 700, padding: 0, border: "none", background: "none", color: "var(--text)", cursor: "pointer", fontSize: 13 }}>
+        {open ? "▾" : "▸"} Temperament <span className="muted" style={{ fontWeight: 500 }}>· tendencies, not a script — the personality text still leads</span>
+      </button>
+      <div hidden={!open} style={{ display: open ? "flex" : "none", flexDirection: "column", gap: 8, marginTop: 8 }}>
         {TRAITS.map(t => {
           const off = "romantic" in t && !romantic;
           return (

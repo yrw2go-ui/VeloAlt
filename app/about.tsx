@@ -22,7 +22,8 @@ export default function AboutCard({ profile, onChange }: { profile: Profile; onC
   const [state, setState] = useState(bio.state);
   const moreJson = JSON.stringify(bio.more || {});
   const [more, setMore] = useState<BioMore>(bio.more || {});
-  const [open, setOpen] = useState(() => Object.values(bio.more || {}).some(Boolean));
+  // 📕 Always starts closed, filled in or not: the card stays short until you ask for the rest.
+  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState("");
