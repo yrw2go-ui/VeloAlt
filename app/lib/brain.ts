@@ -17,7 +17,7 @@ import { sickFor, lifeNote, offToday, WANTS } from "./life";
 import Anthropic from "@anthropic-ai/sdk";
 import type { Caller } from "./caller";
 import { sql } from "./db";
-import { VELO_SYSTEM, CALL_TALK, CALL_RECAP, CALL_REMEMBER, CHAT_REMEMBER, SMS_TALK, PRO_INFO, FREE_INFO, SEARCH_INFO, errandPrompt, ERRAND_SUMMARY, FEELINGS_REMEMBER, TRUST_REMEMBER, HAPPY_REMEMBER, LOVE_REMEMBER, PERSONALITY_PROMPT, PERSONALITIES, type Personality } from "./persona";
+import { CHECKIN_FIRST, CHECKIN_PROMISED, veloSystem, CALL_TALK, CALL_RECAP, CALL_REMEMBER, CHAT_REMEMBER, SMS_TALK, PRO_INFO, FREE_INFO, SEARCH_INFO, errandPrompt, ERRAND_SUMMARY, FEELINGS_REMEMBER, TRUST_REMEMBER, HAPPY_REMEMBER, LOVE_REMEMBER, personalityPrompt, PERSONALITIES, type Personality } from "./persona";
 import { MEMORY_TOOLS, isMemoryTool, runMemoryTool, MemoryError, memoryBlock, saveConversationMemory } from "./memory";
 import { REMINDER_TOOLS, isReminderTool, runReminderTool, ReminderError } from "./reminders";
 import { proToolsFor, isProTool, runProTool, ProError, type Draft } from "./pro";
@@ -60,7 +60,7 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, authToken:
 export type Mode = "chat" | "sms" | "talk" | "recap" | "remember" | "memo" | "errand" | "errandsum" | "checkin";
 
 // 🔔 Texting them first (a check-in, sent as a push notification).
-const PROMISED = `TEXTING THEM AS PROMISED: earlier they asked you to text them at this time (see WHAT YOU PROMISED), and you agreed. Write that ONE text now (1–2 sentences, under 200 characters), in your own voice and mood, as if you remembered on your own — do what you promised (wake them up, remind them, check in, say goodnight). Don't mention apps, notifications or that you were told to write.`;
+const PROMISED = CHECKIN_PROMISED;
 // 💬 Their "Reply length" setting (Settings): how long replies usually are in chats, texts and calls.
 // It sets the usual length only — a list they ask for, or a story they want, can still run longer.
 function replyLengthNote(mode: Mode, raw: unknown): string {
@@ -88,7 +88,7 @@ function groupNote(me: string, them: string, others: string[], wrapUp: boolean, 
   return `GROUP CHAT: ${inPerson !== null && !scene ? `you're hanging out in person with ${all}` : `you're in a group text with ${all}`}. Lines starting with [Name]: are what that person said; your own earlier lines are yours. Reply ONLY as ${me}, with no name tag — never write lines for anyone else. Stay fully yourself: your personality, your feelings for ${person}, how well you know each of the others (see YOUR FRIENDS AND FAMILY). Keep it short like a group text (usually 1–2 sentences), react to what others just said, talk to them by name, joke, ask them things. Don't repeat what someone else already said. Private things you know only from your one-on-one chats with ${person} stay private unless ${person} brings them up here.${sc}${ip}${cu}${love}${banter ? `\nRIGHT NOW: talk to ${others.join(" or ")} directly (by name) — answer what they just said, tease, ask them something, share your news or an opinion. It's between you for a moment; ${person} can read it and may jump in anytime. One or two short sentences.` : ""}`;
 }
 
-const CHECKIN = `REACHING OUT FIRST: they haven't written in a while, and you're texting them first — like a friend (or more) would. Write ONE short text (1–2 sentences, under 160 characters). Make it personal and specific when you can: follow up on something from YOUR MEMORY or your recent chat, react to the time of day, a holiday, the weather of the season, or just say hi in your own way and voice. Don't mention apps, notifications or that you were told to write. No questions lists, no emojis overload, no links.`;
+const CHECKIN = CHECKIN_FIRST;
 export type Turn = { role: "user" | "assistant"; content: string; fileId?: string };
 export const aiReady = () => !!(process.env.VELO_MODEL && process.env.ANTHROPIC_API_KEY);
 
@@ -205,14 +205,14 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
   // 👋 Every so often (once she's close to them), she wants them to meet someone of hers.
   const introKind = ch && mode === "chat" && !scene && !group ? await tickIntro(caller.userId, ch, !!u?.adult_confirmed_at).catch(e => { console.error("velo: intro", e instanceof Error ? e.message : e); return null; }) : null;
   const modeText = {
-    chat: "", checkin: opts.promise ? PROMISED : CHECKIN, sms: SMS_TALK, talk: CALL_TALK, recap: CALL_RECAP, remember: CALL_REMEMBER, memo: CHAT_REMEMBER,
+    chat: "", checkin: opts.promise ? (talkWords(u).checkin_promised || PROMISED) : (talkWords(u).checkin_first || CHECKIN), sms: SMS_TALK, talk: CALL_TALK, recap: CALL_RECAP, remember: CALL_REMEMBER, memo: CHAT_REMEMBER,
     errand: errandPrompt(name, opts.toName || "", opts.goal || ""), errandsum: ERRAND_SUMMARY,
   }[mode];
   // 📞💬 Calls (with Velo or a character) have the text chat with them in mind.
   const chatLog = mode === "talk" ? await chatLogNote(caller.userId, cid, today.tz, ch?.name || "Velo").catch(e => { console.error("velo: chat log", e instanceof Error ? e.message : e); return ""; }) : "";
   const system: Anthropic.TextBlockParam[] = [
     // The persona never changes, so it's cached across everyone's chats.
-    ch ? { type: "text", text: characterPrompt(ch, name, !!u?.adult_confirmed_at, arc ? await feelingsFor(caller.userId, ch.id).catch(() => "") : "", talkWords(u)) } : { type: "text", text: VELO_SYSTEM, cache_control: { type: "ephemeral" } },
+    ch ? { type: "text", text: characterPrompt(ch, name, !!u?.adult_confirmed_at, arc ? await feelingsFor(caller.userId, ch.id).catch(() => "") : "", talkWords(u)) } : { type: "text", text: veloSystem(talkWords(u)), cache_control: { type: "ephemeral" } },
     // Same for the whole call, so it's cached between turns.
     ...(chatLog ? [{ type: "text" as const, text: chatLog, cache_control: { type: "ephemeral" as const } }] : []),
     {
@@ -232,7 +232,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
         canSend ? await recentMediaNote(caller.userId, cid, today.tz).catch(() => "") : "",
         errand || ch ? "" : pro ? SEARCH_INFO + "\n\n" + PRO_INFO + (proTools?.page ? `\nTheir Facebook Page "${proTools.page}" is connected: you can draft posts for it (draft_post).` : "\nNo Facebook Page is connected; if they want you to post, tell them to connect one in Settings → Velo Pro (Facebook only allows Pages, not personal profiles).") : FREE_INFO,
         memory ? `${memory}\n\nYou two have talked before — never introduce yourself; talk like someone who knows them.` : "",
-        !ch && (mode === "chat" || mode === "sms" || mode === "talk" || mode === "recap" || mode === "checkin") ? PERSONALITY_PROMPT[personality] : "",
+        !ch && (mode === "chat" || mode === "sms" || mode === "talk" || mode === "recap" || mode === "checkin") ? personalityPrompt(talkWords(u))[personality] : "",
         modeText,
         group ? "" : replyLengthNote(mode, u?.reply_length),
         scene ? sceneNote(scene) : "",

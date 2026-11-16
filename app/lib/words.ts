@@ -11,6 +11,7 @@
 
 import { MAKE_REAL, MAKE_NAMES } from "./vibes";
 import { ORDINARY } from "./folks";
+import { VELO_WHO, VELO_CARE, VELO_HELP, STYLE_FRIEND, STYLE_PROFESSIONAL, STYLE_SARCASTIC, STYLE_ROMANTIC, CHECKIN_FIRST, CHECKIN_PROMISED } from "./persona";
 
 export type Slot = {
   key: string;
@@ -210,6 +211,29 @@ export const SECTIONS: Section[] = [
         about: "The voice of the comments under a post.",
         text: "Short, natural comments in each person's own voice — a line, a joke, an emoji, the way friends actually comment.",
       },
+    ],
+  },
+  {
+    key: "velo",
+    title: "💜 Velo herself",
+    about: "Velo's own voice — the assistant you talk to on the Chat tab, not your characters. Her four personalities are the ones in Settings.",
+    slots: [
+      { key: "velo_who", label: "Who she is", about: "The first thing said about her in every conversation.", text: VELO_WHO },
+      { key: "velo_care", label: "Caring without nagging", about: "Her version of the same rule your characters have.", text: VELO_CARE },
+      { key: "velo_help", label: "Being useful and honest", about: "How she answers when you actually want help.", text: VELO_HELP },
+      { key: "velo_friend", label: "Personality · 😊 Friend", about: "Used when Friend is picked in Settings.", text: STYLE_FRIEND },
+      { key: "velo_professional", label: "Personality · 💼 Professional", about: "Used when Professional assistant is picked.", text: STYLE_PROFESSIONAL },
+      { key: "velo_sarcastic", label: "Personality · 😏 Sarcastic", about: "Used when Sarcastic is picked.", text: STYLE_SARCASTIC },
+      { key: "velo_romantic", label: "Personality · 💕 Romantic", about: "Used when Romantic companion is picked (18+). The PG-13 line at the end of it is fixed.", text: STYLE_ROMANTIC },
+    ],
+  },
+  {
+    key: "checkins",
+    title: "⏰ Reaching out first",
+    about: "What she writes when nobody asked her to: a check-in after a quiet spell, or the text she promised you.",
+    slots: [
+      { key: "checkin_first", label: "A check-in out of the blue", about: "Sent after a quiet spell, as often as Settings → Check-ins says.", text: CHECKIN_FIRST },
+      { key: "checkin_promised", label: "The text she promised", about: "When you asked her to write at a certain time and she agreed.", text: CHECKIN_PROMISED },
     ],
   },
   {
