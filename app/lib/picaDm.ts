@@ -8,6 +8,7 @@ import { writeText } from "./llm";
 import { wordingFor } from "./wording";
 import {  say } from "./words";
 import { wordsFor } from "./wordsDb";
+import { forgetPicaLines } from "./forget";
 import { scrub } from "./secrets";
 import { startMedia, MediaError, type Media } from "./media";
 import { availableBrains } from "./models";
@@ -126,7 +127,16 @@ export async function dmDelete(userId: string, accountId: string, ids: string[])
   const want = ids.filter(x => /^[0-9a-f-]{36}$/i.test(x)).slice(0, 50);
   if (!want.length) return 0;
   const gone = await sql()`delete from pica_dms where user_id = ${userId} and account_id = ${accountId}
-    and id = any(${want}::uuid[]) and media_id is null returning id`;
+    and id = any(${want}::uuid[]) and media_id is null returning id, role, content, created_at::text`;
+  if (!gone.length) return 0;
+  // 🧠 …and she forgets what she only knew because of them, the same as deleting a chat message.
+  try {
+    const a = await account(userId, accountId);
+    const u = await userInfo(userId);
+    const since = gone.map(r => String(r.created_at)).sort()[0];
+    const lines = gone.map(r => `${r.role === "assistant" ? String(a.name) : u.name || "Them"}: ${String(r.content).slice(0, 600)}`).join("\n");
+    await forgetPicaLines(userId, accountId, lines, since, brainOf(a, u.chatModel));
+  } catch (e) { console.error("pica dm: forget", e instanceof Error ? e.message : e); }
   return gone.length;
 }
 
