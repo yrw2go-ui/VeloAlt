@@ -109,8 +109,6 @@ export async function POST(req: NextRequest) {
         const refs = action === "update" && want.length
           ? (await sql()`select id from velo_media where id = any(${want}::uuid[]) and user_id = ${me} and character_id = ${id} and kind = 'image' and status = 'done'`).map(r => String(r.id))
           : [];
-        const problem = await screenCharacter({ ...f, casual_wear: work.attire ? `${f.casual_wear} / at work: ${work.attire}` : f.casual_wear, arc, romantic });
-        if (problem) return bad(problem);
         const prev = action === "update" ? await getCharacter(id) : null;
         const renamedFrom = prev && prev.name !== f.name ? prev.name : "";
         // Same voice as before: keep it (no trip to ElevenLabs).
@@ -131,6 +129,16 @@ export async function POST(req: NextRequest) {
       }
 
       // 📄 A copy of a character under a new name: everything except her pictures (portrait, references, gallery).
+      // 🛡️ Check this card, when you ask: what the check makes of it, and nothing is saved or
+      // blocked either way.
+      case "screen": {
+        const f = { name: clean(b.name, 60), personality: clean(b.personality, 2000), backstory: clean(b.backstory, 3000), relation: clean(b.relation, 600), appearance: clean(b.appearance, 600), job: clean(b.job, 300), casual_wear: clean(b.casualWear, 400), hobbies: clean(b.hobbies, 600) };
+        if (!f.name) return bad("Give your character a name.");
+        if (!allow(`screen:${me}`, [{ ms: 60_000, max: 10 }, { ms: 86_400_000, max: 200 }])) return bad("That's a lot of checks — try again in a bit.", 429);
+        const attire = clean(b.workAttire, 400);
+        const problem = await screenCharacter({ ...f, casual_wear: attire ? `${f.casual_wear} / at work: ${attire}` : f.casual_wear, arc: clean(b.romanceArc, 2000), romantic: b.romantic === true }).catch(() => "Couldn't check it just now — try again in a moment.");
+        return NextResponse.json(problem ? { ok: false, problem } : { ok: true });
+      }
       case "duplicate": {
         const src = await getCharacter(id);
         if (!src || (src.owner_id && src.owner_id !== me)) return bad("That character wasn't found.");

@@ -188,6 +188,8 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
     return () => clearInterval(t);
   }, [c?.id, c?.portrait_job]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const payload = () => ({ name, personality, backstory, relation, appearance, job, casualWear: wear, hobbies, workAttire: attire, romantic, romanceArc: romantic ? arc : "" });
+
   const save = async () => {
     setBusy(true); setMsg("");
     try {
@@ -237,6 +239,18 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
     return () => clearTimeout(t);
   }, [edited, dirty, busy, working, c?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 🛡️ Checked when you ask, never on save: a second opinion on the card, nothing more.
+  const [scanning, setScanning] = useState("");
+  const [scanned, setScanned] = useState<{ ok: boolean; problem?: string } | null>(null);
+  const scan = async () => {
+    setScanning("…"); setScanned(null);
+    try {
+      const r = await api<{ ok: boolean; problem?: string }>("/api/characters", { action: "screen", ...payload() });
+      setScanned(r);
+    } catch (e) { setScanned({ ok: false, problem: e instanceof Error ? e.message : "Couldn't check it." }); }
+    setScanning("");
+  };
+
   const portrait = async () => {
     const saved = dirty ? await save() : c;
     if (!saved) return;
@@ -255,10 +269,17 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
   return (
     <div role="dialog" aria-modal="true" data-testid="character-editor" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }}>
       <div className="card" style={{ width: "100%", maxWidth: 560, maxHeight: "92dvh", overflowY: "auto", borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 12 }}>
-        <div className="row" style={{ justifyContent: "space-between" }}>
+        <div className="row" style={{ justifyContent: "space-between", gap: 8 }}>
           <div style={{ fontWeight: 800, fontSize: 18 }}>{c ? `Edit ${c.name}` : "New character"}</div>
+          <button className="ghost" onClick={scan} disabled={!!scanning || !name.trim()} data-testid="character-scan" title="Have the card looked over — it never blocks saving" style={{ padding: "4px 10px", fontSize: 12 }}>{scanning || "🛡️ Check"}</button>
           <button className="ghost" onClick={onClose} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
         </div>
+        {scanned && (
+          <div data-testid="character-scan-result" style={{ padding: "8px 10px", borderRadius: 10, fontSize: 13,
+            background: scanned.ok ? "rgba(74,222,128,.14)" : "rgba(245,158,11,.15)", border: `1px solid ${scanned.ok ? "rgba(74,222,128,.45)" : "rgba(245,158,11,.45)"}` }}>
+            {scanned.ok ? "✓ Nothing stood out on this card." : `⚠️ ${scanned.problem} — it's only a second opinion; save it anyway if you disagree.`}
+          </div>
+        )}
         <div className="row" style={{ gap: 14, alignItems: "center" }}>
           {working ? <div style={{ width: 84, height: 84, borderRadius: "50%", border: "2px dashed var(--accent)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, textAlign: "center" }} className="muted">Painting…<br />up to a minute</div>
             : <CharacterFace c={{ name: name || "?", portrait_url: c?.portrait_url || null }} size={84} />}
