@@ -864,13 +864,37 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
         onMake={async d => { const r = await api<{ added: DmMsg[] }>("/api/pica", { action: "dm.me.photo", id, description: d }); setMsgs(m => [...(m || []), ...r.added]); setMySheet(false); }} onClose={() => setMySheet(false)} />}
       {pendingPic && <div style={{ padding: "0 12px 6px" }}><button className="ghost" onClick={sendPic} data-testid="dm-send-pic" style={{ padding: "6px 12px", fontSize: 13, borderColor: "#ec4899" }}>📸 {acc?.name || "She"} didn&apos;t send it — send the pic</button></div>}
       <form onSubmit={e => { e.preventDefault(); send(); }} className="row" style={{ padding: "10px 12px", gap: 8, borderTop: "1px solid var(--border)" }}>
-        <button type="button" className="ghost" onClick={() => setMySheet(true)} aria-label="Send a photo of you" data-testid="dm-my-photo" style={{ flexShrink: 0, padding: "8px 10px", fontSize: 18 }}>📸</button>
-        <button type="button" className="ghost" onClick={() => setPick(true)} aria-label="Send a picture from your gallery" data-testid="dm-pick-open" style={{ flexShrink: 0, padding: "8px 10px", fontSize: 18 }}>🖼️</button>
-        <button type="button" className="ghost" onClick={() => upIn.current?.click()} disabled={!!sending} aria-label="Upload a picture" data-testid="dm-upload-open" style={{ flexShrink: 0, padding: "8px 10px", fontSize: 18 }}>{sending || "📎"}</button>
+        <PicMenu busy={sending} onMine={() => setMySheet(true)} onGallery={() => setPick(true)} onUpload={() => upIn.current?.click()} />
         <input ref={upIn} type="file" accept="image/jpeg,image/png,image/webp" hidden data-testid="dm-upload-file" onChange={e => uploadMine(e.target.files?.[0])} />
         <input value={text} onChange={e => setText(e.target.value)} placeholder={`Message ${acc?.name || ""}…`} aria-label="Message" maxLength={2000} disabled={!msgs} style={{ borderRadius: 999 }} />
         <button className="btn" disabled={!text.trim() || busy || !msgs} style={{ borderRadius: 999, padding: "10px 16px" }}>Send</button>
       </form>
+    </div>
+  );
+}
+
+/**
+ * ➕ The three ways to put a picture in a message, behind one button: a photo of you, something
+ * from your gallery, or one off your phone. They took up half the row as separate buttons.
+ */
+function PicMenu({ busy, onMine, onGallery, onUpload }: { busy: string; onMine: () => void; onGallery: () => void; onUpload: () => void }) {
+  const [open, setOpen] = useState(false);
+  const pick = (go: () => void) => { setOpen(false); go(); };
+  const item: React.CSSProperties = { display: "block", width: "100%", textAlign: "left", background: "none", border: "none", color: "var(--text)", padding: "11px 14px", fontSize: 14, cursor: "pointer" };
+  return (
+    <div style={{ position: "relative", flexShrink: 0 }}>
+      <button type="button" className="ghost" onClick={() => setOpen(o => !o)} aria-expanded={open} aria-haspopup="menu"
+        aria-label="Send a picture" data-testid="dm-plus" style={{ padding: "8px 12px", fontSize: 18, lineHeight: 1 }}>{busy || (open ? "✕" : "📷")}</button>
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 2600 }} />
+          <div role="menu" data-testid="dm-pic-menu" style={{ position: "absolute", bottom: "calc(100% + 8px)", left: 0, zIndex: 2601, minWidth: 210, background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden", boxShadow: "0 10px 30px rgba(0,0,0,.45)" }}>
+            <button type="button" role="menuitem" onClick={() => pick(onMine)} data-testid="dm-my-photo" style={item}>📸 A photo of you</button>
+            <button type="button" role="menuitem" onClick={() => pick(onGallery)} data-testid="dm-pick-open" style={{ ...item, borderTop: "1px solid var(--border)" }}>🖼️ From your gallery</button>
+            <button type="button" role="menuitem" onClick={() => pick(onUpload)} disabled={!!busy} data-testid="dm-upload-open" style={{ ...item, borderTop: "1px solid var(--border)" }}>📎 Upload a picture</button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
