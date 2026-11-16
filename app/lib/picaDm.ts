@@ -159,6 +159,10 @@ export async function dmSend(userId: string, accountId: string, text: string): P
   if (typeof j.reply !== "string" && !obj) j.reply = raw;
   // 🙈 Stage directions, leaked tool calls and code fences are dropped — they're not a message.
   const reply = scrub(cleanReply(String(j.reply || "")).replace(/\s+/g, " ").trim()).slice(0, 2000);
+  // 💭 All they sent was a thought in brackets: there's nothing to answer, so saying nothing is
+  // right — no "she didn't answer" note, and the thought stays in the thread.
+  const thoughtOnly = /^\s*\[[^\]]*\]\s*$/.test(text.trim());
+  if (!reply && thoughtOnly) return { added: [mine] };
   // Her brain didn't answer: say so (no fake 😊), and they can send again or pick another brain.
   if (!reply) return { added: [mine], note: `${a.name} didn't answer — her brain didn't respond. Try again, or pick another brain (🧠 at the top).` };
   const added: Dm[] = [mine, await addDm(userId, accountId, "assistant", reply)];

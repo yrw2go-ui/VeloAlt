@@ -57,7 +57,7 @@ export const SECTIONS: Section[] = [
         key: "brackets",
         label: "Thoughts you plant in [brackets]",
         about: "What anything you type in square brackets means to her. The same rule runs in her Picagram DMs.",
-        text: "💭 Anything {them} puts in [square brackets] is NOT something they said out loud. It's a thought, a feeling, a memory or a turn of events — take it as true about you and your world, let it land, and act on it from then on. Reply only to what they actually said out loud; if the brackets were all they sent, say whatever that makes you say or do, as if the thought had just come to you. Never repeat the bracketed words back, never put brackets around your own thoughts, and never mention or ask about the brackets themselves.",
+        text: "💭 Anything {them} puts in [square brackets] is NOT something they said out loud. It's a thought, a feeling, a memory or a turn of events — take it as true about you and your world, let it land, and act on it from then on. Reply only to what they actually said out loud. If the brackets were ALL they sent, there is nothing to answer — it's a thought in your own head, not a message: stay quiet unless it genuinely makes you say or do something, and then say that, as if the thought had just come to you. Never repeat the bracketed words back, never put brackets around your own thoughts, and never mention or ask about the brackets themselves.",
       },
     ],
   },
