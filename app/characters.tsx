@@ -3,6 +3,7 @@
 // and the admin editor: personality, backstory, relation to the user, call voice, and a
 // portrait (Atlas Cloud Seedream). Every character follows Velo's safety rules.
 import { useEffect, useRef, useState } from "react";
+import { useBack } from "./lib/back";
 import { api, uploadCharacterPicture } from "./lib/api";
 import { confirmAsk } from "./lib/dialog";
 import { localConflict } from "./lib/local";
@@ -89,6 +90,7 @@ export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdi
 export function CharacterEditor({ initial, draft, portraits, brains = [], brainModels = [], onClose, onSaved, onDeleted, onDuplicated }: {
   initial: Character | null; draft?: Partial<Character> | null; portraits: boolean; brains?: string[]; brainModels?: { id: string; model: string }[]; onClose: () => void; onSaved: (c: Character) => void; onDeleted: (id: string) => void; onDuplicated?: (c: Character) => void;
 }) {
+  useBack(true, onClose); // the phone's back button closes her card
   const [c, setC] = useState<Character | null>(initial);
   // ✨ A "make one for me" draft fills everything in; nothing is saved until Save.
   const seed: Partial<Character> | null = initial || draft || null;
@@ -949,6 +951,7 @@ function ClassWeek({ school, setSchool, days, setDays, start, setStart, end, set
 
 /** ✨ ＋ New: make one for me (from a few optional hints), or start from scratch. */
 export function NewCharacterSheet({ onDraft, onBlank, onClose }: { onDraft: (d: Partial<Character>) => void; onBlank: () => void; onClose: () => void }) {
+  useBack(true, onClose); // the phone's back button closes this, one step at a time
   const [name, setName] = useState("");
   const [vibe, setVibe] = useState("");
   const [job, setJob] = useState("");

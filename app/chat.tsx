@@ -3,6 +3,7 @@
 // follows them across devices). When they leave the app after chatting, Velo
 // files a short summary and any new goals/facts in her memory ("memo").
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useBack } from "./lib/back";
 import { BRAIN_OPTIONS } from "./lib/brainOptions";
 import { api, data, uploadFile } from "./lib/api";
 import { VeloAvatar } from "./avatar";
@@ -895,6 +896,7 @@ function AskSheet({ who, ask, busy, onChange, onSend, onClose, onHide }: {
   who: string; ask: { kind: "image" | "video"; description: string }; busy: boolean;
   onChange: (d: string) => void; onSend: (d: string) => void; onClose: () => void; onHide: () => void;
 }) {
+  useBack(true, onClose); // the phone's back button closes this, one step at a time
   return (
     <div role="dialog" aria-modal="true" data-testid="ask-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }}>
       <div className="card" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -915,6 +917,7 @@ function AskSheet({ who, ask, busy, onChange, onSend, onClose, onHide }: {
 }
 
 function PeekSheet({ who, sheet, brains, theirs, onChange, onWriter, onRewrite, onSend, onClose }: { who: string; sheet: { description: string; loading: boolean; error?: string; icu?: boolean; writer: string }; brains: string[]; theirs: string; onChange: (d: string) => void; onWriter: (w: string) => void; onRewrite: () => void; onSend: (d: string) => void; onClose: () => void }) {
+  useBack(true, onClose); // the phone's back button closes this, one step at a time
   // Who can write it: Claude, plus the Atlas brains this server has set up. Hers is the default.
   const options = [{ id: "", label: "Claude (same as Velo)" }, ...BRAIN_OPTIONS.filter(o => o.atlas && (brains.includes(o.id) || o.id === theirs)).map(o => ({ id: o.id as string, label: o.label as string }))];
   return (
@@ -950,6 +953,7 @@ const todayYmd = () => { const d = new Date(); return `${d.getFullYear()}-${Stri
 
 export type SceneClockChoice = { clock: "now" | "set"; time: string };
 export function SceneSheet({ who, plan, onClose, onStart }: { who: string; plan?: { title: string; details: string; time?: string } | null; onClose: () => void; onStart: (kind: "live" | "past", title: string, details: string, clock: SceneClockChoice) => Promise<void> }) {
+  useBack(true, onClose); // the phone's back button closes this, one step at a time
   const [kind, setKind] = useState<"live" | "past">("live");
   // 🕒 Real time now, or the scene's own scheduled time (the plan's time, if it has one).
   const [clock, setClock] = useState<"now" | "set">("now");
@@ -1048,6 +1052,7 @@ export function Selectable({ id, selecting, onStart, onToggle, children }: { id?
 
 /** 🖼️ Pick one of your pictures (from any chat, peeks or Picagram) to send with your next message. */
 function GalleryPicker({ onClose, onPick }: { onClose: () => void; onPick: (f: ChatFile) => void }) {
+  useBack(true, onClose); // the phone's back button closes this, one step at a time
   type Item = ChatFile & { at: string; from: string };
   const [items, setItems] = useState<Item[] | null>(null);
   const [more, setMore] = useState(true);

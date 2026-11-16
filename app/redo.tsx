@@ -1,11 +1,13 @@
 "use client";
 // ↻ Redo a picture from the prompt that made it — a Picagram woman's, or a character's.
 import { useEffect, useState } from "react";
+import { useBack } from "./lib/back";
 import { api } from "./lib/api";
 
 /** ↻ Redo one of her pictures: the prompt that made it, yours to send as it is or tweak.
  *  Whatever you send goes to the picture service exactly as written, like a peek. */
 export function RedoSheet({ mediaId, who, where = "/api/pica", onClose, onGoing }: { mediaId: string; who: string; where?: "/api/pica" | "/api/data"; onClose: () => void; onGoing: () => void }) {
+  useBack(true, onClose); // the phone's back button closes this, one step at a time
   const [prompt, setPrompt] = useState("");
   const [what, setWhat] = useState("photo");
   const [loading, setLoading] = useState(true);

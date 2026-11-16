@@ -1,6 +1,7 @@
 "use client";
 // 📸 Picagram: everyone's posts, newest first, a few at a time as you scroll. Like, comment, and post your own.
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useBack } from "./lib/back";
 import { api, data, uploadFile, uploadPicaPicture } from "./lib/api";
 import { hideSecrets } from "./lib/secrets";
 import { noJargon } from "./lib/text";
@@ -255,6 +256,7 @@ function PostCard({ p, me, obs, onChange, onProfile, onFollow, onNote, onRemoved
 }
 
 function Composer({ onClose, onPosted }: { onClose: () => void; onPosted: () => void }) {
+  useBack(true, onClose); // the phone's back button closes this, one step at a time
   const [caption, setCaption] = useState("");
   const [photo, setPhoto] = useState("");
   const [mine, setMine] = useState(true);
@@ -311,6 +313,7 @@ type Photo = { media_id: string; url: string; thumb: string | null; caption?: st
 
 /** 🖼️ A picture, full screen, with Save. */
 function Viewer({ photo, onClose, onSaved, onRedo, onAvatar, onRef, isRef }: { photo: Photo; onClose: () => void; onSaved: (on: boolean) => void; onRedo?: (mediaId: string) => void; onAvatar?: (mediaId: string) => void; onRef?: (mediaId: string) => void; isRef?: boolean }) {
+  useBack(true, onClose); // the phone's back button closes this, one step at a time
   const [saved, setSaved] = useState(photo.saved);
   const toggle = async () => { const on = !saved; setSaved(on); onSaved(on); await api("/api/pica", { action: "save", id: photo.media_id, on }).catch(() => { setSaved(!on); onSaved(!on); }); };
   return (
@@ -342,6 +345,7 @@ function Grid({ photos, onOpen }: { photos: Photo[]; onOpen: (p: Photo) => void 
 
 /** 👤 Her profile: bio, followers, Follow, and all her photos. */
 function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: string; onClose: () => void; onFollow: (account: string, on: boolean) => void; onChat?: (characterId: string) => void; onMessage?: (id: string) => void; onDeleted?: (id: string) => void }) {
+  useBack(true, onClose); // the phone's back button closes this, one step at a time
   const [data, setData] = useState<{ refs?: { media_id: string; url: string }[]; account: { id: string; handle: string; name: string; bio: string; personality: string; traits: Record<string, number>; followers: number; followed: boolean; avatar: string | null; avatar_media_id?: string | null; character_id: string | null; lives: string; hidden: boolean; married: boolean }; photos: Photo[] } | null>(null);
   const [err, setErr] = useState("");
   const [befriending, setBefriending] = useState(false);
@@ -577,6 +581,7 @@ function PersonaSheet({ who, personality, traits, onSave, onClose }: {
   who: string; personality: string; traits: Record<string, number>;
   onSave: (personality: string, traits: Record<TraitKey, number>) => Promise<void>; onClose: () => void;
 }) {
+  useBack(true, onClose); // the phone's back button closes this, one step at a time
   const [text, setText] = useState(personality);
   const [t, setT] = useState<Record<TraitKey, number>>(cleanTraits(traits && Object.keys(traits).length ? traits : DEFAULT_TRAITS));
   const [saved, setSaved] = useState(false);
@@ -618,6 +623,7 @@ function PersonaSheet({ who, personality, traits, onSave, onClose }: {
 
 /** 🖼️ Pick a picture you already have — anything in the app's gallery — to send her. */
 function PickFromGallery({ onClose, onPick }: { onClose: () => void; onPick: (mediaId: string) => void }) {
+  useBack(true, onClose); // the phone's back button closes this, one step at a time
   type Item = { id: string; mediaId: string; url: string; thumb: string | null; at: string; from: string };
   const [items, setItems] = useState<Item[] | null>(null);
   const [more, setMore] = useState(true);
@@ -652,6 +658,7 @@ function PickFromGallery({ onClose, onPick }: { onClose: () => void; onPick: (me
 
 /** 🔖 Their own Picagram gallery: pictures they saved. */
 function Saved({ onClose }: { onClose: () => void }) {
+  useBack(true, onClose); // the phone's back button closes this, one step at a time
   const [items, setItems] = useState<(Photo & { at: string })[] | null>(null);
   const [view, setView] = useState<Photo | null>(null);
   useEffect(() => { api<{ items: (Photo & { at: string })[] }>("/api/pica", { action: "saved" }).then(r => setItems(r.items)).catch(() => setItems([])); }, []);
@@ -672,6 +679,7 @@ function Saved({ onClose }: { onClose: () => void }) {
 
 /** 👥 Who you follow (up to 70) — unfollow some to make room for new ones. */
 function Following({ onClose, onUnfollow, onOpen, onNewFaces }: { onClose: () => void; onUnfollow: (id: string) => void; onOpen: (id: string) => void; onNewFaces?: (names: string[]) => void }) {
+  useBack(true, onClose); // the phone's back button closes this, one step at a time
   const [list, setList] = useState<{ id: string; handle: string; name: string; avatar: string | null; friend: boolean; character_id: string | null; married?: boolean }[] | null>(null);
   // 🙈 Your characters: hide their posts without them ever knowing (unlike unfollowing).
   const [chars, setChars] = useState<{ id: string; name: string; portrait: string | null; hidden: boolean }[] | null>(null);
@@ -758,6 +766,7 @@ type DmAccount = { id: string; handle: string; name: string; avatar: string | nu
 
 /** ✉️ Picagram messages: one row per person you've DM'd. */
 function Inbox({ onClose, onOpen }: { onClose: () => void; onOpen: (id: string) => void }) {
+  useBack(true, onClose); // the phone's back button closes this, one step at a time
   const [list, setList] = useState<{ account: DmAccount; last: string; at: string; unread: number }[] | null>(null);
   useEffect(() => { api<{ threads: NonNullable<typeof list> }>("/api/pica", { action: "dm.threads" }).then(r => setList(r.threads)).catch(() => setList([])); }, []);
   return (
@@ -785,6 +794,7 @@ function Inbox({ onClose, onOpen }: { onClose: () => void; onOpen: (id: string) 
 
 /** 💬 A DM thread with one account: she answers in her own voice and can send photos (📸 if one didn't come through). */
 function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; onProfile: (id: string) => void }) {
+  useBack(true, onClose); // the phone's back button closes this, one step at a time
   const [acc, setAcc] = useState<DmAccount | null>(null);
   const [brains, setBrains] = useState<{ id: string; label: string }[]>([]);
   const [msgs, setMsgs] = useState<DmMsg[] | null>(null);
@@ -972,6 +982,7 @@ function PicMenu({ busy, onMine, onGallery, onUpload }: { busy: string; onMine: 
 /** 📸 A photo of you: the description first (like a peek), then exactly that — with your photos as reference. */
 /** 📸 A photo she's about to send: the prompt first, the same as a peek. */
 function DmAskSheet({ who, description, busy, onChange, onSend, onClose, onHide }: { who: string; description: string; busy: boolean; onChange: (d: string) => void; onSend: (d: string) => void; onClose: () => void; onHide: () => void }) {
+  useBack(true, onClose); // the phone's back button closes this, one step at a time
   return (
     <div role="dialog" aria-modal="true" data-testid="dm-ask-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2700 }}>
       <div className="card" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -992,6 +1003,7 @@ function DmAskSheet({ who, description, busy, onChange, onSend, onClose, onHide 
 }
 
 function MyPhotoSheet({ title, draft, onMake, onClose }: { title: string; draft: (about: string) => Promise<string>; onMake: (d: string) => Promise<void>; onClose: () => void }) {
+  useBack(true, onClose); // the phone's back button closes this, one step at a time
   const [about, setAbout] = useState("");
   const [desc, setDesc] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1027,6 +1039,7 @@ function MyPhotoSheet({ title, draft, onMake, onClose }: { title: string; draft:
 
 /** 👩 Make someone yourself: your specs, your bio, your two pictures. She posts from those. */
 function MakeHer({ onClose, onMade }: { onClose: () => void; onMade: (id: string) => void }) {
+  useBack(true, onClose); // the phone's back button closes this, one step at a time
   const [name, setName] = useState("");
   const [handle, setHandle] = useState("");
   const [bio, setBio] = useState("");
@@ -1211,6 +1224,7 @@ function EditableBio({ value, onSave, testid, placeholder = "No bio yet", max = 
 
 /** 🙋 Your own Picagram: your picture, your bio, and everything you've posted. */
 function MyProfile({ name, onClose }: { name: string; onClose: () => void }) {
+  useBack(true, onClose); // the phone's back button closes this, one step at a time
   type Me = { name: string; bio: string; avatar: string | null; posts: number; following: number; photos: (Photo & { at: string })[] };
   const [me, setMe] = useState<Me | null>(null);
   const [busy, setBusy] = useState("");

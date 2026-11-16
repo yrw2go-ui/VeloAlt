@@ -2,6 +2,7 @@
 // 👥 Group chats: you and 2–6 characters in one thread. Each one answers as herself and keeps her own
 // memory of it. Characters who didn't know each other meet here and get closer the more you all chat.
 import { useEffect, useRef, useState } from "react";
+import { useBack } from "./lib/back";
 import { api } from "./lib/api";
 import { hideSecrets } from "./lib/secrets";
 import { dropThoughts, noJargon } from "./lib/text";
@@ -255,6 +256,7 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
 
 /** Pick 2–6 characters (and an optional name) for a new group. */
 export function GroupMaker({ chars, name, onClose, onMade }: { chars: Character[]; name: string; onClose: () => void; onMade: (g: Group) => void }) {
+  useBack(true, onClose); // the phone's back button closes this, one step at a time
   const [pick, setPick] = useState<string[]>([]);
   const [title, setTitle] = useState("");
   const [busy, setBusy] = useState(false);
@@ -292,6 +294,7 @@ export function GroupMaker({ chars, name, onClose, onMade }: { chars: Character[
 
 /** 👀 Peek in a group scene: pick who's in the picture (one or more), check the description, then it's made. */
 function GroupPeekSheet({ group, members, name, brains, onClose, onMade }: { group: Group; members: Character[]; name: string; brains: string[]; onClose: () => void; onMade: (added: Msg[]) => void }) {
+  useBack(true, onClose); // the phone's back button closes this, one step at a time
   const [ids, setIds] = useState<string[]>(members.map(c => c.id));
   const [desc, setDesc] = useState("");
   const [forIds, setForIds] = useState("");

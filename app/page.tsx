@@ -2,6 +2,7 @@
 // Velo — the app shell: sign-in, the four tabs (💬 Chat, ☀️ Today, 🧠 Memory,
 // ⚙️ Settings), the 📞 call screen, and due-reminder pop-ups.
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useBack } from "./lib/back";
 import { api, data } from "./lib/api";
 import { VersionCard, UpdateBanner } from "./version";
 import { confirmAsk, currentAsk, subscribeAsk } from "./lib/dialog";
@@ -117,6 +118,8 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   const [brains, setBrains] = useState<string[]>([]);
   const [brainModels, setBrainModels] = useState<{ id: string; model: string }[]>([]);
   const [admin, setAdmin] = useState(false);
+  // ⬅️ Back from any other tab goes to Chat first, and only then out of the app.
+  useBack(tab !== "chat", () => setTab("chat"));
   // A tapped notification opens that chat (?chat=<character id>, or "velo").
   const [withId, setWithId] = useState<string | null>(() => { const c = urlParam("chat"); return c ? (c !== "velo" ? c : null) : place.withId || null; });
   const [editing, setEditing] = useState<Character | "new" | null>(null);
@@ -479,6 +482,7 @@ function Settings({ name, setName, onOut, profile, onProfile, chars = [], admin 
 
 function ConfirmHost() {
   const ask = useSyncExternalStore(subscribeAsk, currentAsk, () => null);
+  useBack(!!ask, () => ask?.resolve(false)); // back is the same as Cancel
   if (!ask) return null;
   return (
     <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 5000 }}>

@@ -4,6 +4,7 @@
 // Once ready the chat shows a small thumbnail (fast, light on data) that fits on
 // screen; the full photo or the video loads only when tapped (full screen).
 import { useEffect, useState } from "react";
+import { useBack } from "./lib/back";
 import { stamp } from "./lib/when";
 import { data } from "./lib/api";
 
@@ -127,6 +128,7 @@ export function VideoTile({ poster, fill }: { poster: string | null; fill?: bool
 
 /** Full screen: centered, the whole picture visible, no scrolling. Loads the full photo / the video now. */
 export function Viewer({ m, onClose, children }: { m: { kind: "image" | "video"; url: string | null; created_at?: string | null }; onClose: () => void; children?: React.ReactNode }) {
+  useBack(true, onClose); // the phone's back button closes this, one step at a time
   useEffect(() => {
     const k = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", k);
