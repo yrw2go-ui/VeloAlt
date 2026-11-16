@@ -26,7 +26,7 @@ import { isValidTimeZone, localDate, formatClock, weekdayOf, zonedParts } from "
 import { partOfDay, monthName, calendarNote, ownBirthdayNote } from "./calendar";
 import { hideSecrets, HIDDEN, scrub as scrubText } from "./secrets";
 import { ownFile, fileForAi } from "./files";
-import { friendsOf, friendsNote, sapphicWith } from "./friends";
+import { friendsOf, friendsNote, hisChances, sapphicWith } from "./friends";
 import { workNow } from "./work";
 import { sceneClockNote } from "./sceneClock";
 import { inPersonFor, inPersonNote, homeNote, LIVE_IN_NOTE, HOME } from "./inPerson";
@@ -232,6 +232,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
         ch?.birthday ? ownBirthdayNote(ch.birthday, chZone ? localNow(chZone).date : today.date) : "",
         about,
         friendNote,
+        ch && !errand && mode !== "remember" && mode !== "memo" ? hisChances(ch, friends, !!u?.adult_confirmed_at, name) : "",
         known,
         taste,
         canSend ? await recentMediaNote(caller.userId, cid, today.tz).catch(() => "") : "",

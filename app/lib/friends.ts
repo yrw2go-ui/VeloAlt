@@ -8,10 +8,12 @@ import { writeText } from "./llm";
 import { sql } from "./db";
 import type { Character } from "./characters";
 import { friendStandingNote, secretsKnownBy, standingOf } from "./standing";
+import { FAMILY, hisChances } from "./chances";
+export { hisChances };
 
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const first = (s: string, n = 200) => (String(s || "").split(/(?<=[.!?])\s/)[0] || "").slice(0, n);
-export const FAMILY = /\b(sister|brother|sibling|twin|mom|mum|mother|dad|father|parent|daughter|son|cousin|aunt|auntie|uncle|niece|nephew|grand\w*|step\w*|half[- ]?(sister|brother)|\w+-in-law|family|related)\b/i;
+export { FAMILY } from "./chances";
 
 /** "@Mia" → "Mia" for what the character reads (and the mentions it makes). */
 export function atMentions(backstory: string, others: { id: string; name: string }[]): { id: string; sentence: string }[] {
@@ -29,7 +31,7 @@ export function atMentions(backstory: string, others: { id: string; name: string
 }
 export const plainAt = (s: string) => s.replace(/@(?=\p{L})/gu, "");
 
-type Friend = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; romantic?: boolean; sapphic?: boolean; standing?: string; kind: string; story: string; level?: 1 | 2 | 3 };
+type Friend = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; romantic?: boolean; sapphic?: boolean; standing?: string; kind: string; story: string; level?: 1 | 2 | 3; sees_others?: boolean; voice_kind?: string; attached?: string };
 
 /** 🤝 How close two characters who met in group chats are: 1 just met, 2 getting to know each other, 3 friends. */
 export function bondLevel(messages: number, occasions: number): 1 | 2 | 3 {
@@ -41,7 +43,7 @@ const BOND_KIND = { 1: "new acquaintance — you met through them in a group cha
 /** Everyone this character knows firsthand: her own links from the editor, @mentions in her own backstory,
  *  and (for this person) the characters she met in their group chats. */
 export async function friendsOf(ch: Pick<Character, "id" | "name" | "backstory">, userId?: string): Promise<Friend[]> {
-  const all = (await sql()`select id, name, personality, backstory, relation, appearance, job, casual_wear, hobbies, romantic, sapphic, standing from chat_characters
+  const all = (await sql()`select id, name, personality, backstory, relation, appearance, job, casual_wear, hobbies, romantic, sapphic, standing, sees_others, voice_kind, attached from chat_characters
     where id <> ${ch.id} and (owner_id is null or owner_id = ${userId || null}::uuid)`) as Omit<Friend, "kind" | "story">[];
   const links = await sql()`select known_id, kind, story from chat_character_links where knower_id = ${ch.id}`;
   const byId = new Map<string, Friend>();
