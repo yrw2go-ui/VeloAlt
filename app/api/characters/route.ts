@@ -9,6 +9,7 @@ import { isValidTimeZone, localDate } from "../../lib/localTime";
 import { availableBrains, brainList } from "../../lib/models";
 import { makeCharacter } from "../../lib/makeCharacter";
 import { listLinks, setLink, removeLink, writeStory, linkSuggestions } from "../../lib/friends";
+import { checkCard } from "../../lib/cardCheck";
 import { MAX_CHARACTERS, DAILY_PORTRAITS, isAdmin, listCharacters, getCharacter, screenCharacter, startPortrait, checkPortrait, deleteCharacter, portraitsReady, chooseVoice, VoiceError } from "../../lib/characters";
 import { setHome } from "../../lib/inPerson";
 import { localNote } from "../../lib/local";
@@ -129,15 +130,24 @@ export async function POST(req: NextRequest) {
       }
 
       // 📄 A copy of a character under a new name: everything except her pictures (portrait, references, gallery).
-      // 🛡️ Check this card, when you ask: what the check makes of it, and nothing is saved or
-      // blocked either way.
+      // 🛡️ A look over the card, when you ask: where she lives, her job, and the ticks against
+      // her own words. It saves nothing and stops nothing.
       case "screen": {
-        const f = { name: clean(b.name, 60), personality: clean(b.personality, 2000), backstory: clean(b.backstory, 3000), relation: clean(b.relation, 600), appearance: clean(b.appearance, 600), job: clean(b.job, 300), casual_wear: clean(b.casualWear, 400), hobbies: clean(b.hobbies, 600) };
-        if (!f.name) return bad("Give your character a name.");
         if (!allow(`screen:${me}`, [{ ms: 60_000, max: 10 }, { ms: 86_400_000, max: 200 }])) return bad("That's a lot of checks — try again in a bit.", 429);
-        const attire = clean(b.workAttire, 400);
-        const problem = await screenCharacter({ ...f, casual_wear: attire ? `${f.casual_wear} / at work: ${attire}` : f.casual_wear, arc: clean(b.romanceArc, 2000), romantic: b.romantic === true }).catch(() => "Couldn't check it just now — try again in a moment.");
-        return NextResponse.json(problem ? { ok: false, problem } : { ok: true });
+        const home = await homeOf(me).catch(() => null);
+        const num = (v: unknown) => (Array.isArray(v) ? v.map(Number).filter((d: number) => Number.isInteger(d) && d >= 0 && d <= 6) : []);
+        const findings = await checkCard({
+          name: clean(b.name, 60), personality: clean(b.personality, 2000), backstory: clean(b.backstory, 3000),
+          relation: clean(b.relation, 600), appearance: clean(b.appearance, 600), job: clean(b.job, 300),
+          casualWear: clean(b.casualWear, 400), hobbies: clean(b.hobbies, 600), workAttire: clean(b.workAttire, 400),
+          romanceArc: clean(b.romanceArc, 2000), workDays: num(b.workDays), workStart: clean(b.workStart, 5), workEnd: clean(b.workEnd, 5),
+          partTime: b.partTime === true, school: clean(b.school, 200), classDays: num(b.classDays), classStart: clean(b.classStart, 5), classEnd: clean(b.classEnd, 5),
+          romantic: b.romantic === true, liveIn: b.liveIn === true, neighbor: b.neighbor === true, local: b.local === true,
+          attached: clean(b.attached, 20) || "single", partner: clean(b.partner, 80), seesOthers: b.seesOthers === true,
+          lesbian: b.lesbian === true, bigFollowing: b.bigFollowing === true, gf: b.gf === true, secret: b.secret === true,
+          polyOk: b.polyOk === true, sapphic: b.sapphic === true, timeZone: clean(b.timeZone, 60),
+        }, home ? homeText(home) : "");
+        return NextResponse.json({ findings });
       }
       case "duplicate": {
         const src = await getCharacter(id);

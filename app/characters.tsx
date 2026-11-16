@@ -188,7 +188,10 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
     return () => clearInterval(t);
   }, [c?.id, c?.portrait_job]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const payload = () => ({ name, personality, backstory, relation, appearance, job, casualWear: wear, hobbies, workAttire: attire, romantic, romanceArc: romantic ? arc : "" });
+  const payload = () => ({ name, personality, backstory, relation, appearance, job, casualWear: wear, hobbies, workAttire: attire,
+    romantic, romanceArc: romantic ? arc : "", workDays, workStart, workEnd, partTime, school, classDays, classStart, classEnd,
+    liveIn, neighbor, local: local || neighbor, attached, partner, seesOthers, lesbian: romantic && lesbian, bigFollowing,
+    gf: romantic && gf, secret: romantic && secret, polyOk: romantic && polyOk, sapphic: romantic && sapphic, timeZone: zone });
 
   const save = async () => {
     setBusy(true); setMsg("");
@@ -241,13 +244,11 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
 
   // 🛡️ Checked when you ask, never on save: a second opinion on the card, nothing more.
   const [scanning, setScanning] = useState("");
-  const [scanned, setScanned] = useState<{ ok: boolean; problem?: string } | null>(null);
+  const [scanned, setScanned] = useState<{ findings: { what: "location" | "job" | "boxes"; note: string }[] } | { error: string } | null>(null);
   const scan = async () => {
     setScanning("…"); setScanned(null);
-    try {
-      const r = await api<{ ok: boolean; problem?: string }>("/api/characters", { action: "screen", ...payload() });
-      setScanned(r);
-    } catch (e) { setScanned({ ok: false, problem: e instanceof Error ? e.message : "Couldn't check it." }); }
+    try { setScanned(await api<{ findings: { what: "location" | "job" | "boxes"; note: string }[] }>("/api/characters", { action: "screen", ...payload() })); }
+    catch (e) { setScanned({ error: e instanceof Error ? e.message : "Couldn't check it." }); }
     setScanning("");
   };
 
@@ -271,15 +272,26 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
       <div className="card" style={{ width: "100%", maxWidth: 560, maxHeight: "92dvh", overflowY: "auto", borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 12 }}>
         <div className="row" style={{ justifyContent: "space-between", gap: 8 }}>
           <div style={{ fontWeight: 800, fontSize: 18 }}>{c ? `Edit ${c.name}` : "New character"}</div>
-          <button className="ghost" onClick={scan} disabled={!!scanning || !name.trim()} data-testid="character-scan" title="Have the card looked over — it never blocks saving" style={{ padding: "4px 10px", fontSize: 12 }}>{scanning || "🛡️ Check"}</button>
+          <button className="ghost" onClick={scan} disabled={!!scanning || !name.trim()} data-testid="character-scan" title="Check where she lives, her job and the ticks against her description — it never blocks saving" style={{ padding: "4px 10px", fontSize: 12 }}>{scanning || "🛡️ Check"}</button>
           <button className="ghost" onClick={onClose} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
         </div>
-        {scanned && (
-          <div data-testid="character-scan-result" style={{ padding: "8px 10px", borderRadius: 10, fontSize: 13,
-            background: scanned.ok ? "rgba(74,222,128,.14)" : "rgba(245,158,11,.15)", border: `1px solid ${scanned.ok ? "rgba(74,222,128,.45)" : "rgba(245,158,11,.45)"}` }}>
-            {scanned.ok ? "✓ Nothing stood out on this card." : `⚠️ ${scanned.problem} — it's only a second opinion; save it anyway if you disagree.`}
-          </div>
-        )}
+        {scanned && (() => {
+          const bad = "error" in scanned ? [{ what: "boxes" as const, note: scanned.error }] : scanned.findings;
+          const clear = !bad.length;
+          return (
+            <div data-testid="character-scan-result" style={{ padding: "8px 10px", borderRadius: 10, fontSize: 13,
+              background: clear ? "rgba(74,222,128,.14)" : "rgba(245,158,11,.15)", border: `1px solid ${clear ? "rgba(74,222,128,.45)" : "rgba(245,158,11,.45)"}` }}>
+              {clear ? "✓ Where she lives, her job and the ticks all line up." : (
+                <>
+                  <div style={{ fontWeight: 700, marginBottom: 4 }}>A few things don&apos;t line up — save it anyway if you disagree:</div>
+                  <ul style={{ margin: 0, paddingLeft: 18 }}>
+                    {bad.map((f, i) => <li key={i} style={{ marginBottom: 2 }}><b>{CHECK_LABEL[f.what]}</b> — {f.note}</li>)}
+                  </ul>
+                </>
+              )}
+            </div>
+          );
+        })()}
         <div className="row" style={{ gap: 14, alignItems: "center" }}>
           {working ? <div style={{ width: 84, height: 84, borderRadius: "50%", border: "2px dashed var(--accent)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, textAlign: "center" }} className="muted">Painting…<br />up to a minute</div>
             : <CharacterFace c={{ name: name || "?", portrait_url: c?.portrait_url || null }} size={84} />}
@@ -638,6 +650,8 @@ function ReferencePicker({ characterId, value, onChange, refresh, onPortrait }: 
 }
 
 /** 🎚️ Nine temperament sliders (0–10). Their mix makes each character unique; Flirty and Suggestive only count when Romantic is on. */
+const CHECK_LABEL: Record<"location" | "job" | "boxes", string> = { location: "📍 Where she lives", job: "💼 Her job", boxes: "☑️ The ticks" };
+
 export function TraitSliders({ value, romantic, onChange }: { value: Record<TraitKey, number>; romantic: boolean; onChange: (k: TraitKey, v: number) => void }) {
   return (
     <div data-testid="trait-sliders" style={{ fontSize: 13, fontWeight: 700 }}>
