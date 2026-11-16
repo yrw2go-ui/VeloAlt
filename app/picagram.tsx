@@ -280,7 +280,7 @@ function Composer({ onClose, onPosted }: { onClose: () => void; onPosted: () => 
     catch (e) { setErr(e instanceof Error ? e.message : "Couldn't post."); setBusy(false); }
   };
   return (
-    <div role="dialog" aria-modal="true" data-testid="pica-composer" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }} onClick={onClose}>
+    <div role="dialog" aria-modal="true" data-testid="pica-composer" style={{ position: "fixed", inset: 0, bottom: "var(--nav-h)", background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }} onClick={onClose}>
       <div className="card" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 10 }}>
         <div className="row" style={{ justifyContent: "space-between" }}>
           <div style={{ fontWeight: 800, fontSize: 17 }}>📸 New post</div>
@@ -452,7 +452,7 @@ function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: 
     await api("/api/pica", { action: "follow", id, on }).catch(e => { setData(d => (d ? { ...d, account: { ...d.account, followed: !on, followers: d.account.followers + (on ? -1 : 1) } } : d)); onFollow(id, !on); setErr(e instanceof Error ? e.message : "Couldn't follow."); });
   };
   return (
-    <div role="dialog" aria-modal="true" data-testid="pica-profile" style={{ position: "fixed", inset: 0, background: "var(--bg)", zIndex: 2600, overflowY: "auto" }}>
+    <div role="dialog" aria-modal="true" data-testid="pica-profile" style={{ position: "fixed", inset: 0, bottom: "var(--nav-h)", background: "var(--bg)", zIndex: 2600, overflowY: "auto" }}>
       <div className="row" style={{ padding: "10px 14px", gap: 8, position: "sticky", top: 0, zIndex: 2, background: "var(--bg)", borderBottom: "1px solid var(--border)" }}>
         <button className="ghost" onClick={onClose} aria-label="Back" style={{ padding: "4px 10px" }}>←</button>
         {data && !data.account.character_id
@@ -607,7 +607,7 @@ function PersonaSheet({ who, personality, traits, onSave, onClose }: {
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
   const close = () => { if (timer.current) clearTimeout(timer.current); save(text, t); onClose(); };
   return (
-    <div role="dialog" aria-modal="true" data-testid="pica-persona" style={{ position: "fixed", inset: 0, background: "var(--bg)", zIndex: 2700, overflowY: "auto" }}>
+    <div role="dialog" aria-modal="true" data-testid="pica-persona" style={{ position: "fixed", inset: 0, bottom: "var(--nav-h)", background: "var(--bg)", zIndex: 2700, overflowY: "auto" }}>
       <div className="row" style={{ padding: "10px 14px", gap: 8, position: "sticky", top: 0, background: "var(--bg)", borderBottom: "1px solid var(--border)" }}>
         <button className="ghost" onClick={close} aria-label="Back" style={{ padding: "4px 10px" }}>←</button>
         <b style={{ flex: 1 }}>🎭 {who}</b>
@@ -669,7 +669,7 @@ function Saved({ onClose }: { onClose: () => void }) {
   const [view, setView] = useState<Photo | null>(null);
   useEffect(() => { api<{ items: (Photo & { at: string })[] }>("/api/pica", { action: "saved" }).then(r => setItems(r.items)).catch(() => setItems([])); }, []);
   return (
-    <div role="dialog" aria-modal="true" data-testid="pica-saved" style={{ position: "fixed", inset: 0, background: "var(--bg)", zIndex: 2600, overflowY: "auto" }}>
+    <div role="dialog" aria-modal="true" data-testid="pica-saved" style={{ position: "fixed", inset: 0, bottom: "var(--nav-h)", background: "var(--bg)", zIndex: 2600, overflowY: "auto" }}>
       <div className="row" style={{ padding: "10px 14px", gap: 8, position: "sticky", top: 0, background: "var(--bg)", borderBottom: "1px solid var(--border)" }}>
         <button className="ghost" onClick={onClose} aria-label="Back" style={{ padding: "4px 10px" }}>←</button>
         <b style={{ flex: 1 }}>🔖 Saved</b>
@@ -725,7 +725,7 @@ function Following({ onClose, onUnfollow, onOpen, onNewFaces }: { onClose: () =>
     catch (e) { setSaid(e instanceof Error ? e.message : "Couldn't delete her."); }
   };
   return (
-    <div role="dialog" aria-modal="true" data-testid="pica-following" style={{ position: "fixed", inset: 0, background: "var(--bg)", zIndex: 2600, overflowY: "auto" }}>
+    <div role="dialog" aria-modal="true" data-testid="pica-following" style={{ position: "fixed", inset: 0, bottom: "var(--nav-h)", background: "var(--bg)", zIndex: 2600, overflowY: "auto" }}>
       <div className="row" style={{ padding: "10px 14px", gap: 8, position: "sticky", top: 0, background: "var(--bg)", borderBottom: "1px solid var(--border)" }}>
         <button className="ghost" onClick={onClose} aria-label="Back" style={{ padding: "4px 10px" }}>←</button>
         <b style={{ flex: 1 }}>👥 Following {list ? `(${list.length}/70)` : ""}</b>
@@ -776,7 +776,7 @@ function Inbox({ onClose, onOpen }: { onClose: () => void; onOpen: (id: string) 
   const [list, setList] = useState<{ account: DmAccount; last: string; at: string; unread: number }[] | null>(null);
   useEffect(() => { api<{ threads: NonNullable<typeof list> }>("/api/pica", { action: "dm.threads" }).then(r => setList(r.threads)).catch(() => setList([])); }, []);
   return (
-    <div role="dialog" aria-modal="true" data-testid="pica-inbox" style={{ position: "fixed", inset: 0, background: "var(--bg)", zIndex: 2600, overflowY: "auto" }}>
+    <div role="dialog" aria-modal="true" data-testid="pica-inbox" style={{ position: "fixed", inset: 0, bottom: "var(--nav-h)", background: "var(--bg)", zIndex: 2600, overflowY: "auto" }}>
       <div className="row" style={{ padding: "10px 14px", gap: 8, position: "sticky", top: 0, background: "var(--bg)", borderBottom: "1px solid var(--border)" }}>
         <button className="ghost" onClick={onClose} aria-label="Back" style={{ padding: "4px 10px" }}>←</button>
         <b style={{ flex: 1 }}>✉️ Messages</b>
@@ -889,7 +889,7 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
     setBusy(false);
   };
   return (
-    <div role="dialog" aria-modal="true" data-testid="pica-thread" style={{ position: "fixed", inset: 0, background: "var(--bg)", zIndex: 2650, display: "flex", flexDirection: "column" }}>
+    <div role="dialog" aria-modal="true" data-testid="pica-thread" style={{ position: "fixed", inset: 0, bottom: "var(--nav-h)", background: "var(--bg)", zIndex: 2650, display: "flex", flexDirection: "column" }}>
       <div className="row" style={{ padding: "10px 14px", gap: 10, borderBottom: "1px solid var(--border)" }}>
         <button className="ghost" onClick={onClose} aria-label="Back" style={{ padding: "4px 10px" }}>←</button>
         {acc && <span onClick={() => onProfile(acc.id)} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", flex: 1, minWidth: 0 }}><Avatar name={acc.name} url={acc.avatar} size={32} /><b style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{acc.handle}</b></span>}
@@ -1097,7 +1097,7 @@ function MakeHer({ onClose, onMade }: { onClose: () => void; onMade: (id: string
     p ? <img src={p.url} alt={alt} style={{ width: 72, height: 72, borderRadius: 12, objectFit: "cover", objectPosition: "top" }} /> : <span style={{ width: 72, height: 72, borderRadius: 12, border: "1px dashed var(--border)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 22, opacity: 0.5 }}>🖼️</span>;
 
   return (
-    <div role="dialog" aria-modal="true" data-testid="pica-make" style={{ position: "fixed", inset: 0, background: "var(--bg)", zIndex: 2700, overflowY: "auto" }}>
+    <div role="dialog" aria-modal="true" data-testid="pica-make" style={{ position: "fixed", inset: 0, bottom: "var(--nav-h)", background: "var(--bg)", zIndex: 2700, overflowY: "auto" }}>
       <div className="row" style={{ padding: "10px 14px", gap: 8, position: "sticky", top: 0, background: "var(--bg)", borderBottom: "1px solid var(--border)" }}>
         <button className="ghost" onClick={onClose} aria-label="Back" style={{ padding: "4px 10px" }}>←</button>
         <b style={{ flex: 1 }}>👩 Make someone</b>
@@ -1247,7 +1247,7 @@ function MyProfile({ name, onClose }: { name: string; onClose: () => void }) {
   };
 
   return (
-    <div role="dialog" aria-modal="true" data-testid="pica-me" style={{ position: "fixed", inset: 0, background: "var(--bg)", zIndex: 2600, overflowY: "auto" }}>
+    <div role="dialog" aria-modal="true" data-testid="pica-me" style={{ position: "fixed", inset: 0, bottom: "var(--nav-h)", background: "var(--bg)", zIndex: 2600, overflowY: "auto" }}>
       <div className="row" style={{ padding: "10px 14px", gap: 8, position: "sticky", top: 0, background: "var(--bg)", borderBottom: "1px solid var(--border)" }}>
         <button className="ghost" onClick={onClose} aria-label="Back" style={{ padding: "4px 10px" }}>←</button>
         <b style={{ flex: 1 }}>{me?.name || name}</b>
