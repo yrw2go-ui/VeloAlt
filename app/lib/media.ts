@@ -129,12 +129,22 @@ async function atlasStart(kind: "image" | "video", model: string, prompt: string
   return id;
 }
 
+/** 📏 Trim to a length without cutting a word in half: back up to the last sentence end, else the last space. */
+export function cut(s: string, n: number): string {
+  if (s.length <= n) return s;
+  const head = s.slice(0, n);
+  const stop = Math.max(head.lastIndexOf(". "), head.lastIndexOf("! "), head.lastIndexOf("? "));
+  if (stop > n * 0.6) return head.slice(0, stop + 1);
+  const sp = head.lastIndexOf(" ");
+  return (sp > n * 0.5 ? head.slice(0, sp) : head).replace(/[\s,;:–-]+$/, "");
+}
+
 /** Starts a photo or video (from the send_media tool) — or, with `offer`, only offers it: nothing is made until they accept. */
 export async function startMedia(userId: string, input: unknown, ctx: { characterId: string | null; who: string; appearance: string; refs: string[]; romantic: boolean; mood?: string; offer?: boolean; other?: { name: string; refs: string[]; appearance: string } | null; peek?: boolean; people?: { name: string; refs: string[]; appearance: string }[]; raw?: boolean; pica?: boolean }): Promise<Media> {
   const a = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
   const kind = a.kind === "video" ? "video" : "image";
   // ✏️ raw (their own peek edits): their words go to Atlas exactly as written — no rewording, no extra instructions, no word filter here (Atlas still checks it).
-  const desc = scrub(String(a.description || "").replace(/\s+/g, " ").trim().slice(0, ctx.raw ? 1500 : 400));
+  const desc = cut(scrub(String(a.description || "").replace(/\s+/g, " ").trim()), ctx.raw ? 1500 : 400);
   if (desc.length < 3) throw new MediaError("Describe what to show in a few words.");
   if (!ctx.raw && (NEVER.test(desc) || (!ctx.romantic && SUGGESTIVE.test(desc)))) throw new MediaError(ctx.romantic
     ? "That can't be sent — it can be flirty and PG-13, but never nudity, lingerie or anything explicit. Tell them so playfully and offer something else."
@@ -183,7 +193,9 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
   const style = ctx.romantic ? "Tasteful and PG-13: flattering and flirty, no nudity, nothing explicit" : "Family-friendly, everyone fully clothed";
   // 🤳 No stray hands or phones: only a mirror selfie shows the phone; otherwise the shot IS the camera.
   const mirror = /\bmirror\b/i.test(desc), selfie = /\bselfie\b/i.test(desc), shooter = o && !withMe ? o.name : ctx.who;
-  const framing = !(withMe || o) ? "" : (mirror
+  // 🔁 Nothing twice: when the description already says where the phone is, don't restate it.
+  const saidPhone = /\b(phone|camera)\b/i.test(desc);
+  const framing = !(withMe || o) ? "" : (saidPhone ? "" : mirror
     ? `A mirror selfie: ${shooter} holds a phone in one hand, seen only in the reflection. `
     : selfie
       ? `An arm's-length selfie from the camera's own point of view: the phone is NOT visible, and at most ${shooter}'s own arm reaches toward the camera. `
@@ -200,7 +212,7 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
   // picture of someone else ("miss me yet?" would make no sense), a peek, or a Picagram post.
   const caption = ctx.peek || ctx.pica || !ctx.offer || (o && !withMe) ? null : captionFor(kind, ctx.romantic && withMe);
   const [row] = await sql()`insert into velo_media (user_id, character_id, kind, prompt, model, caption, description, refs, poster_url, status, peek, subject, pica)
-    values (${userId}, ${ctx.characterId}, ${kind}, ${prompt}, ${model}, ${caption}, ${desc.slice(0, 400)}, ${sendRefs}, ${kind === "video" ? ref : null}, ${ctx.offer ? "offered" : "working"}, ${!!ctx.peek}, ${who}, ${!!ctx.pica}) returning id`;
+    values (${userId}, ${ctx.characterId}, ${kind}, ${prompt}, ${model}, ${caption}, ${cut(desc, 400)}, ${sendRefs}, ${kind === "video" ? ref : null}, ${ctx.offer ? "offered" : "working"}, ${!!ctx.peek}, ${who}, ${!!ctx.pica}) returning id`;
   if (ctx.offer) return { id: row.id, kind, status: "offered", url: null, description: desc, subject: who };
   return { ...(await launch(row.id, kind, model, prompt, sendRefs, desc)), subject: who };
 }
