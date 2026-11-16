@@ -257,6 +257,21 @@ export async function picaComments(userId: string, postId: string): Promise<Pica
   return ((await commentsFor(userId, [postId], name)).get(postId) || []).reverse();
 }
 
+/**
+ * ✏️ Fix a comment — yours, hers, or a stranger's. Every comment on your feed is on your own
+ * Picagram, so they're all yours to word as you like. Blank text leaves it alone (delete the post
+ * if you want it gone).
+ */
+export async function picaCommentEdit(userId: string, id: string, text: string): Promise<PicaComment | null> {
+  const t = scrub(String(text || "").replace(/\s+/g, " ").trim()).slice(0, 600);
+  if (!t) return null;
+  const [row] = await sql()`update pica_comments set text = ${t} where id = ${id} and user_id = ${userId} returning *`;
+  if (!row) return null;
+  const { name } = await userInfo(userId);
+  const known = !!row.author_id || row.mine;
+  return { id: String(row.id), who: row.mine ? name : String(row.name || ""), me: !!row.mine, known, text: String(row.text), created_at: String(row.created_at) };
+}
+
 export async function picaLike(userId: string, postId: string, on: boolean): Promise<boolean> {
   const r = await sql()`update pica_posts set liked = ${on} where id = ${postId} and user_id = ${userId} returning id`;
   return r.length > 0;

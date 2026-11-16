@@ -236,7 +236,14 @@ function PostCard({ p, me, obs, onChange, onProfile, onFollow, onNote, onRemoved
       <div style={{ padding: "2px 14px 0" }}><When at={p.created_at} /></div>
       {p.comments > list.length && !open && <button onClick={showAll} className="muted" data-testid="pica-all" style={{ background: "none", border: "none", padding: "2px 14px", fontSize: 13, cursor: "pointer" }}>View all {p.comments} comments</button>}
       <div style={{ padding: "2px 14px", display: "grid", gap: 3 }}>
-        {list.map(c => <div key={c.id} data-testid="pica-comment" style={{ fontSize: 13.5, overflowWrap: "anywhere" }}><b style={{ color: c.known ? "var(--text)" : "var(--muted)" }}>{c.me ? me : c.who}</b> {noJargon(c.text)}</div>)}
+        {list.map(c => (
+          <EditableComment key={c.id} who={c.me ? me : c.who} known={c.known} text={c.text}
+            onSave={async t => {
+              const r = await api<{ comment: Comment }>("/api/pica", { action: "comment.edit", id: c.id, text: t });
+              const fix = (xs: Comment[] | undefined) => xs?.map(x => (x.id === c.id ? r.comment : x));
+              onChange(x => ({ ...x, preview: fix(x.preview) || x.preview, all: fix(x.all) }));
+            }} />
+        ))}
       </div>
       <form onSubmit={e => { e.preventDefault(); send(); }} className="row" style={{ gap: 8, padding: "6px 14px 0" }}>
         <input value={text} onChange={e => setText(e.target.value)} placeholder="Add a comment…" aria-label="Add a comment" maxLength={500} style={{ padding: "8px 12px", borderRadius: 999, fontSize: 14 }} />
@@ -1037,7 +1044,11 @@ function MakeHer({ onClose, onMade }: { onClose: () => void; onMade: (id: string
  * ✍️ A bio you just click and type in. It saves itself three seconds after you stop typing
  * (and when you tap away), so there's no Save button to remember.
  */
-function EditableBio({ value, onSave, testid, placeholder = "No bio yet", max = 300, size, weight }: { value: string; onSave: (t: string) => Promise<void>; testid: string; placeholder?: string; max?: number; size?: number; weight?: number }) {
+/**
+ * ✍️ Click-to-edit, the same everywhere on Picagram: three seconds after you stop typing it saves
+ * itself, tapping away saves at once, and nothing is sent when the words haven't changed.
+ */
+function useTypeAndSave(value: string, onSave: (t: string) => Promise<void>) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(value);
   const [saved, setSaved] = useState(false);
@@ -1062,6 +1073,32 @@ function EditableBio({ value, onSave, testid, placeholder = "No bio yet", max = 
     save(text);
   };
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  return { editing, setEditing, text, typed, done, saved };
+}
+
+/** 💬 Any comment on your feed — yours, hers, a stranger's: tap the words to put it right. */
+function EditableComment({ who, known, text: value, onSave }: { who: string; known: boolean; text: string; onSave: (t: string) => Promise<void> }) {
+  const { editing, setEditing, text, typed, done, saved } = useTypeAndSave(value, onSave);
+  const name = <b style={{ color: known ? "var(--text)" : "var(--muted)" }}>{who}</b>;
+  if (!editing) return (
+    <div data-testid="pica-comment" style={{ fontSize: 13.5, overflowWrap: "anywhere" }}>
+      {name}{" "}
+      <span onClick={() => setEditing(true)} data-testid="pica-comment-text" title="Click to edit" style={{ cursor: "text" }}>{noJargon(text)}</span>
+      {saved && <span className="muted" data-testid="pica-comment-saved" style={{ marginLeft: 6, fontSize: 11 }}>✓ Saved</span>}
+    </div>
+  );
+  return (
+    <div data-testid="pica-comment" style={{ fontSize: 13.5 }}>
+      {name}
+      <textarea value={text} onChange={e => typed(e.target.value)} onBlur={done} autoFocus maxLength={600} data-testid="pica-comment-box"
+        style={{ width: "100%", minHeight: 34, marginTop: 2, resize: "vertical", padding: "6px 8px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--card)", color: "var(--text)", fontSize: 13 }} />
+      <div className="muted" style={{ fontSize: 11 }}>{saved ? "✓ Saved" : "Saves itself a few seconds after you stop typing"}</div>
+    </div>
+  );
+}
+
+function EditableBio({ value, onSave, testid, placeholder = "No bio yet", max = 300, size, weight }: { value: string; onSave: (t: string) => Promise<void>; testid: string; placeholder?: string; max?: number; size?: number; weight?: number }) {
+  const { editing, setEditing, text, typed, done, saved } = useTypeAndSave(value, onSave);
   if (!editing) return (
     <div onClick={() => setEditing(true)} data-testid={testid} title="Click to edit"
       style={{ fontSize: size ?? (max <= 60 ? 15 : 13), fontWeight: weight ?? (max <= 60 ? 800 : 400), marginTop: size ? 0 : max <= 60 ? 0 : 4, whiteSpace: "pre-wrap", overflowWrap: "anywhere", cursor: "text", minHeight: 18, color: "inherit" }}>
