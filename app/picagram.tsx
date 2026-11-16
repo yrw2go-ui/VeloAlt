@@ -916,6 +916,14 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
  */
 function PicMenu({ busy, onMine, onGallery, onUpload }: { busy: string; onMine: () => void; onGallery: () => void; onUpload: () => void }) {
   const [open, setOpen] = useState(false);
+  // 🪧 It stays up while you tap around — the message box, the thread — and closes only when you
+  // pick one, tap the button again, or press Escape.
+  useEffect(() => {
+    if (!open) return;
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [open]);
   const pick = (go: () => void) => { setOpen(false); go(); };
   const item: React.CSSProperties = { display: "block", width: "100%", textAlign: "left", background: "none", border: "none", color: "var(--text)", padding: "11px 14px", fontSize: 14, cursor: "pointer" };
   return (
@@ -924,7 +932,6 @@ function PicMenu({ busy, onMine, onGallery, onUpload }: { busy: string; onMine: 
         aria-label="Send a picture" data-testid="dm-plus" style={{ padding: "8px 12px", fontSize: 18, lineHeight: 1 }}>{busy || (open ? "✕" : "📷")}</button>
       {open && (
         <>
-          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 2600 }} />
           <div role="menu" data-testid="dm-pic-menu" style={{ position: "absolute", bottom: "calc(100% + 8px)", left: 0, zIndex: 2601, minWidth: 210, background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden", boxShadow: "0 10px 30px rgba(0,0,0,.45)" }}>
             <button type="button" role="menuitem" onClick={() => pick(onMine)} data-testid="dm-my-photo" style={item}>📸 A photo of you</button>
             <button type="button" role="menuitem" onClick={() => pick(onGallery)} data-testid="dm-pick-open" style={{ ...item, borderTop: "1px solid var(--border)" }}>🖼️ From your gallery</button>
