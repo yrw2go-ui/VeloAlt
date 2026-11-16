@@ -7,6 +7,7 @@
 //   "remember" / "memo" — after a call / chat: save a summary, goals and facts to memory
 //   "errand"    — a turn on a call Velo is making FOR the owner to someone else
 //   "errandsum" — a short report to the owner after that call
+import { CLAIMS_MEDIA, MENTIONS_MEDIA } from "./mediaWords";
 import { cleanReply, isMeta } from "./text";
 
 // 💭 She wrote something, but it was all thoughts in brackets: nothing to say out loud.
@@ -103,7 +104,6 @@ export function localNow(rawTz: unknown) {
 const ASKED_FOR_MEDIA = /\b(send|show|share|snap|take|got|get|see|want|wanna|make|need|post|drop)\b[\s\S]{0,40}\b(pics?|pictures?|photos?|selfies?|videos?|vids?|clips?|images?|snaps?|shots?)\b|\b(pics?|pictures?|photos?|selfies?|videos?|vids?)\b[\s\S]{0,30}\?|\b(let me|lemme|can i|could i|i wanna|i want to)\s+see\b|\bshow me\b|\bsend (me )?(one|another|it|that|more)\b|\b(another|one more)( one| pic| photo)?\s*(please|pls|plz)?\s*[!?.]*$|\bwhat (do|does) (you|your \w+) look like\b|\bwhat are you wearing\b/i;
 // "Yes please" to her own "want a pic?" counts as asking.
 const YES = /^\s*(yes|yeah|yep|yup|ya|sure|ok(ay)?|please|pls|plz|of course|absolutely|definitely|do it|go ahead|i'?d love (that|one|to)|send it|why not|try (it |that )?again|retry|resend)\b/i;
-const MENTIONS_MEDIA = /\b(phone|pics?|pictures?|photos?|selfies?|videos?|vids?|clips?|snaps?|show you|send you)\b/i;
 
 /** 📸 A picture they asked for, waiting on them: they see the prompt, then send it, change it or drop it. */
 export type PhotoAsk = { kind: "image" | "video"; description: string; with_me: boolean; with_them: boolean; of_person: string; same_moment: boolean };
@@ -113,8 +113,7 @@ export interface AskResult { reply: string; changed: boolean; drafts: Draft[]; m
 import { REACTIONS as REACTION_LIST } from "./reactions";
 export const REACTIONS: string[] = [...REACTION_LIST];
 const REACT_HINT = `REACTIONS: they can react to your messages with ${REACTIONS.join(" ")} — notes like "(they reacted 🔥 to this)" tell you when they did. You can react to THEIR latest message (or the photo they sent) too, but only now and then — mostly when you really like or love it, or it surprises you: start your reply with [react:❤️] (one of ${REACTIONS.join(" ")}). 😏 is teasing or flirty, 👀 is "oh really", 👌 is nice one, 🤔 is thinking about it, 🫣 is shy or can't-look, 😈 is up to no good, 😅 is awkward, 😴 is sleepy or tired (or something boring), and 🥵 / 🤤 / 💦 only when romance is part of it (PG-13). 🔥 🥵 🤤 💦 😈 on a photo of you mean they really liked it — take the compliment. It shows as a badge on their message; don't mention it. Most replies have no reaction.`;
-// "Sending you a pic", "here's a selfie", "snapping one now 📸" — and a refusal to tell them apart.
-const CLAIMS_MEDIA = /\b(send(ing)?|sent|here'?s|here you go|snapp(ing|ed)|taking|took|coming (your way|right up)|on (its|it's) way)\b[\s\S]{0,50}\b(pics?|pictures?|photos?|selfies?|videos?|vids?|clips?|snaps?|shots?)\b|📸|🤳/i;
+// "Sending you a pic", "here's a selfie", "snapping one now 📸" (CLAIMS_MEDIA, ./mediaWords) — and a refusal to tell them apart.
 const STRONG_CLAIM = /\b(sending|sent|snapping|snapped|taking one|took one|coming (your way|right up))\b|📸|🤳/i;
 const REFUSES_MEDIA = /\b(can'?t|cannot|won'?t|not (going to|gonna)|no (pics?|photos?|selfies?)|maybe later|not right now|limit)\b/i;
 const REACT_TAG = /\[react:\s*([^\]\s]+)\s*\]\s*/gu;

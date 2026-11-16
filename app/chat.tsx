@@ -426,7 +426,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   // 📸 She said a photo/video was coming but it never showed up: a button to make her actually send it.
   const lastReal = [...(msgs || [])].reverse().find(m => !m.draft && !(m.peek && !m.media));
   const pendingPic = !!character && !busy && !!lastReal && lastReal.role === "assistant" && !lastReal.media
-    && /\b(pic|pics|picture|pictures|photo|photos|selfie|selfies|snap|video|vid)\b/i.test(lastReal.content)
+    && /\b(pic|pics|picture|pictures|photo|photos|image|images|selfie|selfies|snap|video|vid)\b/i.test(lastReal.content)
     && /\b(send|sending|sent|here'?s|here you go|coming|on (its|it's) way|incoming|attached|uploading|take one|taking one|let me)\b/i.test(lastReal.content);
   const [picBusy, setPicBusy] = useState(false);
   const sendPic = async () => {

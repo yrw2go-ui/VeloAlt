@@ -102,7 +102,7 @@ async function addDm(userId: string, accountId: string, role: "user" | "assistan
 const transcript = (list: Dm[], her: string, me: string) => list.slice(-30).map(m => `${m.role === "user" ? me : her}: ${m.media ? "(sent a photo) " : ""}${m.content}`).join("\n");
 
 // "sending you one", "here's a selfie", "📸" — and a refusal, to tell them apart.
-const CLAIMS_PHOTO = /\b(send(ing)?|sent|here'?s|here you go|snapp(ing|ed)|taking|took|coming (your way|right up)|on (its|it's) way|round two)\b[\s\S]{0,60}\b(pics?|pictures?|photos?|selfies?|snaps?|shots?|it|one|this)\b|📸|🤳/i;
+const CLAIMS_PHOTO = /\b(send(ing)?|sent|here'?s|here you go|snapp(ing|ed)|taking|took|coming (your way|right up)|on (its|it's) way|round two)\b[\s\S]{0,60}\b(pics?|pictures?|photos?|images?|selfies?|snaps?|shots?|it|one|this)\b|📸|🤳/i;
 const REFUSES_PHOTO = /\b(can'?t|cannot|won'?t|not (going to|gonna)|no (pics?|photos?|selfies?)|maybe later|not right now)\b/i;
 
 /** What photo she meant to send, from the conversation (used when she says one's coming but picks none). */
