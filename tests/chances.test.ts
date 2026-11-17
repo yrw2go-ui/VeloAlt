@@ -20,3 +20,9 @@ ok(hisChances(man, know, false, "Sam") === "", "nothing at all without the grown
 ok(hisChances({ voice_kind: "male", romantic: false }, know, true, "Sam") === "", "nor with 💕 unticked");
 const none = hisChances(man, [{ name: "Chloe", sees_others: false, voice_kind: "female" }], true, "Sam");
 ok(!/Open to it/.test(none) && /Not open to it: Chloe/.test(none), "no one open: only the turn-downs are listed");
+// 💞 Poly on a man's card: he's fine sharing a woman with you.
+const poly = hisChances({ voice_kind: "male", romantic: true, poly_ok: true }, know, true, "Sam");
+ok(/DON'T MIND SHARING/.test(poly) && /you don't compete for her/.test(poly), "poly ticked: he'll share a woman with you");
+ok(!/DON'T SHARE:/.test(poly), "…and isn't also told the opposite");
+const solo = hisChances({ voice_kind: "male", romantic: true }, know, true, "Sam");
+ok(/DON'T SHARE:/.test(solo) && /never an ultimatum/.test(solo), "unticked: he doesn't share, but never nasty about it");
