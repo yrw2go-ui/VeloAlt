@@ -46,7 +46,7 @@ const SUGGESTIONS = ["Plan my day", "Remind me to call Mom tomorrow at 6pm", "I 
 /** A message to drop into one chat (a call recap): cid null = Velo's chat. */
 export type ChatAdd = { msg: ChatMsg; cid: string | null };
 
-export default function Chat({ userId, name, onChanged, added, onAdded, character, adult = false, onAdult, onHistory, onNewCharacter, others = [], onGroup, onSocial, brains = [], startPlan, onPlanStarted }: { startPlan?: { id: string; kind: "video" | "person"; title: string; details: string } | null; onPlanStarted?: () => void; brains?: string[]; onSocial?: (accountId: string) => void; others?: { id: string; name: string }[]; onGroup?: (g: { id: string; title: string; member_ids: string[]; updated_at: string; in_person_place?: string | null }) => void; userId: string; name: string; onChanged: () => void; added: ChatAdd | null; onAdded?: () => void; character?: ChatWith | null; adult?: boolean; onAdult?: () => void; onHistory?: (m: { role: "user" | "assistant"; content: string }[]) => void; onNewCharacter?: (c: { id: string; name: string; portrait_url: string | null }) => void }) {
+export default function Chat({ userId, name, onChanged, added, onAdded, character, adult = false, onAdult, onHistory, onNewCharacter, others = [], onGroup, onSocial, brains = [], startPlan, onPlanStarted }: { startPlan?: { id: string; kind: "video" | "person"; title: string; details: string } | null; onPlanStarted?: () => void; brains?: string[]; onSocial?: (accountId: string) => void; others?: { id: string; name: string; pica_handle?: string | null }[]; onGroup?: (g: { id: string; title: string; member_ids: string[]; updated_at: string; in_person_place?: string | null }) => void; userId: string; name: string; onChanged: () => void; added: ChatAdd | null; onAdded?: () => void; character?: ChatWith | null; adult?: boolean; onAdult?: () => void; onHistory?: (m: { role: "user" | "assistant"; content: string }[]) => void; onNewCharacter?: (c: { id: string; name: string; portrait_url: string | null }) => void }) {
   const cid = character?.id || null;
   const thread = cid ? { characterId: cid } : {};
   const who = character?.name || "Velo";
@@ -458,11 +458,18 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   const [moreOpen, setMoreOpen] = useState(false);
   // ✨ A photo she sent of someone new (not a character): make her a Picagram account from it.
   // (Named: not one of your characters. Unnamed or older photos: the description shows a woman and names none of your characters.)
+  // 🙋 Someone the app already knows who's on Picagram: the button opens her instead of making her.
+  const already = (md?: Media) => {
+    const sub = String(md?.subject || "");
+    const who = sub && sub !== "none" && !sub.startsWith("me") ? others.find(o => o.name.toLowerCase() === sub.toLowerCase()) : null;
+    return who?.pica_handle || null;
+  };
   const socialOk = (md?: Media) => {
     if (md?.status !== "done" || md.kind !== "image") return false;
     const sub = String(md.subject || ""), desc = String(md.description || "");
     if (sub === "me" || sub.startsWith("me+")) return false;
-    if (sub && sub !== "none") return !others.some(o => o.name.toLowerCase() === sub.toLowerCase());
+    // One of your characters: only worth a button when she's already on Picagram — then it opens her.
+    if (sub && sub !== "none") return !others.some(o => o.name.toLowerCase() === sub.toLowerCase()) || !!already(md);
     return /\b(woman|girl|lady|she|her|blonde|brunette|redhead|model|babe)\b/i.test(desc)
       && !others.some(o => new RegExp(`\\b${o.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(desc));
   };
@@ -701,7 +708,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       <div data-testid="chat-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
         {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : (
           <Selectable key={m.media?.id || m.id || i} id={m.id} selecting={selected} onStart={id => setSelected(new Set([id]))} onToggle={toggleSelect}>
-            <Bubble m={m} social={character && onSocial && socialOk(m.media) ? createSocial : undefined} onReactMsg={reactMsg} face={face(28)} onMedia={mediaArrived} onFailed={reload} onReact={react} who={who} onAnswer={x => setMsgs(list => (list || []).map(y => (y.media?.id === x.id ? { ...y, content: mediaNote({ ...y.media!, ...x }), media: { ...y.media!, ...x } } : y)))} />
+            <Bubble m={m} social={character && onSocial && socialOk(m.media) ? createSocial : undefined} openHandle={already(m.media)} onReactMsg={reactMsg} face={face(28)} onMedia={mediaArrived} onFailed={reload} onReact={react} who={who} onAnswer={x => setMsgs(list => (list || []).map(y => (y.media?.id === x.id ? { ...y, content: mediaNote({ ...y.media!, ...x }), media: { ...y.media!, ...x } } : y)))} />
           </Selectable>
         ))}
         {character && msgs && !msgs.length && (
@@ -808,7 +815,7 @@ const When = ({ at, align }: { at?: string; align?: "left" | "right" | "center" 
   return t ? <div data-testid="when" style={{ fontSize: 10, lineHeight: 1.6, opacity: 0.55, color: "var(--text)", padding: "2px 4px 0", textAlign: align || "left", alignSelf: align === "right" ? "flex-end" : align === "center" ? "center" : "flex-start" }}>{t}</div> : null;
 };
 
-function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg, social }: { social?: (md: Media) => void; m: ChatMsg; face: React.ReactNode; who: string; onMedia: (x: Media) => void; onFailed?: () => void; onReact: (id: string, r: string) => void; onAnswer: (x: Media) => void; onReactMsg: (id: string, r: string) => void }) {
+function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg, social, openHandle }: { openHandle?: string | null; social?: (md: Media) => void; m: ChatMsg; face: React.ReactNode; who: string; onMedia: (x: Media) => void; onFailed?: () => void; onReact: (id: string, r: string) => void; onAnswer: (x: Media) => void; onReactMsg: (id: string, r: string) => void }) {
   const mine = m.role === "user";
   const [picking, setPicking] = useState(false);
   // A small badge on the bubble's corner, like a text-message reaction.
@@ -845,7 +852,7 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
       <div style={{ maxWidth: "min(80%, 380px)" }}>
         <MediaView media={m.media} onReady={onMedia} onFailed={onFailed} who={who} onAnswer={x => onAnswer(x)} />
         {m.media.status === "done" && <ReactionBar value={m.media.reaction} onPick={r => onReact(m.media!.id, r)} />}
-        {social && m.media.status === "done" && <SocialButton done={!!m.media.social} onGo={() => social(m.media!)} />}
+        {social && m.media.status === "done" && <SocialButton done={!!m.media.social} openHandle={openHandle} onGo={() => social(m.media!)} />}
         <When at={m.at} align={mine ? "right" : "left"} />
       </div>
     </div>
@@ -1094,8 +1101,13 @@ function GalleryPicker({ onClose, onPick }: { onClose: () => void; onPick: (f: C
   );
 }
 
-function SocialButton({ onGo, done }: { onGo: () => Promise<void> | void; done?: boolean }) {
+function SocialButton({ onGo, done, openHandle }: { onGo: () => Promise<void> | void; done?: boolean; openHandle?: string | null }) {
   const [busy, setBusy] = useState(false);
+  // 🙋 She's already on Picagram: this takes you to her rather than making a second her.
+  if (openHandle) return (
+    <button className="ghost" data-testid="open-social" disabled={busy} onClick={async () => { setBusy(true); await onGo(); setBusy(false); }}
+      style={{ marginTop: 6, padding: "4px 12px", fontSize: 13, borderColor: "#ec4899" }}>{busy ? "✨ Opening…" : `✨ Open @${openHandle}`}</button>
+  );
   // Already made: shown greyed out, can't be tapped again.
   if (done) return <button className="ghost" data-testid="create-social" disabled aria-disabled="true" style={{ marginTop: 6, padding: "4px 12px", fontSize: 13, opacity: 0.5, cursor: "default" }}>✓ Social created</button>;
   return (

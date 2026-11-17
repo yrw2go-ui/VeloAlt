@@ -1038,7 +1038,13 @@ export async function picaFromPhoto(userId: string, mediaId: string): Promise<st
   // An unnamed woman (or an older photo that didn't say who's in it): it has to show a woman, not one of your characters.
   const named = sub && sub !== "none" ? sub : "";
   const chars = (await sql()`select name from chat_characters where owner_id is null or owner_id = ${userId}`).map(r => String(r.name));
-  if (named && chars.some(c => c.toLowerCase() === named.toLowerCase())) throw new PicaLimit(`${named} is already one of your characters.`);
+  // 🙋 One of your characters who's already on Picagram: open her rather than making a second her.
+  if (named) {
+    const [mine] = await sql()`select a.id from pica_accounts a join chat_characters c on c.id = a.character_id
+      where a.user_id = ${userId} and lower(c.name) = lower(${named}) limit 1`;
+    if (mine) return String(mine.id);
+    if (chars.some(c => c.toLowerCase() === named.toLowerCase())) throw new PicaLimit(`${named} is already one of your characters — put her on Picagram from her own chat first.`);
+  }
   if (!named && (!/\b(woman|girl|lady|she|her|blonde|brunette|redhead|model|babe)\b/i.test(desc) || chars.some(c => new RegExp(`\\b${c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(desc))))
     throw new PicaLimit("That photo isn't of someone new.");
   // Already made from this same photo (or she's on Picagram by name): open her.
