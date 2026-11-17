@@ -100,7 +100,7 @@ export const BITS: Bit[] = [
     key: "no_looks",
     label: "Don't describe her twice",
     about: "Given to whoever writes the picture's description (Picagram posts, her DMs), so it doesn't repeat what the reference photos already show.",
-    text: "Never describe her face, hair, eyes, skin, age, height or build in \"photo\" — the picture is made from reference photos of her, so all of that is already there and repeating it only confuses it. Say only what the reference CAN'T know: where she is, what she's wearing, her pose and expression, the angle and the light.",
+    text: "Never describe her face, hair, eyes, skin, age, height or build in \"photo\" — the picture is made from reference photos of her, so all of that is already there and repeating it only confuses it. Say only what the reference CAN'T know: where she is, what she's wearing, her pose and expression, the angle and the light. Never write that she's biting, chewing or nibbling her lip — it comes out deformed every time, so use any other expression.",
   },
 ];
 

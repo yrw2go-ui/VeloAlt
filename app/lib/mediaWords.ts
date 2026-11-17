@@ -14,3 +14,9 @@ export const ASKED_FOR_MEDIA = /\b(send|show|share|snap|take|got|get|see|want|wa
 /** 👍 Her reply is a yes to that: "sure", "here ya go", "take a look", "enjoy the view", "since you
  *  asked so nicely". Only counts right after they asked — on its own it's just friendly talk. */
 export const AGREES_MEDIA = /^\s*(yes|yeah|yep|yup|sure|ok(ay)?|alright|fine|of course|absolutely|definitely|anything for you|say no more|you got it|done|mhm|mmhm)\b|\b(here (ya|you) go|here it is|here'?s one|there (ya|you) go|take a look|have a look|look at this|check (this|it) out|enjoy( the view| this| it)?|hope you (like|enjoy) (it|this)|just for you|only for you|for your eyes only|since you asked( so nicely)?|because you asked( so nicely)?|you asked so nicely|don'?t tell anyone|like what you see)\b|what do you think\?/i;
+
+// 👄 Lip-biting comes out deformed every time, so it never reaches the picture service: it's cut
+// from the description (the rest of the sentence stands) wherever it's written.
+const LIP_BITE = /\s*,?\s*\b(?:(?:gently|softly|slightly|playfully|teasingly|nervously|absently|lightly)\s+)?(?:biting|bites|bite|chewing|chews|nibbling|nibbles|tugging at|tugs at)\s+(?:her|his|their|the)?\s*(?:lower |bottom |upper )?lips?\b(?:\s+(?:\w+ly))?(?:\s+and\b)?|\s*,?\s*\blip[- ]?(?:bite|biting|bitten|nibble|nibbling)\b|\s*,?\s*\b(?:her|his|their|the)?\s*(?:lower |bottom |upper )?lips?\s+(?:caught|held|pinned)\s+(?:between|in)\s+(?:her|his|their)\s+teeth\b/gi;
+export const noLipBite = (s: string) => s.replace(LIP_BITE, "").replace(/\s{2,}/g, " ").replace(/\s+([,.;!?])/g, "$1").replace(/^[\s,]+|[\s,]+$/g, "").trim();
+

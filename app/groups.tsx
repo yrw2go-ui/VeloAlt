@@ -13,6 +13,7 @@ import { stamp } from "./lib/when";
 import { BRAIN_OPTIONS } from "./lib/brainOptions";
 import { SceneSheet, Selectable, type SceneClockChoice } from "./chat";
 import { MediaView, ReactionBar, type Media } from "./media";
+import { MentionPicker, putName } from "./mention";
 
 export type Group = { id: string; title: string; member_ids: string[]; updated_at: string; scene_title?: string | null; scene_details?: string | null; in_person_place?: string | null };
 type Msg = { id: string; speaker_id: string | null; content: string; created_at: string; pending?: boolean; peek?: boolean; media?: Media | null; reaction?: string | null; their_reactions?: Record<string, string>; private_to?: string | null };
@@ -36,6 +37,8 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
   const [peek, setPeek] = useState(false);
   const [msgs, setMsgs] = useState<Msg[] | null>(null);
   const [text, setText] = useState("");
+  // 🗣️ Where the caret is, so "@…" is picked up as you type it.
+  const [caret, setCaret] = useState(0);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const unsaved = useRef(0);
@@ -241,10 +244,14 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
           <button className="btn" onClick={deleteSelected} disabled={!selected.size || deleting} data-testid="select-delete" style={{ background: "var(--bad)" }}>{deleting ? "…" : `🗑 Delete${selected.size > 1 ? ` ${selected.size}` : ""}`}</button>
         </div>
       )}
-      <form onSubmit={e => { e.preventDefault(); send(); }} className="row" style={{ padding: "10px 12px", borderTop: "1px solid var(--border)", ...(selected ? { display: "none" } : {}) }}>
+      <form onSubmit={e => { e.preventDefault(); send(); }} className="row" style={{ position: "relative", padding: "10px 12px", borderTop: "1px solid var(--border)", ...(selected ? { display: "none" } : {}) }}>
+        {/* 🗣️ "@" offers the people you could name here too. */}
+        <MentionPicker testid="group-mention" text={text} caret={caret} onPick={(name, at) => setText(t => putName(t, at, caret, name))} />
         {!group.scene_title && <button type="button" onClick={() => setSceneSheet(true)} disabled={!msgs || busy} aria-label="Start a video chat" data-testid="group-scene-open"
           style={{ borderRadius: 999, width: 36, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 19, border: "none", background: "transparent", color: "var(--muted)" }}>🎥</button>}
-        <textarea rows={1} value={text} onChange={e => setText(e.target.value)} placeholder={msgs ? `Message ${group.title}…` : "Loading…"} aria-label="Message the group" disabled={!msgs}
+        <textarea rows={1} value={text} onChange={e => { setText(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length); }}
+          onSelect={e => setCaret((e.target as HTMLTextAreaElement).selectionStart ?? 0)}
+          placeholder={msgs ? `Message ${group.title}…` : "Loading…"} aria-label="Message the group" disabled={!msgs}
           onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }} style={{ resize: "none", maxHeight: 140, borderRadius: 20 }} />
         <button className="btn" disabled={!text.trim() || busy || !msgs} style={{ borderRadius: 999, padding: "10px 16px" }}>Send</button>
       </form>
