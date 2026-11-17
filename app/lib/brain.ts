@@ -115,9 +115,10 @@ export type PhotoAsk = { kind: "image" | "video"; description: string; with_me: 
 export interface AskResult { reply: string; changed: boolean; drafts: Draft[]; media: Media[]; saved?: boolean; react?: string; ask?: PhotoAsk; by?: "claude" | "alt"; note?: string }
 
 // 😮 Reactions (shown as a little badge on their message, like a text-message tapback).
-import { REACTIONS as REACTION_LIST } from "./reactions";
+import { REACTIONS as REACTION_LIST, reactsThisTime } from "./reactions";
 export const REACTIONS: string[] = [...REACTION_LIST];
-const REACT_HINT = `REACTIONS: they can react to your messages with ${REACTIONS.join(" ")} — notes like "(they reacted 🔥 to this)" tell you when they did. You can react to THEIR latest message (or the photo they sent) too, but only now and then — mostly when you really like or love it, or it surprises you: start your reply with [react:❤️] (one of ${REACTIONS.join(" ")}). 😏 is teasing or flirty, 👀 is "oh really", 👌 is nice one, 🤔 is thinking about it, 🫣 is shy or can't-look, 😈 is up to no good, 😅 is awkward, 😴 is sleepy or tired (or something boring), and 🥵 / 🤤 / 💦 only when romance is part of it (PG-13). 🔥 🥵 🤤 💦 😈 on a photo of you mean they really liked it — take the compliment. It shows as a badge on their message; don't mention it. Most replies have no reaction.`;
+const REACT_HINT = `REACTIONS: they can react to your messages with ${REACTIONS.join(" ")} — notes like "(they reacted 🔥 to this)" tell you when they did. You can react to THEIR latest message (or the photo they sent) too — about one message in seven, more when it's sweet, funny, exciting or a photo, less on a quick "ok": start your reply with [react:❤️] (one of ${REACTIONS.join(" ")}) and then still write your reply as usual. 😏 is teasing or flirty, 👀 is "oh really", 👌 is nice one, 🤔 is thinking about it, 🫣 is shy or can't-look, 😈 is up to no good, 😅 is awkward, 😴 is sleepy or tired (or something boring), and 🥵 / 🤤 / 💦 only when romance is part of it (PG-13). 🔥 🥵 🤤 💦 😈 on a photo of you mean they really liked it — take the compliment. It shows as a badge on their message; don't mention it. Most replies have no reaction.`;
+const REACT_NOW = "THIS TIME: react to their latest message — start your reply with [react:…] using the one that fits it best, then reply in words as usual.";
 // "Sending you a pic", "here's a selfie", "snapping one now 📸" (CLAIMS_MEDIA, ./mediaWords) — and a refusal to tell them apart.
 const STRONG_CLAIM = /\b(sending|sent|snapping|snapped|taking one|took one|coming (your way|right up))\b|📸|🤳/i;
 const REFUSES_MEDIA = /\b(can'?t|cannot|won'?t|not (going to|gonna)|no (pics?|photos?|selfies?)|maybe later|not right now|limit)\b/i;
@@ -266,6 +267,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
         opts.promise ? `WHAT YOU PROMISED: ${opts.promise}` : "",
         ch ? "YOUR HISTORY TOGETHER: lines starting with 🎬 are things you two actually did together, 🎥 are video chats you spent together, and 🧍 mark when you were together in person. All of them are real shared memories — bring them up, tease about them, look back on them." : "",
         mode === "chat" ? REACT_HINT : "",
+        mode === "chat" && !opts.sendPhoto && opts.messages.at(-1)?.role === "user" && reactsThisTime(String(lastSaid), !!opts.messages.at(-1)?.fileId, Math.random()) ? REACT_NOW : "",
         photoMoment && !introKind ? PHOTO_MOMENT : "",
         introKind ? introNote(introKind) : "",
         standNote,
