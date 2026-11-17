@@ -7,7 +7,7 @@ import { listGallery, mediaByIds } from "../../lib/media";
 import { cleanTraits, PRESETS } from "../../lib/traits";
 import { isValidTimeZone, localDate } from "../../lib/localTime";
 import { availableBrains, brainList } from "../../lib/models";
-import { makeCharacter } from "../../lib/makeCharacter";
+import { makeCharacter, usedNames } from "../../lib/makeCharacter";
 import { listLinks, setLink, removeLink, writeStory, linkSuggestions, screenStory } from "../../lib/friends";
 import { checkCard } from "../../lib/cardCheck";
 import { wordsFor } from "../../lib/wordsDb";
@@ -181,7 +181,9 @@ export async function POST(req: NextRequest) {
       // ✨ A whole new character from a few hints — only a draft for the editor (nothing is saved).
       case "generate": {
         if (!allow(`chargen:${me}`, [{ ms: 60_000, max: 6 }, { ms: 86_400_000, max: 100 }])) return bad("That's a lot of new characters — give it a minute.", 429);
-        try { return NextResponse.json({ draft: { local: b.local === true, ...await makeCharacter({ name: String(b.name || ""), vibe: String(b.vibe || ""), job: String(b.job || ""), romantic: b.romantic === true, male: b.male === true, liveIn: b.liveIn === true, local: b.local === true, words: await wordsFor(me), lives: b.local === true ? localNote(await homeSaid(me)) : livesNote(await homeOf(me)) }) } }); }
+        // 🙅 Not another one of the same name: everyone they already have is off the table.
+        const taken = await usedNames(me).catch(() => []);
+        try { return NextResponse.json({ draft: { local: b.local === true, ...await makeCharacter({ name: String(b.name || ""), vibe: String(b.vibe || ""), job: String(b.job || ""), romantic: b.romantic === true, male: b.male === true, liveIn: b.liveIn === true, local: b.local === true, avoidNames: taken, words: await wordsFor(me), lives: b.local === true ? localNote(await homeSaid(me)) : livesNote(await homeOf(me)) }) } }); }
         catch (e) { return bad(e instanceof Error ? e.message : "Couldn't come up with one — try again.", 502); }
       }
       // Make one of her gallery pictures the main headshot.

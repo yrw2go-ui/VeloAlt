@@ -1,16 +1,25 @@
 // ✨ "Make one for me": a whole new character written from a few optional hints (a name, a vibe, a job,
 // romantic or not). It only fills in the editor — nothing is saved until they look it over and tap Save,
 // where the usual safety check runs.
+import { sql } from "./db";
 import { writeText } from "./llm";
 import { availableBrains } from "./models";
 import { cleanTraits, TRAITS } from "./traits";
 import { CHARACTER_VOICES } from "./voices";
 import { scrub } from "./secrets";
-import { vibeNote, rollLesbian, LESBIAN_ASK, AGE_FROM, AGE_TO } from "./vibes";
+import { vibeNote, rollLesbian, LESBIAN_ASK, AGE_FROM, AGE_TO, clearName } from "./vibes";
 import { defaults as wordDefaults, type Words } from "./words";
 
 export type Hints = { name?: string; vibe?: string; job?: string; romantic?: boolean; male?: boolean; avoidNames?: string[]; lives?: string; liveIn?: boolean; local?: boolean; lesbian?: boolean; words?: Words };
 const str = (v: unknown, n: number) => scrub(String(v ?? "").replace(/\s+/g, " ").trim()).slice(0, n);
+
+/** 🙅 Every name already in their world — characters and the people on their Picagram — so a new
+ *  one never comes out as a second Chloe. First names, since that's all a character has. */
+export async function usedNames(userId: string): Promise<string[]> {
+  const rows = await sql()`select name from chat_characters where owner_id is null or owner_id = ${userId}
+    union select name from pica_accounts where user_id = ${userId}`;
+  return [...new Set(rows.map(r => String(r.name || "").trim().split(/\s+/)[0]).filter(Boolean))].slice(0, 60);
+}
 
 export async function makeCharacter(h: Hints) {
   const kind = h.male ? "male" : "female";
@@ -41,6 +50,9 @@ Reply with ONLY a JSON object with these keys:
     j = {}; name = "";
   }
   if (!name || !str(j.personality, 10)) throw new Error("Couldn't come up with one — try again.");
+  // 🙅 It was told which names are taken; if it used one anyway (and you didn't ask for it
+  // yourself), swap in an ordinary one nobody has.
+  if (!str(h.name, 40)) name = clearName(name, h.avoidNames || []);
   const hhmm = (v: unknown) => (typeof v === "string" && /^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(v) ? v : "");
   const start = hhmm(j.work_start), part = j.part_time === true;
   const end = start ? (() => { const [a, b] = start.split(":").map(Number); const t = (a * 60 + b + (part ? 5 : 8) * 60) % 1440; return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`; })() : "";

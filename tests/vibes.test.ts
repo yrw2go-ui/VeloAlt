@@ -1,5 +1,5 @@
 // Run: node --experimental-strip-types tests/vibes.test.ts
-import { VIBES, vibeNote, randomAge, rollLesbian, FIRST_NAMES, LAST_NAMES, LESBIAN_ODDS, LESBIAN_ASK, AGE_FROM, AGE_TO } from "../app/lib/vibes.ts";
+import { clearName, VIBES, vibeNote, randomAge, rollLesbian, FIRST_NAMES, LAST_NAMES, LESBIAN_ODDS, LESBIAN_ASK, AGE_FROM, AGE_TO } from "../app/lib/vibes.ts";
 
 let bad = 0;
 const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m); if (!c) bad++; };
@@ -61,6 +61,14 @@ ok(/nearly the same words/.test(LESBIAN_ASK) && /One or two clauses different, n
 ok(/with men \(the user included\) she's friendly, funny and easy but plainly not interested/.test(LESBIAN_ASK), "…differing in how she is with you and other men");
 ok(/with women she's the one doing the looking/.test(LESBIAN_ASK), "…and with women");
 ok(/her job, her town, her hobbies, her look — is unchanged/.test(LESBIAN_ASK), "nothing else about her changes");
+
+// 🙅 No second Chloe: a name already in their world is swapped for one that isn't.
+const mine = ["Chloe", "Chloe Hart", "Mara", "Ruth"];
+ok(clearName("Nadia", mine) === "Nadia", "a name nobody has comes through as it is");
+ok(clearName("Chloe", mine) !== "Chloe", "a name they already have is swapped out");
+ok(!mine.map(n => n.split(" ")[0]).includes(clearName("Chloe", mine)), "…for one nobody has");
+ok(clearName("Chloe", ["chloe hart"]) !== "Chloe", "it doesn't care about capitals or surnames");
+ok(clearName("Mara", []) === "Mara", "with nobody to clash with, nothing changes");
 
 console.log(bad ? `\n${bad} failed` : "\nall good");
 process.exit(bad ? 1 : 0);

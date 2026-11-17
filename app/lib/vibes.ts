@@ -189,3 +189,14 @@ export const LESBIAN_ASK = `⚢ SHE IS A LESBIAN — into women, not men. Write 
 - "personality": who she is at heart — how she talks, jokes, argues, looks after people. No mention of who she's attracted to.
 - "lesbian_personality": the SAME woman, nearly the same words, changed only where it shows: with men (the user included) she's friendly, funny and easy but plainly not interested that way, and she deflects a come-on lightly rather than coldly; with women she's the one doing the looking and the flirting. One or two clauses different, not a different person.
 Keep both the same length and the same voice. Everything else about her — her job, her town, her hobbies, her look — is unchanged by this.`;
+
+/** A first name nobody in their world has: theirs if it's clear, else an ordinary one that is. */
+export function clearName(name: string, avoid: string[]): string {
+  const taken = new Set(avoid.map(n => String(n || "").trim().split(/\s+/)[0].toLowerCase()).filter(Boolean));
+  if (!taken.has(name.trim().split(/\s+/)[0].toLowerCase())) return name;
+  const free = FIRST_NAMES.filter(n => !taken.has(n.toLowerCase()));
+  const pick = free.length ? free[Math.floor(Math.random() * free.length)] : "";
+  if (pick) console.warn(`makeCharacter: ${name} is already taken — using ${pick}`);
+  return pick || name;
+}
+

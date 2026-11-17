@@ -11,7 +11,8 @@ import { swapIn } from "./redo";
 import { allowsSuggestive, mediaMood, cleanTraits, DEFAULT_TRAITS, TRAITS } from "./traits";
 import { isValidTimeZone, localDate, zonedParts, zonedToUtc } from "./localTime";
 import { randomComments } from "./picaComments";
-import { vibeNote, rollLesbian } from "./vibes";
+import { vibeNote, rollLesbian, FIRST_NAMES, LAST_NAMES } from "./vibes";
+import { usedNames } from "./makeCharacter";
 import { localNote } from "./local";
 import { makeCharacter } from "./makeCharacter";
 import { noteMentions, PLAIN_WORDS } from "./characters";
@@ -458,6 +459,16 @@ function tooClose(handle: string, name: string, taken: { handle: string; name: s
     if (last && tl && last === tl && first[0] === tf[0]) return `${t.name} (same surname, and both ${first[0].toUpperCase()}…)`;
   }
   return "";
+}
+
+/** 🆕 A name nobody here has, for the rare case nothing usable came back. Tries ordinary
+ *  first-name/surname pairs until one is clear of everyone already here. */
+export function freshName(taken: { handle: string; name: string }[], tries = 40): string {
+  for (let i = 0; i < tries; i++) {
+    const n = `${FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)]} ${LAST_NAMES[Math.floor(Math.random() * LAST_NAMES.length)]}`;
+    if (!tooClose("", n, taken)) return n;
+  }
+  return `${FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)]} ${LAST_NAMES[Math.floor(Math.random() * LAST_NAMES.length)]}`;
 }
 
 /** 🏡 One of the six ordinary people, tied to someone real where her brief says so. */
@@ -940,7 +951,7 @@ export async function picaBefriend(userId: string, accountId: string): Promise<s
   const [av] = a.avatar_media_id ? await sql()`select file_id from velo_media where id = ${a.avatar_media_id} and status = 'done'` : [];
   const names = (await sql()`select name from chat_characters where owner_id is null or owner_id = ${userId}`).map(r => String(r.name));
   const first = String(a.name).split(/\s+/)[0];
-  const d0 = await makeCharacter({ words: await wordsFor(userId), name: names.includes(first) ? String(a.name) : first, vibe: `She posts on Picagram as @${a.handle}: "${a.bio}". Looks: ${a.look}. You two just became friends after you followed her on Picagram.`, romantic: u.adult, male: false, avoidNames: [], lives: a.lives ? `WHERE SHE LIVES: ${a.lives} — keep it exactly.` : livesNote(await homeOf(userId)), lesbian: !!a.lesbian });
+  const d0 = await makeCharacter({ words: await wordsFor(userId), name: names.includes(first) ? String(a.name) : first, vibe: `She posts on Picagram as @${a.handle}: "${a.bio}". Looks: ${a.look}. You two just became friends after you followed her on Picagram.`, romantic: u.adult, male: false, avoidNames: await usedNames(userId).catch(() => []), lives: a.lives ? `WHERE SHE LIVES: ${a.lives} — keep it exactly.` : livesNote(await homeOf(userId)), lesbian: !!a.lesbian });
   // 🎭 Her personality and her sliders are yours — whatever you wrote on her Picagram page wins.
   const yours = String(a.personality || "").trim();
   const hadTraits = a.traits && Object.keys(a.traits as object).length > 0;
@@ -1033,11 +1044,26 @@ export async function picaFromPhoto(userId: string, mediaId: string): Promise<st
   // Already made from this same photo (or she's on Picagram by name): open her.
   const [had] = await sql()`select id from pica_accounts where user_id = ${userId} and (avatar_media_id = ${m.id} or (${named} <> '' and lower(name) = lower(${named}))) limit 1`;
   if (had) return String(had.id);
-  const raw = await writeText("", `Make a Picagram (a social photo app like Instagram) profile for this woman, from the photo of her. ${named ? "" : "Give her a first and last name too (fictional, not a celebrity). "}Fictional details are fine. JSON only: {"name":"First Last","handle":"lowercase_handle","bio":"short bio with emojis","look":"${t.pica_look}","followers":12000}`,
-    `${named ? `NAME: ${named}\n` : ""}THE PHOTO: ${desc.slice(0, 400)}${m.sender ? `\nSENT BY: ${m.sender} (who knows her)` : ""}\nNames already used (don't reuse): ${chars.slice(0, 40).join(", ")}`, 600).catch(() => "");
+  // 🙅 Everyone already here — her characters and everyone on her Picagram — so the new woman
+  // isn't a second Chloe Hart.
+  const here = (await sql()`select handle, name from pica_accounts where user_id = ${userId}`).map(r => ({ handle: String(r.handle), name: String(r.name) }));
+  const used = [...here.map(h => h.name), ...chars];
+  const check = [...here, ...chars.map(c => ({ handle: "", name: c }))];
   let a: { name?: string; handle?: string; bio?: string; look?: string; followers?: number } = {};
-  try { a = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); } catch { /* defaults */ }
-  const name = named || scrub(String(a.name || "")).replace(/\s+/g, " ").trim().slice(0, 60) || ["Maya Brooks", "Lena Carter", "Sofia Reyes", "Chloe Hart", "Ava Monroe"][rand(0, 4)];
+  // Two goes at a name nobody here already has; the second one is told what it clashed with.
+  for (let go = 0, clash = ""; go < 2; go++) {
+    const raw = await writeText("", `Make a Picagram (a social photo app like Instagram) profile for this woman, from the photo of her. ${named ? "" : "Give her a first and last name too (fictional, not a celebrity, and not one already used below). "}Fictional details are fine. JSON only: {"name":"First Last","handle":"lowercase_handle","bio":"short bio with emojis","look":"${t.pica_look}","followers":12000}`,
+      `${named ? `NAME: ${named}\n` : ""}THE PHOTO: ${desc.slice(0, 400)}${m.sender ? `\nSENT BY: ${m.sender} (who knows her)` : ""}\nALREADY TAKEN — avoid these names and surnames entirely: ${used.slice(0, 60).join(", ") || "(nobody yet)"}${clash ? `\nYour last try clashed with ${clash} — pick a completely different name.` : ""}`, 600).catch(() => "");
+    try { a = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); } catch { a = {}; }
+    if (named) break;
+    const tryName = scrub(String(a.name || "")).replace(/\s+/g, " ").trim();
+    if (!tryName) break;
+    clash = tooClose(String(a.handle || ""), tryName, check);
+    if (!clash) break;
+    console.warn(`pica: ${tryName} is too close to ${clash} — trying again`);
+    a.name = ""; a.handle = "";
+  }
+  const name = named || scrub(String(a.name || "")).replace(/\s+/g, " ").trim().slice(0, 60) || freshName(check);
   // Her handle keeps her name's capitals (@JulieWelsh) — it's her name, not a label.
   const taken = new Set((await sql()`select handle from pica_accounts where user_id = ${userId}`).map(r => String(r.handle).toLowerCase()));
   let handle = String(a.handle || name).replace(/[^A-Za-z0-9._]/g, "").slice(0, 24) || "newfriend";
