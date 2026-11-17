@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { data } from "./lib/api";
 import { confirmAsk } from "./lib/dialog";
-import { Viewer, VideoTile } from "./media";
+import { Viewer, VideoTile, setKeptEverywhere } from "./media";
 import { RedoSheet } from "./redo";
 
 type Item = { id: string; kind: "image" | "video"; kept: boolean; created_at: string; url: string; thumb: string | null };
@@ -33,6 +33,7 @@ export default function Gallery({ characterId, name, onClose }: { characterId: s
     const kept = !it.kept;
     setItems(list => (list || []).map(x => (x.id === it.id ? { ...x, kept } : x)));
     setOpen(o => (o && o.id === it.id ? { ...o, kept } : o));
+    setKeptEverywhere(it.id, kept); // ⭐ the ⭐ button in chat shows the same answer
     await data("gallery.keep", { id: it.id, kept }).catch(() => {});
   };
   const remove = async (it: Item) => {

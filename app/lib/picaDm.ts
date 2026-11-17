@@ -63,10 +63,10 @@ export async function dmBrain(userId: string, accountId: string, brain: string):
 
 const rowToDm = (r: Record<string, unknown>): Dm => ({
   id: String(r.id), role: r.role as "user" | "assistant", content: String(r.content || ""), created_at: String(r.at),
-  media: r.media_id ? ({ id: String(r.media_id), kind: r.m_kind, status: r.m_status, url: r.m_status === "done" ? r.m_url : null, thumb: r.m_thumb || null } as Media) : null,
+  media: r.media_id ? ({ id: String(r.media_id), kind: r.m_kind, status: r.m_status, url: r.m_status === "done" ? r.m_url : null, thumb: r.m_thumb || null, kept: !!r.m_kept } as Media) : null,
 });
 async function messages(userId: string, accountId: string, limit = 60): Promise<Dm[]> {
-  const rows = await sql()`select d.id, d.role, d.content, d.created_at::text as at, d.media_id, m.kind as m_kind, m.status as m_status, f.url as m_url, t.url as m_thumb
+  const rows = await sql()`select d.id, d.role, d.content, d.created_at::text as at, d.media_id, m.kind as m_kind, m.status as m_status, m.kept as m_kept, f.url as m_url, t.url as m_thumb
     from pica_dms d left join velo_media m on m.id = d.media_id left join velo_files f on f.id = m.file_id left join velo_files t on t.id = m.thumb_file_id
     where d.user_id = ${userId} and d.account_id = ${accountId} order by d.created_at desc limit ${limit}`;
   return rows.reverse().map(rowToDm);
@@ -247,10 +247,10 @@ export async function dmMyPhotoDraft(userId: string, accountId: string, about: s
 export async function dmSendMine(userId: string, accountId: string, mediaId: string): Promise<{ added: Dm[]; note?: string }> {
   const a = await account(userId, accountId);
   const u = await userInfo(userId);
-  const [m] = await sql()`select m.id, m.kind, m.status, m.description, f.url, t.url as thumb from velo_media m join velo_files f on f.id = m.file_id
+  const [m] = await sql()`select m.id, m.kind, m.status, m.description, m.kept, f.url, t.url as thumb from velo_media m join velo_files f on f.id = m.file_id
     left join velo_files t on t.id = m.thumb_file_id where m.id = ${mediaId} and m.user_id = ${userId} and m.kind = 'image' and m.status = 'done'`;
   if (!m) throw new DmError("That picture wasn't found.");
-  const media: Media = { id: String(m.id), kind: "image", status: "done", url: String(m.url), thumb: m.thumb ? String(m.thumb) : null, description: m.description ? String(m.description) : null };
+  const media: Media = { id: String(m.id), kind: "image", status: "done", url: String(m.url), thumb: m.thumb ? String(m.thumb) : null, description: m.description ? String(m.description) : null, kept: !!m.kept };
   const mine = { ...(await addDm(userId, accountId, "user", "", media.id)), media };
   const history = await messages(userId, accountId, 40);
   const raw = await write(brainOf(a, u.chatModel), `You are ${a.name} (@${a.handle}) on Picagram. ${u.name} just sent you a photo in your DMs. React in your own voice — short (1–2 sentences), warm${u.adult ? ", flirty if it fits (PG-13)" : ""}. Never say you're an AI. ${PLAIN_WORDS} Reply with only your message.`,

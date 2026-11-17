@@ -197,12 +197,22 @@ function Watch({ m, onReady, onFail }: { m: Media; onReady: (m: Media) => void; 
   return null;
 }
 
+// ⭐ What's saved, remembered for this session: the same picture opened again (or shown somewhere
+// else) reads the same answer, instead of every button starting from whatever it was first handed.
+export const KEPT = new Map<string, boolean>();
+const keptWatchers = new Set<() => void>();
+export const setKeptEverywhere = (id: string, v: boolean) => { KEPT.set(id, v); keptWatchers.forEach(f => f()); };
+
 /** ⭐ Save to their gallery favorites (everything is in the gallery already; Saved ones are kept and easy to find). */
 export function SaveButton({ m }: { m: Media }) {
-  const [kept, setKept] = useState(!!m.kept);
+  const [, bump] = useState(0);
+  useEffect(() => { const f = () => bump(x => x + 1); keptWatchers.add(f); return () => { keptWatchers.delete(f); }; }, []);
+  // What the server last told us, unless this session has since changed it.
+  useEffect(() => { if (!KEPT.has(m.id) && m.kept !== undefined) KEPT.set(m.id, !!m.kept); }, [m.id, m.kept]);
+  const kept = KEPT.get(m.id) ?? !!m.kept;
   const toggle = async () => {
-    const next = !kept; setKept(next);
-    try { await data("gallery.keep", { id: m.id, kept: next }); } catch { setKept(!next); }
+    const next = !kept; setKeptEverywhere(m.id, next);
+    try { await data("gallery.keep", { id: m.id, kept: next }); } catch { setKeptEverywhere(m.id, !next); }
   };
   return (
     <button type="button" onClick={e => { e.stopPropagation(); toggle(); }} data-testid="media-save" aria-pressed={kept}
