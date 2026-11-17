@@ -288,6 +288,31 @@ export const SECTIONS: Section[] = [
     ],
   },
   {
+    key: "asking_over",
+    title: "📍 Asking to see you",
+    about: "Now and then someone local texts first to suggest seeing each other — only once you've built something with them, and at most one a day whoever it is. These are the briefs she writes her text from.",
+    slots: [
+      {
+        key: "ask_mine",
+        label: "Come round to mine",
+        about: "She has a free evening and wants you at hers.",
+        text: "You've got a free evening and you'd like {them} to come round to yours. Ask them, lightly — no pressure, no big occasion, the way you'd text a friend who lives nearby.",
+      },
+      {
+        key: "ask_yours",
+        label: "Can I come to yours",
+        about: "She offers to come to you instead.",
+        text: "You'd like to see {them} this evening and you're happy to go to them. Ask if they're about and whether you can stop by — casual, easy to say no to.",
+      },
+      {
+        key: "ask_out",
+        label: "Meet somewhere",
+        about: "Out somewhere instead — pick a place that suits her.",
+        text: "You want to get out of the house and see {them} somewhere — coffee, a walk, food, a drink, something you're actually into. Suggest one real-sounding place or thing near you, not a list.",
+      },
+    ],
+  },
+  {
     key: "arriving",
     title: "🚗 Turning up when you're not marked home",
     about: "You two agreed she'd come over, the time came, and your 🏠 Home toggle is off. Rather than wait in silence she says something — on her way, then here and wondering where you are.",

@@ -67,7 +67,7 @@ async function invited(userId: string, characterId: string): Promise<boolean> {
 }
 
 /** Close enough to just turn up: someone you're genuinely in each other's lives with. */
-async function closeEnough(userId: string, c: Character): Promise<boolean> {
+export async function closeEnough(userId: string, c: Character): Promise<boolean> {
   const happy = await happyFor(userId, c).catch(() => 60);
   const trust = await trustFor(userId, c).catch(() => null);
   const love = await loveFor(userId, c, !!c.romantic).catch(() => null);
@@ -75,7 +75,7 @@ async function closeEnough(userId: string, c: Character): Promise<boolean> {
 }
 
 /** A decent hour where she is (she's up until about 1am), and she isn't at work, in class, away or poorly. */
-async function free(userId: string, c: Character): Promise<boolean> {
+export async function free(userId: string, c: Character): Promise<boolean> {
   const tz = isValidTimeZone(c.time_zone) ? c.time_zone : "America/Chicago";
   const { hour } = zonedParts(Date.now(), tz);
   if (hour >= 1 && hour < 9) return false; // between 1am and 9am nobody's knocking

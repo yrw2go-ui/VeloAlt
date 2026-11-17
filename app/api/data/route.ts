@@ -26,6 +26,7 @@ import { availableModels, availableBrains, CHAT_MODELS, MODEL_INFO, type ChatMod
 import { PERSONALITIES } from "../../lib/persona";
 import { deleteFile, ownFile } from "../../lib/files";
 import { roomForMore } from "../../lib/together";
+import { maybeInvite } from "../../lib/meetups";
 import { getCharacterFor, trustFor, happyFor, loveFor, activeScene, saveFeelings, referenceUrls, pictureOf } from "../../lib/characters";
 import { US_STATES } from "../../lib/states";
 import { mediaMood, allowsSuggestive } from "../../lib/traits";
@@ -72,6 +73,12 @@ export async function POST(req: NextRequest) {
         await db`update users set talk_words = ${JSON.stringify(talkKeep(b.words))}::jsonb, updated_at = now() where id = ${me}`;
         const [after] = await db`select talk_words from users where id = ${me}`;
         return NextResponse.json({ sections: talkSections(talkMerge(after?.talk_words)) });
+      }
+      // 📍 Admin: make someone local ask you over right now, instead of waiting for the round.
+      case "invite.now": {
+        const [u] = await db`select is_admin from users where id = ${me}`;
+        if (!u?.is_admin) return bad("That's for admins.");
+        return NextResponse.json({ invite: await maybeInvite(me, true) });
       }
       // ⏰ A plan whose time has come: the pop-up that starts it.
       case "plan.now": {
