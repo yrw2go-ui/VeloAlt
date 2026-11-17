@@ -132,6 +132,9 @@ export async function POST(req: NextRequest) {
         }
         // 🏠 Just moved in: she's home to start with. Moved out: she isn't in the house any more.
         if (liveIn !== !!prev?.live_in) await setHome(me, String(row.id), liveIn).catch(e => console.error("characters: live-in", e instanceof Error ? e.message : e));
+        // 📍 Moved: her Picagram profile says where she lives now too.
+        if (livesIn !== (prev?.lives_in || "")) await sql()`update pica_accounts set lives = ${livesIn || null} where user_id = ${me} and character_id = ${row.id}`
+          .catch(e => console.error("characters: pica lives", e instanceof Error ? e.message : e));
         // ✍️ Renamed: her Picagram account and everyone's memories of her follow the new name.
         if (renamedFrom) await picaRenamed(me, id, renamedFrom, f.name).catch(e => console.error("characters: rename", e instanceof Error ? e.message : e));
         return NextResponse.json({ character: await getCharacter(String(row.id)) });
