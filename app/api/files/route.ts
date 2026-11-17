@@ -39,7 +39,8 @@ export async function POST(req: NextRequest) {
     if (file.size > MAX_BYTES) return NextResponse.json({ error: "That file is over 4 MB." }, { status: 400 });
     if (file.size === 0) return NextResponse.json({ error: "That file is empty." }, { status: 400 });
     const [{ n }] = await sql()`select count(*)::int as n from velo_files where user_id = ${c.userId}`;
-    if (n >= MAX_FILES) return NextResponse.json({ error: `You have ${MAX_FILES} files saved — delete some on the Memory tab first.` }, { status: 400 });
+    // 🗂️ Everything saved counts: uploads, the photos your characters sent and their thumbnails.
+    if (n >= MAX_FILES) return NextResponse.json({ error: `That's ${MAX_FILES} things saved — uploads, photos and their thumbnails all count. Delete some in 🖼️ Gallery or on the Memory tab first.` }, { status: 400 });
 
     // 👩 A picture for a Picagram account they're making: hers to post from.
     if (purpose === "pica") {

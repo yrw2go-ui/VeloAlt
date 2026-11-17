@@ -10,7 +10,7 @@ export const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"
 export const DOC_TYPES = ["application/pdf", "text/plain"];
 /** Uploads pass through the server, which Vercel caps at 4.5 MB per request. */
 export const MAX_BYTES = 4 * 1024 * 1024;
-export const MAX_FILES = 500;
+export const MAX_FILES = 2500;
 export const blobReady = () => !!process.env.BLOB_READ_WRITE_TOKEN;
 
 export type VeloFile = { id: string; url: string; name: string; content_type: string; size: number; kind: string; created_at?: string };
