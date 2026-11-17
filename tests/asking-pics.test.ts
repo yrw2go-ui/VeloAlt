@@ -39,3 +39,10 @@ for (const t of ["can you resend it?", "resend pic", "resend", "send it again", 
   ok(ASKED_FOR_MEDIA.test(t), `"${t}" is asking for it again`);
 for (const t of ["the parcel didn't come", "I didn't get much sleep", "send my love to your mum"])
   ok(!ASKED_FOR_MEDIA.test(t), `"${t}" isn't`);
+
+// 👀 Handing a picture over, in the words she actually uses — these stand on their own.
+for (const t of ["here's the viewer", "here's the view", "here is the view 🙂", "enjoy the view 😏",
+  "enjoy the viewer", "hope you like it", "hope u like this", "hope you love it", "hope you enjoy it"])
+  ok(CLAIMS_MEDIA.test(t), `"${t}" sets the picture going on its own`);
+for (const t of ["hope you had a good day", "enjoy your dinner", "hope you like the restaurant I picked", "enjoy the rest of your evening"])
+  ok(!CLAIMS_MEDIA.test(t), `"${t}" doesn't`);
