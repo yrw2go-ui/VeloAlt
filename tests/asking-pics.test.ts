@@ -31,3 +31,11 @@ for (const t of ["hope it came through!", "hope that lands ok", "hope it shows u
 for (const t of ["hope you had a good day", "I'll send you the address later", "did you come through town?",
   "hope it's sunny tomorrow", "should be there by eight"])
   ok(!CLAIMS_MEDIA.test(t), `"${t}" doesn't`);
+
+// 🔁 It never arrived: asking again is still asking (she already agreed the first time).
+for (const t of ["can you resend it?", "resend pic", "resend", "send it again", "try again",
+  "it didn't come through", "that never showed up", "nothing came through", "I didn't get it",
+  "it didn't load", "it never arrived"])
+  ok(ASKED_FOR_MEDIA.test(t), `"${t}" is asking for it again`);
+for (const t of ["the parcel didn't come", "I didn't get much sleep", "send my love to your mum"])
+  ok(!ASKED_FOR_MEDIA.test(t), `"${t}" isn't`);
