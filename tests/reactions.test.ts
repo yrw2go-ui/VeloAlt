@@ -1,5 +1,5 @@
 // Run: node --experimental-strip-types tests/reactions.test.ts
-import { REACTIONS, HOT, isHot, isReaction, reactChance, reactsThisTime } from "../app/lib/reactions.ts";
+import { SIGN_OFF, REACTIONS, HOT, isHot, isReaction, reactChance, reactsThisTime } from "../app/lib/reactions.ts";
 
 let bad = 0;
 const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m); if (!c) bad++; };
@@ -10,7 +10,11 @@ for (const r of ["👀", "👌", "🤔", "🫣", "💦", "😈"]) ok((REACTIONS 
 for (const r of ["❤️", "🔥", "🙌", "😍", "👍", "😮", "😂", "🥵", "🤤", "😏", "😅", "😴"]) if (!(REACTIONS as readonly string[]).includes(r)) { ok(false, `${r} went missing`); break; }
 ok(true, "every reaction that was there before still is");
 ok(new Set(REACTIONS).size === REACTIONS.length, "no duplicates in the bar");
-ok(REACTIONS.length === 18, `eighteen to choose from (${REACTIONS.length})`);
+ok(REACTIONS.length === 20, `twenty to choose from (${REACTIONS.length})`);
+// 👋 The ones she signs off with, hearts most of all.
+ok(SIGN_OFF.every(r => (REACTIONS as readonly string[]).includes(r)), "every sign-off reaction is one you can give too");
+ok(SIGN_OFF.filter(r => r === "❤️").length / SIGN_OFF.length > 0.5, "a heart is the usual one");
+ok(["😍", "☺️", "😘"].every(r => (SIGN_OFF as readonly string[]).includes(r)), "…with heart eyes, a blush and a kiss as the others");
 
 // 🔥 The ones she always answers.
 ok(HOT.length === 5 && ["🔥", "🥵", "🤤", "💦", "😈"].every(r => isHot(r)), "🔥 🥵 🤤 💦 😈 are the ones that say they really liked it");

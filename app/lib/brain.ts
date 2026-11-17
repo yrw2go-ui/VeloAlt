@@ -117,7 +117,7 @@ export interface AskResult { reply: string; changed: boolean; drafts: Draft[]; m
 // 😮 Reactions (shown as a little badge on their message, like a text-message tapback).
 import { REACTIONS as REACTION_LIST, reactsThisTime } from "./reactions";
 export const REACTIONS: string[] = [...REACTION_LIST];
-const REACT_HINT = `REACTIONS: they can react to your messages with ${REACTIONS.join(" ")} — notes like "(they reacted 🔥 to this)" tell you when they did. You can react to THEIR latest message (or the photo they sent) too — about one message in seven, more when it's sweet, funny, exciting or a photo, less on a quick "ok": start your reply with [react:❤️] (one of ${REACTIONS.join(" ")}) and then still write your reply as usual. 😏 is teasing or flirty, 👀 is "oh really", 👌 is nice one, 🤔 is thinking about it, 🫣 is shy or can't-look, 😈 is up to no good, 😅 is awkward, 😴 is sleepy or tired (or something boring), and 🥵 / 🤤 / 💦 only when romance is part of it (PG-13). 🔥 🥵 🤤 💦 😈 on a photo of you mean they really liked it — take the compliment. It shows as a badge on their message; don't mention it. Most replies have no reaction.`;
+const REACT_HINT = `REACTIONS: they can react to your messages with ${REACTIONS.join(" ")} — notes like "(they reacted 🔥 to this)" tell you when they did. You can react to THEIR latest message (or the photo they sent) too — about one message in seven, more when it's sweet, funny, exciting or a photo, less on a quick "ok": start your reply with [react:❤️] (one of ${REACTIONS.join(" ")}) and then still write your reply as usual. 😏 is teasing or flirty, 👀 is "oh really", 👌 is nice one, 🤔 is thinking about it, 🫣 is shy or can't-look, 😈 is up to no good, 😅 is awkward, 😴 is sleepy or tired (or something boring), ☺️ is warm or a bit shy, 😘 is a kiss goodnight, and 🥵 / 🤤 / 💦 only when romance is part of it (PG-13). 🔥 🥵 🤤 💦 😈 on a photo of you mean they really liked it — take the compliment. It shows as a badge on their message; don't mention it. A reaction CAN be your whole answer: send just [react:❤️] and nothing else, and that's what they get. Most replies have no reaction.`;
 const REACT_NOW = "THIS TIME: react to their latest message — start your reply with [react:…] using the one that fits it best, then reply in words as usual.";
 // "Sending you a pic", "here's a selfie", "snapping one now 📸" (CLAIMS_MEDIA, ./mediaWords) — and a refusal to tell them apart.
 const STRONG_CLAIM = /\b(sending|sent|snapping|snapped|taking one|took one|coming (your way|right up))\b|📸|🤳/i;
@@ -268,6 +268,8 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
         ch ? "YOUR HISTORY TOGETHER: lines starting with 🎬 are things you two actually did together, 🎥 are video chats you spent together, and 🧍 mark when you were together in person. All of them are real shared memories — bring them up, tease about them, look back on them." : "",
         mode === "chat" ? REACT_HINT : "",
         mode === "chat" && !opts.sendPhoto && opts.messages.at(-1)?.role === "user" && reactsThisTime(String(lastSaid), !!opts.messages.at(-1)?.fileId, Math.random()) ? REACT_NOW : "",
+        // 👋 Winding down: a heart on their last message can be the whole answer.
+        mode === "chat" ? (talkWords(u).sign_off || "") : "",
         photoMoment && !introKind ? PHOTO_MOMENT : "",
         introKind ? introNote(introKind) : "",
         standNote,
@@ -343,6 +345,10 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
     ...(search ? [{ type: "web_search_20260209" as const, name: "web_search" as const, max_uses: 5, user_location: { type: "approximate" as const, timezone: today.tz } }] : []),
   ];
   let reply = "";
+  // 😮 Her reaction to their last message. Taken off the front of the reply the moment it arrives,
+  // because a reaction on its own IS an answer — otherwise an empty-looking reply gets asked again.
+  let react: string | undefined;
+  const takeReact = (t: string) => t.replace(REACT_TAG, (_, e: string) => { if (!react && REACTIONS.includes(e)) react = e; return ""; }).trim();
   // 💭 True once a brain has answered with nothing but its own thoughts in brackets.
   let thoughtsOnly = false;
   let changed = false;
@@ -488,6 +494,8 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
         }
         if (round === 5) reply = "";
       }
+      reply = takeReact(reply);
+      if (react && !reply) { answered = true; break; } // 👋 Just a heart: that's the whole answer.
       // 🙈 Narrating the app ("…the system is waiting for their reply") isn't an answer: try the next brain.
       if (isMeta(reply)) { if (nothingButThoughts(reply)) thoughtsOnly = true; console.warn(`velo: ${brainNow.model} answered with a stage direction`); reply = ""; }
       if (!reply) answered = false;
@@ -513,7 +521,8 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
     });
     if (res.stop_reason === "refusal") { reply = errand ? "I'm sorry, I can't help with that. Thanks for your time, goodbye. [[END]]" : "I'd rather not go there — but I'm here for anything else. What's on your mind?"; break; }
     const texts = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text");
-    reply = texts.map(b => b.text).join("").trim();
+    reply = takeReact(texts.map(b => b.text).join("").trim());
+    if (react && !reply && res.stop_reason !== "tool_use") break; // 👋 Just a heart: that's the whole answer.
     if (isMeta(reply) && res.stop_reason !== "tool_use") { if (nothingButThoughts(reply)) thoughtsOnly = true; console.warn("velo: stage-direction reply, asking again"); reply = ""; continue; }
     for (const t of texts) for (const c of t.citations || []) if (c.type === "web_search_result_location" && /^https:\/\//.test(c.url)) sources.set(c.url, c.title || new URL(c.url).hostname);
     // A long web search can pause; send the turn back as is and the server picks it up.
@@ -586,8 +595,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
   // 📸 A photo went out or was offered (asked for or her own idea): the count to her next one starts over.
   if (ch && media.some(m => m.status !== "failed")) await resetPics(caller.userId, ch).catch(() => {});
   // Their reaction tag (chat only) becomes a badge on the person's message; it's never shown or spoken.
-  let react: string | undefined;
-  reply = reply.replace(REACT_TAG, (_, e: string) => { if (!react && REACTIONS.includes(e)) react = e; return ""; });
+  reply = takeReact(reply);
   // Sometimes she writes the note out — "(they reacted ❤️ to this)" — instead of the tag.
   // That's the same thing: it becomes the badge on their message, never a message of its own.
   reply = reply.replace(NOTE_ECHO, (m: string, e: string) => { if (REACTIONS.includes(e)) { if (!react) react = e; return ""; } return m; });
