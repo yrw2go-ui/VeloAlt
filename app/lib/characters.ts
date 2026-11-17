@@ -281,14 +281,16 @@ export async function checkPortrait(adminId: string, c: Character): Promise<"wor
 /** Deletes a character, everyone's chats and memories with it, and its portrait. */
 export async function deleteCharacter(id: string): Promise<boolean> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return false;
-  // The photos/videos it sent to anyone go too.
-  const sent = await sql()`delete from velo_files where id in (select file_id from velo_media where character_id = ${id} and file_id is not null) returning url`;
-  for (const f of sent) { try { await del(String(f.url)); } catch { /* already gone */ } }
+  // The photos/videos it sent to anyone go too — and their thumbnails, which are files of their own.
+  const sent = await sql()`delete from velo_files where id in (
+      select file_id from velo_media where character_id = ${id} and file_id is not null
+      union select thumb_file_id from velo_media where character_id = ${id} and thumb_file_id is not null) returning url, thumb_url`;
+  for (const f of sent) { try { await del([String(f.url), ...(f.thumb_url ? [String(f.thumb_url)] : [])]); } catch { /* already gone */ } }
   const [row] = await sql()`delete from chat_characters where id = ${id} returning portrait_file_id`;
   if (!row) return false;
   if (row.portrait_file_id) {
-    const [f] = await sql()`delete from velo_files where id = ${row.portrait_file_id} returning url`;
-    if (f) { try { await del(String(f.url)); } catch { /* already gone */ } }
+    const [f] = await sql()`delete from velo_files where id = ${row.portrait_file_id} returning url, thumb_url`;
+    if (f) { try { await del([String(f.url), ...(f.thumb_url ? [String(f.thumb_url)] : [])]); } catch { /* already gone */ } }
   }
   return true;
 }

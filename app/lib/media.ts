@@ -435,8 +435,8 @@ export async function deleteMedia(userId: string, id: string): Promise<boolean> 
   if (m.character_id) await sql()`update chat_characters set reference_ids = array_remove(reference_ids, ${id}::uuid),
     portrait_file_id = case when portrait_file_id = ${m.file_id} then null else portrait_file_id end where id = ${m.character_id}`;
   for (const fid of [m.file_id, m.thumb_file_id].filter(Boolean)) {
-    const [f] = await sql()`delete from velo_files where id = ${fid} and user_id = ${userId} returning url`;
-    if (f) { try { await del(String(f.url)); } catch { /* already gone */ } }
+    const [f] = await sql()`delete from velo_files where id = ${fid} and user_id = ${userId} returning url, thumb_url`;
+    if (f) { try { await del([String(f.url), ...(f.thumb_url ? [String(f.thumb_url)] : [])]); } catch { /* already gone */ } }
   }
   return true;
 }

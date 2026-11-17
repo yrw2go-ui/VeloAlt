@@ -23,9 +23,15 @@ export async function ownFile(userId: string, id: string): Promise<VeloFile | nu
 
 /** Deletes a file's blob and row (the message keeps its text; its attachment goes). */
 export async function deleteFile(userId: string, id: string): Promise<boolean> {
-  const [f] = await sql()`delete from velo_files where id = ${id} and user_id = ${userId} returning url, thumb_url`;
-  if (!f) return false;
-  try { await del([String(f.url), ...(f.thumb_url ? [String(f.thumb_url)] : [])]); } catch (e) { console.error("files: blob delete", e instanceof Error ? e.message : e); }
+  // 🖼️ A photo and its little thumbnail are two files: deleting either takes both, and the
+  // photo they belong to, so nothing is left behind.
+  const [m] = await sql()`delete from velo_media where user_id = ${userId} and (file_id = ${id} or thumb_file_id = ${id}) returning file_id, thumb_file_id, character_id`;
+  if (m?.character_id) await sql()`update chat_characters set portrait_file_id = case when portrait_file_id in (${m.file_id}, ${m.thumb_file_id}) then null else portrait_file_id end where id = ${m.character_id}`;
+  const ids = [...new Set([id, ...(m ? [m.file_id, m.thumb_file_id] : [])].filter(Boolean).map(String))];
+  const gone = await sql()`delete from velo_files where id = any(${ids}::uuid[]) and user_id = ${userId} returning url, thumb_url`;
+  if (!gone.length) return false;
+  const urls = gone.flatMap(f => [String(f.url), ...(f.thumb_url ? [String(f.thumb_url)] : [])]);
+  try { await del(urls); } catch (e) { console.error("files: blob delete", e instanceof Error ? e.message : e); }
   return true;
 }
 
