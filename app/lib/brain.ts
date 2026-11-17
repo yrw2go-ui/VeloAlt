@@ -7,7 +7,7 @@
 //   "remember" / "memo" — after a call / chat: save a summary, goals and facts to memory
 //   "errand"    — a turn on a call Velo is making FOR the owner to someone else
 //   "errandsum" — a short report to the owner after that call
-import { CLAIMS_MEDIA, MENTIONS_MEDIA } from "./mediaWords";
+import { CLAIMS_MEDIA, MENTIONS_MEDIA, ASKED_FOR_MEDIA, AGREES_MEDIA } from "./mediaWords";
 import { cleanReply, isMeta, writtenCall } from "./text";
 
 // 💭 She wrote something, but it was all thoughts in brackets: nothing to say out loud.
@@ -106,7 +106,6 @@ export function localNow(rawTz: unknown) {
 }
 
 // "send me a pic", "can I see a selfie?", "show me a video of…", "got any photos?"
-const ASKED_FOR_MEDIA = /\b(send|show|share|snap|take|got|get|see|want|wanna|make|need|post|drop)\b[\s\S]{0,40}\b(pics?|pictures?|photos?|selfies?|videos?|vids?|clips?|images?|snaps?|shots?)\b|\b(pics?|pictures?|photos?|selfies?|videos?|vids?)\b[\s\S]{0,30}\?|\b(let me|lemme|can i|could i|i wanna|i want to)\s+see\b|\bshow me\b|\bsend (me )?(one|another|it|that|more)\b|\b(another|one more)( one| pic| photo)?\s*(please|pls|plz)?\s*[!?.]*$|\bwhat (do|does) (you|your \w+) look like\b|\bwhat are you wearing\b/i;
 // "Yes please" to her own "want a pic?" counts as asking.
 const YES = /^\s*(yes|yeah|yep|yup|ya|sure|ok(ay)?|please|pls|plz|of course|absolutely|definitely|do it|go ahead|i'?d love (that|one|to)|send it|why not|try (it |that )?again|retry|resend)\b/i;
 
@@ -551,9 +550,13 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
   }
   // 📸 She said a photo/video is on its way but never actually sent one (the model skipped the tool):
   // send it now, as she described — so what she says and what arrives always match.
+  // 🙋 They asked for a picture (or said yes to her offering one).
+  const theyAsked = ASKED_FOR_MEDIA.test(String(lastSaid)) || (YES.test(String(lastSaid)) && MENTIONS_MEDIA.test(String(lastHers)));
+  // 👍 …and she said yes, in whatever words — "sure", "here ya go", "enjoy the view". That's a
+  // picture on its way as far as they're concerned, so one is actually made.
   if (canSend && (mode === "chat" || mode === "talk") && reply && !media.some(m => m.status !== "failed")
-    && CLAIMS_MEDIA.test(reply) && !REFUSES_MEDIA.test(reply)
-    && (ASKED_FOR_MEDIA.test(String(lastSaid)) || (YES.test(String(lastSaid)) && MENTIONS_MEDIA.test(String(lastHers))) || STRONG_CLAIM.test(reply))) {
+    && !REFUSES_MEDIA.test(reply)
+    && ((CLAIMS_MEDIA.test(reply) && (theyAsked || STRONG_CLAIM.test(reply))) || (theyAsked && AGREES_MEDIA.test(reply)))) {
     try {
       const input = await photoInput([{ role: "assistant", content: reply }], "(Your photo/video didn't actually go out. Send it now with send_media — exactly what you just told them you're sending.)");
       // 🛟 No brain would write the tool call: send the plain version rather than let her words and
