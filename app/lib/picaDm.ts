@@ -10,7 +10,7 @@ import {  say } from "./words";
 import { wordsFor } from "./wordsDb";
 import { forgetPicaLines } from "./forget";
 import { scrub } from "./secrets";
-import { startMedia, MediaError, type Media } from "./media";
+import { wornLately, startMedia, MediaError, type Media } from "./media";
 import { availableBrains } from "./models";
 import { refsOf, myPhotoDraft, myPhotoMake } from "./picagram";
 import { BRAIN_OPTIONS } from "./brainOptions";
@@ -112,8 +112,9 @@ const REFUSES_PHOTO = /\b(can'?t|cannot|won'?t|not (going to|gonna)|no (pics?|ph
 /** What photo she meant to send, from the conversation (used when she says one's coming but picks none). */
 async function describePhoto(userId: string, a: Record<string, unknown>, u: { name: string; now: string; adult: boolean; chatModel: string }, history: Dm[]): Promise<string> {
   const w = await wordingFor(userId);
-  const raw = await write(brainOf(a, u.chatModel), `You are ${a.name} (@${a.handle}) on Picagram. You told ${u.name} you'd send a photo of yourself, and it hasn't gone out yet. Describe exactly the photo you meant (where, outfit, pose, light) in 1–2 sentences${u.adult ? ", tasteful and PG-13 — flattering and flirty is fine, never nudity or lingerie" : ", fully clothed"}. JSON only: {"photo":"..."}`,
-    `${u.now}\nYou look like: ${a.look}\n\nTHE CONVERSATION:\n${transcript(history, String(a.name), u.name)}`, 400);
+  const worn = await wornLately(userId, null, true).catch(() => "");
+  const raw = await write(brainOf(a, u.chatModel), `You are ${a.name} (@${a.handle}) on Picagram. You told ${u.name} you'd send a photo of yourself, and it hasn't gone out yet. Describe exactly the photo you meant (where, outfit, pose, light) in 1–2 sentences${u.adult ? ", tasteful and PG-13 — flattering and flirty is fine, never nudity or lingerie" : ", fully clothed"}. ${w.no_looks} JSON only: {"photo":"..."}`,
+    `${u.now}\nYou look like: ${a.look}${worn ? `\n\n${worn}` : ""}\n\nTHE CONVERSATION:\n${transcript(history, String(a.name), u.name)}`, 400);
   try { return String(JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]).photo || ""); } catch { return ""; }
 }
 

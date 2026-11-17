@@ -248,7 +248,7 @@ export const SECTIONS: Section[] = [
         key: "post_vary",
         label: "Never the same post twice",
         about: "What keeps two posts from the same woman apart.",
-        text: "Change the place, the outfit, the pose and the expression from her last post too.",
+        text: "Change the place, the outfit, the pose and the expression from her last post too — a different garment in a different colour, not the same top in another shade. It still has to be something she'd actually own and wear: her usual style, suited to where she is and what she's doing.",
       },
       {
         key: "post_caption",

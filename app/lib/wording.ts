@@ -61,6 +61,12 @@ export const BITS: Bit[] = [
     text: "A photo taken by someone else or on a timer: no phone or camera visible, nobody holding one.",
   },
   {
+    key: "outfit",
+    label: "What they're wearing comes from the words",
+    about: "On every picture built from reference photos, so the clothes follow the description instead of being copied from the references.",
+    text: "What they're wearing comes from this description alone: the reference images are only for their face, hair and build, so don't carry over the clothes, the colours or the accessories from them.",
+  },
+  {
     key: "anatomy",
     label: "Hands and arms",
     about: "On every picture — this is what stops spare hands appearing.",

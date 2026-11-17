@@ -6,7 +6,7 @@ import { sql } from "./db";
 import { writeText } from "./llm";
 import { scrub } from "./secrets";
 import { listCharacters, referenceUrls, type Character } from "./characters";
-import { startMedia, deleteMedia, whenMediaReady, MediaError, type Media } from "./media";
+import { startMedia, deleteMedia, whenMediaReady, wornLately, MediaError, type Media } from "./media";
 import { swapIn } from "./redo";
 import { allowsSuggestive, mediaMood, cleanTraits, DEFAULT_TRAITS, TRAITS } from "./traits";
 import { isValidTimeZone, localDate, zonedParts, zonedToUtc } from "./localTime";
@@ -116,6 +116,7 @@ async function generateDay(userId: string, day: string, isToday: boolean): Promi
     const friends = knows;
     const away = await awayFor(userId, c.id);
     return `- ${c.name}: ${c.job || "no job listed"}; hobbies: ${c.hobbies || "—"}; style: ${c.casual_wear || "—"}${c.work_attire ? `; at work: ${c.work_attire}` : ""}; about: ${(c.backstory || c.personality || "").slice(0, 300)}${friends.length ? `; friends (could be in her photo): ${friends.join(", ")}` : ""}${links.get(c.id)?.knownBy.length ? `; people who know her (could comment): ${links.get(c.id)!.knownBy.join(", ")}` : "; nobody she knows comments"}${romanticFor(c, u.adult) ? "; romantic/flirty allowed (PG-13)" : "; keep family-friendly"}${away ? `; ✈️ CURRENTLY OUT OF TOWN at ${away.place} until ${away.until} — post from there` : ""}
+  ${(await wornLately(userId, c.id, true)).replace(/\n/g, " ")}
   THIS POST'S SHOT: ${shotFor(`${c.id}:${day}`, i)}
   THIS POST'S TONE: ${TONES[toneFor(c.id, Number(new Date(`${day}T00:00:00Z`).getUTCDate()), Number(c.traits?.suggestive || 0), romanticFor(c, u.adult))]}`;
   }));

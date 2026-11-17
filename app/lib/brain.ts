@@ -56,7 +56,7 @@ import { PROMISE_TOOL, runPromiseTool, promisesNote } from "./promises";
 import { chatLogNote } from "./chatlog";
 import { tickPics, resetPics, PHOTO_MOMENT } from "./momentPics";
 import { tickIntro, introNote } from "./intros";
-import { SEND_MEDIA_TOOL, startMedia, mediaReady, MediaError, tasteNote, recentMediaNote, type Media } from "./media";
+import { SEND_MEDIA_TOOL, startMedia, mediaReady, MediaError, tasteNote, recentMediaNote, wornLately, type Media } from "./media";
 import { veloLook } from "./veloAvatars";
 
 // Only ever the app's own key (never another credential in the environment).
@@ -243,6 +243,8 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
         known,
         taste,
         canSend ? await recentMediaNote(caller.userId, cid, today.tz).catch(() => "") : "",
+        // 👗 Her last few outfits, so the next picture isn't the same clothes in the same colour.
+        canSend && ch ? await wornLately(caller.userId, cid).catch(() => "") : "",
         errand || ch ? "" : pro ? SEARCH_INFO + "\n\n" + PRO_INFO + (proTools?.page ? `\nTheir Facebook Page "${proTools.page}" is connected: you can draft posts for it (draft_post).` : "\nNo Facebook Page is connected; if they want you to post, tell them to connect one in Settings → Velo Pro (Facebook only allows Pages, not personal profiles).") : FREE_INFO,
         memory ? `${memory}\n\nYou two have talked before — never introduce yourself; talk like someone who knows them.` : "",
         !ch && (mode === "chat" || mode === "sms" || mode === "talk" || mode === "recap" || mode === "checkin") ? personalityPrompt(talkWords(u))[personality] : "",
