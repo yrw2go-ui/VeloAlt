@@ -43,7 +43,7 @@ import { partnerLook, partnerPicNote } from "./partner";
 import { TOGETHER_TIME } from "./together";
 import { timeOfDay } from "./localTime";
 import { attachedNote, lesbianNote, maybeStartDating, maybeEndIt, endedNote, wonOver, cameAround, WON_OVER, type Her } from "./attached";
-import { characterPrompt, feelingsFor, saveFeelings, trustFor, saveTrust, trustNote, happyFor, saveHappy, happyNote, loveFor, saveLove, loveNote, activeScene, sceneNote, noteMentions, acquaintancesNote, referenceUrls, pictureOf, type Character } from "./characters";
+import { characterPrompt, feelingsFor, saveFeelings, trustFor, saveTrust, trustNote, happyFor, saveHappy, happyNote, loveFor, saveLove, loveNote, activeScene, sceneNote, noteMentions, noteAccountMentions, acquaintancesNote, knownAccountsNote, referenceUrls, pictureOf, type Character } from "./characters";
 import { talkWords } from "./words";
 import { askNote, askThisTime } from "./asking";
 import { aboutThem } from "./bio";
@@ -164,10 +164,13 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
   const lastSaid = [...opts.messages].reverse().find(m => m.role === "user")?.content || "";
   const lastHers = (() => { const i = opts.messages.map(m => m.role).lastIndexOf("user"); return [...opts.messages.slice(0, Math.max(0, i))].reverse().find(m => m.role === "assistant")?.content || ""; })();
   if ((mode === "chat" || mode === "talk") && !group) await noteMentions(caller.userId, cid, hideSecrets(String(lastSaid).slice(0, 2000)).text).catch(e => console.error("velo: mentions", e instanceof Error ? e.message : e));
+  // 📸 …and the women on their Picagram they named: she knows OF them, she hasn't met them.
+  if ((mode === "chat" || mode === "talk") && !group) await noteAccountMentions(caller.userId, cid, hideSecrets(String(lastSaid).slice(0, 2000)).text).catch(e => console.error("velo: named", e instanceof Error ? e.message : e));
   // 👭 Her friends and family (firsthand), and nothing about how close they are with them.
   const friends = ch && !errand ? await friendsOf(ch, caller.userId).catch(() => []) : [];
   const friendNote = ch && friends.length ? await friendsNote(ch, name, friends, caller.userId, !!u?.adult_confirmed_at).catch(() => "") : "";
   const known = errand ? "" : await acquaintancesNote(caller.userId, cid, !ch, friends.map(f => f.id)).catch(() => "");
+  const namedPeople = errand ? "" : await knownAccountsNote(caller.userId, cid).catch(() => "");
   // 💡 What they like to see (reactions, declined offers).
   const taste = mediaReady() && (mode === "chat" || mode === "talk") ? await tasteNote(caller.userId, cid).catch(() => "") : "";
   // 🕰️ A character can live in another time zone: their own clock, as well as the person's.
@@ -241,6 +244,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
         friendNote,
         ch && !errand && mode !== "remember" && mode !== "memo" ? hisChances(ch, friends, !!u?.adult_confirmed_at, name) : "",
         known,
+        namedPeople,
         taste,
         canSend ? await recentMediaNote(caller.userId, cid, today.tz).catch(() => "") : "",
         // 👗 Her last few outfits, so the next picture isn't the same clothes in the same colour.

@@ -16,6 +16,7 @@ import { useDictation } from "./dictate";
 import { CharacterFace, LinkBackForm } from "./characters";
 import { MediaView, ReactionBar, type Media } from "./media";
 import { EditSheet } from "./edit";
+import { MentionPicker, putName } from "./mention";
 import { isHot } from "./lib/reactions";
 import { dropThoughts, noJargon, dropSentNote } from "./lib/text";
 import { CLAIMS_MEDIA } from "./lib/mediaWords";
@@ -56,6 +57,8 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   const face = (size: number) => (character ? <CharacterFace c={character} size={size} /> : <VeloAvatar size={size} />);
   const [msgs, setMsgs] = useState<ChatMsg[] | null>(null);
   const [text, setText] = useState("");
+  // 🗣️ Where the caret is, so "@…" is picked up as you type it.
+  const [caret, setCaret] = useState(0);
   const mic = useDictation(setText);
   // The box grows with the message (typed or spoken), up to about 5 lines.
   const box = useRef<HTMLTextAreaElement>(null);
@@ -773,7 +776,9 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
           <button className="btn" onClick={deleteSelected} disabled={!selected.size || deleting} data-testid="select-delete" style={{ background: "var(--bad)" }}>{deleting ? "…" : `🗑 Delete${selected.size > 1 ? ` ${selected.size}` : ""}`}</button>
         </div>
       )}
-      <form onSubmit={e => { e.preventDefault(); send(text); }} className="row" style={{ padding: "10px 12px", borderTop: "1px solid var(--border)", ...(selected ? { display: "none" } : {}) }}>
+      <form onSubmit={e => { e.preventDefault(); send(text); }} className="row" style={{ position: "relative", padding: "10px 12px", borderTop: "1px solid var(--border)", ...(selected ? { display: "none" } : {}) }}>
+        {/* 🗣️ Typing "@" offers the people you could name. Naming someone doesn't mean they've met. */}
+        <MentionPicker text={text} caret={caret} onPick={(name, at) => { setText(t => putName(t, at, caret, name)); box.current?.focus(); }} />
         <input ref={picker} type="file" accept={ACCEPT} hidden onChange={e => pick(e.target.files?.[0])} data-testid="chat-file-input" />
         <div style={{ position: "relative", flexShrink: 0 }}>
           <button type="button" onClick={() => setMoreOpen(o => !o)} disabled={!msgs || busy} aria-label={moreOpen ? "Close menu" : "More: video chat, together, attach"} aria-expanded={moreOpen} data-testid="chat-more"
@@ -791,7 +796,9 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
             </>
           )}
         </div>
-        <textarea ref={box} rows={1} value={text} onChange={e => setText(e.target.value)} placeholder={msgs ? `Message ${who}…` : "Loading…"} aria-label={`Message ${who}`} disabled={!msgs}
+        <textarea ref={box} rows={1} value={text} onChange={e => { setText(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length); }}
+          onSelect={e => setCaret((e.target as HTMLTextAreaElement).selectionStart ?? 0)}
+          placeholder={msgs ? `Message ${who}…` : "Loading…"} aria-label={`Message ${who}`} disabled={!msgs}
           onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(text); } }}
           style={{ resize: "none", maxHeight: 140, borderRadius: 20 }} />
         {mic.supported && (

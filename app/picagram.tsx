@@ -8,6 +8,7 @@ import { hideSecrets } from "./lib/secrets";
 import { noJargon } from "./lib/text";
 import { MediaView, type Media } from "./media";
 import { EditSheet } from "./edit";
+import { MentionPicker, putName } from "./mention";
 import { RedoSheet } from "./redo";
 import { TraitSliders } from "./characters";
 import { Selectable } from "./chat";
@@ -806,6 +807,8 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
   const [brains, setBrains] = useState<{ id: string; label: string }[]>([]);
   const [msgs, setMsgs] = useState<DmMsg[] | null>(null);
   const [text, setText] = useState("");
+  // 🗣️ Where the caret is, so "@…" is picked up as you type it.
+  const [caret, setCaret] = useState(0);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [mySheet, setMySheet] = useState(false);
@@ -948,10 +951,14 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
           <button type="button" className="btn" onClick={deleteSelected} disabled={deleting} data-testid="dm-select-delete" style={{ background: "var(--bad)" }}>{deleting ? "…" : `🗑 Delete${selected.size > 1 ? ` ${selected.size}` : ""}`}</button>
         </div>
       )}
-      <form onSubmit={e => { e.preventDefault(); send(); }} className="row" style={{ padding: "10px 12px", gap: 8, borderTop: "1px solid var(--border)", ...(selected ? { display: "none" } : {}) }}>
+      <form onSubmit={e => { e.preventDefault(); send(); }} className="row" style={{ position: "relative", padding: "10px 12px", gap: 8, borderTop: "1px solid var(--border)", ...(selected ? { display: "none" } : {}) }}>
+        {/* 🗣️ "@" offers the people you could name — she's told who, never that she's met them. */}
+        <MentionPicker testid="dm-mention" text={text} caret={caret} onPick={(name, at) => setText(t => putName(t, at, caret, name))} />
         <PicMenu busy={sending} onMine={() => setMySheet(true)} onGallery={() => setPick(true)} onUpload={() => upIn.current?.click()} />
         <input ref={upIn} type="file" accept="image/jpeg,image/png,image/webp" hidden data-testid="dm-upload-file" onChange={e => uploadMine(e.target.files?.[0])} />
-        <input value={text} onChange={e => setText(e.target.value)} placeholder={`Message ${acc?.name || ""}…`} aria-label="Message" maxLength={2000} disabled={!msgs} style={{ borderRadius: 999 }} />
+        <input value={text} onChange={e => { setText(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length); }}
+          onSelect={e => setCaret((e.target as HTMLInputElement).selectionStart ?? 0)}
+          placeholder={`Message ${acc?.name || ""}…`} aria-label="Message" maxLength={2000} disabled={!msgs} style={{ borderRadius: 999 }} />
         <button className="btn" disabled={!text.trim() || busy || !msgs} style={{ borderRadius: 999, padding: "10px 16px" }}>Send</button>
       </form>
     </div>

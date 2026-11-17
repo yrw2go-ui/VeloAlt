@@ -158,11 +158,13 @@ export async function dmSend(userId: string, accountId: string, text: string): P
   const u = await userInfo(userId);
   const mine = await addDm(userId, accountId, "user", t);
   const history = await messages(userId, accountId, 40);
+  // 🗣️ Anyone they named in their message: she knows OF them from this, nothing more.
+  const named = await namedToAccount(userId, accountId, text).catch(() => "");
   const mem = await memories(userId, accountId);
   const w = await wordingFor(userId);
   const tw = await wordsFor(userId); // 🛠️ Admin → Messaging & wording: the same lines her chats use.
   const raw = await write(brainOf(a, u.chatModel), `You are ${a.name} (@${a.handle}) on Picagram, a social photo app like Instagram. Your bio: "${a.bio}". You look like: ${a.look}.${a.lives ? ` You live in ${a.lives}.` : ""}${a.personality ? `\nWHO YOU ARE: ${String(a.personality).slice(0, 1200)}` : ""}${a.traits && Object.keys(a.traits).length ? `\n${traitsPrompt(a.traits, !!u.adult)}` : ""} You're a real person with your own life; ${u.name} follows you and is messaging you in your DMs. Reply like Instagram DMs: short (1–3 sentences), casual, warm, in your own voice${u.adult ? ", flirty if it fits (PG-13: never nudity, lingerie or anything sexual)" : ", friendly and family-friendly"}. Never say you're an AI. ${say(tw.brackets, u.name, String(a.name))} ${tw.plain} ${say(tw.fresh, u.name, String(a.name))} If they ask for a photo of you (or it fits naturally), you can send one: then set "photo" to exactly what the picture shows (where, outfit, pose, light) in 1–2 sentences${u.adult ? "; tasteful and PG-13 — flattering and flirty is fine, never nudity or lingerie" : ", fully clothed"}. ${w.no_looks} Otherwise leave "photo" empty. Reply with JSON only: {"reply":"...","photo":""}`,
-    `${u.now}\n\n${mem.length ? `WHAT YOU REMEMBER ABOUT ${u.name.toUpperCase()} (from your DMs):\n- ${mem.join("\n- ")}\n\n` : ""}THE CONVERSATION SO FAR:\n${transcript(history, String(a.name), u.name)}`, 800);
+    `${u.now}\n\n${named ? `${named}\n\n` : ""}${mem.length ? `WHAT YOU REMEMBER ABOUT ${u.name.toUpperCase()} (from your DMs):\n- ${mem.join("\n- ")}\n\n` : ""}THE CONVERSATION SO FAR:\n${transcript(history, String(a.name), u.name)}`, 800);
   // Her answer: the JSON asked for — or, if she just wrote her reply as plain text, that text.
   let j: { reply?: string; photo?: string } = {};
   const obj = raw.match(/\{[\s\S]*\}/);
@@ -194,6 +196,24 @@ export async function dmSend(userId: string, accountId: string, text: string): P
   const [{ n }] = await sql()`select count(*)::int as n from pica_dms where user_id = ${userId} and account_id = ${accountId} and role = 'user'`;
   if (n % 4 === 0) await remember(userId, a, [...history, ...added.slice(1)], u.name, mem, brainOf(a, u.chatModel), u.now, u.today).catch(e => console.error("pica dm: remember", e instanceof Error ? e.message : e));
   return { added, ...(note ? { note } : {}), ...(ask ? { ask } : {}) };
+}
+
+/** 🗣️ Who they just named in a DM: her characters and the other women on their Picagram. She knows
+ *  OF them from being told — never met, no history, free to ask or look them up. */
+async function namedToAccount(userId: string, accountId: string, text: string): Promise<string> {
+  const t = String(text || "");
+  if (t.length < 3) return "";
+  const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const hit = (name: string) => name.length >= 3 && new RegExp(`(^|[^\\p{L}])${esc(name)}(?=$|[^\\p{L}])`, "iu").test(t);
+  const chars = (await sql()`select name, lives_in from chat_characters where owner_id is null or owner_id = ${userId}`).filter(c => hit(String(c.name).trim()));
+  const others = (await sql()`select name, handle, bio from pica_accounts where user_id = ${userId} and id <> ${accountId}`)
+    .filter(a => hit(String(a.name).trim().split(/\s+/)[0] || "") || new RegExp(`@?${esc(String(a.handle))}\\b`, "i").test(t));
+  const lines = [
+    ...chars.map(c => `- ${c.name}${c.lives_in ? ` (${c.lives_in})` : ""} — someone in ${"their"} life`),
+    ...others.map(a => `- ${a.name} (@${a.handle}) — she's on Picagram too${a.bio ? `: "${String(a.bio).slice(0, 100)}"` : ""}`),
+  ];
+  if (!lines.length) return "";
+  return `🗣️ WHO THEY JUST NAMED (you have NOT met any of them):\n${lines.join("\n")}\nYou only know these people because they were just mentioned to you. Be curious — ask who she is or how they know each other — and you can look someone up on Picagram and say what's on her profile. Never pretend you know her or make up history with her.`;
 }
 
 /** 📸 "Send the pic": she said she'd send a photo but none came — she sends it now. */

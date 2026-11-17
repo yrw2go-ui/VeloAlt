@@ -201,6 +201,18 @@ export async function POST(req: NextRequest) {
         const [m] = await db`update velo_messages set reaction = ${reaction} where id = ${id} and user_id = ${me} and role = 'assistant' returning id`;
         return m ? NextResponse.json({ ok: true }) : bad("Unknown message.");
       }
+      // 🗣️ Typing "@": everyone they could name — their characters and the women on their Picagram.
+      case "people": {
+        const q = String(b.q || "").trim().toLowerCase().slice(0, 40);
+        const chars = await db`select name from chat_characters where owner_id is null or (owner_id = ${me} and intro_status = 'accepted') order by name`;
+        const accts = await db`select name, handle from pica_accounts where user_id = ${me} order by followed desc, name`;
+        const all = [
+          ...chars.map(c => ({ name: String(c.name), what: "character" as const, handle: "" })),
+          ...accts.map(a => ({ name: String(a.name), what: "picagram" as const, handle: String(a.handle) })),
+        ];
+        const hit = q ? all.filter(p => p.name.toLowerCase().includes(q) || p.handle.toLowerCase().includes(q)) : all;
+        return NextResponse.json({ people: hit.slice(0, 8) });
+      }
       // ✏️ Reword a message — hers or yours — by double-tapping it. The text is simply replaced;
       // nothing else about the chat changes, and she carries on from what it says now.
       case "messages.edit": {

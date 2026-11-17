@@ -315,6 +315,34 @@ export async function noteMentions(userId: string, knowerId: string | null, text
   }
 }
 
+/** 📸 …and the women on their Picagram they've named to her. Knowing OF someone isn't meeting her:
+ *  she can ask about her and look her up, nothing more. */
+export async function noteAccountMentions(userId: string, knowerId: string | null, text: string): Promise<void> {
+  if (!text || text.length < 3) return;
+  const accounts = (await sql()`select id, name, handle from pica_accounts where user_id = ${userId} and character_id is null`) as { id: string; name: string; handle: string }[];
+  for (const a of accounts) {
+    const first = String(a.name).trim().split(/\s+/)[0] || "";
+    const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const hit = (first.length >= 3 && new RegExp(`(^|[^\\p{L}])${esc(first)}(?=$|[^\\p{L}])`, "iu").test(text))
+      || (String(a.handle).length >= 3 && new RegExp(`@?${esc(String(a.handle))}(?=$|[^\\p{L}0-9._])`, "iu").test(text));
+    if (!hit) continue;
+    await sql()`insert into chat_known_accounts (user_id, knower_id, account_id) values (${userId}, ${knowerId}, ${a.id})
+      on conflict (user_id, coalesce(knower_id, '00000000-0000-0000-0000-000000000000'::uuid), account_id) do update
+      set mentions = chat_known_accounts.mentions + case when chat_known_accounts.last_at < now() - interval '30 minutes' then 1 else 0 end, last_at = now()`;
+  }
+}
+
+/** What she knows of the women on their Picagram they've named to her — by name only, never met. */
+export async function knownAccountsNote(userId: string, knowerId: string | null): Promise<string> {
+  const rows = await sql()`select a.name, a.handle, a.bio, a.lives, k.mentions from chat_known_accounts k join pica_accounts a on a.id = k.account_id
+    where k.user_id = ${userId} and k.knower_id is not distinct from ${knowerId} order by k.last_at desc limit 6`;
+  if (!rows.length) return "";
+  const lines = rows.map(r => `- ${r.name} (@${r.handle})${r.lives ? ` — ${r.lives}` : ""}${Number(r.mentions) > 1 ? `, named ${r.mentions} times` : ""}${Number(r.mentions) >= 2 && r.bio ? `. Her profile says: "${String(r.bio).slice(0, 120)}"` : ""}`);
+  return `📸 PEOPLE THEY'VE NAMED TO YOU (on Picagram — you have NOT met them):
+${lines.join("\n")}
+You only know these women because they came up in conversation: a name, a handle, maybe what you've seen on their profile. You've never met them, you have no history with them, and you don't know them to talk to. Be curious the way anyone would — ask who she is, how they know each other, what she's like — and you can say you looked her up on Picagram and mention what's on her profile. Never claim to know her, never invent memories of her, and never act as though you've met.`;
+}
+
 /** What this character (or Velo) knows of the other characters in their life, by how well they've "heard of" them. */
 export async function acquaintancesNote(userId: string, knowerId: string | null, knowerIsVelo: boolean, skip: string[] = []): Promise<string> {
   const rows = (await sql()`select c.id, c.name, c.personality, c.backstory, c.appearance, c.preset, a.mentions, extract(epoch from now() - a.first_at) / 86400 as days
