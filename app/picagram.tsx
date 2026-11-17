@@ -819,6 +819,11 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
     if (next.has(mid)) next.delete(mid); else if (next.size < 10) next.add(mid);
     return next.size ? next : null;
   });
+  // ✏️ Double-tap a written message to reword it — hers or yours. Pictures stay as they are.
+  const editMsg = async (mid: string, text: string) => {
+    const r = await api<{ id: string; content: string }>("/api/pica", { action: "dm.edit", id, messageId: mid, text });
+    setMsgs(list => (list || []).map(m => (m.id === r.id ? { ...m, content: r.content } : m)));
+  };
   const deleteSelected = async () => {
     if (!selected?.size) return;
     const n = selected.size;
@@ -908,7 +913,7 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
           const bubble = (
             <div key={m.id} data-testid={m.role === "user" ? "dm-mine" : "dm-hers"} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "80%" }}>
               {m.media ? <MediaView media={m.media} who={acc?.name || ""} /> : (
-                <div style={{ padding: "9px 13px", borderRadius: 18, background: m.role === "user" ? "linear-gradient(135deg,#8b5cf6,#ec4899)" : "var(--surface2)", color: m.role === "user" ? "#fff" : "var(--text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 15 }}>{m.content}</div>
+                <DmText m={m} onEdit={editMsg} />
               )}
               <When at={m.created_at} align={m.role === "user" ? "right" : "left"} />
             </div>
@@ -1274,5 +1279,39 @@ function MyProfile({ name, onClose }: { name: string; onClose: () => void }) {
       )}
       {view && <Viewer photo={view} onClose={() => setView(null)} onSaved={on => setMe(m => (m ? { ...m, photos: m.photos.map(x => (x.media_id === view.media_id ? { ...x, saved: on } : x)) } : m))} />}
     </div>
+  );
+}
+
+
+/** ✏️ One written DM. Double-tap it to reword it; Enter saves, Escape leaves it. */
+function DmText({ m, onEdit }: { m: { id: string; role: string; content: string }; onEdit: (id: string, text: string) => Promise<void> }) {
+  const [editing, setEditing] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const lastTap = useRef(0);
+  const mine = m.role === "user";
+  const open = () => setEditing(m.content);
+  const save = async () => {
+    const text = (editing || "").trim();
+    if (!text) return;
+    setSaving(true);
+    try { await onEdit(m.id, text); setEditing(null); } catch { /* leave it open */ }
+    setSaving(false);
+  };
+  const box = { padding: "9px 13px", borderRadius: 18, background: mine ? "linear-gradient(135deg,#8b5cf6,#ec4899)" : "var(--surface2)", color: mine ? "#fff" : "var(--text)", whiteSpace: "pre-wrap" as const, overflowWrap: "anywhere" as const, fontSize: 15 };
+  if (editing !== null) return (
+    <div style={{ ...box, display: "grid", gap: 6, minWidth: 180 }} onClick={e => e.stopPropagation()}>
+      <textarea value={editing} autoFocus data-testid="dm-edit-box" aria-label="Edit message" rows={Math.min(8, editing.split("\n").length + 1)}
+        onChange={e => setEditing(e.target.value)}
+        onKeyDown={e => { if (e.key === "Escape") setEditing(null); if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void save(); } }}
+        style={{ width: "100%", minWidth: 180, resize: "vertical", font: "inherit", color: "var(--text)", background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "6px 8px" }} />
+      <div className="row" style={{ gap: 6, justifyContent: "flex-end" }}>
+        <button className="ghost" data-testid="dm-edit-cancel" onClick={() => setEditing(null)} style={{ padding: "2px 10px", fontSize: 12 }}>Cancel</button>
+        <button className="ghost" data-testid="dm-edit-save" disabled={!editing.trim() || saving} onClick={() => void save()} style={{ padding: "2px 10px", fontSize: 12 }}>{saving ? "Saving…" : "Save"}</button>
+      </div>
+    </div>
+  );
+  return (
+    <div data-testid="dm-text" style={box} onDoubleClick={open}
+      onClick={() => { const now = Date.now(); if (now - lastTap.current < 400) open(); lastTap.current = now; }}>{m.content}</div>
   );
 }

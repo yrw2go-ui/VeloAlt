@@ -123,6 +123,16 @@ async function describePhoto(userId: string, a: Record<string, unknown>, u: { na
  * left alone: her photos are yours to keep (delete one from the gallery if you want it gone).
  * Returns how many went.
  */
+/** ✏️ Reword one written message in a thread. Pictures and empty text are left alone. */
+export async function dmEdit(userId: string, accountId: string, id: string, text: string): Promise<{ id: string; content: string } | null> {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+  const body = scrub(String(text ?? "").replace(/\r/g, "").trim()).slice(0, 2000);
+  if (!body) return null;
+  const [row] = await sql()`update pica_dms set content = ${body}
+    where id = ${id} and user_id = ${userId} and account_id = ${accountId} and media_id is null returning id, content`;
+  return row ? { id: String(row.id), content: String(row.content) } : null;
+}
+
 export async function dmDelete(userId: string, accountId: string, ids: string[]): Promise<number> {
   const want = ids.filter(x => /^[0-9a-f-]{36}$/i.test(x)).slice(0, 50);
   if (!want.length) return 0;

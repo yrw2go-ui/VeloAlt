@@ -201,6 +201,16 @@ export async function POST(req: NextRequest) {
         const [m] = await db`update velo_messages set reaction = ${reaction} where id = ${id} and user_id = ${me} and role = 'assistant' returning id`;
         return m ? NextResponse.json({ ok: true }) : bad("Unknown message.");
       }
+      // ✏️ Reword a message — hers or yours — by double-tapping it. The text is simply replaced;
+      // nothing else about the chat changes, and she carries on from what it says now.
+      case "messages.edit": {
+        if (!needId()) return bad("Unknown message.");
+        const text = scrub(String(b.text ?? "").replace(/\r/g, "").trim()).slice(0, 4000);
+        if (!text) return bad("A message can't be empty — delete it instead.");
+        const [m] = await db`update velo_messages set content = ${text}
+          where id = ${id} and user_id = ${me} and media_id is null and not peek returning id, role, content`;
+        return m ? NextResponse.json({ id: String(m.id), role: m.role, content: String(m.content) }) : bad("That one can't be edited.");
+      }
       // 🗑 Delete up to 10 messages; she forgets whatever she learned only from them.
       case "messages.delete": {
         const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;

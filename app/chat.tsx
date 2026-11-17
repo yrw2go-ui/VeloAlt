@@ -473,6 +473,11 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     return /\b(woman|girl|lady|she|her|blonde|brunette|redhead|model|babe)\b/i.test(desc)
       && !others.some(o => new RegExp(`\\b${o.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(desc));
   };
+  // ✏️ Double-tapped a bubble: the new words replace the old ones, in her chat and in what she reads back.
+  const editMsg = async (id: string, text: string) => {
+    const r = await api<{ id: string; content: string }>("/api/data", { action: "messages.edit", id, text });
+    setMsgs(list => (list || []).map(x => (x.id === r.id ? { ...x, content: r.content } : x)));
+  };
   const createSocial = async (md: Media) => {
     setErr("");
     try {
@@ -708,7 +713,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       <div data-testid="chat-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
         {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : (
           <Selectable key={m.media?.id || m.id || i} id={m.id} selecting={selected} onStart={id => setSelected(new Set([id]))} onToggle={toggleSelect}>
-            <Bubble m={m} social={character && onSocial && socialOk(m.media) ? createSocial : undefined} openHandle={already(m.media)} onReactMsg={reactMsg} face={face(28)} onMedia={mediaArrived} onFailed={reload} onReact={react} who={who} onAnswer={x => setMsgs(list => (list || []).map(y => (y.media?.id === x.id ? { ...y, content: mediaNote({ ...y.media!, ...x }), media: { ...y.media!, ...x } } : y)))} />
+            <Bubble m={m} onEdit={editMsg} social={character && onSocial && socialOk(m.media) ? createSocial : undefined} openHandle={already(m.media)} onReactMsg={reactMsg} face={face(28)} onMedia={mediaArrived} onFailed={reload} onReact={react} who={who} onAnswer={x => setMsgs(list => (list || []).map(y => (y.media?.id === x.id ? { ...y, content: mediaNote({ ...y.media!, ...x }), media: { ...y.media!, ...x } } : y)))} />
           </Selectable>
         ))}
         {character && msgs && !msgs.length && (
@@ -815,9 +820,24 @@ const When = ({ at, align }: { at?: string; align?: "left" | "right" | "center" 
   return t ? <div data-testid="when" style={{ fontSize: 10, lineHeight: 1.6, opacity: 0.55, color: "var(--text)", padding: "2px 4px 0", textAlign: align || "left", alignSelf: align === "right" ? "flex-end" : align === "center" ? "center" : "flex-start" }}>{t}</div> : null;
 };
 
-function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg, social, openHandle }: { openHandle?: string | null; social?: (md: Media) => void; m: ChatMsg; face: React.ReactNode; who: string; onMedia: (x: Media) => void; onFailed?: () => void; onReact: (id: string, r: string) => void; onAnswer: (x: Media) => void; onReactMsg: (id: string, r: string) => void }) {
+function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg, social, openHandle, onEdit }: { onEdit?: (id: string, text: string) => Promise<void>; openHandle?: string | null; social?: (md: Media) => void; m: ChatMsg; face: React.ReactNode; who: string; onMedia: (x: Media) => void; onFailed?: () => void; onReact: (id: string, r: string) => void; onAnswer: (x: Media) => void; onReactMsg: (id: string, r: string) => void }) {
   const mine = m.role === "user";
   const [picking, setPicking] = useState(false);
+  // ✏️ Double-tap a written message to reword it — hers or yours. Pictures and markers aren't editable.
+  const [editing, setEditing] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const lastTap = useRef(0);
+  const canEdit = !!onEdit && !!m.id && !m.media && !m.file && !m.peek && m.content !== "📎";
+  const startEdit = () => { if (canEdit) setEditing(m.content); };
+  // Phones send two clicks before dblclick: the second one mustn't also toggle the reactions.
+  const tapped = () => { const now = Date.now(), quick = now - lastTap.current < 400; lastTap.current = now; if (quick && canEdit) { setEditing(m.content); setPicking(false); } return quick; };
+  const save = async () => {
+    const text = (editing || "").trim();
+    if (!text || !m.id || !onEdit) return;
+    setSaving(true);
+    try { await onEdit(m.id, text); setEditing(null); } catch { /* leave the editor open */ }
+    setSaving(false);
+  };
   // A small badge on the bubble's corner, like a text-message reaction.
   const badge = (r: string, who: string) => (
     <span data-testid={mine ? "their-reaction" : "my-reaction"} aria-label={`${who} reacted ${r}`}
@@ -861,11 +881,23 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
     <div style={{ display: "flex", gap: 8, alignItems: "flex-end", justifyContent: mine ? "flex-end" : "flex-start", marginBottom: (mine ? m.theirReaction : m.reaction) ? 10 : 0 }}>
       {!mine && face}
       <div style={{ maxWidth: "80%", display: "flex", flexDirection: "column", alignItems: mine ? "flex-end" : "flex-start" }}>
-      <div onClick={() => { if (!mine && m.id) setPicking(p => !p); }} data-testid={mine ? "my-bubble" : "her-bubble"}
+      <div onClick={() => { if (tapped()) return; if (!mine && m.id) setPicking(p => !p); }} onDoubleClick={startEdit} data-testid={mine ? "my-bubble" : "her-bubble"}
         style={{ position: "relative", cursor: !mine && m.id ? "pointer" : undefined, padding: "10px 14px", borderRadius: 18, borderBottomLeftRadius: mine ? 18 : 4, borderBottomRightRadius: mine ? 4 : 18,
         background: mine ? "linear-gradient(135deg, var(--accent), var(--accent2))" : "var(--surface2)", color: "var(--text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", lineHeight: 1.45, fontSize: 15 }}>
         {m.file && <div style={{ marginBottom: m.content && m.content !== "📎" ? 8 : 0 }}><FileThumb f={m.file} size={180} /></div>}
-        {m.content !== "📎" && styled((mine ? m.content : noJargon(dropSentNote(dropThoughts(m.content))).trim()).replace(/\*\*(.+?)\*\*/g, "$1"))}
+        {editing !== null ? (
+          // ✏️ Double-tapped: reword it in place. Enter saves, Escape leaves it as it was.
+          <div style={{ display: "grid", gap: 6, minWidth: 180 }} onClick={e => e.stopPropagation()}>
+            <textarea value={editing} autoFocus data-testid="edit-box" aria-label="Edit message" rows={Math.min(8, editing.split("\n").length + 1)}
+              onChange={e => setEditing(e.target.value)}
+              onKeyDown={e => { if (e.key === "Escape") setEditing(null); if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void save(); } }}
+              style={{ width: "100%", minWidth: 180, resize: "vertical", font: "inherit", color: "var(--text)", background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "6px 8px" }} />
+            <div className="row" style={{ gap: 6, justifyContent: "flex-end" }}>
+              <button className="ghost" data-testid="edit-cancel" onClick={() => setEditing(null)} style={{ padding: "2px 10px", fontSize: 12 }}>Cancel</button>
+              <button className="ghost" data-testid="edit-save" disabled={!editing.trim() || saving} onClick={() => void save()} style={{ padding: "2px 10px", fontSize: 12 }}>{saving ? "Saving…" : "Save"}</button>
+            </div>
+          </div>
+        ) : m.content !== "📎" && styled((mine ? m.content : noJargon(dropSentNote(dropThoughts(m.content))).trim()).replace(/\*\*(.+?)\*\*/g, "$1"))}
         {mine && m.theirReaction && badge(m.theirReaction, who)}
         {!mine && m.reaction && badge(m.reaction, "You")}
       </div>
