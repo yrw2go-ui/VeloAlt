@@ -512,7 +512,9 @@ export async function POST(req: NextRequest) {
 
         }
         const place = scrub(clean(b.place, 120)).replace(/\n/g, " ");
-        const p = await startInPerson(me, ch.id, place);
+        // 🏠 At yours or at theirs? It decides whether you're home to answer the door.
+        const atMine = /\b(my (place|house|home|flat|apartment|room|sofa|couch|kitchen|garden|yard)|mine|here at mine|at mine|my end|round mine|at home|home)\b/i.test(place) || !place;
+        const p = await startInPerson(me, ch.id, place, atMine);
         return NextResponse.json({ inPerson: p, marker: await note(`🧍 Together in person${place ? ` — ${place}` : ""}`) });
       }
       // 👁️ ICU: together in person (no scene) — the same two steps as a peek: a description to check, then exactly that.

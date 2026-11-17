@@ -10,7 +10,7 @@ import { confirmAsk, currentAsk, subscribeAsk } from "./lib/dialog";
 import { VeloLogo, VeloLookPicker, applyVeloLook, useVeloLook } from "./avatar";
 import VeloCall, { canCallVelo, primeSpeech } from "./call";
 import Chat, { type ChatAdd } from "./chat";
-type DropIn = { id: string; characterId: string; who: string; portrait: string | null; kind: "door" | "back" | "over"; line: string; hosting: { id: string; name: string } | null };
+type DropIn = { id: string; characterId: string; who: string; portrait: string | null; kind: "door" | "back" | "over"; line: string; hosting: { id: string; name: string } | null; away: { name: string } | null };
 import { CallMedia, type Media } from "./media";
 import Picagram from "./picagram";
 import { CharacterStrip, CharacterEditor, CharacterFace, NewCharacterSheet, type Character } from "./characters";
@@ -413,11 +413,17 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
                 ⚠️ {dropIn.hosting.name} is here with you. Open that door and they might end up meeting.
               </div>
             )}
+            {/* 🚶 You're round at someone else's: you can't answer your own door from there. */}
+            {dropIn.away && (
+              <div data-testid="dropin-away" style={{ fontSize: 12, padding: "8px 10px", borderRadius: 10, background: "rgba(96,165,250,.15)", border: "1px solid rgba(96,165,250,.45)" }}>
+                🚶 You&apos;re round at {dropIn.away.name}&apos;s — you&apos;re not home to answer it.
+              </div>
+            )}
             <div className="row" style={{ gap: 8 }}>
-              <button className="ghost" onClick={leaveIt} data-testid="dropin-no" style={{ flex: 1, padding: "10px 14px" }}>Not right now</button>
-              <button className="btn" onClick={answerDoor} data-testid="dropin-yes" style={{ flex: 1, padding: "10px 14px" }}>{dropIn.kind === "over" ? "🚶 Head over" : "🚪 Answer the door"}</button>
+              <button className="ghost" onClick={leaveIt} data-testid="dropin-no" style={{ flex: 1, padding: "10px 14px" }}>{dropIn.away ? "OK" : "Not right now"}</button>
+              {!dropIn.away && <button className="btn" onClick={answerDoor} data-testid="dropin-yes" style={{ flex: 1, padding: "10px 14px" }}>{dropIn.kind === "over" ? "🚶 Head over" : "🚪 Answer the door"}</button>}
             </div>
-            <div className="muted" style={{ fontSize: 11, textAlign: "center" }}>Leaving it is fine — she never knows you were standing there.</div>
+            <div className="muted" style={{ fontSize: 11, textAlign: "center" }}>{dropIn.away ? `${dropIn.who} will text to say she called by.` : "Leaving it is fine — she never knows you were standing there."}</div>
           </div>
         </div>
       )}

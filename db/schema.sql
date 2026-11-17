@@ -838,3 +838,6 @@ create table if not exists chat_known_accounts (
 );
 create unique index if not exists chat_known_accounts_one
   on chat_known_accounts (user_id, coalesce(knower_id, '00000000-0000-0000-0000-000000000000'::uuid), account_id);
+-- 🏠 Whose place you're at while you're together: yours, or theirs. A knock at your door can't be
+-- answered when you're round at someone else's.
+alter table chat_in_person add column if not exists at_mine boolean not null default true;

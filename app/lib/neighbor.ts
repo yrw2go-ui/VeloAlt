@@ -13,12 +13,13 @@ import { offToday, sickFor } from "./life";
 import { soreFor } from "./sore";
 import { isValidTimeZone, zonedParts } from "./localTime";
 import { startInPerson } from "./inPerson";
+import { sendPush } from "./push";
 import { isSecret, standingOf } from "./standing";
 import { bringTogether } from "./groups";
 import { setLink } from "./friends";
 
 export type Kind = "door" | "back" | "over";
-export type DropIn = { id: string; characterId: string; who: string; portrait: string | null; kind: Kind; line: string; hosting: { id: string; name: string } | null };
+export type DropIn = { id: string; characterId: string; who: string; portrait: string | null; kind: Kind; line: string; hosting: { id: string; name: string } | null; away: { name: string } | null };
 
 /** What her card says about living on your street, so she lives it rather than announcing it. */
 export const NEIGHBOR_NOTE = `🏘️ YOU'RE THEIR NEIGHBOUR — you live a few doors down on the same street, and you both know it. You see their car come and go, you pass the house, you run into each other outside. You can say so naturally ("saw your light on", "I'm two minutes away"), pop round, or ask them over, the way neighbours do — never as a big announcement.`;
@@ -48,6 +49,13 @@ export async function hostingNow(userId: string, except?: string): Promise<{ id:
   return r ? { id: String(r.id), name: String(r.name) } : null;
 }
 
+/** 🚶 Out at someone else's place right now: you're not home to answer your own door. */
+export async function outAtTheirs(userId: string): Promise<{ id: string; name: string; place: string } | null> {
+  const [r] = await sql()`select c.id, c.name, p.place from chat_in_person p join chat_characters c on c.id = p.character_id
+    where p.user_id = ${userId} and not p.at_mine order by p.started_at desc limit 1`;
+  return r ? { id: String(r.id), name: String(r.name), place: String(r.place || "") } : null;
+}
+
 /** Anyone standing there right now (the popup reads this). */
 export async function waitingDropIn(userId: string): Promise<DropIn | null> {
   const [r] = await sql()`select d.id, d.character_id, d.kind, d.line, c.name, f.url as portrait
@@ -55,7 +63,9 @@ export async function waitingDropIn(userId: string): Promise<DropIn | null> {
     where d.user_id = ${userId} and d.status = 'waiting' and d.created_at > now() - interval '20 minutes'
     order by d.created_at desc limit 1`;
   if (!r) return null;
-  return { id: String(r.id), characterId: String(r.character_id), who: String(r.name), portrait: r.portrait ? String(r.portrait) : null, kind: r.kind, line: String(r.line), hosting: await hostingNow(userId, String(r.character_id)) };
+  const out = await outAtTheirs(userId);
+  return { id: String(r.id), characterId: String(r.character_id), who: String(r.name), portrait: r.portrait ? String(r.portrait) : null, kind: r.kind, line: String(r.line),
+    hosting: out ? null : await hostingNow(userId, String(r.character_id)), away: out && out.id !== String(r.character_id) ? { name: out.name } : null };
 }
 
 /** 🙋 You asked her over in the last few hours — then she can turn up whether or not you're close. */
@@ -133,7 +143,9 @@ export async function maybeDropIn(userId: string, chance = 0.08): Promise<DropIn
     const kind: Kind = secret ? (Math.random() < 0.8 ? "back" : "over") : Math.random() < 0.6 ? "door" : "over";
     const line = await knockLine(c, kind, String(u?.name || ""));
     const [row] = await sql()`insert into chat_dropins (user_id, character_id, kind, line) values (${userId}, ${c.id}, ${kind}, ${line.slice(0, 300)}) returning id`;
-    return { id: String(row.id), characterId: c.id, who: c.name, portrait: c.portrait_url, kind, line, hosting: await hostingNow(userId, c.id) };
+    const out = await outAtTheirs(userId);
+    return { id: String(row.id), characterId: c.id, who: c.name, portrait: c.portrait_url, kind, line,
+      hosting: out ? null : await hostingNow(userId, c.id), away: out && out.id !== c.id ? { name: out.name } : null };
   }
   return null;
 }
@@ -164,7 +176,8 @@ export async function answerDropIn(userId: string, id: string, meetChance = 0.2)
       return { characterId: c.id, groupId: g.id, place: where, note: NOTE(kind), marker, met: { who: host.name, knewEachOther } };
     }
   }
-  await startInPerson(userId, c.id, place);
+  // 🚪 She came to yours, or you went round to hers: it decides whether you're home to answer a knock.
+  await startInPerson(userId, c.id, place, kind !== "over");
   return { characterId: c.id, place, note: NOTE(kind), marker };
 }
 
@@ -184,8 +197,27 @@ async function metAtTheDoor(a: string, b: string, aName: string, bName: string, 
 
 /** 🙈 You left it. She never knows you were standing there, and nothing changes between you. */
 export async function ignoreDropIn(userId: string, id: string): Promise<boolean> {
-  const rows = await sql()`update chat_dropins set status = 'ignored' where id = ${id} and user_id = ${userId} and status = 'waiting' returning 1`;
-  return rows.length > 0;
+  const rows = await sql()`update chat_dropins set status = 'ignored' where id = ${id} and user_id = ${userId} and status = 'waiting' returning character_id`;
+  if (!rows.length) return false;
+  // 🚶 You were round at someone else's, so you couldn't have answered: she texts to say she called by.
+  if (await outAtTheirs(userId).catch(() => null)) await stoppedBy(userId, String(rows[0].character_id)).catch(e => console.error("neighbor: stopped by", e instanceof Error ? e.message : e));
+  return true;
+}
+
+/** 📩 "I stopped by" — her own words, a few minutes after nobody came to the door. */
+export async function stoppedBy(userId: string, characterId: string): Promise<void> {
+  const c = await getCharacterFor(userId, characterId).catch(() => null);
+  if (!c) return;
+  const [u] = await sql()`select name from users where id = ${userId}`;
+  const plain = ["knocked just now — car's there so I know you're about! No rush, catch you later 🙂",
+    "stopped by, no answer. Saw your car so I'll assume you're busy — no worries x",
+    "came by earlier! Your car's out front so I know you're around somewhere. Shout when you're free."];
+  const raw = await writeText(c.brain, `You are ${c.name}. ${c.personality || ""}
+You live a few doors down from ${String(u?.name || "them")}. You knocked just now and nobody came to the door — but their car is parked outside, so you know they're around here somewhere and simply couldn't come to the door. You're texting to say you called by: warm and completely understanding, no sulking, no pressure, no interrogating them about where they were. You do NOT know where they are and you never guess out loud. Write ONE short text in your own voice, under 140 characters, no quotes, no sign-off. Just the text.`,
+    "You called round, their car is there, and they didn't come to the door.", 70, { ms: 8_000 }).catch(() => "");
+  const line = scrub(raw.replace(/\s+/g, " ").replace(/^["']|["']$/g, "").trim()).slice(0, 200) || plain[Math.floor(Math.random() * plain.length)];
+  await sql()`insert into velo_messages (user_id, role, content, character_id) values (${userId}, 'assistant', ${line}, ${characterId})`;
+  await sendPush(userId, { title: c.name, body: line.slice(0, 170), url: `/?chat=${characterId}`, icon: c.portrait_url || "/icon-192.png", tag: `chat-${characterId}` }).catch(() => {});
 }
 
 /** The note she's given while you're together after a drop-in. */

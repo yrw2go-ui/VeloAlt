@@ -9,9 +9,9 @@ export async function inPersonFor(userId: string, characterId: string): Promise<
   return r ? { place: String(r.place || ""), started_at: String(r.started_at) } : null;
 }
 
-export async function startInPerson(userId: string, characterId: string, place: string): Promise<InPerson> {
-  const [r] = await sql()`insert into chat_in_person (user_id, character_id, place) values (${userId}, ${characterId}, ${place})
-    on conflict (user_id, character_id) do update set place = excluded.place, started_at = now() returning place, started_at::text`;
+export async function startInPerson(userId: string, characterId: string, place: string, atMine = false): Promise<InPerson> {
+  const [r] = await sql()`insert into chat_in_person (user_id, character_id, place, at_mine) values (${userId}, ${characterId}, ${place}, ${atMine})
+    on conflict (user_id, character_id) do update set place = excluded.place, at_mine = excluded.at_mine, started_at = now() returning place, started_at::text`;
   return { place: String(r.place || ""), started_at: String(r.started_at) };
 }
 
@@ -39,7 +39,7 @@ export async function isHome(userId: string, c: { id: string; live_in?: boolean 
 }
 
 export const setHome = async (userId: string, characterId: string, home: boolean) =>
-  home ? void (await startInPerson(userId, characterId, HOME)) : void (await endInPerson(userId, characterId));
+  home ? void (await startInPerson(userId, characterId, HOME, true)) : void (await endInPerson(userId, characterId));
 
 export function homeNote(who: string): string {
   return `🏠 YOU'RE BOTH HOME RIGHT NOW — you live together, and you're in the house with ${who} this minute. This isn't texting: you're in the same rooms, face to face. Talk like it: present tense, a quick action in *italics* when it fits (*I call through from the kitchen*), answer what they say and do right there, and live in the place — what you're cooking, the telly on, the washing, who's getting the door, coming through to find them. Don't talk like you're apart: no "wish you were here", no "can't wait to see you", no "text me later", and don't send them photos of yourself — they can see you. You know the difference between this and being out: when you're out you text, when you're home you talk. Let them lead their own actions; never decide what they do. Keep it within PG-13 and your sliders. Lines starting with 🏠 mark when you came in or went out.`;
