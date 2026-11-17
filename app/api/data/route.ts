@@ -16,7 +16,7 @@ import { deleteMessages } from "../../lib/forget";
 import { sql } from "../../lib/db";
 import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
-import { isValidTimeZone, localDate } from "../../lib/localTime";
+import { isValidTimeZone, localDate, zonedParts } from "../../lib/localTime";
 import { VELO_LOOKS } from "../../lib/veloAvatars";
 import { toE164, showPhone, twilioReady, veloNumber } from "../../lib/twilio";
 import { PHONE_MSG } from "../../lib/contact";
@@ -26,6 +26,7 @@ import { availableModels, availableBrains, CHAT_MODELS, MODEL_INFO, type ChatMod
 import { PERSONALITIES } from "../../lib/persona";
 import { deleteFile, ownFile } from "../../lib/files";
 import { roomForMore } from "../../lib/together";
+import { planLabel, isUrgent, tagged } from "../../lib/planTag";
 import { maybeInvite } from "../../lib/meetups";
 import { getCharacterFor, trustFor, happyFor, loveFor, activeScene, saveFeelings, referenceUrls, pictureOf } from "../../lib/characters";
 import { US_STATES } from "../../lib/states";
@@ -165,7 +166,26 @@ export async function POST(req: NextRequest) {
           left join velo_files mf on mf.id = md.file_id
           left join velo_files mt on mt.id = md.thumb_file_id
           where m.user_id = ${me} and m.character_id is not distinct from ${ch?.id || null} order by m.created_at desc, m.id desc limit 60`;
-        return NextResponse.json({ messages: rows.reverse().filter(r => r.role === "user" || r.file_id || r.media_id || cleanTags(String(r.content))).map(r => ({ id: r.id, role: r.role, at: r.at, ...(r.peek ? { peek: true } : {}), content: r.role === "assistant" ? cleanTags(String(r.content)) : r.content, reaction: r.reaction || null, theirReaction: r.their_reaction || null,
+        // 📅 What you two have on: a quiet line under a few of her messages, a 🚨 in the last hour.
+        let tag: { text: string; urgent: boolean } | null = null;
+        let carry = new Set<string>();
+        if (ch) {
+          const zone = isValidTimeZone(b.timeZone) ? String(b.timeZone) : "America/Chicago";
+          const day = localDate(Date.now(), zone);
+          const { hour, minute } = zonedParts(Date.now(), zone);
+          const now = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+          const [plan] = await db`select title, details, day::text, at_time, kind from chat_plans
+            where user_id = ${me} and character_id = ${ch.id} and status = 'planned' and day >= ${day}::date
+            order by day, at_time nulls last limit 1`;
+          if (plan) {
+            const p = { title: String(plan.title || ""), details: String(plan.details || ""), day: String(plan.day), at_time: String(plan.at_time || ""), kind: String(plan.kind || "video") };
+            const urgent = isUrgent(p, day, now);
+            tag = { text: planLabel(p, day), urgent };
+            carry = tagged(rows.map(r => ({ id: String(r.id), role: String(r.role), at: String(r.at) })), urgent ? Date.now() - 3600_000 : null, Date.now());
+          }
+        }
+        return NextResponse.json({ messages: rows.reverse().filter(r => r.role === "user" || r.file_id || r.media_id || cleanTags(String(r.content))).map(r => ({ id: r.id, role: r.role, at: r.at,
+          ...(tag && carry.has(String(r.id)) ? { plan: tag } : {}), ...(r.peek ? { peek: true } : {}), content: r.role === "assistant" ? cleanTags(String(r.content)) : r.content, reaction: r.reaction || null, theirReaction: r.their_reaction || null,
           ...(r.file_id ? { file: { id: r.file_id, url: r.file_url, thumb: r.file_thumb || null, name: r.file_name, type: r.file_type } } : {}),
           ...(r.media_id ? { media: { id: r.media_id, kind: r.media_kind, status: r.media_status, url: r.media_status === "done" ? r.media_url : null, thumb: r.media_thumb || null, reaction: r.media_reaction || null, description: r.media_description || null, kept: !!r.media_kept, subject: r.media_subject || null, created_at: r.at, ...(r.media_social ? { social: true } : {}) } } : {}) })) });
       }

@@ -25,7 +25,7 @@ import { CLAIMS_MEDIA } from "./lib/mediaWords";
 export type ChatWith = { id: string; name: string; portrait_url: string | null; romantic?: boolean; brain?: string; live_in?: boolean; neighbor?: boolean; home?: boolean };
 
 export type ChatFile = { id: string; url: string; thumb?: string | null; name: string; type: string };
-export type ChatMsg = { id?: string; at?: string; role: "user" | "assistant"; content: string; peek?: boolean; draft?: Draft; file?: ChatFile; media?: Media; reaction?: string | null; theirReaction?: string | null };
+export type ChatMsg = { id?: string; at?: string; role: "user" | "assistant"; content: string; peek?: boolean; draft?: Draft; file?: ChatFile; media?: Media; reaction?: string | null; theirReaction?: string | null; plan?: { text: string; urgent: boolean } };
 /** How a sent photo/video reads in the history the AI sees. */
 export const mediaNote = (m: Media) => {
   const other = m.subject && m.subject !== "me" && m.subject !== "none" ? m.subject.replace(/^me\+/, "") : "";
@@ -78,7 +78,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   };
   // A call finished: Velo's report landed in the chat (draft cards stay where they are).
   const reload = useCallback(() => {
-    data<{ messages: ChatMsg[] }>("messages.list", thread).then(r => setMsgs(m => {
+    data<{ messages: ChatMsg[] }>("messages.list", { ...thread, timeZone: timeZone() }).then(r => setMsgs(m => {
       // Fresh history from the server; each card goes back after the message it followed.
       const out = [...r.messages];
       let anchor: ChatMsg | undefined;
@@ -101,7 +101,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   useEffect(() => {
     // History, then drafts still waiting for a Send and calls still going.
     Promise.all([
-      data<{ messages: ChatMsg[] }>("messages.list", thread).then(r => r.messages).catch(() => [] as ChatMsg[]),
+      data<{ messages: ChatMsg[] }>("messages.list", { ...thread, timeZone: timeZone() }).then(r => r.messages).catch(() => [] as ChatMsg[]),
       // Drafts (texts, calls, posts) are Velo's; characters can't send anything.
       cid ? Promise.resolve([] as Draft[]) : data<{ drafts: Draft[] }>("drafts.list").then(r => r.drafts).catch(() => [] as Draft[]),
     ]).then(([m, d]) => {
@@ -900,6 +900,13 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
         {!mine && m.reaction && badge(m.reaction, "You")}
       </div>
       {picking && m.id && <ReactionBar value={m.reaction} onPick={r => { onReactMsg(m.id!, r); setPicking(false); }} />}
+      {/* 📅 What you two have on — quiet, until the last hour. */}
+      {m.plan && (
+        <div data-testid={m.plan.urgent ? "plan-tag-urgent" : "plan-tag"} style={{ alignSelf: "flex-end", marginTop: 3, fontSize: 11, fontStyle: "italic",
+          color: m.plan.urgent ? "#f87171" : "var(--muted)", opacity: m.plan.urgent ? 1 : 0.75, fontWeight: m.plan.urgent ? 700 : 400 }}>
+          {m.plan.urgent ? "🚨 " : ""}{m.plan.text}
+        </div>
+      )}
       <When at={m.at} align={mine ? "right" : "left"} />
       </div>
     </div>
