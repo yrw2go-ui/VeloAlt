@@ -15,6 +15,7 @@ import { confirmAsk } from "./lib/dialog";
 import { useDictation } from "./dictate";
 import { CharacterFace, LinkBackForm } from "./characters";
 import { MediaView, ReactionBar, type Media } from "./media";
+import { EditSheet } from "./edit";
 import { isHot } from "./lib/reactions";
 import { dropThoughts, noJargon, dropSentNote } from "./lib/text";
 import { CLAIMS_MEDIA } from "./lib/mediaWords";
@@ -885,19 +886,9 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
         style={{ position: "relative", cursor: !mine && m.id ? "pointer" : undefined, padding: "10px 14px", borderRadius: 18, borderBottomLeftRadius: mine ? 18 : 4, borderBottomRightRadius: mine ? 4 : 18,
         background: mine ? "linear-gradient(135deg, var(--accent), var(--accent2))" : "var(--surface2)", color: "var(--text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", lineHeight: 1.45, fontSize: 15 }}>
         {m.file && <div style={{ marginBottom: m.content && m.content !== "📎" ? 8 : 0 }}><FileThumb f={m.file} size={180} /></div>}
-        {editing !== null ? (
-          // ✏️ Double-tapped: reword it in place. Enter saves, Escape leaves it as it was.
-          <div style={{ display: "grid", gap: 6, minWidth: 180 }} onClick={e => e.stopPropagation()}>
-            <textarea value={editing} autoFocus data-testid="edit-box" aria-label="Edit message" rows={Math.min(8, editing.split("\n").length + 1)}
-              onChange={e => setEditing(e.target.value)}
-              onKeyDown={e => { if (e.key === "Escape") setEditing(null); if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void save(); } }}
-              style={{ width: "100%", minWidth: 180, resize: "vertical", font: "inherit", color: "var(--text)", background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "6px 8px" }} />
-            <div className="row" style={{ gap: 6, justifyContent: "flex-end" }}>
-              <button className="ghost" data-testid="edit-cancel" onClick={() => setEditing(null)} style={{ padding: "2px 10px", fontSize: 12 }}>Cancel</button>
-              <button className="ghost" data-testid="edit-save" disabled={!editing.trim() || saving} onClick={() => void save()} style={{ padding: "2px 10px", fontSize: 12 }}>{saving ? "Saving…" : "Save"}</button>
-            </div>
-          </div>
-        ) : m.content !== "📎" && styled((mine ? m.content : noJargon(dropSentNote(dropThoughts(m.content))).trim()).replace(/\*\*(.+?)\*\*/g, "$1"))}
+        {m.content !== "📎" && styled((mine ? m.content : noJargon(dropSentNote(dropThoughts(m.content))).trim()).replace(/\*\*(.+?)\*\*/g, "$1"))}
+        {/* ✏️ Double-tapped: the words get the whole screen. */}
+        {editing !== null && <EditSheet who={mine ? "Your message" : who} value={editing} busy={saving} onChange={setEditing} onSave={() => void save()} onClose={() => setEditing(null)} />}
         {mine && m.theirReaction && badge(m.theirReaction, who)}
         {!mine && m.reaction && badge(m.reaction, "You")}
       </div>

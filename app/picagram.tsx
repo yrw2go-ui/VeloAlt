@@ -7,6 +7,7 @@ import { api, data, uploadFile, uploadPicaPicture } from "./lib/api";
 import { hideSecrets } from "./lib/secrets";
 import { noJargon } from "./lib/text";
 import { MediaView, type Media } from "./media";
+import { EditSheet } from "./edit";
 import { RedoSheet } from "./redo";
 import { TraitSliders } from "./characters";
 import { Selectable } from "./chat";
@@ -1298,20 +1299,13 @@ function DmText({ m, onEdit }: { m: { id: string; role: string; content: string 
     setSaving(false);
   };
   const box = { padding: "9px 13px", borderRadius: 18, background: mine ? "linear-gradient(135deg,#8b5cf6,#ec4899)" : "var(--surface2)", color: mine ? "#fff" : "var(--text)", whiteSpace: "pre-wrap" as const, overflowWrap: "anywhere" as const, fontSize: 15 };
-  if (editing !== null) return (
-    <div style={{ ...box, display: "grid", gap: 6, minWidth: 180 }} onClick={e => e.stopPropagation()}>
-      <textarea value={editing} autoFocus data-testid="dm-edit-box" aria-label="Edit message" rows={Math.min(8, editing.split("\n").length + 1)}
-        onChange={e => setEditing(e.target.value)}
-        onKeyDown={e => { if (e.key === "Escape") setEditing(null); if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void save(); } }}
-        style={{ width: "100%", minWidth: 180, resize: "vertical", font: "inherit", color: "var(--text)", background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: "6px 8px" }} />
-      <div className="row" style={{ gap: 6, justifyContent: "flex-end" }}>
-        <button className="ghost" data-testid="dm-edit-cancel" onClick={() => setEditing(null)} style={{ padding: "2px 10px", fontSize: 12 }}>Cancel</button>
-        <button className="ghost" data-testid="dm-edit-save" disabled={!editing.trim() || saving} onClick={() => void save()} style={{ padding: "2px 10px", fontSize: 12 }}>{saving ? "Saving…" : "Save"}</button>
-      </div>
-    </div>
-  );
   return (
-    <div data-testid="dm-text" style={box} onDoubleClick={open}
-      onClick={() => { const now = Date.now(); if (now - lastTap.current < 400) open(); lastTap.current = now; }}>{m.content}</div>
+    <>
+      <div data-testid="dm-text" style={box} onDoubleClick={open}
+        onClick={() => { const now = Date.now(); if (now - lastTap.current < 400) open(); lastTap.current = now; }}>{m.content}</div>
+      {/* ✏️ Double-tapped: the words get the whole screen. */}
+      {editing !== null && <EditSheet testid="dm-edit" who={mine ? "Your message" : "Her message"} value={editing} busy={saving}
+        onChange={setEditing} onSave={() => void save()} onClose={() => setEditing(null)} />}
+    </>
   );
 }
