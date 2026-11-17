@@ -20,3 +20,14 @@ for (const t of ["I'm at work, maybe later", "that's so funny", "how was your da
 
 // 📸 The old "it's on its way" wording still counts on its own.
 ok(CLAIMS_MEDIA.test("sending you one now 📸"), "saying it's on its way still counts");
+
+// 📤 Ways of saying one is on its way (or went astray), without the word "photo" anywhere.
+for (const t of ["hope it came through!", "hope that lands ok", "hope it shows up", "hoping it went through",
+  "sending it again", "resending now", "let me try again", "lemme send that again",
+  "did it come through?", "has it arrived yet?", "it should be there in a sec", "it's on its way",
+  "just sent 😊", "fingers crossed it works", "tell me if it doesn't show up"])
+  ok(CLAIMS_MEDIA.test(t), `"${t}" counts as one being on its way`);
+// …and ordinary talk doesn't.
+for (const t of ["hope you had a good day", "I'll send you the address later", "did you come through town?",
+  "hope it's sunny tomorrow", "should be there by eight"])
+  ok(!CLAIMS_MEDIA.test(t), `"${t}" doesn't`);
