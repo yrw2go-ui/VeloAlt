@@ -31,7 +31,7 @@ export async function isAdmin(userId: string): Promise<boolean> {
 
 export async function getCharacter(id: string): Promise<Character | null> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
-  const [c] = await sql()`select c.id, c.name, c.personality, c.backstory, c.relation, c.appearance, c.job, c.casual_wear, c.hobbies, c.voice, c.voice_name, c.voice_kind, c.romantic, c.romance_arc, c.reference_ids, c.time_zone, c.traits, c.preset, c.birthday, c.brain, c.standing, c.work_attire, c.work_days, c.work_start, c.work_end, c.part_time, c.school, c.class_days, c.class_start, c.class_end, c.poly_ok, c.sapphic, c.live_in, c.local, c.neighbor, c.attached, c.sees_others, c.lesbian, c.lesbian_personality, c.partner, c.attached_since::text, c.attached_until::text, c.big_following, c.owner_id, c.portrait_job, f.url as portrait_url
+  const [c] = await sql()`select c.id, c.name, c.personality, c.backstory, c.relation, c.appearance, c.job, c.casual_wear, c.hobbies, c.voice, c.voice_name, c.voice_kind, c.romantic, c.romance_arc, c.reference_ids, c.time_zone, c.traits, c.preset, c.birthday, c.brain, c.standing, c.work_attire, c.work_days, c.work_start, c.work_end, c.part_time, c.school, c.class_days, c.class_start, c.class_end, c.poly_ok, c.sapphic, c.live_in, c.local, c.neighbor, c.lives_in, c.attached, c.sees_others, c.lesbian, c.lesbian_personality, c.partner, c.attached_since::text, c.attached_until::text, c.big_following, c.owner_id, c.portrait_job, f.url as portrait_url
     from chat_characters c left join velo_files f on f.id = c.portrait_file_id where c.id = ${id}`;
   return (c as Character) || null;
 }
@@ -45,7 +45,7 @@ export async function getCharacterFor(userId: string, id: string): Promise<Chara
 }
 
 export async function listCharacters(userId?: string): Promise<Character[]> {
-  return (await sql()`select c.id, c.name, c.personality, c.backstory, c.relation, c.appearance, c.job, c.casual_wear, c.hobbies, c.voice, c.voice_name, c.voice_kind, c.romantic, c.romance_arc, c.reference_ids, c.time_zone, c.traits, c.preset, c.birthday, c.brain, c.standing, c.work_attire, c.work_days, c.work_start, c.work_end, c.part_time, c.school, c.class_days, c.class_start, c.class_end, c.poly_ok, c.sapphic, c.live_in, c.local, c.neighbor, c.attached, c.sees_others, c.lesbian, c.lesbian_personality, c.partner, c.attached_since::text, c.attached_until::text, c.big_following, c.portrait_job, f.url as portrait_url,
+  return (await sql()`select c.id, c.name, c.personality, c.backstory, c.relation, c.appearance, c.job, c.casual_wear, c.hobbies, c.voice, c.voice_name, c.voice_kind, c.romantic, c.romance_arc, c.reference_ids, c.time_zone, c.traits, c.preset, c.birthday, c.brain, c.standing, c.work_attire, c.work_days, c.work_start, c.work_end, c.part_time, c.school, c.class_days, c.class_start, c.class_end, c.poly_ok, c.sapphic, c.live_in, c.local, c.neighbor, c.lives_in, c.attached, c.sees_others, c.lesbian, c.lesbian_personality, c.partner, c.attached_since::text, c.attached_until::text, c.big_following, c.portrait_job, f.url as portrait_url,
       a.handle as pica_handle
     from chat_characters c left join velo_files f on f.id = c.portrait_file_id
       left join pica_accounts a on a.character_id = c.id and a.user_id = ${userId || null}::uuid
