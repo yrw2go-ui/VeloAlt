@@ -1,13 +1,14 @@
 // Run: node --experimental-strip-types tests/gifts.test.ts
-import { GIFTS, SLOTS, giftById, shopFor, weekOf, wishlistFor, onWishlist, boostFrom, boostNote, BOOST_MS, myGift, myGiftId, isMyGift, MAX_MY_GIFTS, MY_GIFT_EMOJI, photoBrief, MONEY_FLOOR, WISHED_X, WANTS_YOURS_AT } from "../app/lib/gifts.ts";
+import { GIFTS, SLOTS, ROTATING, giftById, shopFor, weekOf, wishlistFor, onWishlist, boostFrom, boostNote, BOOST_MS, myGift, myGiftId, isMyGift, MAX_MY_GIFTS, MY_GIFT_EMOJI, photoBrief, MONEY_FLOOR, WISHED_X, WANTS_YOURS_AT } from "../app/lib/gifts.ts";
 
 let bad = 0;
 const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m); if (!c) bad++; };
 const NOW = Date.parse("2026-11-18T12:00:00Z");
 const hoursAgo = (h: number) => NOW - h * 3_600_000;
 
-// 🎁 Fifty things, each priced like the real thing.
-ok(GIFTS.length === 50, `fifty gifts to choose from (${GIFTS.length})`);
+// 🎁 Everything there is, each priced like the real thing — ninety of them on rotation.
+ok(GIFTS.length === 113, `a hundred and thirteen gifts to choose from (${GIFTS.length})`);
+ok(GIFTS.filter(g => !g.always && !g.slot).length === 90, `ninety of them are on rotation (${GIFTS.filter(g => !g.always && !g.slot).length})`);
 ok(new Set(GIFTS.map(g => g.id)).size === GIFTS.length, "…no two the same");
 ok(GIFTS.every(g => g.price >= 8 && g.price <= 8000), "…all priced like the real thing");
 ok(!!giftById("gucci-purse") && giftById("gucci-purse")!.price > 2000, "a Gucci purse costs what a Gucci purse costs");
@@ -19,10 +20,15 @@ const w = weekOf(NOW);
 ok(weekOf(NOW + 7 * 86_400_000) === w + 1, "a week later is the next week");
 ok(weekOf(NOW + 6 * 3_600_000) === w, "…and six hours later is the same one");
 const [a, b] = [shopFor(w), shopFor(w + 1)];
-ok(a.length >= 20 && a.length <= 36, `the shop holds a good spread (${a.length})`);
+ok(a.length === GIFTS.filter(g => g.always).length + SLOTS.length + ROTATING, `the shop holds the staples, a slot each and thirty more (${a.length})`);
+// 🔁 Thirty come and go each week, out of a good deal more than thirty.
+const rotating = (week: number) => shopFor(week).filter(g => !g.always && !g.slot);
+ok(rotating(w).length === ROTATING, `thirty of them are on rotation (${rotating(w).length})`);
+ok(GIFTS.filter(g => !g.always && !g.slot).length > ROTATING + 8, `and there are plenty more waiting their turn (${GIFTS.filter(g => !g.always && !g.slot).length})`);
+ok(rotating(w).map(g => g.id).join() !== rotating(w + 1).map(g => g.id).join(), "a different thirty next week");
 ok(JSON.stringify(a) === JSON.stringify(shopFor(w)), "the same week always has the same shop");
 ok(JSON.stringify(a) !== JSON.stringify(b), "the next week's is different");
-ok(a.filter(g => g.price <= 200 && !g.slot).length === GIFTS.filter(g => g.price <= 200 && !g.slot).length, "the everyday things are always in");
+ok(GIFTS.filter(g => g.always).every(g => a.some(x => x.id === g.id)), "the everyday things are always in");
 
 // 👙 One bikini, one high-cut leotard, one necklace, one pair of platform heels - every week.
 for (const week of [w, w + 1, w + 2, w + 3, w + 7, w + 30]) {
@@ -34,12 +40,18 @@ for (const week of [w, w + 1, w + 2, w + 3, w + 7, w + 30]) {
 const overWeeks = (sl: string) => new Set(Array.from({ length: 26 }, (_, i) => shopFor(w + i).find(g => g.slot === sl)!.id));
 ok(SLOTS.every(sl => overWeeks(sl).size > 1), "and it isn't the same one week after week");
 
-// ☕ The five small ones, always there, never rotated, never on a wishlist.
+// ☕ The small ones, always there, never rotated, never on a wishlist.
 const staples = GIFTS.filter(g => g.always);
-ok(staples.length === 6, `six small ones that never rotate (${staples.map(g => g.name).join(", ")})`);
+ok(staples.length === 8, `eight that never rotate (${staples.map(g => g.name).join(", ")})`);
+const wine = GIFTS.find(g => g.id === "wine")!;
+ok(!!wine.always && wine.price === 35, `a nice bottle of wine is one of them, at $${wine.price}`);
+// 🌹 Roses are one of them now, at the bottom with the rest.
+const roses = GIFTS.find(g => g.id === "flowers")!;
+ok(!!roses.always, "a dozen roses never rotate out");
+ok([...Array(12).keys()].every(i => shopFor(w + i).some(g => g.id === "flowers")), "…so they are there every week of the year");
 const book = GIFTS.find(g => g.id === "book")!;
 ok(!!book.always && book.price === 25, `a book is one of them, at $${book.price}`);
-ok(GIFTS[GIFTS.length - 1].id === "book", "and it sits at the bottom of the list");
+ok(GIFTS[GIFTS.length - 1].id === "wine", "and the wine sits right at the bottom, after the roses");
 ok(staples.every(g => shopFor(w).some(x => x.id === g.id) && shopFor(w + 7).some(x => x.id === g.id) && shopFor(w + 31).some(x => x.id === g.id)), "…in the shop every week, whatever the week");
 ok(giftById("iced-latte")!.price === 10 && giftById("ice-cream")!.price === 8 && giftById("food-delivery")!.price === 30
   && giftById("gift-card")!.price === 50 && giftById("team-gear")!.price === 60, "…priced as the small things they are");
@@ -98,7 +110,7 @@ ok(/never as a transaction/.test(note) && /never as something that bought you/.t
 ok(boostNote(null, "a purse", "Sam") === "", "nothing sent, nothing said");
 
 // 🛍️ Things you list yourself.
-ok(MAX_MY_GIFTS === 5, "you can list five of your own");
+ok(MAX_MY_GIFTS === 10, "you can list ten of your own");
 const own = myGift({ id: "aaaaaaaa-1111-2222-3333-444444444444", name: "courtside tickets", brand: "Bulls", price: 900 });
 ok(own.emoji === MY_GIFT_EMOJI && own.emoji === "🛍️", "one of yours carries a plain shopping bag");
 ok(own.price === 900 && own.name === "courtside tickets" && own.brand === "Bulls", "…with what you said it was, and what you said it cost");

@@ -8,7 +8,7 @@ import { confirmAsk } from "./lib/dialog";
 import { isMyGift } from "./lib/gifts";
 
 type Gift = { id: string; name: string; brand: string; kind: string; price: number; emoji: string; was?: number; off?: number };
-type Person = { id: string; kind: "character" | "account"; name: string; handle: string | null; face: string | null; wishlist: Gift[]; hinting?: boolean };
+type Person = { id: string; kind: "character" | "account"; name: string; handle: string | null; face: string | null; wishlist: Gift[]; hinting?: boolean; leftToday?: number };
 type Sent = { id: string; kind: string; who: string; handle: string | null; what: string; amount: number; wished: boolean; note: string; at: string };
 
 const money = (n: number) => `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
@@ -35,7 +35,7 @@ export default function Gifts() {
   const [err, setErr] = useState("");
   const [cash, setCash] = useState("");
   const [note, setNote] = useState("");
-  // 🛍️ Your own things to send: up to five, listed by hand, never rotated away.
+  // 🛍️ Your own things to send: up to ten, listed by hand, never rotated away.
   const [mine, setMine] = useState<Gift[]>([]);
   const [maxMine, setMaxMine] = useState(5);
   const [newGift, setNewGift] = useState({ brand: "", name: "", price: "" });
@@ -54,9 +54,10 @@ export default function Gifts() {
     if (!chosen) { setErr("Pick who it's for first."); return; }
     setBusy(gift ? gift.id : "money"); setErr("");
     try {
-      const r = await api<{ sent: { amount: number; wished: boolean }; wallet: number; bank: number; history: Sent[] }>("/api/gifts",
+      const r = await api<{ sent: { amount: number; wished: boolean; leftToday?: number }; wallet: number; bank: number; history: Sent[] }>("/api/gifts",
         { action: "send", toKind: chosen.kind, toId: chosen.id, giftId: gift?.id, money: amount, note });
       setWallet(r.wallet); setBank(r.bank); setHistory(r.history); setNote(""); setCash("");
+      if (typeof r.sent.leftToday === "number") setPeople(ps => ps.map(p => (p.id === chosen.id ? { ...p, leftToday: r.sent.leftToday } : p)));
       await confirmAsk(`${gift ? `${gift.emoji} ${gift.brand} ${gift.name}` : money(r.sent.amount)} sent to ${chosen.name}.${r.sent.wished ? ` It was on ${chosen.name}'s wishlist — that one really lands.` : ""}\n\nFor the next two days ${chosen.name} is warmer with you, keener to meet up or get on video, and much more likely to slip away from work or class for you.`, { yes: "Lovely", danger: false });
     } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't send that."); }
     finally { setBusy(""); }
@@ -135,6 +136,11 @@ export default function Gifts() {
           <div data-testid="wishlist" style={{ padding: "10px 12px", borderRadius: 12, background: "rgba(244,114,182,.10)", border: "1px solid rgba(244,114,182,.35)" }}>
             <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>💭 {chosen.name}&apos;s wishlist this week
               {chosen.hinting && <span data-testid="has-hinted" style={{ fontWeight: 500, marginLeft: 6 }}>· 🔴 {chosen.name} has been hinting</span>}</div>
+            {typeof chosen.leftToday === "number" && (
+              <div data-testid="left-today" className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
+                {chosen.leftToday > 0 ? `${chosen.leftToday} more ${chosen.leftToday === 1 ? "present" : "presents"} for ${chosen.name} today` : `That’s everything for ${chosen.name} today — more tomorrow`}
+              </div>
+            )}
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               {chosen.wishlist.map(g => (
                 <div key={g.id} className="row" style={{ justifyContent: "space-between", gap: 8, fontSize: 13 }}>
@@ -150,7 +156,7 @@ export default function Gifts() {
             <div className="row" style={{ gap: 8 }}>
               <input value={cash} onChange={e => setCash(e.target.value.replace(/[^\d]/g, "").slice(0, 5))} inputMode="numeric"
                 data-testid="cash" aria-label={`How much to send ${chosen.name}`} placeholder="250" style={{ flex: 1 }} />
-              <button className="btn" data-testid="send-money" disabled={!cash || busy === "money"} onClick={() => send(null, Number(cash))}
+              <button className="btn" data-testid="send-money" disabled={!cash || busy === "money" || chosen.leftToday === 0} onClick={() => send(null, Number(cash))}
                 style={{ padding: "8px 14px", fontSize: 13, whiteSpace: "nowrap" }}>{busy === "money" ? "Sending…" : "Send"}</button>
             </div>
             <input value={note} onChange={e => setNote(e.target.value.slice(0, 200))} data-testid="gift-note"
@@ -185,7 +191,7 @@ export default function Gifts() {
                 <button className="btn" data-testid="list-item" disabled={!newGift.name.trim() || !newGift.price} onClick={listItem}
                   style={{ padding: "8px 14px", fontSize: 13, whiteSpace: "nowrap" }}>List item</button>
               </div>
-            ) : <div className="muted" style={{ fontSize: 12 }}>That&apos;s all five. Remove one to list something else.</div>}
+            ) : <div className="muted" style={{ fontSize: 12 }}>That&apos;s all ten. Remove one to list something else.</div>}
           </div>
 
           <div>
@@ -203,8 +209,8 @@ export default function Gifts() {
                       {g.was ? <span style={{ textDecoration: "line-through", opacity: .6, marginRight: 5, fontWeight: 500 }}>{money(g.was)}</span> : null}
                       {money(g.price)}
                     </span>
-                    <button className="btn" disabled={!!busy || g.price > wallet} onClick={() => send(g)}
-                      style={{ padding: "4px 10px", fontSize: 12 }}>{busy === g.id ? "…" : g.price > wallet ? "Too dear" : "Send"}</button>
+                    <button className="btn" disabled={!!busy || g.price > wallet || chosen.leftToday === 0} onClick={() => send(g)}
+                      style={{ padding: "4px 10px", fontSize: 12 }}>{busy === g.id ? "…" : chosen.leftToday === 0 ? "Tomorrow" : g.price > wallet ? "Too dear" : "Send"}</button>
                   </div>
                 </div>
               ))}
@@ -229,7 +235,7 @@ export default function Gifts() {
         </div>
       )}
       <div className="muted" style={{ fontSize: 12, lineHeight: 1.45 }}>
-        It&apos;s play money. For two days after a present or some cash, they&apos;re warmer with you, readier to meet up or get on video, and much more likely to slip away from work or class for you — more so if it was something on their wishlist. The shop and every wishlist change each week.
+        It&apos;s play money. Five presents a day each, cash included. For two days after a present or some cash, they&apos;re warmer with you, readier to meet up or get on video, and much more likely to slip away from work or class for you — more so if it was something on their wishlist. The shop and every wishlist change each week.
       </div>
     </div>
   );

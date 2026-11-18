@@ -41,9 +41,70 @@ export const GIFTS: Gift[] = [
   { id: "spa-day", brand: "Spa", name: "day at the spa", kind: "treat", price: 280, emoji: "💆" },
   { id: "dinner-out", brand: "Dinner", name: "dinner anywhere she likes", kind: "treat", price: 180, emoji: "🍽️" },
   { id: "concert-tickets", brand: "Tickets", name: "two concert tickets", kind: "treat", price: 340, emoji: "🎫" },
-  { id: "flowers", brand: "Flowers", name: "a dozen roses, delivered", kind: "home", price: 75, emoji: "🌹" },
   { id: "bose-speaker", brand: "Bose", name: "SoundLink speaker", kind: "tech", price: 149, emoji: "🔊" },
   { id: "cartier-love", brand: "Cartier", name: "Love bracelet", kind: "jewellery", price: 7350, emoji: "💛" },
+  { id: "sony-headphones", brand: "Sony", name: "WH-1000XM5 headphones", kind: "tech", price: 399, emoji: "🎧" },
+  { id: "kindle", brand: "Amazon", name: "Kindle Paperwhite", kind: "tech", price: 160, emoji: "📱" },
+  { id: "polaroid", brand: "Polaroid", name: "instant camera", kind: "tech", price: 120, emoji: "📷" },
+  { id: "birkenstocks", brand: "Birkenstock", name: "Arizona sandals", kind: "shoes", price: 110, emoji: "🩴" },
+  { id: "converse", brand: "Converse", name: "Chuck 70s", kind: "shoes", price: 85, emoji: "👟" },
+  { id: "cowboy-boots", brand: "Tecovas", name: "leather cowboy boots", kind: "shoes", price: 295, emoji: "👢" },
+  { id: "patagonia-fleece", brand: "Patagonia", name: "Better Sweater fleece", kind: "clothes", price: 139, emoji: "🧥" },
+  { id: "reformation-dress", brand: "Reformation", name: "midi dress", kind: "clothes", price: 248, emoji: "👗" },
+  { id: "cosplay-outfit", brand: "", name: "cosplay outfit she's been eyeing", kind: "clothes", price: 115, emoji: "🎭" },
+  { id: "minidress", brand: "House of CB", name: "bodycon minidress", kind: "clothes", price: 189, emoji: "👠" },
+  { id: "miniskirt", brand: "Miaou", name: "pleated miniskirt", kind: "clothes", price: 145, emoji: "🩱" },
+  { id: "marc-jacobs-tote", brand: "Marc Jacobs", name: "The Tote Bag", kind: "bag", price: 350, emoji: "👜" },
+  { id: "diptyque-candle", brand: "Diptyque", name: "Baies candle", kind: "home", price: 78, emoji: "🕯️" },
+  { id: "lush-set", brand: "Lush", name: "bath bomb set", kind: "beauty", price: 45, emoji: "🛁" },
+  { id: "laneige-set", brand: "Laneige", name: "lip mask set", kind: "beauty", price: 38, emoji: "💋" },
+  { id: "massage", brand: "Massage", name: "an hour's massage", kind: "treat", price: 120, emoji: "💆" },
+  { id: "weekend-away", brand: "Weekend", name: "a weekend away", kind: "treat", price: 850, emoji: "🏨" },
+  { id: "ysl-loulou", brand: "Saint Laurent", name: "Loulou shoulder bag", kind: "bag", price: 2950, emoji: "👜" },
+  { id: "telfar-bag", brand: "Telfar", name: "shopping bag", kind: "bag", price: 257, emoji: "👜" },
+  { id: "longchamp", brand: "Longchamp", name: "Le Pliage tote", kind: "bag", price: 145, emoji: "👜" },
+  { id: "fjallraven", brand: "Fjällräven", name: "Kånken backpack", kind: "bag", price: 90, emoji: "🎒" },
+  { id: "baggu", brand: "Baggu", name: "crescent bag", kind: "bag", price: 68, emoji: "👛" },
+  { id: "skims-set", brand: "SKIMS", name: "cosy lounge set", kind: "clothes", price: 128, emoji: "🧶" },
+  { id: "aritzia-coat", brand: "Aritzia", name: "wool wrap coat", kind: "clothes", price: 348, emoji: "🧥" },
+  { id: "free-people-dress", brand: "Free People", name: "maxi dress", kind: "clothes", price: 168, emoji: "👗" },
+  { id: "madewell-jeans", brand: "Madewell", name: "high-rise jeans", kind: "clothes", price: 138, emoji: "👖" },
+  { id: "carhartt-jacket", brand: "Carhartt", name: "Detroit jacket", kind: "clothes", price: 148, emoji: "🧥" },
+  { id: "lulu-define", brand: "Lululemon", name: "Define jacket", kind: "clothes", price: 118, emoji: "🧥" },
+  { id: "silk-robe", brand: "Lunya", name: "washable silk robe", kind: "clothes", price: 228, emoji: "👘" },
+  { id: "cashmere-jumper", brand: "Quince", name: "cashmere jumper", kind: "clothes", price: 60, emoji: "🧣" },
+  { id: "vintage-tee", brand: "Vintage", name: "band tee she'd actually wear", kind: "clothes", price: 55, emoji: "👕" },
+  { id: "corset-top", brand: "Dion Lee", name: "corset top", kind: "clothes", price: 390, emoji: "👑" },
+  { id: "golden-goose", brand: "Golden Goose", name: "Super-Star trainers", kind: "shoes", price: 595, emoji: "👟" },
+  { id: "new-balance", brand: "New Balance", name: "530s", kind: "shoes", price: 100, emoji: "👟" },
+  { id: "sambas", brand: "Adidas", name: "Sambas", kind: "shoes", price: 100, emoji: "👟" },
+  { id: "hoka-runners", brand: "Hoka", name: "Clifton running shoes", kind: "shoes", price: 150, emoji: "🏃" },
+  { id: "hunter-wellies", brand: "Hunter", name: "tall wellies", kind: "shoes", price: 165, emoji: "👢" },
+  { id: "chelsea-boots", brand: "Blundstone", name: "Chelsea boots", kind: "shoes", price: 220, emoji: "👢" },
+  { id: "gold-hoops", brand: "Mejuri", name: "bold gold hoops", kind: "jewellery", price: 198, emoji: "💍" },
+  { id: "anklet", brand: "Mejuri", name: "fine gold anklet", kind: "jewellery", price: 95, emoji: "🦶" },
+  { id: "birthstone-ring", brand: "Angara", name: "birthstone ring", kind: "jewellery", price: 480, emoji: "💍" },
+  { id: "david-yurman", brand: "David Yurman", name: "cable bracelet", kind: "jewellery", price: 850, emoji: "💫" },
+  { id: "watch-cartier", brand: "Cartier", name: "Tank watch", kind: "jewellery", price: 3400, emoji: "⌚" },
+  { id: "belly-chain", brand: "Éliou", name: "beaded belly chain", kind: "jewellery", price: 125, emoji: "✨" },
+  { id: "dyson-dryer", brand: "Dyson", name: "Supersonic hair dryer", kind: "beauty", price: 429, emoji: "💨" },
+  { id: "charlotte-tilbury", brand: "Charlotte Tilbury", name: "Pillow Talk set", kind: "beauty", price: 85, emoji: "💄" },
+  { id: "ysl-perfume", brand: "Yves Saint Laurent", name: "Libre eau de parfum", kind: "beauty", price: 135, emoji: "🧴" },
+  { id: "le-labo", brand: "Le Labo", name: "Santal 33", kind: "beauty", price: 220, emoji: "🧴" },
+  { id: "drunk-elephant", brand: "Drunk Elephant", name: "skincare set", kind: "beauty", price: 158, emoji: "🧴" },
+  { id: "gua-sha", brand: "Herbivore", name: "jade gua sha set", kind: "beauty", price: 42, emoji: "💎" },
+  { id: "nails-done", brand: "Nails", name: "her nails done properly", kind: "beauty", price: 90, emoji: "💅" },
+  { id: "hair-done", brand: "Salon", name: "a morning at the salon", kind: "beauty", price: 240, emoji: "💇" },
+  { id: "ipad", brand: "Apple", name: "iPad", kind: "tech", price: 349, emoji: "📱" },
+  { id: "airtag", brand: "Apple", name: "AirTag for her keys", kind: "tech", price: 29, emoji: "🔑" },
+  { id: "ring-light", brand: "Lume Cube", name: "ring light", kind: "tech", price: 110, emoji: "💡" },
+  { id: "switch-lite", brand: "Nintendo", name: "Switch Lite", kind: "tech", price: 200, emoji: "🎮" },
+  { id: "espresso-machine", brand: "Breville", name: "espresso machine", kind: "home", price: 700, emoji: "☕" },
+  { id: "le-creuset", brand: "Le Creuset", name: "casserole dish", kind: "home", price: 400, emoji: "🍲" },
+  { id: "record-player", brand: "Audio-Technica", name: "record player", kind: "home", price: 299, emoji: "🎶" },
+  { id: "weighted-blanket", brand: "Bearaby", name: "weighted blanket", kind: "home", price: 199, emoji: "🛏️" },
+  { id: "cooking-class", brand: "Class", name: "a cooking class for two", kind: "treat", price: 160, emoji: "👩‍🍳" },
+  { id: "festival-tickets", brand: "Tickets", name: "two festival tickets", kind: "treat", price: 450, emoji: "🎪" },
   // 👙 One of each of these is in the shop every week — a different one each time, never none.
   { id: "triangl-bikini", brand: "Triangl", name: "neoprene bikini", kind: "clothes", price: 99, emoji: "👙", slot: "bikini" },
   { id: "frankies-bikini", brand: "Frankies Bikinis", name: "Marley triangle bikini", kind: "clothes", price: 150, emoji: "👙", slot: "bikini" },
@@ -67,6 +128,8 @@ export const GIFTS: Gift[] = [
   { id: "gift-card", brand: "", name: "gift card", kind: "treat", price: 50, emoji: "🎟️", always: true },
   { id: "team-gear", brand: "", name: "team gear", kind: "clothes", price: 60, emoji: "🏟️", always: true, team: true },
   { id: "book", brand: "", name: "book they've been meaning to read", kind: "home", price: 25, emoji: "📖", always: true },
+  { id: "flowers", brand: "Flowers", name: "a dozen roses, delivered", kind: "home", price: 75, emoji: "🌹", always: true },
+  { id: "wine", brand: "", name: "a nice bottle of wine", kind: "treat", price: 35, emoji: "🍷", always: true },
 ];
 
 export const giftById = (id: string) => GIFTS.find(g => g.id === id) || null;
@@ -75,7 +138,7 @@ export const giftById = (id: string) => GIFTS.find(g => g.id === id) || null;
  *  own, they never rotate out of the shop, and they're never on anyone's wishlist — a wishlist is
  *  what she came up with, and these are what you came up with. */
 export const MY_GIFT_EMOJI = "🛍️";
-export const MAX_MY_GIFTS = 5;
+export const MAX_MY_GIFTS = 10;
 export const myGiftId = (rowId: string) => `mine:${rowId}`;
 export const isMyGift = (id: string) => id.startsWith("mine:");
 export const myGift = (row: { id: string; name: string; brand: string; price: number }): Gift =>
@@ -90,7 +153,33 @@ export function weekOf(ms: number): number {
 const hash = (s: string) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
 const order = (seed: string, items: Gift[]) => items.map(g => ({ g, k: hash(seed + g.id) })).sort((a, b) => a.k - b.k).map(x => x.g);
 
-/** 🛍️ What the shop has this week: the staples always, plus a rotating handful of the rest. */
+/**
+ * 🛠️ An edit made by hand in Admin → Gifts: a different price, a different brand, a different
+ * name. Only the parts actually changed are given; the rest of the gift stays as the catalogue has
+ * it, so an edit survives the catalogue being added to.
+ */
+export type GiftEdit = { name?: string | null; brand?: string | null; price?: number | null };
+
+/** The catalogue with the hand edits laid over it, in catalogue order. */
+export function edited(list: Gift[], edits: Map<string, GiftEdit>): Gift[] {
+  if (!edits.size) return list;
+  return list.map(g => {
+    const e = edits.get(g.id);
+    if (!e) return g;
+    const name = typeof e.name === "string" && e.name.trim() ? e.name.trim() : g.name;
+    const brand = typeof e.brand === "string" ? e.brand.trim() : g.brand;
+    const price = Number.isFinite(Number(e.price)) && Number(e.price) > 0 ? Math.round(Number(e.price)) : g.price;
+    return { ...g, name, brand, price };
+  });
+}
+
+/** 🎁 How much you can give one person in a day — presents and cash together. */
+export const GIFTS_A_DAY = 5;
+
+/** 🔁 How many of the rotating things are in the shop in a week, unless Admin says otherwise. */
+export const ROTATING = 30;
+
+/** 🛍️ What the shop has this week: the staples and a slot each, plus thirty that come and go. */
 /** 🏷️ Two things are reduced every week, each by a different amount between a tenth and a
  *  quarter off. Which two, and by how much, is settled by the week itself, so the shop everyone
  *  opens on a Tuesday is the shop they opened on the Monday. */
@@ -119,15 +208,16 @@ export function salesFor(week: number, stock: Gift[]): Map<string, number> {
 export const reduced = (g: Gift, off?: number): Gift =>
   off ? { ...g, price: salePrice(g.price, off), was: g.price, off } : g;
 
-export function shopFor(week: number): Gift[] {
+export function shopFor(week: number, rotating = ROTATING, edits?: Map<string, GiftEdit>): Gift[] {
   // 👙 One bikini, one high-cut leotard, one necklace, one pair of platform heels — always there,
   // and a different one of each as the weeks go by.
   const picks = SLOTS.map(sl => order(`slot:${sl}:${week}`, GIFTS.filter(g => g.slot === sl))[0]).filter(Boolean);
-  const always = GIFTS.filter(g => !g.slot && (g.always || g.price <= 200));
-  const rest = GIFTS.filter(g => !g.slot && g.price > 200);
-  const rotating = order(`shop:${week}`, rest).slice(0, 10);
-  const keep = new Set<Gift>([...always, ...rotating, ...picks]);
-  const stock = GIFTS.filter(g => keep.has(g));
+  const always = GIFTS.filter(g => !g.slot && g.always);
+  const rest = GIFTS.filter(g => !g.slot && !g.always);
+  const picked = order(`shop:${week}`, rest).slice(0, Math.max(0, rotating));
+  const keep = new Set<Gift>([...always, ...picked, ...picks]);
+  // 🛠️ Hand edits go on BEFORE the sale, so a reduction comes off the price you set.
+  const stock = edits ? edited(GIFTS.filter(g => keep.has(g)), edits) : GIFTS.filter(g => keep.has(g));
   const sales = salesFor(week, stock);
   return stock.map(g => reduced(g, sales.get(g.id)));
 }
@@ -138,11 +228,12 @@ export function shopFor(week: number): Gift[] {
  *  closer thing to want. */
 export const WANTS_YOURS_AT = 62;
 
-export function wishlistFor(whoId: string, week: number, mine: Gift[] = [], closeness = 100): Gift[] {
+export function wishlistFor(whoId: string, week: number, mine: Gift[] = [], closeness = 100, edits?: Map<string, GiftEdit>): Gift[] {
   // The everyday small ones aren't what anyone puts on a wishlist — a wishlist is for things people
   // hope for, not for a coffee. What you listed yourself only joins the pool once they're close.
   const yours = closeness >= WANTS_YOURS_AT ? mine : [];
-  return order(`wish:${whoId}:${week}`, [...GIFTS.filter(g => !g.always), ...yours]).slice(0, 3);
+  const pool = edits ? edited(GIFTS.filter(g => !g.always), edits) : GIFTS.filter(g => !g.always);
+  return order(`wish:${whoId}:${week}`, [...pool, ...yours]).slice(0, 3);
 }
 
 export const onWishlist = (whoId: string, week: number, giftId: string, mine: Gift[] = [], closeness = 100) =>

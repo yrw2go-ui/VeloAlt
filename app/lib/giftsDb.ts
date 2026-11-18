@@ -2,7 +2,7 @@
 // whether someone is still in the glow of one.
 import { sql } from "./db";
 import { scrub } from "./secrets";
-import { GIFTS, giftById, shopFor, weekOf, wishlistFor, onWishlist, boostFrom, myGift, isMyGift, MAX_MY_GIFTS, type Boost, type Gift } from "./gifts";
+import { GIFTS, giftById, shopFor, weekOf, wishlistFor, onWishlist, boostFrom, myGift, isMyGift, edited, ROTATING, GIFTS_A_DAY, MAX_MY_GIFTS, type Boost, type Gift, type GiftEdit } from "./gifts";
 import { settle, transfer, BANK, WEEKLY_RATE, PAY_LOW, PAY_HIGH } from "./money";
 import { hintsThisWeek, hintPick, hintLive, hintDealtWith, moneyTier, lovePoints, MONEY_LAVISH } from "./hints";
 
@@ -63,12 +63,67 @@ export async function unlistMyGift(userId: string, giftId: string): Promise<bool
 }
 
 /** 🛍️ The shop as it stands: this week's rotation, plus everything you listed yourself. */
-export const shopNow = (now = Date.now()): Gift[] => shopFor(weekOf(now));
-export async function shopFull(userId: string, now = Date.now()): Promise<Gift[]> {
-  return [...(await myGifts(userId)), ...shopNow(now)];
+/**
+ * 🛠️ What Admin → Gifts has changed by hand: a price, a brand, a name. Everything the shop
+ * shows and everything it charges goes through here, so an edit is the real thing everywhere — in
+ * the shop, on her wishlist, and on the bill.
+ */
+export async function giftEdits(): Promise<Map<string, GiftEdit>> {
+  const rows = await sql()`select gift_id, name, brand, price from gift_edits`.catch(() => []);
+  return new Map(rows.map(r => [String(r.gift_id), { name: r.name === null ? null : String(r.name),
+    brand: r.brand === null ? null : String(r.brand), price: r.price === null ? null : Number(r.price) }]));
 }
-export const wishlistOf = (whoId: string, now = Date.now(), mine: Gift[] = [], closeness = 100): Gift[] =>
-  wishlistFor(whoId, weekOf(now), mine, closeness);
+
+/** 🔁 How many rotating things are in the shop this week — Admin's number, or thirty. */
+export async function rotatingCount(): Promise<number> {
+  const [r] = await sql()`select rotating from gift_shop where only_row`.catch(() => []);
+  const n = Number(r?.rotating);
+  return Number.isFinite(n) && n >= 1 ? Math.round(n) : ROTATING;
+}
+
+export async function shopNow(now = Date.now()): Promise<Gift[]> {
+  return shopFor(weekOf(now), await rotatingCount(), await giftEdits());
+}
+export async function shopFull(userId: string, now = Date.now()): Promise<Gift[]> {
+  return [...(await myGifts(userId)), ...(await shopNow(now))];
+}
+export async function wishlistOf(whoId: string, now = Date.now(), mine: Gift[] = [], closeness = 100): Promise<Gift[]> {
+  return wishlistFor(whoId, weekOf(now), mine, closeness, await giftEdits());
+}
+
+/** 🛍️ Every gift there is, with the hand edits on, for the admin list. */
+export async function catalogue(): Promise<(Gift & { edited: boolean })[]> {
+  const tweaks = await giftEdits();
+  return edited(GIFTS, tweaks).map(g => ({ ...g, edited: tweaks.has(g.id) }));
+}
+
+/** ✏️ Change one by hand. Giving back the catalogue's own value clears the edit rather than storing it. */
+export async function editGift(giftId: string, patch: { name?: string; brand?: string; price?: number }): Promise<Gift> {
+  const base = GIFTS.find(g => g.id === giftId);
+  if (!base) throw new GiftError("That isn't one of the gifts.");
+  const name = String(patch.name ?? base.name).replace(/\s+/g, " ").trim().slice(0, 80);
+  const brand = String(patch.brand ?? base.brand).replace(/\s+/g, " ").trim().slice(0, 60);
+  const price = Math.round(Number(patch.price ?? base.price));
+  if (!name) throw new GiftError("It needs a name.");
+  if (!Number.isFinite(price) || price < 1 || price > 1_000_000) throw new GiftError("Put a price on it, between $1 and $1,000,000.");
+  // Back to exactly what the catalogue says? Then there's nothing to remember.
+  if (name === base.name && brand === base.brand && price === base.price) {
+    await sql()`delete from gift_edits where gift_id = ${giftId}`;
+    return base;
+  }
+  await sql()`insert into gift_edits (gift_id, name, brand, price) values (${giftId}, ${name}, ${brand}, ${price})
+    on conflict (gift_id) do update set name = excluded.name, brand = excluded.brand, price = excluded.price, updated_at = now()`;
+  return { ...base, name, brand, price };
+}
+
+/** 🔁 Set how many rotating things are in the shop each week. */
+export async function setRotating(n: number): Promise<number> {
+  const want = Math.round(Number(n));
+  if (!Number.isFinite(want) || want < 1 || want > 200) throw new GiftError("Between 1 and 200.");
+  await sql()`insert into gift_shop (only_row, rotating) values (true, ${want})
+    on conflict (only_row) do update set rotating = excluded.rotating, updated_at = now()`;
+  return want;
+}
 
 /** 💞 How close each of your characters is to you — the higher of love and trust, as stored. */
 export async function closenessMap(userId: string): Promise<Map<string, number>> {
@@ -90,14 +145,41 @@ export async function peopleToGift(userId: string) {
   const mine = await myGifts(userId);
   const close = await closenessMap(userId);
   const hints = await liveHints(userId, now).catch(() => new Map());
+  // 🛠️ One read of the hand edits for everyone's wishlist, rather than one each.
+  const tweaks = await giftEdits();
+  // 🎁 How many each of them has had today (your day, not the server's), so the panel can say
+  // how many are left before you reach for the Send button.
+  const [u] = await sql()`select coalesce(nullif(time_zone, ''), 'America/Chicago') as tz from users where id = ${userId}`;
+  const tz = String(u?.tz || "America/Chicago");
+  const todayRows = await sql()`select character_id, account_id from pica_gift_sent
+    where user_id = ${userId} and (created_at at time zone ${tz})::date = (now() at time zone ${tz})::date`;
+  const givenToday = new Map<string, number>();
+  for (const r of todayRows) {
+    const key = String(r.character_id || r.account_id || "");
+    if (key) givenToday.set(key, (givenToday.get(key) || 0) + 1);
+  }
+  const left = (id: string) => Math.max(0, GIFTS_A_DAY - (givenToday.get(id) || 0));
+  const wish = (id: string, forChar: boolean) => wishlistFor(id, weekOf(now), forChar ? mine : [], forChar ? close.get(id) || 0 : 0, tweaks);
   return [
     ...chars.map(r => ({ id: String(r.id), kind: "character" as const, name: String(r.name), handle: null as string | null,
-      face: r.face ? String(r.face) : null, wishlist: wishlistOf(String(r.id), now, mine, close.get(String(r.id)) || 0),
+      face: r.face ? String(r.face) : null, wishlist: wish(String(r.id), true), leftToday: left(String(r.id)),
       hinting: hints.has(String(r.id)) })),
     // Someone you only follow on Picagram is never close enough for one of yours.
     ...accounts.map(r => ({ id: String(r.id), kind: "account" as const, name: String(r.name), handle: String(r.handle || ""),
-      face: r.face ? String(r.face) : null, wishlist: wishlistOf(String(r.id), now, [], 0), hinting: false })),
+      face: r.face ? String(r.face) : null, wishlist: wish(String(r.id), false), leftToday: left(String(r.id)), hinting: false })),
   ];
+}
+
+/** 🎁 How many presents (and how much cash) have gone to this one person today, your time. */
+export async function sentToday(userId: string, to: { kind: "character" | "account"; id: string }): Promise<number> {
+  const [u] = await sql()`select coalesce(nullif(time_zone, ''), 'America/Chicago') as tz from users where id = ${userId}`;
+  const tz = String(u?.tz || "America/Chicago");
+  const [r] = to.kind === "character"
+    ? await sql()`select count(*)::int as n from pica_gift_sent where user_id = ${userId} and character_id = ${to.id}
+        and (created_at at time zone ${tz})::date = (now() at time zone ${tz})::date`
+    : await sql()`select count(*)::int as n from pica_gift_sent where user_id = ${userId} and account_id = ${to.id}
+        and (created_at at time zone ${tz})::date = (now() at time zone ${tz})::date`;
+  return Number(r?.n || 0);
 }
 
 /** 🎀 Send it. The money leaves the wallet, and it's remembered for the warm spell afterwards. */
@@ -108,10 +190,14 @@ export async function sendGift(userId: string, to: { kind: "character" | "accoun
   if (what.giftId && !gift) throw new GiftError("That isn't something you can send.");
   // One of the thirty has to be in stock this week; one of yours always is.
   // 🏷️ And it is the shop's copy that is paid for, so a week's reduction is really taken off.
-  const stocked = gift && !mine ? shopNow(now).find(g => g.id === gift.id) || null : null;
+  const stocked = gift && !mine ? (await shopNow(now)).find(g => g.id === gift.id) || null : null;
   if (gift && !mine && !stocked) throw new GiftError(`${gift.name} isn't in the shop this week.`);
   const money = gift ? 0 : Math.round(Number(what.money) || 0);
   if (!gift && (money < 1 || money > 50_000)) throw new GiftError("Send between $1 and $50,000.");
+  // 🎁 Five a day to any one person, presents and cash together — counted against the day where
+  // YOU are, so it comes round again at your own midnight rather than the server's.
+  const sent = await sentToday(userId, to);
+  if (sent >= GIFTS_A_DAY) throw new GiftError(`That's ${GIFTS_A_DAY} today — the most you can send one person in a day. Try again tomorrow.`);
   const amount = gift ? (stocked || gift).price : money;
   const wallet = await walletFor(userId);
   if (amount > wallet) throw new GiftError(`That's $${(amount - wallet).toLocaleString()} more than you have. Add funds first.`);
@@ -129,7 +215,8 @@ export async function sendGift(userId: string, to: { kind: "character" | "accoun
   // 💗 Money that was more than a gesture (over $99) moves the love slider a point.
   const tier = gift ? "small" as const : moneyTier(amount);
   if (to.kind === "character" && lovePoints(tier) > 0) await nudgeLove(userId, to.id, lovePoints(tier)).catch(() => {});
-  return { id: String(row.id), at: String(row.created_at), amount, wished, gift: stocked || gift, tier, dealt, wallet: wallet - amount };
+  return { id: String(row.id), at: String(row.created_at), amount, wished, gift: stocked || gift, tier, dealt,
+    wallet: wallet - amount, leftToday: Math.max(0, GIFTS_A_DAY - (sent + 1)) };
 }
 
 /** 💞 Is she still in the glow of something? Null once two days have gone by. */
@@ -190,13 +277,13 @@ export async function liveHints(userId: string, now = Date.now()): Promise<Map<s
   for (const c of chars) {
     const id = String(c.id);
     if (!hintsThisWeek(userId, id, week)) continue;
-    const pick = hintPick(userId, id, week, wishlistOf(id, now, mine, close.get(id) || 0));
+    const pick = hintPick(userId, id, week, await wishlistOf(id, now, mine, close.get(id) || 0));
     await sql()`insert into chat_hints (user_id, character_id, week, kind, gift_id)
       values (${userId}, ${id}, ${week}, ${pick.kind}, ${pick.giftId}) on conflict do nothing`;
   }
   const rows = await sql()`select character_id, kind, gift_id, created_at, done_at from chat_hints
     where user_id = ${userId} and done_at is null and created_at > now() - interval '48 hours'`;
-  const shop = new Set([...shopNow(now).map(g => g.id), ...mine.map(g => g.id)]);
+  const shop = new Set([...(await shopNow(now)).map(g => g.id), ...mine.map(g => g.id)]);
   const out = new Map<string, { kind: string; giftId: string; at: number }>();
   for (const r of rows) {
     const h = { created_at: Date.parse(String(r.created_at)), done_at: r.done_at ? Date.parse(String(r.done_at)) : null, kind: String(r.kind), gift_id: String(r.gift_id || "") };

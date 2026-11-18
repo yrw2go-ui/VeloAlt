@@ -5,11 +5,12 @@ import { sql } from "../../lib/db";
 import { getCharacterFor } from "../../lib/characters";
 import { thankThem } from "../../lib/thanks";
 import { dmSend, dmGiftPhoto } from "../../lib/picaDm";
-import { shopFull, peopleToGift, sendGift, giftHistory, accountsFor, moveAcross, listMyGift, unlistMyGift, myGifts, closenessMap, GiftError, BANK, WEEKLY_RATE, PAY_LOW, PAY_HIGH } from "../../lib/giftsDb";
+import { shopFull, peopleToGift, sendGift, giftHistory, accountsFor, moveAcross, listMyGift, unlistMyGift, myGifts, closenessMap, catalogue, editGift, rotatingCount, setRotating, shopNow, GiftError, BANK, WEEKLY_RATE, PAY_LOW, PAY_HIGH } from "../../lib/giftsDb";
 import { MAX_MY_GIFTS } from "../../lib/gifts";
 
 const UUID = /^[0-9a-f-]{36}$/i;
 const bad = (error: string, status = 400) => NextResponse.json({ error }, { status });
+const isAdmin = async (me: string) => !!(await sql()`select is_admin from users where id = ${me}`)[0]?.is_admin;
 
 // 🎁 Picagifts: the shop, who you can send to and what they're hoping for, and sending it.
 export async function POST(req: NextRequest) {
@@ -71,6 +72,28 @@ export async function POST(req: NextRequest) {
       case "unlist": {
         if (!(await unlistMyGift(me, String(b.giftId || "")))) return bad("That one isn't on your list.");
         return NextResponse.json({ shop: await shopFull(me), mine: await myGifts(me) });
+      }
+      // 🛠️ Admin → Gifts: every gift there is, with its price, to put right by hand.
+      case "all": {
+        if (!(await isAdmin(me))) return bad("That's for admins.");
+        const stocked = new Set((await shopNow()).map(g => g.id));
+        return NextResponse.json({ gifts: (await catalogue()).map(g => ({ ...g, inShop: stocked.has(g.id) })),
+          rotating: await rotatingCount(), pool: (await catalogue()).filter(g => !g.always && !g.slot).length });
+      }
+      case "edit": {
+        if (!(await isAdmin(me))) return bad("That's for admins.");
+        if (!allow(`giftedit:${me}`, [{ ms: 60_000, max: 60 }])) return bad("Slow down a moment.", 429);
+        await editGift(String(b.giftId || ""), { name: b.name === undefined ? undefined : String(b.name),
+          brand: b.brand === undefined ? undefined : String(b.brand), price: b.price === undefined ? undefined : Number(b.price) });
+        const stocked = new Set((await shopNow()).map(x => x.id));
+        const g = (await catalogue()).find(x => x.id === String(b.giftId || ""))!;
+        return NextResponse.json({ gift: { ...g, inShop: stocked.has(g.id) } });
+      }
+      case "rotating": {
+        if (!(await isAdmin(me))) return bad("That's for admins.");
+        const n = await setRotating(Number(b.rotating));
+        const stocked = new Set((await shopNow()).map(g => g.id));
+        return NextResponse.json({ rotating: n, gifts: (await catalogue()).map(g => ({ ...g, inShop: stocked.has(g.id) })) });
       }
       default: return bad("Unknown action.");
     }

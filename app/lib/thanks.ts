@@ -44,7 +44,10 @@ Reply with the message only — no quotes, no name, no stage directions.`,
     const who = g?.team || g?.theirs ? ` ${ch.hobbies || ""} ${ch.lives_in || ""} ${ch.backstory || ""}`.replace(/\s+/g, " ").trim().slice(0, 300) : "";
     // 😊 Her face is hers: her sliders, and how close the two of you are.
     const face = giftFace(t, closeness, big);
-    media = await startMedia(userId, { kind: "image", description: `${brief}. ${face}${who ? ` About her: ${who}` : ""} ${ch.casual_wear && !wearing ? `Wearing ${ch.casual_wear}.` : ""} It is clearly the same woman as in the reference pictures — her face, her hair, her build. Taken on her own phone where she is, candid and real.` },
+    // 📸 with_me is what makes her OWN reference photos go to the picture service (the same flag a
+    // peek and a Picagram DM use). Without it her references are fetched and then thrown away, the
+    // picture is drawn from words alone, and it doesn't look like her.
+    media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: `${brief}. ${face}${who ? ` About her: ${who}` : ""} ${ch.casual_wear && !wearing ? `Wearing ${ch.casual_wear}.` : ""} It is clearly the same woman as in the reference pictures — her face, her hair, her build. Taken on her own phone where she is, candid and real.` },
       { characterId: ch.id, who: ch.name, appearance: ch.appearance, refs: await referenceUrls(ch).catch(() => []),
         romantic: romantic && allowsSuggestive(ch.traits), mood: mediaMood(ch.traits), offer: false })
       .catch(e => { console[e instanceof MediaError ? "warn" : "error"]("thanks: photo", e instanceof Error ? e.message : e); return null; });
