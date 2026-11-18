@@ -252,7 +252,7 @@ async function remember(userId: string, a: Record<string, unknown>, list: Dm[], 
   for (const f of facts.slice(0, 3)) {
     const t = scrub(String(f || "")).replace(/\s+/g, " ").trim().slice(0, 600);
     // 📅 Each note carries the day it was made ("Nov 12, 2026: Sam told me…").
-    if (t.length >= 6 && !known.some(k => undated(k) === undated(t))) await sql()`insert into pica_memories (user_id, account_id, text) values (${userId}, ${a.id}, ${`${today}: ${undated(t)}`.slice(0, 600)})`;
+    if (t.length >= 6 && !known.some(k => undated(k) === undated(t))) await sql()`insert into pica_memories (user_id, account_id, text) values (${userId}, ${String(a.id)}, ${`${today}: ${undated(t)}`.slice(0, 600)})`;
   }
 }
 

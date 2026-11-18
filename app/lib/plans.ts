@@ -162,6 +162,6 @@ async function say(userId: string, r: Record<string, unknown>, how: string, them
   const text = scrub(cleanReply(await writeText(r.brain, `You are ${r.name}${r.personality ? ` (${String(r.personality).slice(0, 400)})` : ""}, texting ${String(them || "them")}. ${how} Output only the text.`,
     `WHAT YOU TWO AGREED: ${String(r.title || "")}${r.details ? ` — ${String(r.details)}` : ""}`, 200).catch(() => "")).replace(/\s+/g, " ").trim()).slice(0, 300);
   if (text.length < 2) return false;
-  await sql()`insert into velo_messages (user_id, character_id, role, content) values (${userId}, ${r.character_id}, 'assistant', ${text})`;
+  await sql()`insert into velo_messages (user_id, character_id, role, content) values (${userId}, ${String(r.character_id)}, 'assistant', ${text})`;
   return true;
 }

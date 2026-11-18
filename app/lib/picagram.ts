@@ -381,7 +381,7 @@ export async function picaPost(userId: string, caption: string, photo: string, u
   // A post with another woman in it, or about one, is the sort everybody notices — so the people
   // you talk to all see that one. An ordinary post is still hit and miss, as before.
   const notable = inIt.length > 0 || mentioned.length > 0;
-  const fans = [...inIt, ...mentioned, ...(close as typeof all).filter(() => notable || Math.random() < 0.75)]
+  const fans = [...inIt, ...mentioned, ...(close as unknown as typeof all).filter(() => notable || Math.random() < 0.75)]
     .filter(f => (seen.has(String(f.id)) ? false : (seen.add(String(f.id)), true)));
   if (fans.length) {
     // 🗣️ Who she'd name to whom: the woman in the photo is named to anyone who's heard of her, and
@@ -564,7 +564,7 @@ export async function refsOf(a: Record<string, unknown>): Promise<string[]> {
     if (rows.length) return rows.map(r => String(r.url));
   }
   if (!a.avatar_media_id) return [];
-  const [av] = await sql()`select f.url from velo_media m join velo_files f on f.id = m.file_id where m.id = ${a.avatar_media_id} and m.status = 'done'`;
+  const [av] = await sql()`select f.url from velo_media m join velo_files f on f.id = m.file_id where m.id = ${String(a.avatar_media_id)} and m.status = 'done'`;
   return av ? [String(av.url)] : [];
 }
 
@@ -594,10 +594,10 @@ async function accountPosts(userId: string, day: string, isToday: boolean, u: U,
     const media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: photo },
       { characterId: null, who: String(a.name), appearance: String(a.look), refs: await refsOf(a), romantic: u.adult, offer: false, other: null, pica: true }).catch(() => null);
     if (!media) continue;
-    if (!a.avatar_media_id) await sql()`update pica_accounts set avatar_media_id = ${media.id} where id = ${a.id}`;
+    if (!a.avatar_media_id) await sql()`update pica_accounts set avatar_media_id = ${media.id} where id = ${String(a.id)}`;
     const at = isToday && i === 0 ? now - rand(5, 40) * 60_000 : start + Math.random() * (end - start);
     const likes = Math.max(150, Math.min(25000, Math.round(Number(a.followers) * (0.005 + Math.random() * 0.03))));
-    const [post] = await sql()`insert into pica_posts (user_id, account_id, kind, caption, photo, media_id, likes_target, created_at) values (${userId}, ${a.id}, 'image', ${caption}, ${photo}, ${media.id}, ${likes}, ${new Date(at).toISOString()}) returning id`;
+    const [post] = await sql()`insert into pica_posts (user_id, account_id, kind, caption, photo, media_id, likes_target, created_at) values (${userId}, ${String(a.id)}, 'image', ${caption}, ${photo}, ${media.id}, ${likes}, ${new Date(at).toISOString()}) returning id`;
     for (const s of randomComments(`${caption} ${photo}`, "image", rand(3, 5)))
       await sql()`insert into pica_comments (post_id, user_id, name, text, created_at) values (${post.id}, ${userId}, ${s.name}, ${s.text}, ${new Date(at + rand(2, 300) * 60_000).toISOString()})`;
   }
@@ -650,7 +650,7 @@ export async function putUpUploads(userId: string, a: Record<string, unknown>, m
     const at = new Date(r.created_at as string).getTime();
     const likes = Math.max(150, Math.min(25000, Math.round(Number(a.followers) * (0.005 + Math.random() * 0.03))));
     const [post] = await sql()`insert into pica_posts (user_id, account_id, kind, caption, photo, media_id, likes_target, created_at)
-      values (${userId}, ${a.id}, 'image', ${caption}, ${photo}, ${r.id}, ${likes}, ${new Date(at).toISOString()}) returning id`;
+      values (${userId}, ${String(a.id)}, 'image', ${caption}, ${photo}, ${String(r.id)}, ${likes}, ${new Date(at).toISOString()}) returning id`;
     for (const c of randomComments(`${caption} ${photo}`, "image", rand(3, 5)))
       await sql()`insert into pica_comments (post_id, user_id, name, text, created_at) values (${post.id}, ${userId}, ${c.name}, ${c.text}, ${new Date(at + rand(2, 300) * 60_000).toISOString()})`;
   }
@@ -685,10 +685,10 @@ async function postFor(userId: string, a: Record<string, unknown>, u: U, at: num
   const media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: photo },
     { characterId: null, who: String(a.name), appearance: String(a.look), refs: await refsOf(a), romantic: u.adult, offer: false, other: null, pica: true }).catch(() => null);
   if (!media) return false;
-  if (!a.avatar_media_id) await sql()`update pica_accounts set avatar_media_id = ${media.id} where id = ${a.id}`;
+  if (!a.avatar_media_id) await sql()`update pica_accounts set avatar_media_id = ${media.id} where id = ${String(a.id)}`;
   const likes = Math.max(150, Math.min(25000, Math.round(Number(a.followers) * (0.005 + Math.random() * 0.03))));
   const [post] = await sql()`insert into pica_posts (user_id, account_id, kind, caption, photo, media_id, likes_target, created_at)
-    values (${userId}, ${a.id}, 'image', ${caption || "✨"}, ${photo}, ${media.id}, ${likes}, ${new Date(at).toISOString()}) returning id`;
+    values (${userId}, ${String(a.id)}, 'image', ${caption || "✨"}, ${photo}, ${media.id}, ${likes}, ${new Date(at).toISOString()}) returning id`;
   for (const c of randomComments(`${caption} ${photo}`, "image", rand(3, 5)))
     await sql()`insert into pica_comments (post_id, user_id, name, text, created_at) values (${post.id}, ${userId}, ${c.name}, ${c.text}, ${new Date(at + rand(2, 300) * 60_000).toISOString()})`;
   return true;

@@ -19,7 +19,7 @@ export async function deleteMessages(userId: string, characterId: string | null,
 export async function forgetLines(userId: string, characterId: string | null, lines: string, since: string, brain: unknown): Promise<number> {
   const mems = await sql()`select id, text from velo_memories where user_id = ${userId} and character_id is not distinct from ${characterId} and status = 'active'
     and created_at >= ${since}::timestamptz - interval '1 minute' order by created_at limit 40`;
-  return forget(userId, mems as Mem[], lines, brain,
+  return forget(userId, mems as unknown as Mem[], lines, brain,
     id => sql()`delete from velo_memories where id = ${id} and user_id = ${userId}`,
     (id, text) => sql()`update velo_memories set text = ${text}, updated_at = now() where id = ${id} and user_id = ${userId}`);
 }
@@ -31,7 +31,7 @@ export async function forgetLines(userId: string, characterId: string | null, li
 export async function forgetPicaLines(userId: string, accountId: string, lines: string, since: string, brain: unknown): Promise<number> {
   const mems = await sql()`select id, text from pica_memories where user_id = ${userId} and account_id = ${accountId}
     and created_at >= ${since}::timestamptz - interval '1 minute' order by created_at limit 40`;
-  return forget(userId, mems as Mem[], lines, brain,
+  return forget(userId, mems as unknown as Mem[], lines, brain,
     id => sql()`delete from pica_memories where id = ${id} and user_id = ${userId}`,
     (id, text) => sql()`update pica_memories set text = ${text} where id = ${id} and user_id = ${userId}`);
 }
