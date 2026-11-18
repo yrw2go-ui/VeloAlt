@@ -17,7 +17,7 @@ import { BRAIN_OPTIONS } from "./brainOptions";
 import { isValidTimeZone, zonedParts, formatClock } from "./localTime";
 import { partOfDay } from "./calendar";
 import { cleanTraits } from "./traits";
-import { giftById, photoBrief, giftFace, PHOTO_ODDS } from "./gifts";
+import { giftById, photoBrief, giftFace, wearOdds, PHOTO_ODDS } from "./gifts";
 
 export type Dm = { id: string; role: "user" | "assistant"; content: string; created_at: string; media: Media | null };
 export class DmError extends Error {}
@@ -267,7 +267,7 @@ export async function dmGiftPhoto(userId: string, accountId: string, what: strin
   const g = giftId ? giftById(giftId) : null;
   const t = cleanTraits((a.traits || {}) as Record<string, unknown>);
   const who = g?.team || g?.theirs ? ` ${a.bio || ""} ${a.lives || ""}`.replace(/\s+/g, " ").trim().slice(0, 300) : "";
-  const desc = `${photoBrief(what, kind, g).brief}. ${giftFace(t, closeness, big)}${who ? ` About her: ${who}` : ""} It is clearly the same woman as in the reference pictures — her face, her hair, her build. Taken on her own phone where she is, candid and real.`;
+  const desc = `${photoBrief(what, kind, g, wearOdds(t, closeness)).brief}. ${giftFace(t, closeness, big)}${who ? ` About her: ${who}` : ""} It is clearly the same woman as in the reference pictures — her face, her hair, her build. Taken on her own phone where she is, candid and real.`;
   const m = await sendPhotoOf(userId, a, scrub(desc).replace(/\s+/g, " ").trim().slice(0, 1500), u.adult)
     .catch(e => { if (!(e instanceof MediaError)) console.error("pica dm: gift photo", e instanceof Error ? e.message : e); return null; });
   if (m && m.status !== "failed") await addDm(userId, accountId, "assistant", "", m.id, 1000);

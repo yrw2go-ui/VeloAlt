@@ -31,7 +31,7 @@ ok(staples.every(g => shopFor(w).some(x => x.id === g.id) && shopFor(w + 7).some
 ok(giftById("iced-latte")!.price === 10 && giftById("ice-cream")!.price === 8 && giftById("food-delivery")!.price === 30
   && giftById("gift-card")!.price === 50 && giftById("team-gear")!.price === 60, "…priced as the small things they are");
 ok(!staples.some(g => ["aaa", "bbb", "ccc", "ddd"].some(who => [w, w + 1, w + 5].some(k => wishlistFor(who, k).some(x => x.id === g.id)))), "…and never what someone puts on a wishlist");
-ok(/their OWN team/.test(photoBrief("team gear", "gift", giftById("team-gear")).brief), "team gear is their own team, not a random one");
+ok(/their OWN team/.test(photoBrief("team gear", "gift", giftById("team-gear"), 1).brief), "team gear is their own team, not a random one");
 // ☕🍦🥡 And the edible ones are whatever THIS person actually orders.
 for (const id of ["iced-latte", "ice-cream", "food-delivery"]) {
   const brief = photoBrief(giftById(id)!.name, "gift", giftById(id)).brief;
@@ -39,7 +39,7 @@ for (const id of ["iced-latte", "ice-cream", "food-delivery"]) {
   ok(/never tacos unless tacos are genuinely theirs/.test(brief), `…and nobody defaults to tacos (${id})`);
 }
 ok(!/OWN usual/.test(photoBrief("Gucci GG Marmont purse", "gift", giftById("gucci-purse")).brief), "a purse is just a purse — it isn't theirs to choose");
-ok(/follow or play for/.test(photoBrief("team gear", "gift", giftById("team-gear")).brief), "…the one they follow or play for");
+ok(/follow or play for/.test(photoBrief("team gear", "gift", giftById("team-gear"), 1).brief), "…the one they follow or play for");
 ok(a.some(g => g.price > 1000) || b.some(g => g.price > 1000), "and the dear things come round");
 
 // 💭 Everyone keeps a wishlist of their own, and it moves on.

@@ -150,6 +150,25 @@ export function giftFace(t: { humor?: number; coldness?: number; flirty?: number
   return `Her expression: ${face}. ${toward}${more}`;
 }
 
+/**
+ * 👗 How likely she is to have the present ON rather than held up to the camera.
+ *
+ * Trying something on for someone is a familiar thing to do. A woman who barely knows you is far
+ * likelier to hold the boots up and say look what you sent than to put them on and photograph
+ * herself in them; someone you're close to does it without thinking. Who she is moves it again —
+ * a flirt or a livewire will try anything on, someone cold or shy would rather just show you.
+ */
+export function wearOdds(t: { humor?: number; coldness?: number; flirty?: number; energetic?: number; moody?: number }, closeness: number): number {
+  const n = (v: unknown) => Math.max(0, Math.min(10, Number(v) || 0));
+  let p = 0.12 + Math.max(0, Math.min(100, closeness)) / 100 * 0.63;
+  if (n(t.flirty) >= 7) p += 0.12;
+  if (n(t.energetic) >= 7) p += 0.08;
+  if (n(t.humor) >= 7) p += 0.05;
+  if (n(t.coldness) >= 7) p -= 0.18;
+  if (n(t.moody) >= 7) p -= 0.1;
+  return Math.max(0.05, Math.min(0.9, p));
+}
+
 /** 📸 How often a thank-you comes with a photo: most of the time, not always. */
 export const PHOTO_ODDS = 0.7;
 
@@ -158,20 +177,25 @@ export const PHOTO_ODDS = 0.7;
  *
  * `wearing` says she has the present ON. When she has, nothing else is described for her to wear:
  * telling the picture she's in the new boots AND her usual white sneakers is how you get a photo of
- * someone holding boots. Something she can wear is held up about half the time anyway — both are
- * worth seeing.
+ * someone holding boots. Whether she has it on at all is `wears` (see wearOdds): someone who hardly
+ * knows you holds the boots up to the camera rather than putting them on for you.
  */
-export function photoBrief(what: string, kind: "gift" | "money", g: Pick<Gift, "emoji" | "name" | "brand" | "kind"> & { team?: true; theirs?: true } | null, roll = Math.random()): { brief: string; wearing: boolean } {
+export function photoBrief(what: string, kind: "gift" | "money", g: Pick<Gift, "emoji" | "name" | "brand" | "kind"> & { team?: true; theirs?: true } | null, wears = 0.5, roll = Math.random()): { brief: string; wearing: boolean } {
+  const hasOn = roll < wears;
   const held = (brief: string) => ({ brief, wearing: false });
   if (kind === "money") return held(`holding up a fan of cash — ${what} in notes — grinning at the camera`);
   // One of yours, or something we don't know: she holds it up. ("a present" reads as "the present".)
   if (!g || g.kind === "mine") return held(`holding up the ${what.replace(/^(?:an?|the)\s+/i, "") || "present"} they've just been sent, pleased with it`);
   // 🏟️ Team gear is whatever team is actually theirs — the one they follow, or the one they play for.
-  if (g.team) return { brief: `wearing the team gear they've just been sent — their OWN team, the one they follow or play for (from their description: their college side, their city's team, the sport they play), in that team's real colours — showing it off to the camera`, wearing: true };
+  const team = `their OWN team, the one they follow or play for (from their description: their college side, their city's team, the sport they play), in that team's real colours`;
+  if (g.team) return hasOn
+    ? { brief: `wearing the team gear they've just been sent — ${team} — showing it off to the camera`, wearing: true }
+    : held(`holding up the team gear they've just been sent — ${team} — to the camera, pleased with it`);
   // ☕🍦🥡 A coffee, a pudding, dinner: whatever THIS person actually orders, not a stock answer.
   if (g.theirs) return held(`with the ${g.name} they've just been sent — their OWN usual, the drink or the food THIS person actually orders (from their description, where they live, what they're like), never a stock answer and never tacos unless tacos are genuinely theirs — holding it up to the camera, pleased`);
-  // 👗 Something she can wear: on about half the time, held up to the camera the other half.
+  // 👗 Something she can wear: on, or held up to the camera — how often depends on who she is and
+  // how well she knows you (wearOdds).
   const canWear = ["clothes", "shoes", "jewellery", "bag"].includes(g.kind);
-  if (canWear && roll < 0.5) return { brief: `wearing the ${g.brand} ${g.name} they've just been sent, showing it off to the camera`, wearing: true };
+  if (canWear && hasOn) return { brief: `wearing the ${g.brand} ${g.name} they've just been sent, showing it off to the camera`, wearing: true };
   return held(`holding up the ${g.brand} ${g.name} they've just been sent${canWear ? ", showing it off to the camera" : ", pleased with it"}`);
 }

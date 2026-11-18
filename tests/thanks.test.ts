@@ -1,5 +1,5 @@
 // Run: node --experimental-strip-types tests/thanks.test.ts
-import { photoBrief, PHOTO_ODDS, giftById, giftFace } from "../app/lib/gifts.ts";
+import { photoBrief, PHOTO_ODDS, giftById, giftFace, wearOdds } from "../app/lib/gifts.ts";
 
 
 let bad = 0;
@@ -13,8 +13,8 @@ const cash = photoBrief("$2,500", "money", null).brief;
 ok(/fan of cash/.test(cash) && /\$2,500/.test(cash), `money gets held up: "${cash}"`);
 
 // 👜 Something she'd wear is sometimes on her, sometimes held up — never both at once.
-const on = (what: string, id: string) => photoBrief(what, "gift", giftById(id), 0.2);
-const up = (what: string, id: string) => photoBrief(what, "gift", giftById(id), 0.8);
+const on = (what: string, id: string) => photoBrief(what, "gift", giftById(id), 1);
+const up = (what: string, id: string) => photoBrief(what, "gift", giftById(id), 0);
 const purse = on("Gucci GG Marmont purse", "gucci-purse");
 ok(/wearing the Gucci/.test(purse.brief) && purse.wearing, `a purse can be worn: "${purse.brief}"`);
 ok(/holding up the Gucci/.test(up("Gucci GG Marmont purse", "gucci-purse").brief), "…and other times held up to the camera");
@@ -27,9 +27,22 @@ const flowers = photoBrief("Flowers a dozen roses, delivered", "gift", giftById(
 ok(/holding up the/.test(flowers.brief) && !flowers.wearing, "and nor are flowers");
 ok(/showing it off to the camera/.test(purse.brief) && /showing it off to the camera/.test(up("Gucci GG Marmont purse", "gucci-purse").brief), "either way she's showing them");
 // 👟 The conflict this exists to stop: she can't be in the new boots AND her usual white sneakers.
-ok(photoBrief("team gear", "gift", giftById("team-gear")).wearing, "team gear is worn, so nothing else is described");
-ok(!photoBrief("$500", "money", null).wearing, "cash is never worn");
-ok(!photoBrief("a large iced latte", "gift", giftById("iced-latte")).wearing, "nor is a coffee");
+ok(photoBrief("team gear", "gift", giftById("team-gear"), 1).wearing, "team gear can be worn, and then nothing else is described");
+ok(!photoBrief("team gear", "gift", giftById("team-gear"), 0).wearing, "…or held up to the camera instead");
+ok(/their OWN team/.test(photoBrief("team gear", "gift", giftById("team-gear"), 0).brief), "either way it's her own team");
+ok(!photoBrief("$500", "money", null, 1).wearing, "cash is never worn, however close you are");
+ok(!photoBrief("a large iced latte", "gift", giftById("iced-latte"), 1).wearing, "nor is a coffee");
+
+// 👋 Who tries a present on for you: someone who knows you, and someone game enough.
+const odds = (t: Record<string, number>, close: number) => wearOdds(t, close);
+ok(odds({}, 95) > odds({}, 5), "someone close tries it on; someone new holds it up");
+ok(odds({}, 5) < 0.3, "a stranger very rarely puts it on for a photo");
+ok(odds({}, 95) > 0.6, "someone who's mad about you usually does");
+ok(odds({ flirty: 9 }, 50) > odds({}, 50), "a flirt will try anything on");
+ok(odds({ energetic: 9 }, 50) > odds({}, 50), "so will a livewire");
+ok(odds({ coldness: 9 }, 50) < odds({}, 50), "someone cold would rather just show you");
+ok(odds({ moody: 9 }, 50) < odds({}, 50), "and so would someone shy");
+ok(odds({ coldness: 10, moody: 10 }, 0) >= 0.05 && odds({ flirty: 10, energetic: 10, humor: 10 }, 100) <= 0.9, "nobody is ever certain either way");
 
 // Something that's somehow not in the list still gives a sensible picture.
 ok(/holding up the present/.test(photoBrief("a present", "gift", null).brief), "an unknown present still works");

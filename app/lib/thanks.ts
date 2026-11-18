@@ -9,7 +9,7 @@ import { scrub } from "./secrets";
 import { startMedia, mediaNote, MediaError } from "./media";
 import { mediaMood, allowsSuggestive, cleanTraits } from "./traits";
 import { referenceUrls, type Character } from "./characters";
-import { giftById, photoBrief, giftFace, PHOTO_ODDS } from "./gifts";
+import { giftById, photoBrief, giftFace, wearOdds, PHOTO_ODDS } from "./gifts";
 
 
 /** 💬 She writes back about it, straight away, and usually sends a picture with it. */
@@ -36,7 +36,8 @@ Reply with the message only — no quotes, no name, no stage directions.`,
   // 📸 And usually a picture of her with it.
   let media = null;
   if (Math.random() < PHOTO_ODDS) {
-    const { brief, wearing } = photoBrief(what, kind, g);
+    // 👗 On her, or held up to the camera: how close you are and who she is decide which.
+    const { brief, wearing } = photoBrief(what, kind, g, wearOdds(t, closeness));
     // 🏟️ Team gear: her own team, so whatever her description says she follows or plays for goes in.
     // 🏟️☕ Team gear and the edible ones are whatever is genuinely hers, so she's described to the
     // picture: her hobbies, her life, where she is.
