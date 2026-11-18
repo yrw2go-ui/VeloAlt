@@ -11,7 +11,8 @@ import { makeCharacter, usedNames } from "../../lib/makeCharacter";
 import { listLinks, setLink, removeLink, writeStory, linkSuggestions, screenStory } from "../../lib/friends";
 import { checkCard } from "../../lib/cardCheck";
 import { wordsFor } from "../../lib/wordsDb";
-import { MAX_CHARACTERS, DAILY_PORTRAITS, isAdmin, listCharacters, getCharacter, screenCharacter, startPortrait, checkPortrait, deleteCharacter, portraitsReady, chooseVoice, VoiceError } from "../../lib/characters";
+import { writeText } from "../../lib/llm";
+import { MAX_CHARACTERS, DAILY_PORTRAITS, isAdmin, listCharacters, getCharacter, getCharacterFor, screenCharacter, startPortrait, checkPortrait, deleteCharacter, portraitsReady, chooseVoice, VoiceError } from "../../lib/characters";
 import { setHome } from "../../lib/inPerson";
 import { localNote } from "../../lib/local";
 import { cleanPartner } from "../../lib/attached";
@@ -110,6 +111,9 @@ export async function POST(req: NextRequest) {
         const seesOthers = b.seesOthers === true, lesbian = romantic && b.lesbian === true;
         const partner = cleanPartner(b.partner);
         const lesbianPersonality = clean(b.lesbianPersonality, 2000);
+        // 🗣️ How she talks: only ever shapes her voice, never who she is.
+        const speech = clean(b.speech, 1200);
+        const speechOn = b.speechOn !== false;
         // 💞🤫 Official girlfriend, or a relationship kept secret (one or the other, romance only).
         const standing = romantic ? [b.gf === true ? "gf" : "", b.secret === true ? "secret" : ""].filter(Boolean).join("+") : "";
         const zone = typeof b.timeZone === "string" && b.timeZone && isValidTimeZone(b.timeZone) ? b.timeZone : "";
@@ -123,8 +127,8 @@ export async function POST(req: NextRequest) {
         // Same voice as before: keep it (no trip to ElevenLabs).
         const v = prev && (b.voice?.id ?? b.voice) === prev.voice ? { id: prev.voice, name: prev.voice_name, kind: prev.voice_kind } : await chooseVoice(b.voice);
         const [row] = action === "create"
-          ? await sql()`insert into chat_characters (created_by, name, personality, backstory, relation, appearance, job, casual_wear, hobbies, voice, voice_name, voice_kind, romantic, romance_arc, traits, preset, time_zone, birthday, brain, work_attire, work_days, work_start, work_end, part_time, poly_ok, sapphic, live_in, neighbor, local, attached, sees_others, lesbian, lesbian_personality, partner, big_following, standing, school, class_days, class_start, class_end, lives_in) values (${me}, ${f.name}, ${f.personality}, ${f.backstory}, ${f.relation}, ${f.appearance}, ${f.job}, ${f.casual_wear}, ${f.hobbies}, ${v.id}, ${v.name}, ${v.kind}, ${romantic}, ${arc}, ${JSON.stringify(traits)}::jsonb, ${presetId}, ${zone}, ${bday}, ${brain}, ${work.attire}, ${work.days}::int[], ${work.start}, ${work.end}, ${work.part}, ${polyOk}, ${sapphic}, ${liveIn}, ${neighbor}, ${local}, ${attached}, ${seesOthers}, ${lesbian}, ${lesbianPersonality}, ${partner}, ${bigFollowing}, ${standing}, ${klass.school}, ${klass.days}::int[], ${klass.start}, ${klass.end}, ${livesIn}) returning id`
-          : await sql()`update chat_characters set name = ${f.name}, personality = ${f.personality}, backstory = ${f.backstory}, relation = ${f.relation}, appearance = ${f.appearance}, job = ${f.job}, casual_wear = ${f.casual_wear}, hobbies = ${f.hobbies}, voice = ${v.id}, voice_name = ${v.name}, voice_kind = ${v.kind}, romantic = ${romantic}, romance_arc = ${arc}, traits = ${JSON.stringify(traits)}::jsonb, preset = ${presetId}, time_zone = ${zone}, birthday = ${bday}, brain = ${brain}, work_attire = ${work.attire}, work_days = ${work.days}::int[], work_start = ${work.start}, work_end = ${work.end}, part_time = ${work.part}, poly_ok = ${polyOk}, sapphic = ${sapphic}, live_in = ${liveIn}, neighbor = ${neighbor}, local = ${local}, attached = ${attached}, sees_others = ${seesOthers}, lesbian = ${lesbian}, lesbian_personality = ${lesbianPersonality}, partner = ${partner}, big_following = ${bigFollowing}, standing = ${standing}, school = ${klass.school}, class_days = ${klass.days}::int[], class_start = ${klass.start}, class_end = ${klass.end}, lives_in = ${livesIn}, reference_ids = ${want.filter((x: string) => refs.includes(x))}::uuid[], updated_at = now() where id = ${id} returning id`;
+          ? await sql()`insert into chat_characters (created_by, name, personality, backstory, relation, appearance, job, casual_wear, hobbies, voice, voice_name, voice_kind, romantic, romance_arc, traits, preset, time_zone, birthday, brain, work_attire, work_days, work_start, work_end, part_time, poly_ok, sapphic, live_in, neighbor, local, attached, sees_others, lesbian, lesbian_personality, partner, big_following, standing, school, class_days, class_start, class_end, lives_in, speech, speech_on) values (${me}, ${f.name}, ${f.personality}, ${f.backstory}, ${f.relation}, ${f.appearance}, ${f.job}, ${f.casual_wear}, ${f.hobbies}, ${v.id}, ${v.name}, ${v.kind}, ${romantic}, ${arc}, ${JSON.stringify(traits)}::jsonb, ${presetId}, ${zone}, ${bday}, ${brain}, ${work.attire}, ${work.days}::int[], ${work.start}, ${work.end}, ${work.part}, ${polyOk}, ${sapphic}, ${liveIn}, ${neighbor}, ${local}, ${attached}, ${seesOthers}, ${lesbian}, ${lesbianPersonality}, ${partner}, ${bigFollowing}, ${standing}, ${klass.school}, ${klass.days}::int[], ${klass.start}, ${klass.end}, ${livesIn}, ${speech}, ${speechOn}) returning id`
+          : await sql()`update chat_characters set name = ${f.name}, personality = ${f.personality}, backstory = ${f.backstory}, relation = ${f.relation}, appearance = ${f.appearance}, job = ${f.job}, casual_wear = ${f.casual_wear}, hobbies = ${f.hobbies}, voice = ${v.id}, voice_name = ${v.name}, voice_kind = ${v.kind}, romantic = ${romantic}, romance_arc = ${arc}, traits = ${JSON.stringify(traits)}::jsonb, preset = ${presetId}, time_zone = ${zone}, birthday = ${bday}, brain = ${brain}, work_attire = ${work.attire}, work_days = ${work.days}::int[], work_start = ${work.start}, work_end = ${work.end}, part_time = ${work.part}, poly_ok = ${polyOk}, sapphic = ${sapphic}, live_in = ${liveIn}, neighbor = ${neighbor}, local = ${local}, attached = ${attached}, sees_others = ${seesOthers}, lesbian = ${lesbian}, lesbian_personality = ${lesbianPersonality}, partner = ${partner}, big_following = ${bigFollowing}, standing = ${standing}, school = ${klass.school}, class_days = ${klass.days}::int[], class_start = ${klass.start}, class_end = ${klass.end}, lives_in = ${livesIn}, speech = ${speech}, speech_on = ${speechOn}, reference_ids = ${want.filter((x: string) => refs.includes(x))}::uuid[], updated_at = now() where id = ${id} returning id`;
         // 💍 Her own relationship: starting one sets the clock, ending one clears it.
         if (attached !== (prev?.attached || "single")) {
           if (attached === "single") await sql()`update chat_characters set attached_since = null, attached_until = null, partner = '' where id = ${row.id}`;
@@ -258,6 +262,32 @@ export async function POST(req: NextRequest) {
         const job = await startPortrait(ch.name, ch.appearance);
         await sql()`update chat_characters set portrait_job = ${job} where id = ${id}`;
         return NextResponse.json({ status: "working" });
+      }
+      // 🗣️ "Learn from chat": read her own messages back and write down the habits of her voice.
+      // It only ever proposes — nothing is saved until they keep it.
+      case "speech.learn": {
+        const ch = await getCharacterFor(me, id);
+        if (!ch) return bad("That character wasn't found.");
+        if (!allow(`speech:${me}`, [{ ms: 60_000, max: 4 }, { ms: 86_400_000, max: 60 }])) return bad("That's the limit for now — try again in a minute.", 429);
+        // Only the messages they rewrote themselves: those edits are the examples of how she should
+        // sound. Everything she wrote herself is what they were correcting, so it's left out.
+        const rows = await sql()`select content from velo_messages where user_id = ${me} and character_id = ${id}
+          and role = 'assistant' and edited and media_id is null and not peek order by created_at desc limit 40`;
+        const said = rows.map(r => String(r.content || "").trim()).filter(x => x.length > 1).reverse();
+        if (said.length < 2) return bad(`Rewrite a few of ${ch.name}'s messages first — double-tap one of ${ch.voice_kind === "male" ? "his" : "her"} bubbles to put it in your own words, and this reads those back.`);
+        const text = await writeText(ch.brain,
+          `You are given messages from a chat that the reader REWROTE BY HAND, to make the character sound the way they want her to sound. They are the examples to follow. Write down the HABITS OF HER VOICE and nothing else: the shape and sound of how she writes.
+Only what you can actually see in these messages. Say it in 2-5 short lines, each a plain habit, like notes someone jotted down:
+- how long her messages are, and whether she sends one or several
+- capitals, punctuation, how she ends a sentence, whether she trails off
+- words and phrases she actually reaches for (quote the real ones)
+- emoji: which, how often, or none
+- anything she clearly never does
+Never describe her personality, mood, feelings, opinions, who she is or what she talks about. No praise, no analysis, no preamble, no headings. Just the lines.`,
+          `MESSAGES OF ${ch.name.toUpperCase()}'S, REWRITTEN BY HAND:\n${said.map(x => `- ${x.slice(0, 300)}`).join("\n").slice(0, 12000)}`, 500).catch(() => "");
+        const speech = scrub(text).replace(/\r/g, "").trim().slice(0, 1200);
+        if (!speech) return bad("Couldn't work that out — try again.");
+        return NextResponse.json({ speech });
       }
       case "portrait.check": {
         const ch = await getCharacter(id);

@@ -239,7 +239,7 @@ export async function POST(req: NextRequest) {
         if (!needId()) return bad("Unknown message.");
         const text = scrub(String(b.text ?? "").replace(/\r/g, "").trim()).slice(0, 4000);
         if (!text) return bad("A message can't be empty — delete it instead.");
-        const [m] = await db`update velo_messages set content = ${text}
+        const [m] = await db`update velo_messages set content = ${text}, edited = true
           where id = ${id} and user_id = ${me} and media_id is null and not peek returning id, role, content`;
         return m ? NextResponse.json({ id: String(m.id), role: m.role, content: String(m.content) }) : bad("That one can't be edited.");
       }

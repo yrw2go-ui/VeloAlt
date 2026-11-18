@@ -841,3 +841,13 @@ create unique index if not exists chat_known_accounts_one
 -- 🏠 Whose place you're at while you're together: yours, or theirs. A knock at your door can't be
 -- answered when you're round at someone else's.
 alter table chat_in_person add column if not exists at_mine boolean not null default true;
+-- 🗣️ How she talks: a short note about her voice (phrases she uses, how she punctuates, what she
+-- never says). Filled in from her own messages with "Learn from chat", and yours to edit. It only
+-- shapes HOW she says things — her personality and description always decide WHAT she says — and
+-- the switch turns it off without losing what's written.
+alter table chat_characters add column if not exists speech text not null default '' check (char_length(speech) <= 1200);
+alter table chat_characters add column if not exists speech_on boolean not null default true;
+-- ✏️ Which of her messages you rewrote yourself. "Learn from your edits" reads only these: your
+-- edits are the examples of how she should sound, and the rest of the thread isn't.
+alter table velo_messages add column if not exists edited boolean not null default false;
+create index if not exists velo_messages_edited on velo_messages (user_id, character_id, created_at desc) where edited;

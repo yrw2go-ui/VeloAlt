@@ -16,7 +16,7 @@ import { BRAIN_OPTIONS } from "./lib/brainOptions";
 
 type VoiceOption = { id: string; name: string; kind: "female" | "male"; about: string; preview: string; owner?: string };
 
-export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; brain?: string; standing?: string; work_attire?: string; work_days?: number[]; work_start?: string; work_end?: string; part_time?: boolean; school?: string; class_days?: number[]; class_start?: string; class_end?: string; poly_ok?: boolean; sapphic?: boolean; live_in?: boolean; neighbor?: boolean; local?: boolean; lives_in?: string; attached?: "single" | "dating" | "married"; sees_others?: boolean; lesbian?: boolean; lesbian_personality?: string; partner?: string; big_following?: boolean; busy?: "work" | "class" | null; ditched?: boolean; home?: boolean; together?: boolean; pica_handle?: string | null; portrait_url: string | null; portrait_job: string | null };
+export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; brain?: string; standing?: string; work_attire?: string; work_days?: number[]; work_start?: string; work_end?: string; part_time?: boolean; school?: string; class_days?: number[]; class_start?: string; class_end?: string; poly_ok?: boolean; sapphic?: boolean; live_in?: boolean; neighbor?: boolean; local?: boolean; lives_in?: string; attached?: "single" | "dating" | "married"; sees_others?: boolean; lesbian?: boolean; lesbian_personality?: string; partner?: string; speech?: string; speech_on?: boolean; big_following?: boolean; busy?: "work" | "class" | null; ditched?: boolean; home?: boolean; together?: boolean; pica_handle?: string | null; portrait_url: string | null; portrait_job: string | null };
 
 /** A character's picture in a circle (their initial until a portrait exists). */
 export function CharacterFace({ c, size }: { c: Pick<Character, "name" | "portrait_url">; size: number }) {
@@ -137,6 +137,10 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
   const first = CHARACTER_VOICES[0];
   const [romantic, setRomantic] = useState(!!seed?.romantic);
   const [arc, setArc] = useState(seed?.romance_arc || "");
+  // 🗣️ How she talks: habits of her voice, learned from her own messages and yours to edit.
+  const [speech, setSpeech] = useState(seed?.speech || "");
+  const [speechOn, setSpeechOn] = useState(seed?.speech_on !== false);
+  const [learning, setLearning] = useState(false);
   const [traits, setTraits] = useState<Record<TraitKey, number>>(cleanTraits(seed?.traits && Object.keys(seed.traits).length ? seed.traits : DEFAULT_TRAITS));
   const [preset, setPreset] = useState(seed?.preset || "");
   const [zone, setZone] = useState(seed?.time_zone || "");
@@ -184,7 +188,7 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
   const working = !!c?.portrait_job;
   const dirty = !c || gender !== (c.voice_kind === "male" ? "male" : "female") || name !== c.name || personality !== c.personality || backstory !== c.backstory || relation !== c.relation || appearance !== c.appearance || job !== (c.job || "") || wear !== (c.casual_wear || "") || hobbies !== (c.hobbies || "") || voice.id !== c.voice || JSON.stringify(traits) !== JSON.stringify(cleanTraits(c.traits && Object.keys(c.traits).length ? c.traits : DEFAULT_TRAITS)) || preset !== (c.preset || "") || zone !== (c.time_zone || "") || bday !== (c.birthday || "") || romantic !== !!c.romantic || (romantic ? arc : "") !== (c.romance_arc || "") || refIds.join() !== (c.reference_ids || []).join() || brain !== (c.brain || "")
     || attire !== (c.work_attire || "") || [...workDays].sort().join() !== [...(c.work_days || [])].sort().join() || workStart !== (c.work_start || "") || workEnd !== (c.work_end || "") || partTime !== !!c.part_time || school !== (c.school || "") || [...classDays].sort().join() !== [...(c.class_days || [])].sort().join() || classStart !== (c.class_start || "") || classEnd !== (c.class_end || "")
-    || (romantic ? [gf ? "gf" : "", secret ? "secret" : ""].filter(Boolean).join("+") : "") !== (c.standing || "") || (romantic && polyOk) !== !!c.poly_ok || (romantic && sapphic) !== !!c.sapphic || bigFollowing !== !!c.big_following || liveIn !== !!c.live_in || neighbor !== !!c.neighbor || local !== !!c.local || livesIn.trim() !== (c.lives_in || "").trim() || attached !== (c.attached || "single") || partner !== (c.partner || "") || seesOthers !== !!c.sees_others || lesbian !== !!c.lesbian || lesbianWho !== (c.lesbian_personality || "");
+    || (romantic ? [gf ? "gf" : "", secret ? "secret" : ""].filter(Boolean).join("+") : "") !== (c.standing || "") || (romantic && polyOk) !== !!c.poly_ok || (romantic && sapphic) !== !!c.sapphic || bigFollowing !== !!c.big_following || liveIn !== !!c.live_in || neighbor !== !!c.neighbor || local !== !!c.local || livesIn.trim() !== (c.lives_in || "").trim() || attached !== (c.attached || "single") || partner !== (c.partner || "") || seesOthers !== !!c.sees_others || lesbian !== !!c.lesbian || lesbianWho !== (c.lesbian_personality || "") || speech.trim() !== (c.speech || "").trim() || speechOn !== (c.speech_on !== false);
 
   // A portrait in progress: check back every few seconds until it's ready.
   useEffect(() => {
@@ -213,6 +217,19 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
     finally { setSocialBusy(false); }
   };
 
+  // 🗣️ Read back the messages they rewrote by hand and jot down the voice in them. Nothing is saved until Save.
+  const learnSpeech = async () => {
+    if (!c || learning) return;
+    setLearning(true); setMsg("");
+    try {
+      const r = await api<{ speech: string }>("/api/characters", { action: "speech.learn", id: c.id });
+      setSpeech(r.speech);
+      setSpeechOn(true);
+    }
+    catch (e) { setMsg(e instanceof Error ? e.message : `Couldn't work out how ${G.they} talks.`); }
+    finally { setLearning(false); }
+  };
+
   const payload = () => ({ gender, name, personality, backstory, relation, appearance, job, casualWear: wear, hobbies, workAttire: attire,
     romantic, romanceArc: romantic ? arc : "", workDays, workStart, workEnd, partTime, school, classDays, classStart, classEnd,
     liveIn, neighbor, local: local || neighbor, livesIn: livesIn.trim(), attached, partner, seesOthers, lesbian: romantic && lesbian, bigFollowing,
@@ -222,7 +239,7 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
     setBusy(true); setMsg("");
     try {
       const fields = { name, personality, backstory, relation, appearance, job, casualWear: wear, hobbies, voice: { id: voice.id, name: voice.name, kind: voice.kind, owner: voice.owner }, romantic, romanceArc: romantic ? arc : "", traits, preset, timeZone: zone, birthday: bday, brain,
-        workAttire: attire, workDays, workStart: workStart && workEnd ? workStart : "", workEnd: workStart && workEnd ? workEnd : "", partTime, school, classDays, classStart: classStart && classEnd ? classStart : "", classEnd: classStart && classEnd ? classEnd : "", polyOk: romantic && polyOk, sapphic: romantic && sapphic, bigFollowing, liveIn, neighbor, local: local || neighbor, livesIn: livesIn.trim(), attached, partner, seesOthers, lesbian: romantic && lesbian, lesbianPersonality: lesbianWho, gf: romantic && gf, secret: romantic && secret };
+        workAttire: attire, workDays, workStart: workStart && workEnd ? workStart : "", workEnd: workStart && workEnd ? workEnd : "", partTime, school, classDays, classStart: classStart && classEnd ? classStart : "", classEnd: classStart && classEnd ? classEnd : "", polyOk: romantic && polyOk, sapphic: romantic && sapphic, bigFollowing, liveIn, neighbor, local: local || neighbor, livesIn: livesIn.trim(), attached, partner, seesOthers, lesbian: romantic && lesbian, lesbianPersonality: lesbianWho, gf: romantic && gf, secret: romantic && secret, speech: speech.trim(), speechOn };
       const r = await api<{ character: Character }>("/api/characters", { action: c ? "update" : "create", id: c?.id, ...fields, referenceIds: refIds });
       // 🖼️ Pictures picked while making a new character: upload them now (first one as headshot), as references.
       if (!c && pending.files.length && pending.fictional) {
@@ -509,6 +526,30 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
             <span className="muted" style={{ fontWeight: 500, display: "block", marginTop: 4 }}>Each person&apos;s relationship develops on its own from here, a little after every chat and call. Edit this any time to add new turns.</span>
           </label>
         )}
+        {/* 🗣️ How she talks: habits of her voice only. Her personality and description still lead. */}
+        <div data-testid="speech" style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+          <div className="row" style={{ justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>\uD83D\uDDE3\uFE0F How {G.they} talks</div>
+            <label className="row" style={{ gap: 6, fontSize: 12, fontWeight: 700, alignItems: "center" }}>
+              <input type="checkbox" checked={speechOn} onChange={e => setSpeechOn(e.target.checked)} data-testid="speech-on"
+                aria-label={`Use how ${G.they} talks`} style={{ width: 18, height: 18 }} />
+              <span className="muted" style={{ fontWeight: 600 }}>{speechOn ? "On" : "Off"}</span>
+            </label>
+          </div>
+          <textarea value={speech} onChange={e => setSpeech(e.target.value)} maxLength={1200} rows={4} data-testid="speech-text"
+            aria-label={`How ${G.they} talks`} disabled={!speechOn}
+            placeholder={`Habits of ${G.their} voice \u2014 short lines, e.g.\nTexts in lowercase, barely any full stops.\nUsually two short messages instead of one long one.\nSays \u201Cugh\u201D and \u201Chonestly\u201D a lot. Never uses emoji.`}
+            style={{ marginTop: 6, resize: "vertical", opacity: speechOn ? 1 : 0.5 }} />
+          <div className="row" style={{ gap: 8, marginTop: 6, alignItems: "center" }}>
+            <button type="button" className="ghost" onClick={learnSpeech} disabled={!c || learning} data-testid="speech-learn"
+              title={c ? `Read back the messages of ${G.theirs} you rewrote yourself, and jot down how ${G.they} talks` : "Save them first, then rewrite a few messages"}
+              style={{ padding: "5px 12px", fontSize: 12 }}>{learning ? "Reading\u2026" : "\u2728 Learn from my edits"}</button>
+            {speech.trim() && <button type="button" className="ghost" onClick={() => setSpeech("")} style={{ padding: "5px 12px", fontSize: 12 }}>Clear</button>}
+          </div>
+          <span className="muted" style={{ fontWeight: 500, display: "block", marginTop: 6, fontSize: 12 }}>
+            Rewrite a few of {G.their} messages (double-tap a bubble), then <b>Learn from my edits</b> reads them back and writes down the voice in them. Only how {G.they} says things \u2014 never what {G.they} says or who {G.they} is. {G.Their} personality and description always win where they disagree, and the switch turns this off without losing what&apos;s written.
+          </span>
+        </div>
         {gender === "female" && <label className="row" style={{ gap: 10, fontSize: 13, fontWeight: 700, alignItems: "flex-start" }}>
           <input type="checkbox" checked={bigFollowing} onChange={e => setBigFollowing(e.target.checked)} data-testid="big-following" style={{ width: 20, height: 20, marginTop: 1, flexShrink: 0 }} />
           <span>📸 Big Picagram following <span className="muted" style={{ fontWeight: 500, display: "block" }}>Her posts get 200–1,500 likes (otherwise 20–300).</span></span>

@@ -11,6 +11,7 @@
 
 import { MAKE_REAL, MAKE_NAMES } from "./vibes";
 import { ORDINARY } from "./folks";
+import { SLANG, VELO_SLANG } from "./slang";
 import { VELO_WHO, VELO_CARE, VELO_HELP, STYLE_FRIEND, STYLE_PROFESSIONAL, STYLE_SARCASTIC, STYLE_ROMANTIC, CHECKIN_FIRST, CHECKIN_PROMISED } from "./persona";
 
 export type Slot = {
@@ -52,6 +53,12 @@ export const SECTIONS: Section[] = [
         label: "No caption-speak",
         about: "Words nobody says out loud.",
         text: `Talk like a person, not a caption writer: never say "golden hour" when you're talking, captioning or commenting — nobody says that. If you mean the light, say the light, the evening sun, the sun going down, or just describe how it looked. (The photo description for the image generator is a different thing and can say what it likes.)`,
+      },
+      {
+        key: "slang",
+        label: "Texting shorthand and slang",
+        about: "Everyone understands how people actually text, whether or not they text that way themselves.",
+        text: SLANG,
       },
       {
         key: "brackets",
@@ -278,6 +285,7 @@ export const SECTIONS: Section[] = [
       { key: "velo_who", label: "Who she is", about: "The first thing said about her in every conversation.", text: VELO_WHO },
       { key: "velo_care", label: "Caring without nagging", about: "Her version of the same rule your characters have.", text: VELO_CARE },
       { key: "velo_help", label: "Being useful and honest", about: "How she answers when you actually want help.", text: VELO_HELP },
+      { key: "velo_slang", label: "Texting shorthand and slang", about: "She understands how people text, whether or not she texts that way herself.", text: VELO_SLANG },
       { key: "velo_friend", label: "Personality · 😊 Friend", about: "Used when Friend is picked in Settings.", text: STYLE_FRIEND },
       { key: "velo_professional", label: "Personality · 💼 Professional", about: "Used when Professional assistant is picked.", text: STYLE_PROFESSIONAL },
       { key: "velo_sarcastic", label: "Personality · 😏 Sarcastic", about: "Used when Sarcastic is picked.", text: STYLE_SARCASTIC },
