@@ -27,6 +27,10 @@ Reply with the message only — no quotes, no name, no stage directions.`,
     `WHAT ARRIVED: ${what}`, 200).catch(() => "");
   const words = scrub(String(text || "").replace(/^["']|["']$/g, "").replace(/\s+/g, " ").trim()).slice(0, 400)
     || (kind === "money" ? `okay WHAT 😳 ${what}?? you didn't have to do that` : `it came!! ${what} 😍 you're ridiculous`);
+  // 🎁 The chat says what turned up before she says anything about it — the way the other markers
+  // do (🎥 video chat ended, 🏠 she's home).
+  const line = `🎁 Received: ${what}`;
+  const [mark] = await sql()`insert into velo_messages (user_id, role, content, character_id) values (${userId}, 'user', ${line}, ${ch.id}) returning id, created_at::text as at`;
   const [msg] = await sql()`insert into velo_messages (user_id, role, content, character_id) values (${userId}, 'assistant', ${words}, ${ch.id}) returning id, created_at::text as at`;
 
   // 📸 And usually a picture of her with it.
@@ -43,5 +47,6 @@ Reply with the message only — no quotes, no name, no stage directions.`,
       .catch(e => { if (!(e instanceof MediaError)) console.error("thanks: photo", e instanceof Error ? e.message : e); return null; });
     if (media) await sql()`insert into velo_messages (user_id, role, content, character_id, media_id) values (${userId}, 'assistant', '', ${ch.id}, ${media.id})`;
   }
-  return { id: String(msg.id), at: String(msg.at), content: words, media };
+  return { marker: { id: String(mark.id), at: String(mark.at), role: "user" as const, content: line },
+    id: String(msg.id), at: String(msg.at), content: words, media };
 }

@@ -873,6 +873,10 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
   if (m.content.startsWith("💭 ")) return (
     <div data-testid="feelings-note" style={{ alignSelf: "center", maxWidth: "90%", textAlign: "center", fontSize: 12, padding: "6px 12px", borderRadius: 999, background: "rgba(236,72,153,.14)", border: "1px solid rgba(236,72,153,.4)" }} className="muted">{m.content}</div>
   );
+  // 🎁 What turned up, just before she says anything about it.
+  if (m.content.startsWith("🎁 ")) return (
+    <div data-testid="gift-note" style={{ alignSelf: "center", maxWidth: "90%", textAlign: "center", fontSize: 12, fontWeight: 700, padding: "6px 12px", borderRadius: 999, background: "rgba(250,204,21,.16)", border: "1px solid rgba(250,204,21,.5)", color: "var(--text)" }}>{m.content}</div>
+  );
   if (m.content.startsWith("🎬 ") || m.content.startsWith("🎥 ") || m.content.startsWith("🧍 ")) return (
     <div data-testid="scene-note" style={{ alignSelf: "center", maxWidth: "90%", textAlign: "center", fontSize: 12, padding: "6px 12px", borderRadius: 999, background: "var(--surface2)", border: "1px solid var(--border)" }} className="muted">{m.content}</div>
   );

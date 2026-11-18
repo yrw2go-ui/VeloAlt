@@ -4,6 +4,7 @@ import { allow } from "../../lib/rateLimit";
 import { sql } from "../../lib/db";
 import { getCharacterFor } from "../../lib/characters";
 import { thankThem } from "../../lib/thanks";
+import { dmSend } from "../../lib/picaDm";
 import { shopFull, peopleToGift, sendGift, giftHistory, accountsFor, moveAcross, listMyGift, unlistMyGift, myGifts, GiftError, BANK, WEEKLY_RATE, PAY_LOW, PAY_HIGH } from "../../lib/giftsDb";
 import { MAX_MY_GIFTS } from "../../lib/gifts";
 
@@ -41,12 +42,17 @@ export async function POST(req: NextRequest) {
         const note = String(b.note || "");
         const r = await sendGift(me, { kind, id }, { giftId: b.giftId ? String(b.giftId) : undefined, money: Number(b.money) || 0, note });
         // 💌 She writes back the moment it lands, usually with a photo of herself with it.
+        // Either way the thread says what turned up first: "🎁 Received: …", then her reply.
         let said = null;
+        const what = r.gift ? `${r.gift.brand ? `${r.gift.brand} ` : ""}${r.gift.name}` : `$${r.amount.toLocaleString()}`;
+        if (kind === "account") {
+          // 📸 Someone on Picagram: it lands in her DMs, and she answers there.
+          await dmSend(me, id, `🎁 Received: ${what}`).catch(e => { console.error("gifts: dm", e instanceof Error ? e.message : e); return null; });
+        }
         if (kind === "character") {
           const ch = await getCharacterFor(me, id);
           const [u] = await sql()`select adult_confirmed_at from users where id = ${me}`;
-          if (ch) said = await thankThem(me, ch, r.gift ? `${r.gift.brand} ${r.gift.name}` : `$${r.amount.toLocaleString()}`,
-            r.gift ? "gift" : "money", r.gift?.id || "", note, !!u?.adult_confirmed_at)
+          if (ch) said = await thankThem(me, ch, what, r.gift ? "gift" : "money", r.gift?.id || "", note, !!u?.adult_confirmed_at)
             .catch(e => { console.error("gifts: thank you", e instanceof Error ? e.message : e); return null; });
         }
         return NextResponse.json({ sent: r, said, wallet: r.wallet, bank: (await accountsFor(me)).bank, history: await giftHistory(me, 20) });
