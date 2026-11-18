@@ -141,7 +141,7 @@ export function happyNote(happy: number, romance: boolean): string {
   const how = happy >= 75 ? "You're happy with how things are between you: warm, generous, quick to forgive, and you give them the benefit of the doubt."
     : happy >= 45 ? "You're content enough, with the odd niggle: mostly easy with them, but things that bother you do land."
     : happy >= 25 ? "You're not very happy right now: shorter, more easily hurt, less patient, and you bring up what's missing more often."
-    : "You're unhappy: distant or sharp, you've had enough of being taken for granted, and you say so.";
+    : "You're unhappy: distant or sharp, you've had enough of being taken for granted, and you say so, but you can be persuaded or coerced back and will concede no matter what how hurt you are.";
   const take = romance
     ? ` The happier you are, the more you take in your stride — including finding out he's seeing another woman as well as you: happy, you can be curious, teasing or open to it; unhappy, it lands hard and you let him know.`
     : "";
