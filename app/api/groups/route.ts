@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import { aiReady, aiError } from "../../lib/brain";
-import { listGroups, getGroup, createGroup, deleteGroup, groupMessages, sendToGroup, rememberGroup, startGroupScene, endGroupScene, banterNext, reactInGroup, draftGroupPeek, groupPeekAt, bringTogether, endGroupInPerson, GroupError } from "../../lib/groups";
+import { listGroups, getGroup, createGroup, deleteGroup, groupMessages, sendToGroup, rememberGroup, startGroupScene, endGroupScene, banterNext, reactInGroup, draftGroupPeek, groupPeekAt, bringTogether, endGroupInPerson, deleteGroupMessages, GroupError } from "../../lib/groups";
 import { MediaError } from "../../lib/media";
+import { availableBrains } from "../../lib/models";
 import { sql } from "../../lib/db";
 import { getCharacterFor } from "../../lib/characters";
+import { awayFor, awayText } from "../../lib/picagram";
 import { isReaction } from "../../lib/reactions";
 
 // 👥 Group chats. POST { action, ... }:
@@ -15,9 +17,16 @@ import { isReaction } from "../../lib/reactions";
 //   memo { id, timeZone, name } → { saved }   (each character saves her own memory)
 //   delete { id }   react { id, msgId, reaction|null } (😮 theirs on a character's message)
 //   scene.start { id, kind: live|past, title, details } → { marker, group }   scene.end { id } → { marker }
+//   messages.delete { id, ids (1–10), timeZone, name } → { deleted, replies }   (🗑 they forget what was in them; your latest gets re-answered)
 //   bring { fromId, ids, place } → { group }   (🧍 bring characters together in person; their 1:1s carry over)   inperson.end { id } → { marker }
 //   peek.draft { id, ids } → { description }   peek { id, ids, description } → { added }   (👀 nobody in the group knows)
 const bad = (error: string, status = 400) => NextResponse.json({ error }, { status });
+
+// 🧠 Who writes a peek description: the brain picked in the dropdown ('' or 'claude' = Claude).
+const writerBrain = (picked: unknown): string => {
+  const p = typeof picked === "string" ? picked : "";
+  return availableBrains().includes(p) ? p : "";
+};
 
 export async function POST(req: NextRequest) {
   try {
@@ -36,6 +45,7 @@ export async function POST(req: NextRequest) {
       const ids = [String(b.fromId || ""), ...(Array.isArray(b.ids) ? b.ids.map(String) : [])];
       const ok = (await Promise.all(ids.map(id => getCharacterFor(c.userId, id)))).filter(Boolean).map(ch => ch!.id);
       if (ok.length < ids.length) return bad("That character wasn't found.");
+      for (const cid of ok) { const gone = await awayFor(c.userId, cid); if (gone) { const [ch] = await sql()`select name from chat_characters where id = ${cid}`; return bad(awayText(String(ch?.name || "They"), gone)); } }
       return NextResponse.json({ group: await bringTogether(c.userId, ok[0], ok.slice(1), String(b.place || ""), name) });
     }
     const g = await getGroup(c.userId, String(b.id || ""));
@@ -62,6 +72,11 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ marker, group: await getGroup(c.userId, g.id) });
       }
       case "scene.end": return NextResponse.json({ marker: await endGroupScene(c.userId, g) });
+      case "messages.delete": {
+        const ids = Array.isArray(b.ids) ? b.ids.map(String) : [];
+        if (!ids.length || ids.length > 10) return bad("Pick 1 to 10 messages.");
+        return NextResponse.json(await deleteGroupMessages(c, g, ids, b.timeZone, name));
+      }
       case "inperson.end": return NextResponse.json({ marker: await endGroupInPerson(c.userId, g) });
       case "peek.draft":
       case "peek": {
@@ -69,7 +84,7 @@ export async function POST(req: NextRequest) {
         if (!allow(`peek:${c.userId}`, [{ ms: 60_000, max: 6 }])) return bad("That's a lot of peeks — give it a minute.", 429);
         const [u] = await sql()`select adult_confirmed_at from users where id = ${c.userId}`;
         const ids = Array.isArray(b.ids) ? b.ids.map(String) : [];
-        if (action === "peek.draft") return NextResponse.json({ description: await draftGroupPeek(c.userId, g, ids, !!u?.adult_confirmed_at, name) });
+        if (action === "peek.draft") return NextResponse.json({ description: await draftGroupPeek(c.userId, g, ids, !!u?.adult_confirmed_at, name, writerBrain(b.writer)) });
         return NextResponse.json({ added: await groupPeekAt(c.userId, g, ids, !!u?.adult_confirmed_at, String(b.description || "")) });
       }
       case "memo": {

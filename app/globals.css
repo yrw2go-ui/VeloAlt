@@ -2,6 +2,8 @@
   --bg: #0b0d17; --surface: #141828; --surface2: #1c2236; --border: #2a3150;
   --text: #f1f2f7; --muted: #9aa3bd; --accent: #7c8cff; --accent2: #a78bfa;
   --good: #10b981; --bad: #f87171;
+  /* 🧭 How tall the bottom tab bar is: full-screen views stop here, so the tabs stay reachable. */
+  --nav-h: calc(64px + env(safe-area-inset-bottom));
 }
 * { box-sizing: border-box; overflow-wrap: anywhere; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);

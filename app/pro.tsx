@@ -358,3 +358,152 @@ export function PersonalityCard({ profile, onChange }: { profile: Profile; onCha
     </div>
   );
 }
+
+type WordBit = { key: string; label: string; about: string; text: string; fallback: string };
+
+/** 📝 Settings → Photo wording: every standing line that goes on every picture, theirs to edit. */
+export function WordingCard() {
+  const [open, setOpen] = useState(false);
+  const [bits, setBits] = useState<WordBit[] | null>(null);
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const load = (b: { bits?: WordBit[] }) => {
+    const list = b.bits || [];
+    setBits(list);
+    setDraft(Object.fromEntries(list.map(x => [x.key, x.text])));
+  };
+  useEffect(() => {
+    if (!open || bits) return;
+    data("wording.get").then(b => load(b as { bits?: WordBit[] })).catch(() => setBits([]));
+  }, [open, bits]);
+  // 🔒 House rule: saving only ever happens when something actually changed.
+  const dirty = !!bits && bits.some(b => (draft[b.key] ?? "").trim() !== b.text.trim());
+  const save = async () => {
+    if (!dirty) return;
+    setBusy(true);
+    const ok = await data("wording.set", { words: draft }).then(b => { load(b as { bits?: WordBit[] }); return true; }, () => false);
+    setBusy(false);
+    if (ok) { setSaved(true); setTimeout(() => setSaved(false), 1500); }
+  };
+  return (
+    <div className="card" data-testid="wording">
+      <button onClick={() => setOpen(o => !o)} style={{ all: "unset", cursor: "pointer", display: "flex", width: "100%", alignItems: "center", justifyContent: "space-between" }}>
+        <span>
+          <span style={{ fontWeight: 700 }}>📝 Photo wording</span>
+          <span className="muted" style={{ fontSize: 13, display: "block", margin: "2px 0 0" }}>The lines put on every picture your characters and the Picagram people send — edit any of them for better results.</span>
+        </span>
+        <span aria-hidden style={{ marginLeft: 10 }}>{open ? "▾" : "▸"}</span>
+      </button>
+      {open && (bits === null ? <div className="muted" style={{ marginTop: 12, fontSize: 13 }}>Loading…</div> : (
+        <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 14 }}>
+          <div className="muted" style={{ fontSize: 12 }}>{"{her}, {other}, {who} are filled in with the names when the picture is made — keep them."}</div>
+          {bits.map(b => {
+            const changed = (draft[b.key] ?? "") .trim() !== b.fallback.trim();
+            return (
+              <div key={b.key}>
+                <div style={{ fontWeight: 600, fontSize: 14 }}>{b.label}{changed ? " ·  edited" : ""}</div>
+                <div className="muted" style={{ fontSize: 12, margin: "2px 0 6px" }}>{b.about}</div>
+                <textarea value={draft[b.key] ?? ""} aria-label={b.label} rows={3} maxLength={700}
+                  onChange={e => setDraft(d => ({ ...d, [b.key]: e.target.value }))}
+                  style={{ width: "100%", background: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 10, padding: 8, fontSize: 13, fontFamily: "inherit" }} />
+                {changed && <button className="ghost" style={{ marginTop: 4, fontSize: 12, padding: "4px 10px" }}
+                  onClick={() => setDraft(d => ({ ...d, [b.key]: b.fallback }))}>Put the default back</button>}
+              </div>
+            );
+          })}
+          <div className="row" style={{ justifyContent: "flex-end" }}>
+            <button className="btn" disabled={!dirty || busy} onClick={save}>{saved ? "Saved ✓" : "Save"}</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+type TalkSlot = { key: string; label: string; about: string; text: string; fallback: string; romantic: boolean };
+type TalkSection = { key: string; title: string; about: string; slots: TalkSlot[]; fixed?: boolean };
+
+/**
+ * 🛠️ Settings → Admin → Messaging & wording. Every standing line that shapes how a character
+ * talks, in plain boxes: edit one, save, and her next message uses it. Hard safety isn't here.
+ */
+export function AdminCard() {
+  const [open, setOpen] = useState(false);
+  const [sections, setSections] = useState<TalkSection[] | null>(null);
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [err, setErr] = useState("");
+  const load = (b: { sections?: TalkSection[] }) => {
+    const list = b.sections || [];
+    setSections(list);
+    setDraft(Object.fromEntries(list.filter(s => !s.fixed).flatMap(s => s.slots.map(x => [x.key, x.text]))));
+  };
+  useEffect(() => {
+    if (!open || sections) return;
+    data("talk.get").then(b => load(b as { sections?: TalkSection[] })).catch(e => { setErr(e instanceof Error ? e.message : "Couldn't open it."); setSections([]); });
+  }, [open, sections]);
+  const all = (sections || []).filter(s => !s.fixed).flatMap(s => s.slots);
+  // 🔒 House rule: saving only ever happens when something actually changed.
+  const dirty = all.some(x => (draft[x.key] ?? "").trim() !== x.text.trim());
+  const changed = all.filter(x => (draft[x.key] ?? "").trim() !== x.fallback.trim()).length;
+  const save = async () => {
+    if (!dirty) return;
+    setBusy(true); setErr("");
+    const ok = await data("talk.set", { words: draft }).then(b => { load(b as { sections?: TalkSection[] }); return true; },
+      e => { setErr(e instanceof Error ? e.message : "Couldn't save."); return false; });
+    setBusy(false);
+    if (ok) { setSaved(true); setTimeout(() => setSaved(false), 1600); }
+  };
+  return (
+    <div className="card" data-testid="admin-card">
+      <button onClick={() => setOpen(o => !o)} style={{ all: "unset", cursor: "pointer", display: "flex", width: "100%", alignItems: "center", justifyContent: "space-between" }}>
+        <span>
+          <span style={{ fontWeight: 700 }}>🛠️ Admin · Messaging &amp; wording</span>
+          <span className="muted" style={{ fontSize: 13, display: "block", margin: "2px 0 0" }}>Every line that shapes how your characters talk — the voice, the length, the anti-rehearsed rule, caring without nagging. Edit any of them.{changed ? ` · ${changed} edited` : ""}</span>
+        </span>
+        <span aria-hidden style={{ marginLeft: 10 }}>{open ? "▾" : "▸"}</span>
+      </button>
+      {open && (sections === null ? <div className="muted" style={{ marginTop: 12, fontSize: 13 }}>Loading…</div> : (
+        <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 18 }}>
+          {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
+          <div className="muted" style={{ fontSize: 12 }}>
+            {"{them} is your name and {name} is hers — they're filled in when she answers, so keep them. Safety (being honest when you sincerely ask if she's an AI, secrets, self-harm, cruelty) isn't here and can't be edited."}
+          </div>
+          {sections.map(sec => (
+            <div key={sec.key} data-testid={`talk-${sec.key}`}>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>{sec.title}</div>
+              <div className="muted" style={{ fontSize: 12, margin: "2px 0 10px" }}>{sec.about}</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {sec.fixed ? sec.slots.map(x => (
+                  <div key={x.key} data-testid="talk-fixed">
+                    <div style={{ fontWeight: 600, fontSize: 13.5 }}>🔒 {x.label}</div>
+                    <div className="muted" style={{ fontSize: 12, margin: "2px 0 6px" }}>{x.about}</div>
+                    <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: 8, fontSize: 13, whiteSpace: "pre-wrap", opacity: 0.85 }}>{x.text}</div>
+                  </div>
+                )) : sec.slots.map(x => {
+                  const edited = (draft[x.key] ?? "").trim() !== x.fallback.trim();
+                  return (
+                    <div key={x.key}>
+                      <div style={{ fontWeight: 600, fontSize: 13.5 }}>{x.label}{edited ? " ·  edited" : ""}</div>
+                      <div className="muted" style={{ fontSize: 12, margin: "2px 0 6px" }}>{x.about}</div>
+                      <textarea value={draft[x.key] ?? ""} aria-label={x.label} rows={4} maxLength={2000}
+                        onChange={e => setDraft(d => ({ ...d, [x.key]: e.target.value }))}
+                        style={{ width: "100%", background: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 10, padding: 8, fontSize: 13, fontFamily: "inherit" }} />
+                      {edited && <button className="ghost" style={{ marginTop: 4, fontSize: 12, padding: "4px 10px" }}
+                        onClick={() => setDraft(d => ({ ...d, [x.key]: x.fallback }))}>Put the default back</button>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+          <div className="row" style={{ justifyContent: "flex-end", position: "sticky", bottom: 0, background: "var(--card)", paddingTop: 8 }}>
+            <button className="btn" disabled={!dirty || busy} onClick={save} data-testid="talk-save">{saved ? "Saved ✓" : busy ? "…" : "Save"}</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
