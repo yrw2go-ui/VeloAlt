@@ -3,13 +3,14 @@
 // OpenAI-compatible chat API. A choice only shows once its key and model are set.
 // Model ids come from the environment (QWEN_MODEL / DEEPSEEK_MODEL), never code.
 
-export type ChatModel = "claude" | "qwen" | "deepseek";
-export const CHAT_MODELS: ChatModel[] = ["claude", "qwen", "deepseek"];
+export type ChatModel = "claude" | "qwen" | "deepseek" | "kimi";
+export const CHAT_MODELS: ChatModel[] = ["claude", "qwen", "deepseek", "kimi"];
 
 export const MODEL_INFO: Record<ChatModel, { label: string; by: string; where: string }> = {
   claude: { label: "Claude", by: "Anthropic", where: "Processed by Anthropic (US)." },
   qwen: { label: "Qwen", by: "Alibaba Cloud", where: "Processed by Alibaba Cloud (Model Studio, international), or through Atlas Cloud." },
   deepseek: { label: "DeepSeek", by: "DeepSeek", where: "Processed by DeepSeek (servers in China), or through Atlas Cloud." },
+  kimi: { label: "Kimi", by: "Moonshot AI", where: "Through Atlas Cloud." },
 };
 
 export interface OpenAiProvider { baseUrl: string; key: string; model: string; extra?: Record<string, unknown>; minTokens?: number }
@@ -24,7 +25,7 @@ export function provider(m: ChatModel): OpenAiProvider | null {
     return { baseUrl: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com", key: process.env.DEEPSEEK_API_KEY, model: process.env.DEEPSEEK_MODEL };
   }
   // Otherwise the same model through Atlas Cloud, when it's set up there.
-  return m === "qwen" || m === "deepseek" ? atlasBrain(m) : null;
+  return m === "qwen" || m === "deepseek" || m === "kimi" ? atlasBrain(m) : null;
 }
 
 /** The choices this server can offer (Claude always). */

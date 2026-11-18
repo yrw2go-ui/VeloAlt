@@ -2,15 +2,19 @@
 // Velo — the app shell: sign-in, the four tabs (💬 Chat, ☀️ Today, 🧠 Memory,
 // ⚙️ Settings), the 📞 call screen, and due-reminder pop-ups.
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import React from "react";
+import { readPlace, savePlace, type Place } from "./lib/place";
+import { useBack } from "./lib/back";
 import { api, data } from "./lib/api";
 import { VersionCard, UpdateBanner } from "./version";
 import { confirmAsk, currentAsk, subscribeAsk } from "./lib/dialog";
 import { VeloLogo, VeloLookPicker, applyVeloLook, useVeloLook } from "./avatar";
 import VeloCall, { canCallVelo, primeSpeech } from "./call";
 import Chat, { type ChatAdd } from "./chat";
+type DropIn = { id: string; characterId: string; who: string; portrait: string | null; kind: "door" | "back" | "over"; line: string; hosting: { id: string; name: string } | null; away: { name: string } | null };
 import { CallMedia, type Media } from "./media";
+import Picagram from "./picagram";
 import { CharacterStrip, CharacterEditor, CharacterFace, NewCharacterSheet, type Character } from "./characters";
+import Gifts from "./gifts";
 import { GroupChat, GroupMaker, type Group } from "./groups";
 import Gallery from "./gallery";
 import AboutCard from "./about";
@@ -18,32 +22,18 @@ import CheckinsCard from "./notify";
 import Today from "./today";
 import Memory from "./memory";
 import { timeZone } from "./lib/tz";
-import ProCard, { BrainCard, PersonalityCard, ReplyLengthCard, VideoCard, type Profile } from "./pro";
+import ProCard, { AdminCard, BrainCard, PersonalityCard, ReplyLengthCard, VideoCard, WordingCard, type Profile } from "./pro";
 
-type Tab = "chat" | "today" | "memory" | "settings";
+type Tab = "chat" | "pica" | "gifts" | "today" | "memory" | "settings";
 const TABS: { id: Tab; icon: string; label: string }[] = [
   { id: "chat", icon: "💬", label: "Chat" },
+  { id: "pica", icon: "📸", label: "Picagram" },
+  { id: "gifts", icon: "🎁", label: "Gifts" },
   { id: "today", icon: "☀️", label: "Today" },
   { id: "memory", icon: "🧠", label: "Memory" },
   { id: "settings", icon: "⚙️", label: "Settings" },
 ];
 type User = { id: string; email: string };
-
-
-class GroupErrorBoundary extends React.Component<{ children: React.ReactNode; onReset: () => void }, { err: boolean; msg: string }> {
-  state = { err: false, msg: "" };
-  static getDerivedStateFromError(e: Error) { return { err: true, msg: e.message || "Unknown error" }; }
-  render() {
-    if (this.state.err) return (
-      <div style={{ padding: 24, textAlign: "center" }}>
-        <div style={{ fontWeight: 800, marginBottom: 8 }}>This group could not load.</div>
-        <div className="muted" style={{ fontSize: 14, marginBottom: 12 }}>{this.state.msg}</div>
-        <button className="btn" onClick={() => { this.setState({ err: false, msg: "" }); this.props.onReset(); }}>Back to chat</button>
-      </div>
-    );
-    return this.props.children;
-  }
-}
 
 export default function Home() {
   const [user, setUser] = useState<User | null | undefined>(undefined);
@@ -85,7 +75,7 @@ function SignIn({ onIn }: { onIn: (u: User) => void }) {
     <Center>
       <form onSubmit={go} style={{ width: "100%", maxWidth: 380, display: "flex", flexDirection: "column", gap: 12, alignItems: "stretch" }}>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, marginBottom: 8 }}>
-          <VeloLogo size={112} />
+          <VeloLogo size={128} />
           <h1 style={{ margin: 0, fontSize: 32 }}>Velo 2</h1>
           <div className="muted" style={{ textAlign: "center" }}>Your personal assistant and companion.</div>
         </div>
@@ -101,15 +91,6 @@ function SignIn({ onIn }: { onIn: (u: User) => void }) {
 
 type DueReminder = { id: string; text: string };
 
-// 📍 Where they are in the app (tab, open chat or group, scroll), so a reload or an update brings them right back.
-type Place = { tab?: Tab; withId?: string | null; groupId?: string | null; scroll?: Partial<Record<Tab, number>> };
-const placeKey = (userId: string) => `velo:place:${userId}`;
-function readPlace(userId: string): Place {
-  try { const p = JSON.parse(localStorage.getItem(placeKey(userId)) || "{}"); return p && typeof p === "object" ? p : {}; } catch { return {}; }
-}
-function savePlace(userId: string, patch: Place) {
-  try { localStorage.setItem(placeKey(userId), JSON.stringify({ ...readPlace(userId), ...patch })); } catch { /* private mode: fine */ }
-}
 const urlParam = (k: string) => (typeof location === "undefined" ? null : new URLSearchParams(location.search).get(k));
 
 function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
@@ -131,6 +112,8 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   const [brains, setBrains] = useState<string[]>([]);
   const [brainModels, setBrainModels] = useState<{ id: string; model: string }[]>([]);
   const [admin, setAdmin] = useState(false);
+  // ⬅️ Back from any other tab goes to Chat first, and only then out of the app.
+  useBack(tab !== "chat", () => setTab("chat"));
   // A tapped notification opens that chat (?chat=<character id>, or "velo").
   const [withId, setWithId] = useState<string | null>(() => { const c = urlParam("chat"); return c ? (c !== "velo" ? c : null) : place.withId || null; });
   const [editing, setEditing] = useState<Character | "new" | null>(null);
@@ -142,25 +125,14 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   useEffect(() => {
     api<{ characters: Character[]; portraits: boolean; admin: boolean; brains?: string[]; brainModels?: { id: string; model: string }[] }>("/api/characters", { action: "list" })
       .then(r => { setChars(r.characters); setPortraits(r.portraits); setAdmin(r.admin); setBrains(r.brains || []); setBrainModels(r.brainModels || []); }).catch(() => {});
-  }, [userId]);
+  }, [userId, refresh]);
   const withChar = chars.find(c => c.id === withId) || null;
-  // Watch for notification taps that change the URL.
-  useEffect(() => {
-    const check = () => { const c = urlParam("chat"); if (c && c !== withId) { setWithId(c !== "velo" ? c : null); setTab("chat"); } };
-    window.addEventListener("popstate", check);
-    return () => window.removeEventListener("popstate", check);
-  }, [withId]);
   // 👥 Group chats (you and 2–6 characters).
   const [groups, setGroups] = useState<Group[]>([]);
   const [groupId, setGroupId] = useState<string | null>(() => (urlParam("chat") ? null : place.groupId || null));
   const [groupsLoaded, setGroupsLoaded] = useState(false);
   const [makingGroup, setMakingGroup] = useState(false);
-  useEffect(() => { if (userId) api<{ groups: Group[] }>("/api/groups", { action: "list" }).then(r => {
-  const list = Array.isArray(r.groups) ? r.groups : [];
-  setGroups(list);
-  // If the saved groupId isn't in the list, clear it so we don't keep crashing on a bad group.
-  setGroupId(id => (id && !list.some(g => g.id === id) ? null : id));
-}).catch(() => { setGroups([]); setGroupId(null); }).finally(() => setGroupsLoaded(true)); }, [userId]);
+  useEffect(() => { if (userId) api<{ groups: Group[] }>("/api/groups", { action: "list" }).then(r => setGroups(r.groups)).catch(() => {}).finally(() => setGroupsLoaded(true)); }, [userId]);
   // 📍 Remember where they are.
   useEffect(() => { savePlace(userId, { tab, withId, groupId }); }, [userId, tab, withId, groupId]);
   // …and how far down they'd scrolled (Today, Memory, Settings): put back once the page has loaded after a reload.
@@ -187,11 +159,16 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   const pickChat = (id: string | null) => { setGroupId(null); setWithId(id); };
   // 🔴 Unread counts per chat ("velo" or character id). The open chat is marked read as it updates.
   const [unread, setUnread] = useState<Record<string, number>>({});
+  const [picaNew, setPicaNew] = useState(0);
+  const [picaOpen, setPicaOpen] = useState<string | null>(null); // a Picagram profile to open
   useEffect(() => {
     const key = withId || "velo";
     const tick = async () => {
       if (document.visibilityState !== "visible") return;
       if (tab === "chat") await data("chats.read", withId ? { characterId: withId } : {}).catch(() => {});
+      // 📸 New Picagram posts since they last looked (the tab clears it).
+      if (tab !== "pica") api<{ n: number; dms?: number }>("/api/pica", { action: "new" }).then(x => setPicaNew(x.n + (x.dms || 0))).catch(() => {});
+      else setPicaNew(0);
       const r = await data<{ unread: Record<string, number> }>("chats.unread").catch(() => null);
       if (!r) return;
       const u = { ...r.unread };
@@ -204,7 +181,12 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
     document.addEventListener("visibilitychange", tick);
     return () => { clearInterval(t); document.removeEventListener("visibilitychange", tick); };
   }, [userId, withId, tab, refresh]);
-  const savedChar = (c: Character) => { setChars(cs => (cs.some(x => x.id === c.id) ? cs.map(x => (x.id === c.id ? c : x)) : [...cs, c])); setWithId(c.id); };
+  const savedChar = (c: Character) => {
+    setChars(cs => (cs.some(x => x.id === c.id) ? cs.map(x => (x.id === c.id ? { ...x, ...c } : x)) : [...cs, c]));
+    setWithId(c.id);
+    // Her chip also shows things the server works out (at work, in class, home) — ask for those again.
+    api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => setChars(r.characters)).catch(() => {});
+  };
   const bump = useCallback(() => setRefresh(r => r + 1), []);
 
   // Their profile: name, look, and the time zone they're in now.
@@ -237,6 +219,66 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
     return () => { clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
   }, [userId, bump]);
 
+  // 🔔 Neighbours. While you're marked home, someone a few doors down might knock, or spot your
+  // car and ask you over. Checked every minute; leaving it costs nothing with her.
+  const [dropIn, setDropIn] = useState<DropIn | null>(null);
+  const hasNeighbor = chars.some(c => c.neighbor && !c.live_in);
+  useEffect(() => {
+    if (!hasNeighbor) return;
+    let stop = false;
+    const check = async () => {
+      const r = await data<{ dropIn: DropIn | null }>("dropin.check").catch(() => ({ dropIn: null }));
+      if (!stop && r.dropIn) setDropIn(d => d || r.dropIn);
+    };
+    check();
+    const t = setInterval(check, 60_000);
+    const onVis = () => { if (document.visibilityState === "visible") check(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { stop = true; clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
+  }, [userId, hasNeighbor]);
+  // ⏰ A plan whose time has come: start it here, whichever tab you're on.
+  type PlanNow = { id: string; title: string; details: string; time?: string; kind: "video" | "person"; character_id?: string; who?: string; portrait?: string | null };
+  const [planNow, setPlanNow] = useState<PlanNow | null>(null);
+  useEffect(() => {
+    let stop = false;
+    const check = async () => {
+      const r = await data<{ plan: PlanNow | null }>("plan.now").catch(() => ({ plan: null }));
+      if (!stop && r.plan) setPlanNow(p => p || r.plan);
+    };
+    check();
+    const t = setInterval(check, 60_000);
+    const onVis = () => { if (document.visibilityState === "visible") check(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { stop = true; clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
+  }, [userId]);
+  const startPlan = async () => {
+    const p = planNow; setPlanNow(null);
+    if (!p?.character_id) return;
+    setTab("chat"); setGroupId(null); setWithId(p.character_id); setChatTick(t => t + 1);
+    setStartPlan({ id: p.id, kind: p.kind, title: p.title, details: p.details });
+  };
+  const planLater = async () => {
+    const p = planNow; setPlanNow(null);
+    if (p) await data("plan.later", { id: p.id }).catch(() => {});
+  };
+  // What the chat should open once it's on screen: the scene sheet, or the in-person one.
+  const [startingPlan, setStartPlan] = useState<{ id: string; kind: "video" | "person"; title: string; details: string } | null>(null);
+
+  const answerDoor = async () => {
+    if (!dropIn) return;
+    const d = dropIn; setDropIn(null);
+    const r = await data<{ characterId: string; groupId?: string }>("dropin.answer", { id: d.id }).catch(() => null);
+    if (!r) return;
+    setTab("chat");
+    // 👥 The two of them met in the doorway: everyone carries on together.
+    if (r.groupId) { bump(); setWithId(null); setGroupId(r.groupId); return; }
+    setGroupId(null); setWithId(r.characterId); setChatTick(t => t + 1);
+  };
+  const leaveIt = async () => {
+    const d = dropIn; setDropIn(null);
+    if (d) await data("dropin.ignore", { id: d.id }).catch(() => {});
+  };
+
   const doneDue = async (id: string) => {
     setDue(d => d.filter(x => x.id !== id));
     await data("reminders.dismiss", { id }).catch(() => {});
@@ -248,7 +290,22 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   const [callMini, setCallMini] = useState(false);
   // 🎨 Photos/videos sent during the call: shown on the call screen, and saved to that chat.
   const [callMedia, setCallMedia] = useState<Media[]>([]);
-  const startCall = () => { primeSpeech(); setCallOpener(null); setCallWith(tab === "chat" ? withChar : null); setCallMedia([]); setCallMini(false); setCallBrain(null); setCalling(true); };
+  // 📞 She doesn't always pick up: at work, in class, or she just can't talk — then she texts back
+  // instead, and the call never starts. (Velo always answers.)
+  const [ringing, setRinging] = useState(false);
+  const startCall = async () => {
+    const who = tab === "chat" ? withChar : null;
+    primeSpeech();
+    if (who) {
+      setRinging(true);
+      try {
+        const r = await data<{ ok: boolean; say?: string }>("call.try", { characterId: who.id, timeZone: timeZone() });
+        if (!r.ok) { setRinging(false); setChatTick(t => t + 1); await confirmAsk(`${who.name} didn't pick up.\n\n"${r.say}"`, { yes: "OK" }); return; }
+      } catch { /* if the check itself fails, let the call through */ }
+      setRinging(false);
+    }
+    setCallOpener(null); setCallWith(who); setCallMedia([]); setCallMini(false); setCallBrain(null); setCalling(true);
+  };
   // 📞↩ Continue in call: the call picks up the chat — her first line follows on from the last 12 messages.
   const chatHistory = useRef<{ role: "user" | "assistant"; content: string }[]>([]);
   const [historyCount, setHistoryCount] = useState(0);
@@ -295,21 +352,21 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   };
 
   return (
-    <div style={{ height: "100dvh", display: "flex", flexDirection: "column", maxWidth: 1080, margin: "0 auto" }}>
+    <div style={{ height: "100dvh", display: "flex", flexDirection: "column", maxWidth: 720, margin: "0 auto" }}>
       {calling && callMini && <div aria-hidden style={{ height: "calc(max(8px, env(safe-area-inset-top)) + 50px)", flexShrink: 0 }} />}
-      <header className="row" style={{ padding: "max(12px, env(safe-area-inset-top)) 16px 12px", borderBottom: "1px solid var(--border)" }}>
-        <VeloLogo size={40} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 800, fontSize: 18 }}>Velo 2</div>
-          <div className="muted" style={{ fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name ? `Here for you, ${name.split(" ")[0]}` : "Your assistant & companion"}</div>
+      <header className="row" style={{ gap: 8, padding: "max(6px, env(safe-area-inset-top)) 12px 6px", borderBottom: "1px solid var(--border)" }}>
+        <VeloLogo size={32} />
+        <div className="row" style={{ flex: 1, minWidth: 0, gap: 6, alignItems: "baseline" }}>
+          <div style={{ fontWeight: 800, fontSize: 15 }}>Velo 2</div>
+          <div className="muted" style={{ fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name ? `Here for you, ${name.split(" ")[0]}` : "Your assistant & companion"}</div>
         </div>
         {canCallVelo() && !calling && tab === "chat" && !inGroup && (
           <button className="ghost" onClick={continueCall} disabled={continuing || historyCount < CONTINUE_MIN} data-testid="continue-call"
             title={historyCount < CONTINUE_MIN ? `Chat a little more first (${historyCount}/${CONTINUE_MIN} messages)` : "Call and pick up where the chat left off"}
-            aria-label={`Continue the chat in a call with ${withChar ? withChar.name : "Velo"}`} style={{ borderRadius: 999, padding: "6px 9px", fontSize: 14, lineHeight: 1.1, whiteSpace: "nowrap", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
-            {continuing ? "…" : <><span style={{ fontSize: 15 }}>📞↩</span><span>Continue</span></>}</button>
+            aria-label={`Continue the chat in a call with ${withChar ? withChar.name : "Velo"}`} style={{ borderRadius: 999, padding: "4px 10px", fontSize: 12, lineHeight: 1.1, whiteSpace: "nowrap", flexShrink: 0 }}>
+            {continuing ? "…" : "📞↩ Continue"}</button>
         )}
-        {canCallVelo() && !calling && !inGroup && <button className="btn" onClick={startCall} aria-label={`Call ${tab === "chat" && withChar ? withChar.name : "Velo"}`} data-testid="call-velo" style={{ borderRadius: 999, padding: "10px 16px" }}>📞 Call</button>}
+        {canCallVelo() && !calling && !inGroup && <button className="btn" onClick={startCall} disabled={ringing} aria-label={`Call ${tab === "chat" && withChar ? withChar.name : "Velo"}`} data-testid="call-velo" style={{ borderRadius: 999, padding: "6px 14px", fontSize: 14 }}>{ringing ? "📞 …" : "📞 Call"}</button>}
       </header>
 
       <UpdateBanner />
@@ -318,20 +375,70 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
           {due.map(r => (
             <div key={r.id} className="card row" style={{ padding: 12, borderColor: "var(--accent)" }}>
               <span style={{ fontSize: 22 }}>⏰</span>
-              <div style={{ flex: 1 }}><div className="muted" style={{ fontSize: 14 }}>Reminder</div><div style={{ fontWeight: 700 }}>{r.text}</div></div>
+              <div style={{ flex: 1 }}><div className="muted" style={{ fontSize: 12 }}>Reminder</div><div style={{ fontWeight: 700 }}>{r.text}</div></div>
               <button className="btn" onClick={() => doneDue(r.id)} style={{ padding: "8px 14px" }}>Done</button>
             </div>
           ))}
         </div>
       )}
 
+        {planNow && (
+        <div role="dialog" aria-modal="true" data-testid="plan-now" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 4000 }}>
+            <div className="card" style={{ maxWidth: 380, width: "100%", display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ fontWeight: 800, fontSize: 17 }}>{planNow.kind === "person" ? "🧍" : "🎥"} It&apos;s time{planNow.time ? ` — ${planNow.time}` : ""}</div>
+              <div style={{ fontSize: 15 }}>{planNow.title}{planNow.who ? ` with ${planNow.who}` : ""}</div>
+              {planNow.details && <div className="muted" style={{ fontSize: 13 }}>{planNow.details}</div>}
+              <div className="muted" style={{ fontSize: 12 }}>{planNow.kind === "person" ? "You two are meeting up — she'll be there with you." : "You two are getting on a video chat."}</div>
+              <div className="row" style={{ gap: 8 }}>
+                <button className="ghost" onClick={planLater} data-testid="plan-now-later" style={{ flex: 1, padding: "10px 14px" }}>Not now</button>
+                <button className="btn" onClick={startPlan} data-testid="plan-now-start" style={{ flex: 1, padding: "10px 14px" }}>{planNow.kind === "person" ? "Meet up" : "Start the video chat"}</button>
+              </div>
+            </div>
+          </div>
+        )}
+      {dropIn && (
+        <div role="dialog" aria-modal="true" data-testid="dropin" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 18, zIndex: 2700 }}>
+          <div className="card" style={{ width: "100%", maxWidth: 420, display: "flex", flexDirection: "column", gap: 12 }}>
+            <div className="row" style={{ gap: 12 }}>
+              {dropIn.portrait
+                // eslint-disable-next-line @next/next/no-img-element
+                ? <img src={dropIn.portrait} alt="" width={52} height={52} style={{ width: 52, height: 52, borderRadius: "50%", objectFit: "cover" }} />
+                : <span style={{ fontSize: 34 }}>{dropIn.kind === "door" ? "🔔" : "🏡"}</span>}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 800, fontSize: 17 }}>{dropIn.kind === "over" ? `${dropIn.who} saw your car` : dropIn.kind === "back" ? `${dropIn.who} is at your back door` : `${dropIn.who} is at your door`}</div>
+                <div className="muted" style={{ fontSize: 12 }}>{dropIn.kind === "over" ? "She's asking you over." : dropIn.kind === "back" ? "Round the back, where nobody sees her." : "She lives a few doors down."}</div>
+              </div>
+            </div>
+            <div data-testid="dropin-line" style={{ fontSize: 15, padding: "10px 12px", borderRadius: 12, background: "var(--surface2)" }}>{dropIn.line}</div>
+            {dropIn.hosting && dropIn.kind !== "over" && (
+              <div data-testid="dropin-hosting" style={{ fontSize: 12, padding: "8px 10px", borderRadius: 10, background: "rgba(245,158,11,.15)", border: "1px solid rgba(245,158,11,.45)" }}>
+                ⚠️ {dropIn.hosting.name} is here with you. Open that door and they might end up meeting.
+              </div>
+            )}
+            {/* 🚶 You're round at someone else's: you can't answer your own door from there. */}
+            {dropIn.away && (
+              <div data-testid="dropin-away" style={{ fontSize: 12, padding: "8px 10px", borderRadius: 10, background: "rgba(96,165,250,.15)", border: "1px solid rgba(96,165,250,.45)" }}>
+                🚶 You&apos;re round at {dropIn.away.name}&apos;s — you&apos;re not home to answer it.
+              </div>
+            )}
+            <div className="row" style={{ gap: 8 }}>
+              <button className="ghost" onClick={leaveIt} data-testid="dropin-no" style={{ flex: 1, padding: "10px 14px" }}>{dropIn.away ? "OK" : "Not right now"}</button>
+              {!dropIn.away && <button className="btn" onClick={answerDoor} data-testid="dropin-yes" style={{ flex: 1, padding: "10px 14px" }}>{dropIn.kind === "over" ? "🚶 Head over" : "🚪 Answer the door"}</button>}
+            </div>
+            <div className="muted" style={{ fontSize: 11, textAlign: "center" }}>{dropIn.away ? `${dropIn.who} will text to say she called by.` : "Leaving it is fine — she never knows you were standing there."}</div>
+          </div>
+        </div>
+      )}
+
       <main ref={mainRef} onScroll={onMainScroll} style={{ flex: 1, minHeight: 0, overflowY: tab === "chat" ? "hidden" : "auto", display: "flex", flexDirection: "column" }}>
         {tab === "chat" && <CharacterStrip characters={chars} active={withChar?.id || null} admin={admin} onPick={pickChat} onNew={() => setNewChar(true)} onEdit={setEditing} onGallery={() => setGallery(true)} unread={unread}
           groups={groups} activeGroup={inGroup?.id || null} onPickGroup={setGroupId} onNewGroup={() => setMakingGroup(true)} />}
-        {inGroup && <GroupErrorBoundary onReset={() => setGroupId(null)}><GroupChat key={inGroup.id} group={inGroup} chars={chars} name={name} onDeleted={id => { setGroups(gs => gs.filter(g => g.id !== id)); setGroupId(null); }} /></GroupErrorBoundary>}
-        {tab === "chat" && !inGroup && !(groupId && !groupsLoaded) && <Chat key={`${withChar?.id || "velo"}-${chatTick}`} userId={userId} name={name} onChanged={bump} added={chatAdd} onAdded={() => setChatAdd(null)} character={withChar} adult={!!profile?.adultConfirmed} onAdult={() => setProfileTick(t => t + 1)} onHistory={h => { chatHistory.current = h; setHistoryCount(h.length); }}
+        {inGroup && <GroupChat key={inGroup.id} group={inGroup} chars={chars} name={name} brains={brains} onDeleted={id => { setGroups(gs => gs.filter(g => g.id !== id)); setGroupId(null); }} />}
+        {tab === "chat" && !inGroup && !(groupId && !groupsLoaded) && <Chat key={`${withChar?.id || "velo"}-${chatTick}`} startPlan={startingPlan} onPlanStarted={() => setStartPlan(null)} brains={brains} userId={userId} name={name} onChanged={bump} added={chatAdd} onAdded={() => setChatAdd(null)} character={withChar} adult={!!profile?.adultConfirmed} onAdult={() => setProfileTick(t => t + 1)} onHistory={h => { chatHistory.current = h; setHistoryCount(h.length); }}
           onNewCharacter={() => api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => setChars(r.characters)).catch(() => {})}
-          others={chars.map(c => ({ id: c.id, name: c.name }))} onGroup={g => { setGroups(gs => [g, ...gs.filter(x => x.id !== g.id)]); setGroupId(g.id); }} />}
+          others={chars.map(c => ({ id: c.id, name: c.name, pica_handle: c.pica_handle || null }))} onSocial={id => { setPicaOpen(id); setTab("pica"); }} onGroup={g => { setGroups(gs => [g, ...gs.filter(x => x.id !== g.id)]); setGroupId(g.id); }} />}
+        {tab === "pica" && <Picagram name={name} userId={userId} openProfile={picaOpen} onProfileOpened={() => setPicaOpen(null)} onChat={id => api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => { setChars(r.characters); setTab("chat"); pickChat(id); }).catch(() => {})} />}
+        {tab === "gifts" && <Gifts />}
         {tab === "today" && <Today refresh={refresh} />}
         {tab === "memory" && <Memory refresh={refresh} />}
         {tab === "settings" && <Settings name={name} setName={setName} onOut={onOut} profile={profile} onProfile={() => setProfileTick(t => t + 1)}
@@ -341,8 +448,10 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       <nav style={{ display: "flex", borderTop: "1px solid var(--border)", paddingBottom: "env(safe-area-inset-bottom)", background: "var(--surface)" }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} aria-current={tab === t.id ? "page" : undefined}
-            style={{ flex: 1, background: "none", border: "none", padding: "10px 0 12px", color: tab === t.id ? "var(--accent)" : "var(--muted)", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, fontSize: 14, fontWeight: 700 }}>
-            <span style={{ fontSize: 20 }}>{t.icon}</span>{t.label}
+            style={{ flex: 1, background: "none", border: "none", padding: "10px 0 12px", color: tab === t.id ? "var(--accent)" : "var(--muted)", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, fontSize: 12, fontWeight: 700 }}>
+            <span style={{ fontSize: 20, position: "relative" }}>{t.icon}
+              {t.id === "pica" && picaNew > 0 && tab !== "pica" && <span data-testid="pica-badge" aria-label={`${picaNew} new posts`} style={{ position: "absolute", top: -6, right: -14, minWidth: 18, height: 18, padding: "0 5px", borderRadius: 999, background: "#ef4444", color: "#fff", fontSize: 11, fontWeight: 800, lineHeight: "18px", textAlign: "center" }}>{picaNew > 99 ? "99+" : picaNew}</span>}
+            </span>{t.label}
           </button>
         ))}
       </nav>
@@ -365,6 +474,8 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       {editing && (
         <CharacterEditor key={editing === "new" ? `new-${draft?.name || ""}` : editing.id} initial={editing === "new" ? null : editing} draft={editing === "new" ? draft : null} portraits={portraits} brains={brains} brainModels={brainModels}
           onClose={() => setEditing(null)} onSaved={savedChar}
+          onSocial={id => { setEditing(null); setPicaOpen(id); setTab("pica");
+            api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => setChars(r.characters)).catch(() => {}); }}
           onDeleted={id => { setChars(cs => cs.filter(c => c.id !== id)); setWithId(null); setEditing(null); }}
           onDuplicated={c => { setChars(cs => [...cs, c]); setEditing(c); }} />
       )}
@@ -386,9 +497,9 @@ function Settings({ name, setName, onOut, profile, onProfile, chars = [], admin 
     if (ok) { setName(n); setSaved(true); setTimeout(() => setSaved(false), 1500); }
   };
   return (
-    <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16, overflowWrap: "anywhere" }}>
+    <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
       <div className="card">
-        <div style={{ fontWeight: 700, marginBottom: 10, fontSize: 17 }}>What should Velo call you?</div>
+        <div style={{ fontWeight: 700, marginBottom: 8 }}>What should Velo call you?</div>
         <div className="row">
           <input value={draft} onChange={e => setDraft(e.target.value)} placeholder="Your name" aria-label="Your name" maxLength={80} />
           <button className="btn" disabled={!dirty} onClick={save}>{saved ? "Saved ✓" : "Save"}</button>
@@ -396,7 +507,7 @@ function Settings({ name, setName, onOut, profile, onProfile, chars = [], admin 
       </div>
       <div className="card">
         <div style={{ fontWeight: 700 }}>🧑 Velo&apos;s look</div>
-        <div className="muted" style={{ fontSize: 15, margin: "4px 0 14px" }}>Each face has her own voice on calls. You can also upload your own picture (she keeps the default voice).</div>
+        <div className="muted" style={{ fontSize: 13, margin: "2px 0 12px" }}>Each face has her own voice on calls. You can also upload your own picture (she keeps the default voice).</div>
         <VeloLookPicker />
       </div>
       {profile && <AboutCard profile={profile} onChange={onProfile} />}
@@ -405,6 +516,8 @@ function Settings({ name, setName, onOut, profile, onProfile, chars = [], admin 
       {profile && <BrainCard profile={profile} onChange={onProfile} chars={chars} admin={admin} brains={brains} brainModels={brainModels} onCharChange={onCharChange} />}
       {profile && <ReplyLengthCard profile={profile} onChange={onProfile} />}
       {profile && <VideoCard profile={profile} onChange={onProfile} />}
+      <WordingCard />
+      {admin && <AdminCard />}
       {profile && <ProCard profile={profile} onChange={onProfile} />}
       <button className="ghost" onClick={() => api("/api/auth", { action: "signout" }).finally(onOut)}>Sign out</button>
       <VersionCard />
@@ -414,6 +527,7 @@ function Settings({ name, setName, onOut, profile, onProfile, chars = [], admin 
 
 function ConfirmHost() {
   const ask = useSyncExternalStore(subscribeAsk, currentAsk, () => null);
+  useBack(!!ask, () => ask?.resolve(false)); // back is the same as Cancel
   if (!ask) return null;
   return (
     <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 5000 }}>

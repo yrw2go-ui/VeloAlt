@@ -3,8 +3,10 @@
 // and the admin editor: personality, backstory, relation to the user, call voice, and a
 // portrait (Atlas Cloud Seedream). Every character follows Velo's safety rules.
 import { useEffect, useRef, useState } from "react";
+import { useBack } from "./lib/back";
 import { api, uploadCharacterPicture } from "./lib/api";
 import { confirmAsk } from "./lib/dialog";
+import { localConflict } from "./lib/local";
 import { VeloAvatar } from "./avatar";
 import { CHARACTER_VOICES } from "./lib/voices";
 import { TRAITS, PRESETS, DEFAULT_TRAITS, cleanTraits, type TraitKey } from "./lib/traits";
@@ -14,7 +16,7 @@ import { BRAIN_OPTIONS } from "./lib/brainOptions";
 
 type VoiceOption = { id: string; name: string; kind: "female" | "male"; about: string; preview: string; owner?: string };
 
-export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; brain?: string; work_attire?: string; work_days?: number[]; work_start?: string; work_end?: string; part_time?: boolean; poly_ok?: boolean; sapphic?: boolean; explicit_ok?: boolean; gender?: "female" | "male"; live_in?: boolean; portrait_url: string | null; portrait_job: string | null };
+export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; brain?: string; standing?: string; work_attire?: string; work_days?: number[]; work_start?: string; work_end?: string; part_time?: boolean; school?: string; class_days?: number[]; class_start?: string; class_end?: string; poly_ok?: boolean; sapphic?: boolean; live_in?: boolean; neighbor?: boolean; local?: boolean; lives_in?: string; attached?: "single" | "dating" | "married"; sees_others?: boolean; lesbian?: boolean; lesbian_personality?: string; partner?: string; speech?: string; speech_on?: boolean; big_following?: boolean; busy?: "work" | "class" | null; ditched?: boolean; home?: boolean; together?: boolean; at_yours?: boolean; hinting?: boolean; pica_handle?: string | null; portrait_url: string | null; portrait_job: string | null };
 
 /** A character's picture in a circle (their initial until a portrait exists). */
 export function CharacterFace({ c, size }: { c: Pick<Character, "name" | "portrait_url">; size: number }) {
@@ -25,12 +27,48 @@ export function CharacterFace({ c, size }: { c: Pick<Character, "name" | "portra
   return <span aria-label={c.name} style={{ display: "flex", flexShrink: 0, width: size, height: size, borderRadius: "50%", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, var(--accent), var(--accent2))", color: "#fff", fontWeight: 800, fontSize: size * 0.42 }}>{c.name.slice(0, 1).toUpperCase()}</span>;
 }
 
-const chip = (on: boolean) => ({ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, padding: "4px 10px 4px 4px", borderRadius: 999, cursor: "pointer", fontSize: 13, fontWeight: 700,
-  border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, background: on ? "rgba(124,140,255,0.15)" : "var(--surface2)", color: "var(--text)" } as const);
+const chip = (on: boolean, busy?: "work" | "class" | null, home?: boolean, together?: boolean) => ({ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, padding: "4px 10px 4px 4px", borderRadius: 999, cursor: "pointer", fontSize: 13, fontWeight: 700,
+  // 🎓 in class: yellow. 💼 at work: orange. The ring stays when she's ditched it — she gets a 😏 instead.
+  // 🧍🎥 together right now (in person or on a video chat): a faint blue hue, over everything else.
+  // 🏠 home (someone who lives with you): faint green.
+  border: `${busy || home || together ? 2 : 1}px solid ${together ? "rgba(96,165,250,0.65)" : busy === "class" ? "#facc15" : busy === "work" ? "#f97316" : home ? "rgba(74,222,128,0.5)" : on ? "var(--accent)" : "var(--border)"}`,
+  background: together ? "rgba(96,165,250,0.18)" : on ? "rgba(124,140,255,0.15)" : "var(--surface2)", color: "var(--text)" } as const);
 
 /** The chips above the chat. Tap a chip to switch chats; admins tap the open one again to edit it. */
 /** 🔴 A small number on a chip: their unread messages there. */
 const Badge = ({ n }: { n?: number }) => (n ? <span data-testid="unread-badge" aria-label={`${n} unread`} style={{ position: "absolute", top: -6, right: -4, minWidth: 18, height: 18, padding: "0 5px", borderRadius: 999, background: "#ef4444", color: "#fff", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid var(--bg, #0b0d17)" }}>{n > 99 ? "99+" : n}</span> : null);
+
+/** 🔴 They've dropped a hint lately: a red dot until you do something about it (or two days pass). */
+const Hinting = ({ c }: { c: Character }) =>
+  c.hinting ? <span data-testid="hint-dot" title={`${c.name} has hinted at something — have a look in 🎁 Gifts`} aria-label="has hinted at something"
+    style={{ width: 8, height: 8, borderRadius: "50%", background: "#ef4444", display: "inline-block", flexShrink: 0 }} /> : null;
+
+/** ⭐ At your place right now — round at yours, or living with you and in. */
+const AtYours = ({ c }: { c: Character }) =>
+  c.at_yours ? <span data-testid="at-yours" title={`${c.name} is at your place right now`} aria-label="at your place" style={{ fontSize: 12 }}>⭐</span> : null;
+
+/** 😏 She should be in class or at work, and she's skipped it — for you. */
+const Ditched = ({ c }: { c: Character }) =>
+  c.ditched ? <span data-testid="ditched" title={`${c.voice_kind === "male" ? "He's" : "She's"} ${c.busy === "class" ? "skipped class" : "called off work"} today`} aria-label="skipped it today" style={{ fontSize: 11, marginLeft: 1 }}>😏</span> : null;
+
+/** 💍 Married. ⚢ Into women (until you win her round). */
+const Attached = ({ c }: { c: Character }) => (
+  <>
+    {c.attached === "married" && <span data-testid="is-married" title={c.partner ? `Married to ${c.partner}` : "Married"} aria-label="married" style={{ fontSize: 11, marginLeft: 1 }}>💍</span>}
+    {c.lesbian && <span data-testid="is-sapphic" title="Into women — win her round and this goes" aria-label="into women" style={{ fontSize: 11, marginLeft: 1 }}>⚢</span>}
+  </>
+);
+
+/** 💞🤫 Where the romance stands, on her chip: official, or kept secret. */
+const STANDING_BADGE: Record<string, { icon: string; title: string }> = {
+  gf: { icon: "💞", title: "Officially together" },
+  secret: { icon: "🤫", title: "Seeing each other, kept quiet" },
+  "gf+secret": { icon: "💞🤫", title: "Your girlfriend — and nobody knows" },
+};
+const Standing = ({ c }: { c: Character }) => {
+  const b = c.romantic && c.standing ? STANDING_BADGE[c.standing] : null;
+  return b ? <span data-testid={`standing-${c.standing}`} title={b.title} aria-label={b.title} style={{ fontSize: 11, marginLeft: 1 }}>{b.icon}</span> : null;
+};
 
 export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdit, onGallery, unread = {}, groups = [], activeGroup = null, onPickGroup, onNewGroup }: {
   characters: Character[]; active: string | null; admin: boolean; onPick: (id: string | null) => void; onNew: () => void; onEdit: (c: Character) => void; onGallery: () => void; unread?: Record<string, number>;
@@ -38,15 +76,17 @@ export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdi
 }) {
   if (activeGroup) active = "__group";
   return (
-    <div data-testid="character-strip" style={{ display: "flex", gap: 8, overflowX: "auto", padding: "12px 12px 8px", borderBottom: "1px solid var(--border)" }}>
+    <div data-testid="character-strip" style={{ display: "flex", flexWrap: "wrap", alignContent: "flex-start", gap: 8, maxHeight: 136, overflowY: "auto", padding: "12px 12px 8px", borderBottom: "1px solid var(--border)" }}>
       <button style={{ ...chip(active === null), position: "relative" }} onClick={() => onPick(null)} aria-pressed={active === null}><VeloAvatar size={26} /> Velo<Badge n={active === null ? 0 : unread.velo} /></button>
       {characters.map(c => (
-        <button key={c.id} style={{ ...chip(active === c.id), position: "relative" }} aria-pressed={active === c.id} onClick={() => (active !== c.id ? onPick(c.id) : admin ? onEdit(c) : undefined)}>
-          <CharacterFace c={c} size={26} /> {c.name}{admin && active === c.id ? " ✎" : ""}<Badge n={active === c.id ? 0 : unread[c.id]} />
+        <button key={c.id} style={{ ...chip(active === c.id, c.busy, c.home, c.together), position: "relative" }} aria-pressed={active === c.id} data-busy={c.busy || undefined} data-ditched={c.ditched ? "yes" : undefined} data-home={c.home ? "yes" : undefined} data-together={c.together ? "yes" : undefined}
+          title={c.together ? `You're with ${c.name} right now` : c.ditched ? `${c.name} should be ${c.busy === "class" ? "in class" : "at work"} — ${c.voice_kind === "male" ? "he's" : "she's"} not` : c.busy === "work" ? `${c.name} is at work` : c.busy === "class" ? `${c.name} is in class` : undefined} onClick={() => (active !== c.id ? onPick(c.id) : admin ? onEdit(c) : undefined)}>
+          <CharacterFace c={c} size={26} /> <AtYours c={c} /><Hinting c={c} />{c.name}<Ditched c={c} /><Attached c={c} /><Standing c={c} />{admin && active === c.id ? " ✎" : ""}<Badge n={active === c.id ? 0 : unread[c.id]} />
         </button>
       ))}
-      {(groups || []).map(g => (
-        <button key={g.id} style={chip(activeGroup === g.id)} aria-pressed={activeGroup === g.id} onClick={() => onPickGroup?.(g.id)} data-testid={`group-chip-${g.title}`}>
+      {groups.map(g => (
+        <button key={g.id} style={chip(activeGroup === g.id, null, false, !!g.scene_title || g.in_person_place != null)} aria-pressed={activeGroup === g.id} onClick={() => onPickGroup?.(g.id)}
+          data-together={g.scene_title || g.in_person_place != null ? "yes" : undefined} title={g.scene_title || g.in_person_place != null ? `You're with ${g.title} right now` : undefined} data-testid={`group-chip-${g.title}`}>
           <GroupFaces g={g} chars={characters} size={22} /> {g.title.length > 18 ? g.title.slice(0, 17) + "…" : g.title}
         </button>
       ))}
@@ -58,9 +98,10 @@ export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdi
 }
 
 /** Create or edit a character, and generate their portrait. */
-export function CharacterEditor({ initial, draft, portraits, brains = [], brainModels = [], onClose, onSaved, onDeleted, onDuplicated }: {
-  initial: Character | null; draft?: Partial<Character> | null; portraits: boolean; brains?: string[]; brainModels?: { id: string; model: string }[]; onClose: () => void; onSaved: (c: Character) => void; onDeleted: (id: string) => void; onDuplicated?: (c: Character) => void;
+export function CharacterEditor({ initial, draft, portraits, brains = [], brainModels = [], onClose, onSaved, onDeleted, onDuplicated, onSocial }: {
+  initial: Character | null; draft?: Partial<Character> | null; portraits: boolean; brains?: string[]; brainModels?: { id: string; model: string }[]; onClose: () => void; onSaved: (c: Character) => void; onDeleted: (id: string) => void; onDuplicated?: (c: Character) => void; onSocial?: (accountId: string) => void;
 }) {
+  useBack(true, onClose); // the phone's back button closes her card
   const [c, setC] = useState<Character | null>(initial);
   // ✨ A "make one for me" draft fills everything in; nothing is saved until Save.
   const seed: Partial<Character> | null = initial || draft || null;
@@ -76,17 +117,39 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
   const [workStart, setWorkStart] = useState(seed?.work_start || "");
   const [workEnd, setWorkEnd] = useState(seed?.work_end || "");
   const [partTime, setPartTime] = useState(!!seed?.part_time);
+  // 🎓 Her classes: their own days and hours, and where she studies.
+  const [school, setSchool] = useState(seed?.school || "");
+  const [classDays, setClassDays] = useState<number[]>(seed?.class_days || []);
+  const [classStart, setClassStart] = useState(seed?.class_start || "");
+  const [classEnd, setClassEnd] = useState(seed?.class_end || "");
   // 💞🌈 Romance options.
   const [polyOk, setPolyOk] = useState(!!seed?.poly_ok);
-  const [sapphic, setSapphic] = useState(!!seed?.sapphic);
-  const [explicitOk, setExplicitOk] = useState(!!seed?.explicit_ok);
-  const [gender, setGender] = useState<"female" | "male">(seed?.gender || "female");
+  // 💞🤫 Where it stands: official girlfriend, or together but kept quiet (one or the other).
   const [liveIn, setLiveIn] = useState(!!seed?.live_in);
+  const [local, setLocal] = useState(!!seed?.local);
+  const [livesIn, setLivesIn] = useState(seed?.lives_in || "");
+  // 🏘️ A few doors down: she knows it, and she can stop by when you're marked home.
+  const [neighbor, setNeighbor] = useState(!!seed?.neighbor);
+  // 💍 Where else her heart is, and whether she might start something of her own.
+  const [attached, setAttached] = useState<"single" | "dating" | "married">(seed?.attached || "single");
+  const [partner, setPartner] = useState(seed?.partner || "");
+  const [seesOthers, setSeesOthers] = useState(!!seed?.sees_others);
+  const [lesbian, setLesbian] = useState(!!seed?.lesbian);
+  // ⚢ The version of her that's used while that tick is on — usually her usual self, a clause or two different.
+  const [lesbianWho, setLesbianWho] = useState(seed?.lesbian_personality || "");
+  const [gf, setGf] = useState(!!seed?.standing?.includes("gf"));
+  const [secret, setSecret] = useState(!!seed?.standing?.includes("secret"));
+  const [sapphic, setSapphic] = useState(!!seed?.sapphic);
+  const [bigFollowing, setBigFollowing] = useState(!!seed?.big_following);
   const [wear, setWear] = useState(seed?.casual_wear || "");
   const [hobbies, setHobbies] = useState(seed?.hobbies || "");
   const first = CHARACTER_VOICES[0];
   const [romantic, setRomantic] = useState(!!seed?.romantic);
   const [arc, setArc] = useState(seed?.romance_arc || "");
+  // 🗣️ How she talks: habits of her voice, learned from her own messages and yours to edit.
+  const [speech, setSpeech] = useState(seed?.speech || "");
+  const [speechOn, setSpeechOn] = useState(seed?.speech_on !== false);
+  const [learning, setLearning] = useState(false);
   const [traits, setTraits] = useState<Record<TraitKey, number>>(cleanTraits(seed?.traits && Object.keys(seed.traits).length ? seed.traits : DEFAULT_TRAITS));
   const [preset, setPreset] = useState(seed?.preset || "");
   const [zone, setZone] = useState(seed?.time_zone || "");
@@ -100,7 +163,15 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
     if (!c) return;
     setCopyErr("");
     try { const r = await api<{ character: Character }>("/api/characters", { action: "duplicate", id: c.id, name: copyName.trim() }); setCopying(false); onDuplicated?.(r.character); }
-    catch (e) { setCopyErr(e instanceof Error ? e.message : "Couldn't copy her."); }
+    catch (e) { setCopyErr(e instanceof Error ? e.message : `Couldn't copy ${G.them}.`); }
+  };
+  // Switching ♀/♂ moves the voice to one that matches (and clears the woman-only options).
+  const switchGender = (g: "female" | "male") => {
+    setGender(g);
+    if (voice.kind === g) return;
+    const v = CHARACTER_VOICES.find(x => x.kind === g) || CHARACTER_VOICES[0];
+    setVoice({ id: v.voiceId, name: v.name, kind: v.kind, about: v.about, preview: "" });
+    if (g === "male") { setGf(false); setSecret(false); setSapphic(false); setBigFollowing(false); }
   };
   // 🎚️ A preset sets the sliders (and the personality, if it's empty or still another preset's text).
   const applyPreset = (id: string) => {
@@ -113,13 +184,20 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
   const [shots, setShots] = useState(0);
   const [pending, setPending] = useState<{ files: File[]; headshot: boolean; fictional: boolean }>({ files: [], headshot: true, fictional: false }); // finished portraits (refreshes the reference picker)
   const [refIds, setRefIds] = useState<string[]>(initial?.reference_ids || []);
+  // ♀♂ Which they are. The voice follows it, and it decides the woman-only bits of the card.
+  const [gender, setGender] = useState<"female" | "male">(seed?.voice_kind === "male" ? "male" : "female");
+  // 🗣️ His card says he, hers says she.
+  const male = gender === "male";
+  const G = male
+    ? { They: "He", they: "he", them: "him", Their: "His", their: "his", theirs: "his" }
+    : { They: "She", they: "she", them: "her", Their: "Her", their: "her", theirs: "hers" };
   const [voice, setVoice] = useState<VoiceOption>(seed?.voice ? { id: seed.voice, name: seed.voice_name || "Voice", kind: seed.voice_kind || "female", about: "", preview: "" } : { id: first.voiceId, name: first.name, kind: first.kind, about: first.about, preview: "" });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const working = !!c?.portrait_job;
-  const dirty = !c || name !== c.name || personality !== c.personality || backstory !== c.backstory || relation !== c.relation || appearance !== c.appearance || job !== (c.job || "") || wear !== (c.casual_wear || "") || hobbies !== (c.hobbies || "") || voice.id !== c.voice || JSON.stringify(traits) !== JSON.stringify(cleanTraits(c.traits && Object.keys(c.traits).length ? c.traits : DEFAULT_TRAITS)) || preset !== (c.preset || "") || zone !== (c.time_zone || "") || bday !== (c.birthday || "") || romantic !== !!c.romantic || (romantic ? arc : "") !== (c.romance_arc || "") || refIds.join() !== (c.reference_ids || []).join() || brain !== (c.brain || "")
-    || attire !== (c.work_attire || "") || [...workDays].sort().join() !== [...(c.work_days || [])].sort().join() || workStart !== (c.work_start || "") || workEnd !== (c.work_end || "") || partTime !== !!c.part_time
-    || (romantic && polyOk) !== !!c.poly_ok || (romantic && sapphic) !== !!c.sapphic || (romantic && explicitOk) !== !!c.explicit_ok || gender !== (c.gender || "female") || liveIn !== !!c.live_in;
+  const dirty = !c || gender !== (c.voice_kind === "male" ? "male" : "female") || name !== c.name || personality !== c.personality || backstory !== c.backstory || relation !== c.relation || appearance !== c.appearance || job !== (c.job || "") || wear !== (c.casual_wear || "") || hobbies !== (c.hobbies || "") || voice.id !== c.voice || JSON.stringify(traits) !== JSON.stringify(cleanTraits(c.traits && Object.keys(c.traits).length ? c.traits : DEFAULT_TRAITS)) || preset !== (c.preset || "") || zone !== (c.time_zone || "") || bday !== (c.birthday || "") || romantic !== !!c.romantic || (romantic ? arc : "") !== (c.romance_arc || "") || refIds.join() !== (c.reference_ids || []).join() || brain !== (c.brain || "")
+    || attire !== (c.work_attire || "") || [...workDays].sort().join() !== [...(c.work_days || [])].sort().join() || workStart !== (c.work_start || "") || workEnd !== (c.work_end || "") || partTime !== !!c.part_time || school !== (c.school || "") || [...classDays].sort().join() !== [...(c.class_days || [])].sort().join() || classStart !== (c.class_start || "") || classEnd !== (c.class_end || "")
+    || (romantic ? [gf ? "gf" : "", secret ? "secret" : ""].filter(Boolean).join("+") : "") !== (c.standing || "") || (romantic && polyOk) !== !!c.poly_ok || (romantic && sapphic) !== !!c.sapphic || bigFollowing !== !!c.big_following || liveIn !== !!c.live_in || neighbor !== !!c.neighbor || local !== !!c.local || livesIn.trim() !== (c.lives_in || "").trim() || attached !== (c.attached || "single") || partner !== (c.partner || "") || seesOthers !== !!c.sees_others || lesbian !== !!c.lesbian || lesbianWho !== (c.lesbian_personality || "") || speech.trim() !== (c.speech || "").trim() || speechOn !== (c.speech_on !== false);
 
   // A portrait in progress: check back every few seconds until it's ready.
   useEffect(() => {
@@ -133,11 +211,44 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
     return () => clearInterval(t);
   }, [c?.id, c?.portrait_job]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 📸 Not on Picagram yet: one button makes the account from their card and opens it.
+  const [handle, setHandle] = useState<string | null>(initial?.pica_handle || null);
+  const [socialBusy, setSocialBusy] = useState(false);
+  const makeSocial = async () => {
+    if (!c || socialBusy) return;
+    setSocialBusy(true); setMsg("");
+    try {
+      const r = await api<{ account: { id: string; handle: string } }>("/api/pica", { action: "profile", id: c.id });
+      setHandle(r.account.handle);
+      onSocial?.(r.account.id);
+    }
+    catch (e) { setMsg(e instanceof Error ? e.message : `Couldn't make ${G.their} account.`); }
+    finally { setSocialBusy(false); }
+  };
+
+  // 🗣️ Read back the messages they rewrote by hand and jot down the voice in them. Nothing is saved until Save.
+  const learnSpeech = async () => {
+    if (!c || learning) return;
+    setLearning(true); setMsg("");
+    try {
+      const r = await api<{ speech: string }>("/api/characters", { action: "speech.learn", id: c.id });
+      setSpeech(r.speech);
+      setSpeechOn(true);
+    }
+    catch (e) { setMsg(e instanceof Error ? e.message : `Couldn't work out how ${G.they} talks.`); }
+    finally { setLearning(false); }
+  };
+
+  const payload = () => ({ gender, name, personality, backstory, relation, appearance, job, casualWear: wear, hobbies, workAttire: attire,
+    romantic, romanceArc: romantic ? arc : "", workDays, workStart, workEnd, partTime, school, classDays, classStart, classEnd,
+    liveIn, neighbor, local: local || neighbor, livesIn: livesIn.trim(), attached, partner, seesOthers, lesbian: romantic && lesbian, bigFollowing,
+    gf: romantic && gf, secret: romantic && secret, polyOk: romantic && polyOk, sapphic: romantic && sapphic, timeZone: zone });
+
   const save = async () => {
     setBusy(true); setMsg("");
     try {
       const fields = { name, personality, backstory, relation, appearance, job, casualWear: wear, hobbies, voice: { id: voice.id, name: voice.name, kind: voice.kind, owner: voice.owner }, romantic, romanceArc: romantic ? arc : "", traits, preset, timeZone: zone, birthday: bday, brain,
-        workAttire: attire, workDays, workStart: workStart && workEnd ? workStart : "", workEnd: workStart && workEnd ? workEnd : "", partTime, polyOk: romantic && polyOk, sapphic: romantic && sapphic, explicitOk: romantic && explicitOk, gender, liveIn };
+        workAttire: attire, workDays, workStart: workStart && workEnd ? workStart : "", workEnd: workStart && workEnd ? workEnd : "", partTime, school, classDays, classStart: classStart && classEnd ? classStart : "", classEnd: classStart && classEnd ? classEnd : "", polyOk: romantic && polyOk, sapphic: romantic && sapphic, bigFollowing, liveIn, neighbor, local: local || neighbor, livesIn: livesIn.trim(), attached, partner, seesOthers, lesbian: romantic && lesbian, lesbianPersonality: lesbianWho, gf: romantic && gf, secret: romantic && secret, speech: speech.trim(), speechOn };
       const r = await api<{ character: Character }>("/api/characters", { action: c ? "update" : "create", id: c?.id, ...fields, referenceIds: refIds });
       // 🖼️ Pictures picked while making a new character: upload them now (first one as headshot), as references.
       if (!c && pending.files.length && pending.fictional) {
@@ -160,6 +271,40 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
     } catch (e) { setMsg(e instanceof Error ? e.message : "Couldn't save."); return null; }
     finally { setBusy(false); }
   };
+  // 📍 Marked local, but her story puts her somewhere else: say so (a warning, never a block).
+  // 📍 Where she lives now is its own field: when it's filled in, that alone decides — a backstory
+  // that says she grew up in Arizona and a job in Chicago no longer trip the warning.
+  const clash = local ? localConflict(livesIn.trim() || `${backstory} ${relation} ${job} ${personality}`) : "";
+
+  // 💾 Autosave: three seconds after you stop changing things, an existing character saves itself.
+  // Every change restarts the clock — typing a sentence saves once, at the end, not halfway through.
+  // (A new one still needs Create — it has to pass the safety check and be given a name first.)
+  const [saved, setSaved] = useState(false);
+  const saving = useRef(false);
+  const edited = JSON.stringify([gender, name, personality, backstory, relation, appearance, job, wear, hobbies, voice.id, traits, preset, zone, bday, romantic, arc, refIds, brain,
+    attire, workDays, workStart, workEnd, partTime, school, classDays, classStart, classEnd, gf, secret, polyOk, sapphic, bigFollowing, liveIn, neighbor, local, livesIn, attached, partner, seesOthers, lesbian, lesbianWho]);
+  useEffect(() => {
+    if (!c || !dirty || busy || working || !name.trim()) return;
+    const t = setTimeout(async () => {
+      if (saving.current) return;
+      saving.current = true;
+      const r = await save();
+      saving.current = false;
+      if (r) { setSaved(true); setTimeout(() => setSaved(false), 2000); }
+    }, 3000);
+    return () => clearTimeout(t);
+  }, [edited, dirty, busy, working, c?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 🛡️ Checked when you ask, never on save: a second opinion on the card, nothing more.
+  const [scanning, setScanning] = useState("");
+  const [scanned, setScanned] = useState<{ findings: { what: "location" | "job" | "boxes"; note: string }[] } | { error: string } | null>(null);
+  const scan = async () => {
+    setScanning("…"); setScanned(null);
+    try { setScanned(await api<{ findings: { what: "location" | "job" | "boxes"; note: string }[] }>("/api/characters", { action: "screen", ...payload() })); }
+    catch (e) { setScanned({ error: e instanceof Error ? e.message : "Couldn't check it." }); }
+    setScanning("");
+  };
+
   const portrait = async () => {
     const saved = dirty ? await save() : c;
     if (!saved) return;
@@ -178,10 +323,36 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
   return (
     <div role="dialog" aria-modal="true" data-testid="character-editor" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }}>
       <div className="card" style={{ width: "100%", maxWidth: 560, maxHeight: "92dvh", overflowY: "auto", borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 12 }}>
-        <div className="row" style={{ justifyContent: "space-between" }}>
+        <div className="row" style={{ justifyContent: "space-between", gap: 8 }}>
           <div style={{ fontWeight: 800, fontSize: 18 }}>{c ? `Edit ${c.name}` : "New character"}</div>
+          <button className="ghost" onClick={scan} disabled={!!scanning || !name.trim()} data-testid="character-scan" title={`Check where ${G.they} lives, ${G.their} job and the ticks against ${G.their} description — it never blocks saving`} style={{ padding: "4px 10px", fontSize: 12 }}>{scanning || "🛡️ Check"}</button>
           <button className="ghost" onClick={onClose} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
         </div>
+        {c && !handle && (
+          <button type="button" data-testid="character-social" onClick={makeSocial} disabled={socialBusy}
+            title={`${G.They} has no Picagram account — make one from ${G.their} card`}
+            style={{ width: "100%", borderRadius: 10, padding: "9px 12px", fontSize: 13, fontWeight: 700, cursor: socialBusy ? "default" : "pointer",
+              color: "var(--text)", background: "rgba(96,165,250,.16)", border: "1px solid rgba(96,165,250,.5)" }}>
+            {socialBusy ? "Making it…" : "📸 Create social"}
+          </button>
+        )}
+        {scanned && (() => {
+          const bad = "error" in scanned ? [{ what: "boxes" as const, note: scanned.error }] : scanned.findings;
+          const clear = !bad.length;
+          return (
+            <div data-testid="character-scan-result" style={{ padding: "8px 10px", borderRadius: 10, fontSize: 13,
+              background: clear ? "rgba(74,222,128,.14)" : "rgba(245,158,11,.15)", border: `1px solid ${clear ? "rgba(74,222,128,.45)" : "rgba(245,158,11,.45)"}` }}>
+              {clear ? `✓ Where ${G.they} lives, ${G.their} job and the ticks all line up.` : (
+                <>
+                  <div style={{ fontWeight: 700, marginBottom: 4 }}>A few things don&apos;t line up — save it anyway if you disagree:</div>
+                  <ul style={{ margin: 0, paddingLeft: 18 }}>
+                    {bad.map((f, i) => <li key={i} style={{ marginBottom: 2 }}><b>{checkLabel(f.what, male)}</b> — {f.note}</li>)}
+                  </ul>
+                </>
+              )}
+            </div>
+          );
+        })()}
         <div className="row" style={{ gap: 14, alignItems: "center" }}>
           {working ? <div style={{ width: 84, height: 84, borderRadius: "50%", border: "2px dashed var(--accent)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, textAlign: "center" }} className="muted">Painting…<br />up to a minute</div>
             : <CharacterFace c={{ name: name || "?", portrait_url: c?.portrait_url || null }} size={84} />}
@@ -192,6 +363,112 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
         <label style={{ fontSize: 13, fontWeight: 700 }}>Name
           <input value={name} onChange={e => setName(e.target.value)} maxLength={60} placeholder="e.g. Captain Mira" aria-label="Character name" style={{ marginTop: 4 }} />
         </label>
+        <div data-testid="gender" className="row" style={{ gap: 8 }}>
+          {([["female", "♀ Woman"], ["male", "♂ Man"]] as const).map(([id, label]) => (
+            <button key={id} type="button" data-testid={`gender-${id}`} aria-pressed={gender === id} onClick={() => switchGender(id)}
+              style={{ flex: 1, borderRadius: 999, padding: "8px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer", color: "var(--text)",
+                border: `1px solid ${gender === id ? "var(--accent)" : "var(--border)"}`, background: gender === id ? "rgba(124,140,255,0.15)" : "var(--surface2)" }}>{label}</button>
+          ))}
+        </div>
+        {gender === "female" && (
+          <div data-testid="standing" className="row" style={{ gap: 14, flexWrap: "wrap", padding: "8px 12px", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface2)" }}>
+            <label className="row" style={{ gap: 6, fontSize: 13, fontWeight: 700, cursor: "pointer" }} title="Officially together — everyone knows">
+              <input type="checkbox" checked={gf} data-testid="is-gf" onChange={e => setGf(e.target.checked)} style={{ width: 20, height: 20 }} />💞 gf
+            </label>
+            <label className="row" style={{ gap: 6, fontSize: 13, fontWeight: 700, cursor: "pointer" }} title="Together, but kept private in front of others">
+              <input type="checkbox" checked={secret} data-testid="is-secret" onChange={e => setSecret(e.target.checked)} style={{ width: 20, height: 20 }} />🤫 secret
+            </label>
+            <span className="muted" style={{ fontSize: 11, flexBasis: "100%" }}>
+              {!romantic ? "Turn on 💕 Romantic below for these to mean anything."
+                : gf && secret ? "Your girlfriend, and nobody knows: official between you two, discreet in front of everyone else."
+                : gf ? "Official: she talks about you as her boyfriend, and everyone you both know knows."
+                : secret ? "Seeing each other, quietly — nothing official, and discreet in front of others."
+                : "Neither ticked: nobody knows anything either way, as before."}
+              {(gf || secret) && romantic ? " How she feels about it is hers — some love it, some want more, some hate being hidden." : ""}
+            </span>
+          </div>
+        )}
+        {(
+          <div data-testid="hers" style={{ padding: "8px 12px", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface2)", display: "flex", flexDirection: "column", gap: 8 }}>
+            <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
+              <label style={{ fontSize: 13, fontWeight: 700 }}>{G.Their} own love life
+                <select value={attached} onChange={e => setAttached(e.target.value as typeof attached)} data-testid="attached" aria-label={`${G.Their} own love life`} style={{ marginTop: 4, display: "block" }}>
+                  <option value="single">Single</option>
+                  <option value="dating">Seeing someone</option>
+                  <option value="married">💍 Married</option>
+                </select>
+              </label>
+              {attached !== "single" && (
+                <label style={{ fontSize: 13, fontWeight: 700, flex: 1, minWidth: 140 }}>His or her name <span className="muted" style={{ fontWeight: 500 }}>· optional</span>
+                  <input value={partner} onChange={e => setPartner(e.target.value)} maxLength={120} data-testid="partner" aria-label="Partner" placeholder="e.g. Marcus" style={{ marginTop: 4 }} />
+                </label>
+              )}
+            </div>
+            <label className="row" style={{ gap: 6, fontSize: 13, fontWeight: 700, cursor: "pointer" }} title={`${G.They} might start something of ${G.their} own — short-term only`}>
+              <input type="checkbox" checked={seesOthers} data-testid="sees-others" onChange={e => setSeesOthers(e.target.checked)} style={{ width: 20, height: 20 }} />💘 {G.They} may see other people
+            </label>
+            {romantic && !male && (
+              <label className="row" style={{ gap: 6, fontSize: 13, fontWeight: 700, cursor: "pointer" }} title="Into women — she flirts with other women more than with you until you win her round">
+                <input type="checkbox" checked={lesbian} data-testid="is-lesbian" onChange={e => setLesbian(e.target.checked)} style={{ width: 20, height: 20 }} />⚢ Into women
+              </label>
+            )}
+            {romantic && lesbian && !male && (
+              <label style={{ fontSize: 13, fontWeight: 700 }}>⚢ Her personality while that&apos;s true <span className="muted" style={{ fontWeight: 500 }}>· used instead of the one below, only while the tick is on</span>
+                <textarea value={lesbianWho} onChange={e => setLesbianWho(e.target.value)} maxLength={2000} rows={4} aria-label="Personality while into women" data-testid="lesbian-personality"
+                  placeholder="Usually the same as her normal personality, with a clause or two different: friendly and funny with you and other men but plainly not interested that way, and she's the one doing the looking with women."
+                  style={{ marginTop: 4, resize: "vertical" }} />
+                <span className="muted" style={{ fontWeight: 500, fontSize: 11, display: "block", marginTop: 2 }}>
+                  {lesbianWho.trim() ? "Win her round and the tick comes off — she goes back to the personality below, unchanged." : "Empty, and her usual personality is used as it is."}
+                  {!lesbianWho.trim() && personality.trim() ? <> <button type="button" className="ghost" onClick={() => setLesbianWho(personality)} data-testid="copy-personality" style={{ padding: "2px 8px", fontSize: 11 }}>Copy her usual one to start from</button></> : null}
+                </span>
+              </label>
+            )}
+            <span className="muted" style={{ fontSize: 11 }}>
+              {male
+                ? attached === "married" ? `Married. ${G.They} can send you pictures of ${G.their} wife, and ${G.they} keeps the same face every time. Put ${G.their} name in above.`
+                  : attached === "dating" ? `Seeing someone. ${G.They} can send you pictures of ${G.them}, and ${G.they} keeps the same face every time. Put ${G.their} name in above.`
+                  : seesOthers ? "Single for now — he may meet someone; put her name in once he does." :
+                  "Single, and staying that way — nothing with anyone else."
+                : attached === "married" ? "Married: a 💍 on her chip and her Picagram bio. Anything with you stays quiet, and she's slower to fall — it means more when she does. Marriages end now and then." :
+               attached === "dating" ? "Seeing someone: short-term, a few weeks or months. She keeps on with you, more quietly, and the odd night she's not free." :
+               seesOthers ? "Single for now — she may meet someone, always short-term, and she'll still be yours while it lasts." :
+               "Single, and staying that way — nothing with anyone else."}
+              {romantic && lesbian && !male ? " ⚢ She flirts with women far more than with you to start with; win her round over time and the tick comes off by itself." : ""}
+              {!romantic && lesbian && !male ? " (Turn on 💕 Romantic below for ⚢ to mean anything.)" : ""}
+            </span>
+          </div>
+        )}
+        <div data-testid="live-in" style={{ padding: "8px 12px", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface2)" }}>
+          <label style={{ display: "block", marginBottom: 10 }}>
+            <span style={{ fontSize: 13, fontWeight: 700 }}>📍 Currently lives in</span>
+            <input value={livesIn} onChange={e => setLivesIn(e.target.value)} data-testid="lives-in" maxLength={120}
+              aria-label="Currently lives in" placeholder="Munster, IN" style={{ width: "100%", marginTop: 4 }} />
+            <span className="muted" style={{ fontSize: 11, display: "block", marginTop: 3 }}>Where {G.they} is NOW — not where {G.they} grew up or where {G.they} works. Everything else reads this.</span>
+          </label>
+          <div className="row" style={{ gap: 16, flexWrap: "wrap" }}>
+            <label className="row" style={{ gap: 6, fontSize: 13, fontWeight: 700, cursor: "pointer" }} title={`${G.They} lives with you — when ${G.they}'s home you're in the same house`}>
+              <input type="checkbox" checked={liveIn} data-testid="is-live-in" onChange={e => setLiveIn(e.target.checked)} style={{ width: 20, height: 20 }} />🏠 Lives with me
+            </label>
+            <label className="row" style={{ gap: 6, fontSize: 13, fontWeight: 700, cursor: "pointer" }} title={`${G.They} lives within about an hour — close enough to see on a weeknight`}>
+              <input type="checkbox" checked={local} data-testid="is-local" onChange={e => setLocal(e.target.checked)} style={{ width: 20, height: 20 }} />📍 Local
+            </label>
+            <label className="row" style={{ gap: 6, fontSize: 13, fontWeight: 700, cursor: "pointer" }} title={`${G.They} lives a few doors down — ${G.they} can stop by when you're home`}>
+              <input type="checkbox" checked={neighbor} data-testid="is-neighbor" onChange={e => { setNeighbor(e.target.checked); if (e.target.checked) setLocal(true); }} style={{ width: 20, height: 20 }} />🏘️ Neighbour
+            </label>
+          </div>
+          {local && clash && (
+            <div data-testid="local-clash" style={{ marginTop: 6, padding: "6px 10px", borderRadius: 10, background: "rgba(245,158,11,.15)", border: "1px solid rgba(245,158,11,.45)", fontSize: 12, fontWeight: 500 }}>
+              ⚠️ {livesIn.trim() ? `${G.They} lives in` : `${G.Their} card says`} <b>{clash}</b> — that isn&apos;t within an hour. Change where {G.they} lives, or untick Local.
+            </div>
+          )}
+          <span className="muted" style={{ fontSize: 11, display: "block", marginTop: 4 }}>
+            {liveIn
+              ? `When ${G.they}'s home you're in the same house: ${G.they} talks to you face to face instead of texting, 👁️ ICU works, and ${G.their} chip goes faint green. A 🏠 Home / Out toggle sits above the message box. Say how you two came to live together in ${G.their} description or backstory.`
+              : neighbor
+                ? `${G.They} lives a few doors down and knows it: ${G.they} sees your car come and go. While you're marked 🏠 home ${G.they} might knock, or spot your car and ask you over — only if you two are close, and only now and then. Leaving it costs you nothing with ${G.them}.`
+                : `Tick this if ${G.they} lives at your place.`}
+          </span>
+        </div>
         <label style={{ fontSize: 13, fontWeight: 700 }}>Personality preset <span className="muted" style={{ fontWeight: 500 }}>· optional starting point</span>
           <select value={preset} onChange={e => applyPreset(e.target.value)} aria-label="Personality preset" style={{ marginTop: 4, display: "block", width: "100%" }}>
             <option value="">— Custom —</option>
@@ -213,7 +490,8 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
           <label style={{ fontSize: 13, fontWeight: 700 }}>Job
             <input value={job} onChange={e => setJob(e.target.value)} maxLength={300} placeholder="e.g. Yoga instructor at a small studio downtown, teaches mornings" aria-label="Job" style={{ marginTop: 4 }} />
           </label>
-          <WorkWeek attire={attire} setAttire={setAttire} days={workDays} setDays={setWorkDays} start={workStart} setStart={setWorkStart} end={workEnd} setEnd={setWorkEnd} part={partTime} setPart={setPartTime} />
+          <WorkWeek male={male} attire={attire} setAttire={setAttire} days={workDays} setDays={setWorkDays} start={workStart} setStart={setWorkStart} end={workEnd} setEnd={setWorkEnd} part={partTime} setPart={setPartTime} />
+          <ClassWeek male={male} school={school} setSchool={setSchool} days={classDays} setDays={setClassDays} start={classStart} setStart={setClassStart} end={classEnd} setEnd={setClassEnd} />
           <label style={{ fontSize: 13, fontWeight: 700 }}>Preferred casual wear
             <textarea value={wear} onChange={e => setWear(e.target.value)} maxLength={400} rows={2} placeholder="e.g. Oversized hoodies, high-waisted jeans, white sneakers, gold hoops" aria-label="Preferred casual wear" style={{ marginTop: 4, resize: "vertical" }} />
           </label>
@@ -222,8 +500,8 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
           </label>
           <span className="muted" style={{ fontSize: 12 }}>They&apos;ll talk about their work and hobbies, and usually wear their casual style in everyday photos.</span>
         </div>
-        <BrainPick value={brain} onChange={setBrain} available={brains} models={brainModels} />
-        {c && <FriendsCard id={c.id} />}
+        <BrainPick value={brain} onChange={setBrain} available={brains} models={brainModels} male={male} />
+        {c && <FriendsCard id={c.id} male={male} />}
         <TraitSliders value={traits} romantic={romantic} onChange={(k, v) => { setTraits(t => ({ ...t, [k]: v })); }} />
         <label style={{ fontSize: 13, fontWeight: 700 }}>Where they live (time zone)
           <select value={zone} onChange={e => setZone(e.target.value)} aria-label="Character time zone" style={{ marginTop: 4, display: "block", width: "100%" }}>
@@ -242,20 +520,14 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
             </select>
           </div>
         </div>
-        <VoicePicker value={voice} onChange={setVoice} />
-        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-          <button type="button" onClick={() => setGender("female")} style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid var(--line)", background: gender === "female" ? "var(--accent)" : "transparent", color: gender === "female" ? "#fff" : "var(--text)" }}>Female</button>
-          <button type="button" onClick={() => setGender("male")} style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid var(--line)", background: gender === "male" ? "var(--accent)" : "transparent", color: gender === "male" ? "#fff" : "var(--text)" }}>Male</button>
-        </div>
+        <VoicePicker value={voice} onChange={setVoice} only={gender} />
         <label className="row" style={{ gap: 10, fontSize: 13, fontWeight: 700, alignItems: "flex-start" }}>
           <input type="checkbox" checked={romantic} onChange={e => setRomantic(e.target.checked)} aria-label="Romantic" style={{ width: 20, height: 20, marginTop: 1, flexShrink: 0 }} />
-          <span>💕 Romantic (unrated) <span className="muted" style={{ fontWeight: 500, display: "block" }}>Romance becomes possible with adults who confirmed they&apos;re 18+  — but their personality still leads. Others get a friendly, platonic version.</span></span>
+          <span>💕 Romantic (PG-13) <span className="muted" style={{ fontWeight: 500, display: "block" }}>{gender === "male"
+            ? "He can have a love life of his own: flirting, dating and falling for the women in your world. It never points at you — with you he stays a friend."
+            : "Romance becomes possible with adults who confirmed they\u2019re 18+ (never explicit) — but their personality still leads. Others get a friendly, platonic version."}</span></span>
         </label>
-        <label className="row" style={{ gap: 10, fontSize: 13, fontWeight: 700, alignItems: "flex-start", marginTop: 8 }}>
-          <input type="checkbox" checked={liveIn} onChange={e => setLiveIn(e.target.checked)} style={{ width: 20, height: 20, marginTop: 1, flexShrink: 0 }} />
-          <span>🏠 Live-in <span className="muted" style={{ fontWeight: 500, display: "block" }}>When home, they are at your house. Toggle home/away in chat.</span></span>
-        </label>
-        {romantic && gender === "female" && (
+        {romantic && (
           <label style={{ fontSize: 13, fontWeight: 700 }}>💕 Romance arc
             <textarea value={arc} onChange={e => setArc(e.target.value)} maxLength={1500} rows={3} aria-label="Romance arc"
               placeholder="How their feelings start and can grow, e.g. Not interested in them at first and a bit cold — but if they're patient and kind, she slowly starts to care and could fall for them."
@@ -263,39 +535,66 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
             <span className="muted" style={{ fontWeight: 500, display: "block", marginTop: 4 }}>Each person&apos;s relationship develops on its own from here, a little after every chat and call. Edit this any time to add new turns.</span>
           </label>
         )}
+        {/* 🗣️ How she talks: habits of her voice only. Her personality and description still lead. */}
+        <div data-testid="speech" style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+          <div className="row" style={{ justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>\uD83D\uDDE3\uFE0F How {G.they} talks</div>
+            <label className="row" style={{ gap: 6, fontSize: 12, fontWeight: 700, alignItems: "center" }}>
+              <input type="checkbox" checked={speechOn} onChange={e => setSpeechOn(e.target.checked)} data-testid="speech-on"
+                aria-label={`Use how ${G.they} talks`} style={{ width: 18, height: 18 }} />
+              <span className="muted" style={{ fontWeight: 600 }}>{speechOn ? "On" : "Off"}</span>
+            </label>
+          </div>
+          <textarea value={speech} onChange={e => setSpeech(e.target.value)} maxLength={1200} rows={4} data-testid="speech-text"
+            aria-label={`How ${G.they} talks`} disabled={!speechOn}
+            placeholder={`Habits of ${G.their} voice \u2014 short lines, e.g.\nTexts in lowercase, barely any full stops.\nUsually two short messages instead of one long one.\nSays \u201Cugh\u201D and \u201Chonestly\u201D a lot. Never uses emoji.`}
+            style={{ marginTop: 6, resize: "vertical", opacity: speechOn ? 1 : 0.5 }} />
+          <div className="row" style={{ gap: 8, marginTop: 6, alignItems: "center" }}>
+            <button type="button" className="ghost" onClick={learnSpeech} disabled={!c || learning} data-testid="speech-learn"
+              title={c ? `Read back the messages of ${G.theirs} you rewrote yourself, and jot down how ${G.they} talks` : "Save them first, then rewrite a few messages"}
+              style={{ padding: "5px 12px", fontSize: 12 }}>{learning ? "Reading\u2026" : "\u2728 Learn from my edits"}</button>
+            {speech.trim() && <button type="button" className="ghost" onClick={() => setSpeech("")} style={{ padding: "5px 12px", fontSize: 12 }}>Clear</button>}
+          </div>
+          <span className="muted" style={{ fontWeight: 500, display: "block", marginTop: 6, fontSize: 12 }}>
+            Rewrite a few of {G.their} messages (double-tap a bubble), then <b>Learn from my edits</b> reads them back and writes down the voice in them. Only how {G.they} says things \u2014 never what {G.they} says or who {G.they} is. {G.Their} personality and description always win where they disagree, and the switch turns this off without losing what&apos;s written.
+          </span>
+        </div>
+        {gender === "female" && <label className="row" style={{ gap: 10, fontSize: 13, fontWeight: 700, alignItems: "flex-start" }}>
+          <input type="checkbox" checked={bigFollowing} onChange={e => setBigFollowing(e.target.checked)} data-testid="big-following" style={{ width: 20, height: 20, marginTop: 1, flexShrink: 0 }} />
+          <span>📸 Big Picagram following <span className="muted" style={{ fontWeight: 500, display: "block" }}>Her posts get 200–1,500 likes (otherwise 20–300).</span></span>
+        </label>}
         {romantic && (
           <div style={{ display: "grid", gap: 8 }}>
             <label className="row" style={{ gap: 10, fontSize: 13, fontWeight: 700, alignItems: "flex-start" }}>
               <input type="checkbox" checked={polyOk} onChange={e => setPolyOk(e.target.checked)} data-testid="poly-ok" style={{ width: 20, height: 20, marginTop: 1, flexShrink: 0 }} />
-              <span>💞 Polyamory possible <span className="muted" style={{ fontWeight: 500, display: "block" }}>Open to sharing you with others over time — possible, never guaranteed. More likely if you keep gently nudging that way. Unchecked: she isn&apos;t into sharing you.</span></span>
+              <span>{male ? "💞 Open to sharing" : "💞 Polyamory possible"} <span className="muted" style={{ fontWeight: 500, display: "block" }}>{male
+                ? "A woman he's seeing or interested in can be close with you too — he's fine sharing her rather than competing for her. Unchecked: she's his, and he doesn't share."
+                : "Open to sharing you with others over time — possible, never guaranteed. More likely if you keep gently nudging that way. Unchecked: she isn\u2019t into sharing you."}</span></span>
             </label>
-            <label className="row" style={{ gap: 10, fontSize: 13, fontWeight: 700, alignItems: "flex-start" }}>
+            {gender === "female" && <label className="row" style={{ gap: 10, fontSize: 13, fontWeight: 700, alignItems: "flex-start" }}>
               <input type="checkbox" checked={sapphic} onChange={e => setSapphic(e.target.checked)} data-testid="sapphic" style={{ width: 20, height: 20, marginTop: 1, flexShrink: 0 }} />
               <span>🌈 Kinda lesbian leaning <span className="muted" style={{ fontWeight: 500, display: "block" }}>Men always stay her main attraction and she never goes fully lesbian — but with another romantic character who has this checked too, something could slowly develop (PG-13).</span></span>
-            </label>
-            <label className="row" style={{ gap: 10, fontSize: 13, fontWeight: 700, alignItems: "flex-start" }}>
-              <input type="checkbox" checked={explicitOk} onChange={e => setExplicitOk(e.target.checked)} data-testid="explicit-ok" style={{ width: 20, height: 20, marginTop: 1, flexShrink: 0 }} />
-              <span>🔞 Can send explicit <span className="muted" style={{ fontWeight: 500, display: "block" }}>She can send nudes or explicit pics on her own. Off = suggestive only.</span></span>
-            </label>
+            </label>}
           </div>
         )}
-        {c && <ReferencePicker characterId={c.id} value={refIds} onChange={setRefIds} refresh={shots}
+        {c && <ReferencePicker characterId={c.id} value={refIds} onChange={setRefIds} refresh={shots} male={male}
           onPortrait={ch => { setC(ch); onSaved(ch); }} />}
-        {!c && <PendingPictures value={pending} onChange={setPending} />}
+        {!c && <PendingPictures value={pending} onChange={setPending} male={male} />}
         <label style={{ fontSize: 13, fontWeight: 700 }}>Appearance (for the portrait)
           <textarea value={appearance} onChange={e => setAppearance(e.target.value)} maxLength={600} rows={2} placeholder="e.g. weathered sea captain, silver braid, navy coat, warm smile" aria-label="Appearance" style={{ marginTop: 4, resize: "vertical" }} />
         </label>
         <div className="muted" style={{ fontSize: 12 }}>Everyone can chat with and call this character. Each person gets their own chats and memories with them. Characters are fictional: no real people and nothing explicit — romantic characters can be PG-13 (flirty, suggestive, never explicit). A quick safety check runs when you save.</div>
         {msg && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {msg}</div>}
         <div className="row" style={{ flexWrap: "wrap" }}>
-          <button className="btn" disabled={busy || !name.trim() || (!dirty && !!c)} onClick={save}>{busy ? "…" : c ? "Save" : "Create"}</button>
+          <button className="btn" disabled={busy || !name.trim() || (!dirty && !!c)} onClick={save} data-testid="character-save">{busy ? "…" : c ? "Save" : "Create"}</button>
+          {c && <span data-testid="autosave" className="muted" style={{ fontSize: 12, alignSelf: "center" }}>{busy ? "Saving…" : saved ? "✓ Saved" : dirty ? "Saves on its own…" : ""}</span>}
           {portraits && <button className="ghost" disabled={busy || working || !name.trim() || !appearance.trim()} onClick={portrait} data-testid="character-portrait">{c?.portrait_url ? "🎨 New portrait" : "🎨 Generate portrait"}</button>}
           {c && onDuplicated && <button className="ghost" disabled={busy || dirty} onClick={() => { setCopyName(`${c.name} 2`); setCopying(true); }} data-testid="duplicate-open" title={dirty ? "Save first" : "Make a copy under a new name"}>📄 Duplicate</button>}
           {c && <button className="ghost" disabled={busy} onClick={remove} style={{ marginLeft: "auto", color: "var(--bad)" }}>Delete</button>}
         </div>
         {copying && c && (
           <div className="card" data-testid="duplicate-sheet" style={{ display: "grid", gap: 8, padding: 12 }}>
-            <div style={{ fontSize: 13, fontWeight: 700 }}>📄 Copy {c.name} — everything except her pictures</div>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>📄 Copy {c.name} — everything except {G.their} pictures</div>
             <input value={copyName} onChange={e => { setCopyName(e.target.value); setCopyErr(""); }} onKeyDown={e => { if (e.key === "Enter" && copyName.trim()) duplicate(); }} maxLength={60} autoFocus aria-label="Name for the copy" placeholder="New name" data-testid="duplicate-name" />
             {copyErr && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {copyErr}</div>}
             <div className="row">
@@ -310,7 +609,7 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
 }
 
 /** 🔊 Pick a call voice: their ElevenLabs voices plus a search of ElevenLabs' shared library, with ▶ samples. */
-function VoicePicker({ value, onChange }: { value: VoiceOption; onChange: (v: VoiceOption) => void }) {
+function VoicePicker({ value, onChange, only }: { value: VoiceOption; onChange: (v: VoiceOption) => void; only?: "female" | "male" }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [list, setList] = useState<VoiceOption[] | null>(null);
@@ -320,7 +619,7 @@ function VoicePicker({ value, onChange }: { value: VoiceOption; onChange: (v: Vo
   const audio = useRef<HTMLAudioElement | null>(null);
   const search = async (text: string) => {
     setErr("");
-    try { setList((await api<{ voices: VoiceOption[] }>("/api/voices", { provider, q: text })).voices); }
+    try { const all = (await api<{ voices: VoiceOption[] }>("/api/voices", { provider, q: text })).voices; setList(only ? all.filter(v => v.kind === only) : all); }
     catch (e) { setErr(e instanceof Error ? e.message : "Couldn't load voices."); setList([]); }
   };
   useEffect(() => { if (open) { setList(null); search(q); } }, [open, provider]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -343,7 +642,7 @@ function VoicePicker({ value, onChange }: { value: VoiceOption; onChange: (v: Vo
       {open && (
         <div style={{ marginTop: 8, border: "1px solid var(--border)", borderRadius: 12, padding: 8 }}>
           <div role="tablist" className="row" style={{ gap: 6, marginBottom: 8 }}>
-            {([["elevenlabs", "ElevenLabs"], ["fish", "🐟 Fish Audio (female)"]] as const).map(([id, label]) => (
+            {([["elevenlabs", "ElevenLabs"], ...(only === "male" ? [] : [["fish", "🐟 Fish Audio (female)"] as const])] as const).map(([id, label]) => (
               <button key={id} type="button" role="tab" aria-selected={provider === id} onClick={() => setProvider(id)} data-testid={`voices-${id}`}
                 style={{ borderRadius: 999, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", border: `1px solid ${provider === id ? "var(--accent)" : "var(--border)"}`, background: provider === id ? "rgba(124,140,255,0.15)" : "transparent", color: "var(--text)" }}>{label}</button>
             ))}
@@ -377,7 +676,8 @@ function VoicePicker({ value, onChange }: { value: VoiceOption; onChange: (v: Vo
 }
 
 /** 🖼️ Pick 2–4 pictures of this character (portraits or photos it sent you) that keep it looking the same in new photos and videos. */
-function ReferencePicker({ characterId, value, onChange, refresh, onPortrait }: { characterId: string; value: string[]; onChange: (ids: string[]) => void; refresh: number; onPortrait: (c: Character) => void }) {
+function ReferencePicker({ characterId, value, onChange, refresh, onPortrait, male = false }: { characterId: string; value: string[]; onChange: (ids: string[]) => void; refresh: number; onPortrait: (c: Character) => void; male?: boolean }) {
+  const their = male ? "his" : "her", them = male ? "him" : "her";
   const [items, setItems] = useState<{ id: string; thumb: string | null; url: string }[] | null>(null);
   const [reload, setReload] = useState(0);
   const [fictional, setFictional] = useState(false);
@@ -386,8 +686,12 @@ function ReferencePicker({ characterId, value, onChange, refresh, onPortrait }: 
   const [err, setErr] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  // 🖼️ The pictures already picked as hers come with the list, wherever they live, so every one
+  // that's counted is also on screen.
+  const picked = useRef(value);
   useEffect(() => {
-    api<{ items: { id: string; thumb: string | null; url: string }[] }>("/api/characters", { action: "gallery", id: characterId }).then(r => setItems(r.items)).catch(() => setItems([]));
+    api<{ items: { id: string; thumb: string | null; url: string }[] }>("/api/characters", { action: "gallery", id: characterId, ids: picked.current })
+      .then(r => setItems(r.items)).catch(() => setItems([]));
   }, [characterId, refresh, reload]);
   const upload = async (f: File | undefined) => {
     if (!f) return;
@@ -414,17 +718,24 @@ function ReferencePicker({ characterId, value, onChange, refresh, onPortrait }: 
       </label>
       <label className="row" style={{ gap: 8 }}>
         <input type="checkbox" checked={asHeadshot} onChange={e => setAsHeadshot(e.target.checked)} aria-label="Use as headshot" style={{ width: 18, height: 18, flexShrink: 0 }} />
-        <span>Also make it her main headshot</span>
+        <span>Also make it {their} main headshot</span>
       </label>
       <button type="button" className="ghost" disabled={!fictional || busy} onClick={() => input.current?.click()} data-testid="char-upload-btn" style={{ alignSelf: "flex-start", padding: "6px 12px", fontSize: 13 }}>{busy ? "Uploading…" : "⬆️ Upload a picture"}</button>
       <input ref={input} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={e => upload(e.target.files?.[0])} data-testid="char-upload-input" />
       {err && <div style={{ color: "var(--bad)", fontSize: 12 }}>⚠️ {err}</div>}
     </div>
   );
+  const gone = items ? value.filter(id => !items.some(x => x.id === id)) : [];
   const toggle = (id: string) => onChange(value.includes(id) ? value.filter(x => x !== id) : value.length >= 4 ? value : [...value, id]);
   return (
     <div style={{ fontSize: 13, fontWeight: 700 }}>
-      Reference pictures <span className="muted" style={{ fontWeight: 500 }}>· {value.length}/4 picked (2–4 keeps them looking the same)</span>
+      Reference pictures <span className="muted" style={{ fontWeight: 500 }}>· {items ? value.filter(id => items.some(x => x.id === id)).length : value.length}/4 picked (2–4 keeps them looking the same)</span>
+      {gone.length > 0 && (
+        <div data-testid="refs-gone" style={{ fontWeight: 500, marginTop: 6, padding: "6px 10px", borderRadius: 10, background: "rgba(245,158,11,.15)", border: "1px solid rgba(245,158,11,.45)", fontSize: 12 }}>
+          ⚠️ {gone.length === 1 ? `One of ${their} reference pictures is gone` : `${gone.length} of ${their} reference pictures are gone`} — deleted since they were picked.{" "}
+          <button type="button" className="ghost" data-testid="refs-drop-gone" onClick={() => onChange(value.filter(id => !gone.includes(id)))} style={{ padding: "2px 8px", fontSize: 12 }}>Drop {gone.length === 1 ? "it" : "them"}</button>
+        </div>
+      )}
       {!items ? <div className="muted" style={{ fontWeight: 500, marginTop: 6 }}>Loading…</div>
         : !items.length ? <div className="muted" style={{ fontWeight: 500, marginTop: 6 }}>Upload pictures you made (e.g. in Atlas Cloud), generate a few portraits, or ask them for selfies in chat — then pick the best 2–4 here.</div>
         : (
@@ -443,7 +754,7 @@ function ReferencePicker({ characterId, value, onChange, refresh, onPortrait }: 
           </div>
         )}
       {selected && items?.some(x => x.id === selected) && (
-        <button type="button" className="ghost" disabled={busy} onClick={() => makeHeadshot(selected)} data-testid="make-headshot" style={{ marginTop: 6, padding: "6px 12px", fontSize: 13 }}>⭐ Make the last one I tapped her headshot</button>
+        <button type="button" className="ghost" disabled={busy} onClick={() => makeHeadshot(selected)} data-testid="make-headshot" style={{ marginTop: 6, padding: "6px 12px", fontSize: 13 }}>⭐ Make the last one I tapped {their} headshot</button>
       )}
       {uploader}
     </div>
@@ -451,11 +762,19 @@ function ReferencePicker({ characterId, value, onChange, refresh, onPortrait }: 
 }
 
 /** 🎚️ Nine temperament sliders (0–10). Their mix makes each character unique; Flirty and Suggestive only count when Romantic is on. */
-function TraitSliders({ value, romantic, onChange }: { value: Record<TraitKey, number>; romantic: boolean; onChange: (k: TraitKey, v: number) => void }) {
+const checkLabel = (what: "location" | "job" | "boxes", male: boolean) =>
+  what === "location" ? `📍 Where ${male ? "he" : "she"} lives` : what === "job" ? `💼 ${male ? "His" : "Her"} job` : "☑️ The ticks";
+
+export function TraitSliders({ value, romantic, onChange }: { value: Record<TraitKey, number>; romantic: boolean; onChange: (k: TraitKey, v: number) => void }) {
+  // 🎚️ Closed to begin with — nine sliders is a wall of them, and most visits don't touch any.
+  const [open, setOpen] = useState(false);
   return (
     <div data-testid="trait-sliders" style={{ fontSize: 13, fontWeight: 700 }}>
-      Temperament <span className="muted" style={{ fontWeight: 500 }}>· tendencies, not a script — the personality text still leads</span>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+      <button type="button" className="ghost" onClick={() => setOpen(o => !o)} aria-expanded={open} data-testid="traits-toggle"
+        style={{ textAlign: "left", fontWeight: 700, padding: 0, border: "none", background: "none", color: "var(--text)", cursor: "pointer", fontSize: 13 }}>
+        {open ? "▾" : "▸"} Temperament <span className="muted" style={{ fontWeight: 500 }}>· tendencies, not a script — the personality text still leads</span>
+      </button>
+      <div hidden={!open} style={{ display: open ? "flex" : "none", flexDirection: "column", gap: 8, marginTop: 8 }}>
         {TRAITS.map(t => {
           const off = "romantic" in t && !romantic;
           return (
@@ -475,7 +794,8 @@ function TraitSliders({ value, romantic, onChange }: { value: Record<TraitKey, n
 }
 
 /** 🖼️ New character: pick pictures (e.g. made in Atlas Cloud) now; they're uploaded when you tap Create. */
-function PendingPictures({ value, onChange }: { value: { files: File[]; headshot: boolean; fictional: boolean }; onChange: (v: { files: File[]; headshot: boolean; fictional: boolean }) => void }) {
+function PendingPictures({ value, onChange, male = false }: { value: { files: File[]; headshot: boolean; fictional: boolean }; onChange: (v: { files: File[]; headshot: boolean; fictional: boolean }) => void; male?: boolean }) {
+  const their = male ? "his" : "her", them = male ? "him" : "her";
   const input = useRef<HTMLInputElement>(null);
   const [urls, setUrls] = useState<string[]>([]);
   useEffect(() => {
@@ -490,7 +810,7 @@ function PendingPictures({ value, onChange }: { value: { files: File[]; headshot
   };
   return (
     <div data-testid="pending-pictures" style={{ fontSize: 13, fontWeight: 700 }}>
-      Pictures of her <span className="muted" style={{ fontWeight: 500 }}>· optional, up to 4 — uploaded when you tap Create</span>
+      Pictures of {them} <span className="muted" style={{ fontWeight: 500 }}>· optional, up to 4 — uploaded when you tap Create</span>
       {urls.length > 0 && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginTop: 6 }}>
           {urls.map((u, i) => (
@@ -511,7 +831,7 @@ function PendingPictures({ value, onChange }: { value: { files: File[]; headshot
         </label>
         <label className="row" style={{ gap: 8 }}>
           <input type="checkbox" checked={value.headshot} onChange={e => onChange({ ...value, headshot: e.target.checked })} aria-label="Use as headshot" style={{ width: 18, height: 18, flexShrink: 0 }} />
-          <span>Use the first one as her main headshot</span>
+          <span>Use the first one as {their} main headshot</span>
         </label>
         <button type="button" className="ghost" disabled={!value.fictional || value.files.length >= 4} onClick={() => input.current?.click()} data-testid="pending-add" style={{ alignSelf: "flex-start", padding: "6px 12px", fontSize: 13 }}>⬆️ Add pictures</button>
         <input ref={input} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onChange={e => add(e.target.files)} data-testid="pending-input" />
@@ -524,7 +844,8 @@ type Link = { id: string; name: string; kind: string; story: string };
 /** 👭 Friends & family: other characters this one knows firsthand (one way — the other knows her only
  *  once linked from her side too). She can talk about them, but never learns how close the person is
  *  with them (only that they're friends, and any family tie). */
-function FriendsCard({ id }: { id: string }) {
+function FriendsCard({ id, male = false }: { id: string; male?: boolean }) {
+  const they = male ? "he" : "she", their = male ? "his" : "her", them = male ? "him" : "her";
   const [links, setLinks] = useState<Link[]>([]);
   const [knownBy, setKnownBy] = useState<Link[]>([]);
   const [backing, setBacking] = useState<string | null>(null);
@@ -549,14 +870,14 @@ function FriendsCard({ id }: { id: string }) {
     setBusy(false);
   };
   const remove = async (l: Link) => {
-    if (!(await confirmAsk(`Unlink ${l.name}? Are you sure? She'll no longer know ${l.name} (unless an @mention in her backstory links them).`, { yes: "Yes, unlink", danger: true }))) return;
+    if (!(await confirmAsk(`Unlink ${l.name}? Are you sure? ${male ? "He" : "She"}'ll no longer know ${l.name} (unless an @mention in ${their} backstory links them).`, { yes: "Yes, unlink", danger: true }))) return;
     try { show(await api<{ links: Link[]; knownBy: Link[] }>("/api/characters", { action: "link.remove", id, otherId: l.id })); } catch { /* keep */ }
   };
   const free = others.filter(o => !links.some(l => l.id === o.id));
   return (
     <div data-testid="friends-card" style={{ display: "grid", gap: 8, border: "1px solid var(--border)", borderRadius: 12, padding: 12 }}>
       <b style={{ fontSize: 13 }}>👭 Friends &amp; family</b>
-      <span className="muted" style={{ fontSize: 12 }}>Who she knows firsthand (one way: they only know her back if linked from their side too). She can talk about them with you, but only knows you&apos;re friends with them, not how close you are (unless you tell her). Family ties to you are shared.</span>
+      <span className="muted" style={{ fontSize: 12 }}>Who {they} knows firsthand (one way: they only know {them} back if linked from their side too). {they === "he" ? "He" : "She"} can talk about them with you, but only knows you&apos;re friends with them, not how close you are (unless you tell {them}). Family ties to you are shared.</span>
       {links.map(l => (
         <div key={l.id} data-testid={`friend-${l.name}`} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
           <div style={{ flex: 1, fontSize: 13 }}><b>{l.name}</b> · {l.kind}{l.story && <div className="muted" style={{ fontSize: 12 }}>{l.story}</div>}</div>
@@ -566,7 +887,7 @@ function FriendsCard({ id }: { id: string }) {
       {knownBy.map(l => (
         <div key={l.id} data-testid={`knownby-${l.name}`} style={{ display: "grid", gap: 6, fontSize: 13 }}>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <span className="muted" style={{ flex: 1 }}>{l.name} knows her ({l.kind}), but she doesn&apos;t know {l.name} yet.</span>
+            <span className="muted" style={{ flex: 1 }}>{l.name} knows {them} ({l.kind}), but {they} doesn&apos;t know {l.name} yet.</span>
             {backing !== l.id && <button className="ghost" style={{ padding: "2px 10px" }} disabled={busy} onClick={() => setBacking(l.id)}>Link back</button>}
           </div>
           {backing === l.id && <LinkBackForm id={id} other={l} onLinked={r => { show(r); setBacking(null); }} onCancel={() => setBacking(null)} />}
@@ -632,11 +953,12 @@ export function LinkBackForm({ id, other, who, onLinked, onCancel, cancelLabel =
 }
 
 /** 🧠 Her brain: Claude, Qwen (fast), Qwen (big) or DeepSeek — check one, or none to use the same as Velo. */
-function BrainPick({ value, onChange, available, models = [] }: { value: string; onChange: (v: string) => void; available: string[]; models?: { id: string; model: string }[] }) {
+function BrainPick({ value, onChange, available, models = [], male = false }: { value: string; onChange: (v: string) => void; available: string[]; models?: { id: string; model: string }[]; male?: boolean }) {
+  const their = male ? "His" : "Her", them = male ? "him" : "her", theirLower = male ? "his" : "her";
   return (
     <div data-testid="brain-pick" style={{ display: "grid", gap: 6, border: "1px solid var(--border)", borderRadius: 12, padding: 12 }}>
-      <b style={{ fontSize: 13 }}>🧠 Her brain</b>
-      <span className="muted" style={{ fontSize: 12 }}>Check one to have it handle everything for her: chats, texts, calls, check-ins, her memories and peek descriptions. Leave all unchecked to use the same brain as Velo.</span>
+      <b style={{ fontSize: 13 }}>🧠 {their} brain</b>
+      <span className="muted" style={{ fontSize: 12 }}>Check one to have it handle everything for {them}: chats, texts, calls, check-ins, {theirLower} memories and peek descriptions. Leave all unchecked to use the same brain as Velo.</span>
       <div style={{ display: "grid", gap: 6 }}>
         {BRAIN_OPTIONS.map(o => {
           const ready = !o.atlas || available.includes(o.id), model = models.find(m => m.id === o.id)?.model;
@@ -653,7 +975,7 @@ function BrainPick({ value, onChange, available, models = [] }: { value: string;
 }
 
 /** 💼 Work clothes, which days, what hours (8 hours, or 5 for part-time — editable). */
-function WorkWeek({ attire, setAttire, days, setDays, start, setStart, end, setEnd, part, setPart }: {
+function WorkWeek({ male = false, attire, setAttire, days, setDays, start, setStart, end, setEnd, part, setPart }: { male?: boolean;
   attire: string; setAttire: (v: string) => void; days: number[]; setDays: (v: number[]) => void; start: string; setStart: (v: string) => void; end: string; setEnd: (v: string) => void; part: boolean; setPart: (v: boolean) => void;
 }) {
   const plus = (hhmm: string, h: number) => { if (!hhmm) return ""; const [a, b] = hhmm.split(":").map(Number); const t = (a * 60 + b + h * 60) % 1440; return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`; };
@@ -683,23 +1005,58 @@ function WorkWeek({ attire, setAttire, days, setDays, start, setStart, end, setE
           <input type="checkbox" checked={part} onChange={e => { setPart(e.target.checked); if (start) setEnd(plus(start, e.target.checked ? 5 : 8)); }} data-testid="part-time" style={{ width: 18, height: 18 }} /> Part-time
         </label>
       </div>
-      <span className="muted" style={{ fontSize: 12 }}>She knows when she&apos;s at work (&quot;at work till 6&quot;) or off (&quot;I&apos;m off Tuesdays&quot;), texts like it, and wears her work clothes in photos taken at work. Times are in her time zone.</span>
+      <span className="muted" style={{ fontSize: 12 }}>{male ? "He" : "She"} knows when {male ? "he" : "she"}&apos;s at work (&quot;at work till 6&quot;) or off (&quot;I&apos;m off Tuesdays&quot;), texts like it, and wears {male ? "his" : "her"} work clothes in photos taken at work. Times are in {male ? "his" : "her"} time zone.</span>
+    </div>
+  );
+}
+
+/** 🎓 Her classes: where she studies, which days and what hours (alongside any job). */
+function ClassWeek({ male = false, school, setSchool, days, setDays, start, setStart, end, setEnd }: { male?: boolean;
+  school: string; setSchool: (v: string) => void; days: number[]; setDays: (v: number[]) => void; start: string; setStart: (v: string) => void; end: string; setEnd: (v: string) => void;
+}) {
+  const plus = (hhmm: string, h: number) => { if (!hhmm) return ""; const [a, b] = hhmm.split(":").map(Number); const t = (a * 60 + b + h * 60) % 1440; return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`; };
+  const DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  return (
+    <div data-testid="class-week" style={{ display: "grid", gap: 8 }}>
+      <label style={{ fontSize: 13, fontWeight: 700 }}>🎓 School / college <span className="muted" style={{ fontWeight: 500 }}>· if {male ? "he" : "she"} studies</span>
+        <input value={school} onChange={e => setSchool(e.target.value)} maxLength={200} aria-label="School" data-testid="school" placeholder="e.g. Nursing at Ivy Tech" style={{ marginTop: 4 }} />
+      </label>
+      <div style={{ fontSize: 13, fontWeight: 700 }}>Class days
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
+          {DAY.map((d, i) => (
+            <label key={d} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13, padding: "4px 8px", borderRadius: 999, border: `1px solid ${days.includes(i) ? "var(--accent2, var(--accent))" : "var(--border)"}`, background: days.includes(i) ? "rgba(249,115,22,0.15)" : "transparent" }}>
+              <input type="checkbox" checked={days.includes(i)} onChange={e => setDays(e.target.checked ? [...days, i].sort() : days.filter(x => x !== i))} data-testid={`class-day-${d}`} aria-label={`Has class ${d}`} />{d}
+            </label>
+          ))}
+        </div>
+      </div>
+      <div className="row" style={{ gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <label style={{ fontSize: 13, fontWeight: 700, flex: "1 1 110px" }}>First class
+          <input type="time" value={start} onChange={e => { setStart(e.target.value); if (!end) setEnd(plus(e.target.value, 4)); }} aria-label="Class starts" data-testid="class-start" style={{ marginTop: 4 }} />
+        </label>
+        <label style={{ fontSize: 13, fontWeight: 700, flex: "1 1 110px" }}>Last class ends
+          <input type="time" value={end} onChange={e => setEnd(e.target.value)} aria-label="Class ends" data-testid="class-end" style={{ marginTop: 4 }} />
+        </label>
+      </div>
+      <span className="muted" style={{ fontSize: 12 }}>{male ? "He" : "She"} knows when {male ? "he" : "she"}&apos;s in class (phone under the desk) and when {male ? "he" : "she"}&apos;s out, talks about assignments and tests, and {male ? "his" : "her"} chip gets an orange ring while {male ? "he" : "she"}&apos;s there. Times are in {male ? "his" : "her"} time zone.</span>
     </div>
   );
 }
 
 /** ✨ ＋ New: make one for me (from a few optional hints), or start from scratch. */
 export function NewCharacterSheet({ onDraft, onBlank, onClose }: { onDraft: (d: Partial<Character>) => void; onBlank: () => void; onClose: () => void }) {
+  useBack(true, onClose); // the phone's back button closes this, one step at a time
   const [name, setName] = useState("");
   const [vibe, setVibe] = useState("");
   const [job, setJob] = useState("");
   const [romantic, setRomantic] = useState(false);
   const [male, setMale] = useState(false);
+  const [local, setLocal] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const make = async () => {
     setBusy(true); setErr("");
-    try { onDraft((await api<{ draft: Partial<Character> }>("/api/characters", { action: "generate", name, vibe, job, romantic, male })).draft); }
+    try { onDraft((await api<{ draft: Partial<Character> }>("/api/characters", { action: "generate", name, vibe, job, romantic, male, local })).draft); }
     catch (e) { setErr(e instanceof Error ? e.message : "Couldn't come up with one — try again."); setBusy(false); }
   };
   return (
@@ -714,8 +1071,9 @@ export function NewCharacterSheet({ onDraft, onBlank, onClose }: { onDraft: (d: 
         <textarea value={vibe} onChange={e => setVibe(e.target.value)} maxLength={300} rows={2} placeholder="Vibe (optional) — e.g. shy bookworm with a wild side, Texas girl, loves horror movies" aria-label="Vibe" data-testid="gen-vibe" style={{ resize: "vertical" }} />
         <input value={job} onChange={e => setJob(e.target.value)} maxLength={120} placeholder="Job (optional) — e.g. nurse, barista, real estate agent" aria-label="Job" data-testid="gen-job" />
         <div className="row" style={{ gap: 16, flexWrap: "wrap", fontSize: 14, fontWeight: 600 }}>
-          <label className="row" style={{ gap: 6 }}><input type="checkbox" checked={romantic} onChange={e => setRomantic(e.target.checked)} data-testid="gen-romantic" style={{ width: 18, height: 18 }} /> 💕 Romantic (unrated)</label>
+          <label className="row" style={{ gap: 6 }}><input type="checkbox" checked={romantic} onChange={e => setRomantic(e.target.checked)} data-testid="gen-romantic" style={{ width: 18, height: 18 }} /> 💕 Romantic (PG-13)</label>
           <label className="row" style={{ gap: 6 }}><input type="checkbox" checked={male} onChange={e => setMale(e.target.checked)} data-testid="gen-male" style={{ width: 18, height: 18 }} /> Male</label>
+          <label className="row" style={{ gap: 6 }} title="A real town within about an hour of you"><input type="checkbox" checked={local} onChange={e => setLocal(e.target.checked)} data-testid="gen-local" style={{ width: 18, height: 18 }} /> 📍 Local</label>
         </div>
         {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
         <button className="btn" onClick={make} disabled={busy} data-testid="gen-make">{busy ? "Dreaming one up…" : "✨ Make one for me"}</button>

@@ -3,10 +3,12 @@
 // placeholder and keeps checking (never gives up on its own — the server decides).
 // Once ready the chat shows a small thumbnail (fast, light on data) that fits on
 // screen; the full photo or the video loads only when tapped (full screen).
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useBack } from "./lib/back";
+import { stamp } from "./lib/when";
 import { data } from "./lib/api";
 
-export type Media = { id: string; kind: "image" | "video"; status: "offered" | "declined" | "working" | "done" | "failed"; url: string | null; thumb?: string | null; caption?: string | null; reaction?: string | null; description?: string | null; kept?: boolean; subject?: string | null };
+export type Media = { id: string; kind: "image" | "video"; status: "offered" | "declined" | "working" | "done" | "failed"; url: string | null; thumb?: string | null; caption?: string | null; reaction?: string | null; description?: string | null; kept?: boolean; subject?: string | null; social?: boolean; created_at?: string | null };
 
 // ❤️ Reactions they can leave on a photo/video.
 import { REACTIONS } from "./lib/reactions";
@@ -124,8 +126,54 @@ export function VideoTile({ poster, fill }: { poster: string | null; fill?: bool
   );
 }
 
+// 👆 Swiping between pictures while one is open, and the arrow keys for a keyboard. A swipe that
+// ends on the dark background mustn't also be read as a tap outside, so it's remembered and the
+// close is skipped that once.
+export function useSwipeNav(onPrev?: () => void, onNext?: () => void) {
+  const from = useRef<{ x: number; y: number; t: number } | null>(null);
+  const swiped = useRef(false);
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft") { e.preventDefault(); onPrev?.(); }
+      if (e.key === "ArrowRight") { e.preventDefault(); onNext?.(); }
+    };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [onPrev, onNext]);
+  const bind = {
+    onPointerDown: (e: React.PointerEvent) => { swiped.current = false; from.current = { x: e.clientX, y: e.clientY, t: Date.now() }; },
+    onPointerUp: (e: React.PointerEvent) => {
+      const a = from.current; from.current = null;
+      if (!a || (!onPrev && !onNext)) return;
+      const dx = e.clientX - a.x, dy = e.clientY - a.y;
+      // A real sideways swipe: far enough, quick enough, and more across than down.
+      if (Date.now() - a.t < 900 && Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+        swiped.current = true;
+        (dx < 0 ? onNext : onPrev)?.();
+      }
+    },
+  };
+  /** Did the finger just swipe? Then this tap isn't a tap outside. */
+  const tapped = () => { if (!swiped.current) return true; swiped.current = false; return false; };
+  return { bind, tapped };
+}
+
+/** ‹ › while more than one picture is open. */
+export function SwipeArrow({ side, onGo }: { side: "left" | "right"; onGo: () => void }) {
+  return (
+    <button aria-label={side === "left" ? "Previous photo" : "Next photo"} data-testid={`viewer-${side}`}
+      onClick={e => { e.stopPropagation(); onGo(); }}
+      style={{ position: "fixed", top: "50%", transform: "translateY(-50%)", [side]: 6, width: 44, height: 64, borderRadius: 12, border: "none",
+        background: "rgba(255,255,255,.12)", color: "#fff", fontSize: 24, cursor: "pointer", zIndex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      {side === "left" ? "\u2039" : "\u203A"}
+    </button>
+  );
+}
+
 /** Full screen: centered, the whole picture visible, no scrolling. Loads the full photo / the video now. */
-export function Viewer({ m, onClose, children }: { m: { kind: "image" | "video"; url: string | null }; onClose: () => void; children?: React.ReactNode }) {
+export function Viewer({ m, onClose, onPrev, onNext, children }: { m: { kind: "image" | "video"; url: string | null; created_at?: string | null }; onClose: () => void; onPrev?: () => void; onNext?: () => void; children?: React.ReactNode }) {
+  useBack(true, onClose); // the phone's back button closes this, one step at a time
+  const { bind, tapped } = useSwipeNav(onPrev, onNext); // 👆 swipe (or ← →) between them
   useEffect(() => {
     const k = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", k);
@@ -133,10 +181,13 @@ export function Viewer({ m, onClose, children }: { m: { kind: "image" | "video";
   }, [onClose]);
   const style = { display: "block", maxWidth: "calc(100vw - 32px)", maxHeight: children ? "calc(100dvh - 150px)" : "calc(100dvh - 96px)", objectFit: "contain", borderRadius: 12 } as const;
   return (
-    <div role="dialog" aria-label="Photo" data-testid="media-viewer" onClick={e => { e.stopPropagation(); onClose(); }}
+    <div role="dialog" aria-label="Photo" data-testid="media-viewer" {...bind} onClick={e => { e.stopPropagation(); if (tapped()) onClose(); }}
       style={{ position: "fixed", inset: 0, zIndex: 4000, background: "rgba(0,0,0,.92)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, padding: 16 }}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       {m.kind === "image" ? <img src={m.url!} alt="Photo" data-testid="viewer-full" style={style} onClick={e => e.stopPropagation()} /> : <video src={m.url!} data-testid="viewer-video" style={style} controls playsInline autoPlay loop onClick={e => e.stopPropagation()} />}
+      {stamp(m.created_at) && <div data-testid="when" style={{ fontSize: 11, opacity: 0.6, color: "#fff" }}>{stamp(m.created_at)}</div>}
+      {onPrev && <SwipeArrow side="left" onGo={onPrev} />}
+      {onNext && <SwipeArrow side="right" onGo={onNext} />}
       {children && <div className="row" style={{ gap: 10 }} onClick={e => e.stopPropagation()}>{children}</div>}
       <button aria-label="Close" onClick={onClose} style={{ position: "fixed", top: "max(14px, env(safe-area-inset-top))", right: 14, width: 40, height: 40, borderRadius: 999, border: "none", background: "rgba(255,255,255,.15)", color: "#fff", fontSize: 18, cursor: "pointer" }}>✕</button>
     </div>
@@ -193,12 +244,22 @@ function Watch({ m, onReady, onFail }: { m: Media; onReady: (m: Media) => void; 
   return null;
 }
 
+// ⭐ What's saved, remembered for this session: the same picture opened again (or shown somewhere
+// else) reads the same answer, instead of every button starting from whatever it was first handed.
+export const KEPT = new Map<string, boolean>();
+const keptWatchers = new Set<() => void>();
+export const setKeptEverywhere = (id: string, v: boolean) => { KEPT.set(id, v); keptWatchers.forEach(f => f()); };
+
 /** ⭐ Save to their gallery favorites (everything is in the gallery already; Saved ones are kept and easy to find). */
 export function SaveButton({ m }: { m: Media }) {
-  const [kept, setKept] = useState(!!m.kept);
+  const [, bump] = useState(0);
+  useEffect(() => { const f = () => bump(x => x + 1); keptWatchers.add(f); return () => { keptWatchers.delete(f); }; }, []);
+  // What the server last told us, unless this session has since changed it.
+  useEffect(() => { if (!KEPT.has(m.id) && m.kept !== undefined) KEPT.set(m.id, !!m.kept); }, [m.id, m.kept]);
+  const kept = KEPT.get(m.id) ?? !!m.kept;
   const toggle = async () => {
-    const next = !kept; setKept(next);
-    try { await data("gallery.keep", { id: m.id, kept: next }); } catch { setKept(!next); }
+    const next = !kept; setKeptEverywhere(m.id, next);
+    try { await data("gallery.keep", { id: m.id, kept: next }); } catch { setKeptEverywhere(m.id, !next); }
   };
   return (
     <button type="button" onClick={e => { e.stopPropagation(); toggle(); }} data-testid="media-save" aria-pressed={kept}

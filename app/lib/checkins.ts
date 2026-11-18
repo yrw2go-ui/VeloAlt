@@ -35,7 +35,7 @@ export async function runCheckins(opts: { userId?: string; force?: boolean } = {
 async function checkIn(u: { id: string; email: string; name: string | null; time_zone: string | null; checkins: "sometimes" | "often" }, force: boolean): Promise<boolean> {
   const tz = isValidTimeZone(u.time_zone) ? u.time_zone : "America/Chicago";
   const hour = zonedParts(Date.now(), tz).hour;
-  if (!force && (hour < 9 || hour >= 21)) return false;
+  if (!force && hour >= 1 && hour < 9) return false;
   const [busy] = await sql()`select 1 from velo_messages where user_id = ${u.id} and role = 'user' and created_at > now() - interval '3 hours' limit 1`;
   if (busy && !force) return false;
   const [{ n, last }] = await sql()`select count(*)::int as n, max(sent_at) as last from chat_checkins where user_id = ${u.id} and sent_at > now() - interval '20 hours'`;

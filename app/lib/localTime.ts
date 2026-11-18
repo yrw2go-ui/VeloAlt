@@ -117,3 +117,8 @@ export function clientDateLabel(raw: unknown, now = Date.now()): string {
   const [y, m, d] = ymd.split("-").map(Number);
   return `${m}/${d}/${y}`;
 }
+
+/** 🕒 The clock without the calendar: "7:20 PM — evening". Used while you two are together, when
+ *  the day and date aren't hers to know. */
+export const timeOfDay = (label: string) => (label.split("), ")[1] || label).replace(/ \(time zone [^)]+\)/, "").trim();
+

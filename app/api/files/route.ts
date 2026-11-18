@@ -8,6 +8,7 @@ import { IMAGE_TYPES, DOC_TYPES, MAX_BYTES, MAX_FILES, blobReady, deleteFile, st
 import { thumbOf, saveImageItem } from "../../lib/media";
 import { isAdmin, getCharacter } from "../../lib/characters";
 import { describePhoto } from "../../lib/bio";
+import { scrub } from "../../lib/secrets";
 
 /** 🔒 Re-saves a photo without its hidden data (GPS location, camera, date…), upright, same format. */
 async function cleanImage(buf: Buffer, type: string): Promise<Buffer> {
@@ -29,7 +30,7 @@ export async function POST(req: NextRequest) {
     const form = await req.formData().catch(() => null);
     const file = form?.get("file");
     const p0 = String(form?.get("purpose") || "");
-    const purpose = p0 === "face" ? "face" : p0 === "bio" ? "bio" : p0 === "character" ? "character" : "chat";
+    const purpose = p0 === "face" ? "face" : p0 === "bio" ? "bio" : p0 === "character" ? "character" : p0 === "pica" ? "pica" : p0 === "picame" ? "picame" : "chat";
     if (!(file instanceof File)) return NextResponse.json({ error: "Choose a file." }, { status: 400 });
     const type = (file.type || "").toLowerCase();
     const allowed = purpose === "chat" ? [...IMAGE_TYPES, ...DOC_TYPES] : IMAGE_TYPES;
@@ -37,7 +38,26 @@ export async function POST(req: NextRequest) {
     if (file.size > MAX_BYTES) return NextResponse.json({ error: "That file is over 4 MB." }, { status: 400 });
     if (file.size === 0) return NextResponse.json({ error: "That file is empty." }, { status: 400 });
     const [{ n }] = await sql()`select count(*)::int as n from velo_files where user_id = ${c.userId}`;
-    if (n >= MAX_FILES) return NextResponse.json({ error: `You have ${MAX_FILES} files saved — delete some on the Memory tab first.` }, { status: 400 });
+    // 🗂️ Everything saved counts: uploads, the photos your characters sent and their thumbnails.
+    if (n >= MAX_FILES) return NextResponse.json({ error: `That's ${MAX_FILES} things saved — uploads, photos and their thumbnails all count. Delete some in 🖼️ Gallery or on the Memory tab first.` }, { status: 400 });
+
+    // 👩 A picture for a Picagram account they're making: hers to post from.
+    if (purpose === "pica") {
+      if (form?.get("fictional") !== "yes") return NextResponse.json({ error: "Confirm it's an AI-made or fictional picture — not a photo of a real person." }, { status: 400 });
+      let img: Buffer;
+      try { img = await cleanImage(Buffer.from(await file.arrayBuffer()), type); }
+      catch { return NextResponse.json({ error: "That picture couldn't be read. Try another one." }, { status: 400 }); }
+      // 💬 What the picture shows, in words: it's what her followers comment on when it goes up,
+      // and what her caption is written from. Your own words if you gave any; otherwise read off
+      // the picture itself. Both if you wrote something short — the detail is what makes a comment
+      // land on the right thing.
+      const said = scrub(String(form?.get("about") || "").replace(/\s+/g, " ").trim()).slice(0, 400);
+      const seen = said.length > 120 ? null : await describePhoto(img, type).catch(e => { console.error("files: describe pica photo", e instanceof Error ? e.message : e); return null; });
+      const look = seen && seen !== "NONE" ? seen : "";
+      const note = [said, said && look ? `(also in the picture: ${look})` : look].filter(Boolean).join(" ") || "A photo of her";
+      const item = await saveImageItem(c.userId, null, img, type, note, "upload");
+      return NextResponse.json({ mediaId: item.mediaId, url: item.url, note });
+    }
 
     // 🎭 An admin adding a picture of a character (e.g. made in Atlas Cloud): into her gallery, optionally her headshot.
     if (purpose === "character") {
@@ -70,6 +90,13 @@ export async function POST(req: NextRequest) {
       values (${c.userId}, ${purpose === "chat" ? "file" : purpose}, ${blob.url}, ${blob.pathname}, ${name}, ${type}, ${body.length}, ${thumbUrl})
       returning id, url, thumb_url, name, content_type, size, kind`;
 
+    if (purpose === "picame") {
+      // 👤 Your Picagram picture: one at a time, and it replaces the last one.
+      const old = await sql()`select id from velo_files where user_id = ${c.userId} and kind = 'picame' and id <> ${row.id}`;
+      await sql()`update users set pica_avatar_file_id = ${row.id}, updated_at = now() where id = ${c.userId}`;
+      for (const o of old) await deleteFile(c.userId, String(o.id));
+      return NextResponse.json({ file: row });
+    }
     if (purpose === "face") {
       // One custom face at a time: the old one is removed.
       const old = await sql()`select id from velo_files where user_id = ${c.userId} and kind = 'face' and id <> ${row.id}`;
@@ -77,11 +104,11 @@ export async function POST(req: NextRequest) {
       await sql()`update users set look = 'custom', updated_at = now() where id = ${c.userId}`;
     }
     if (purpose === "bio") {
-      // 👤 Their photo for "About you": described once in words (visible features only), old one removed.
+      // 👤 Their photos for "About you": each described once in words (visible features only). Up to 6 — the newest is the main one.
       const note = await describePhoto(body, type).catch(e => { console.error("files: describe photo", e instanceof Error ? e.message : e); return null; });
-      await sql()`update users set bio_photo_file_id = ${row.id}, bio_photo_note = ${note}, updated_at = now() where id = ${c.userId}`;
-      const old = await sql()`select id from velo_files where user_id = ${c.userId} and kind = 'bio' and id <> ${row.id}`;
-      for (const o of old) await deleteFile(c.userId, String(o.id));
+      await sql()`update users set bio_photo_file_id = ${row.id}, bio_photo_note = ${note}, bio_photo_notes = bio_photo_notes || ${JSON.stringify({ [String(row.id)]: note || "" })}::jsonb, updated_at = now() where id = ${c.userId}`;
+      const extra = await sql()`select id from velo_files where user_id = ${c.userId} and kind = 'bio' order by created_at desc offset 6`;
+      for (const o of extra) await deleteFile(c.userId, String(o.id));
       return NextResponse.json({ file: row, note });
     }
     return NextResponse.json({ file: row });

@@ -1,24 +1,40 @@
 import { NextRequest, NextResponse } from "next/server";
-import { duePlans, setPlanStatus } from "../../lib/plans";
+import { duePlans, setPlanStatus, planNow, planLater, arriving } from "../../lib/plans";
 import { readyIntros, acceptIntro, declineIntro, IntroError } from "../../lib/intros";
 import { peekAt, draftPeek, draftIcu } from "../../lib/peek";
 import { inPersonFor, startInPerson, endInPerson } from "../../lib/inPerson";
+import { atHome, setAtHome, maybeDropIn, waitingDropIn, answerDropIn, ignoreDropIn } from "../../lib/neighbor";
+import { canShe, sickFor, type Answer } from "../../lib/life";
+import { setHome, isHome } from "../../lib/inPerson";
+import { redoDraft, redoMake } from "../../lib/redo";
+// 🎲 In tests the coin is pinned (set in the test environment only); in the app it's a real coin.
+const luckOf = (b: Record<string, unknown>): "yes" | "no" | undefined =>
+  (process.env.VELO_TEST_LUCK === "1" ? (b.luck === "ask" ? undefined : b.luck === "no" ? "no" : "yes") : undefined);
+import { awayFor, awayText, myPhotos } from "../../lib/picagram";
 import { cleanTags } from "../../lib/text";
+import { deleteMessages } from "../../lib/forget";
 import { sql } from "../../lib/db";
 import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
-import { isValidTimeZone, localDate } from "../../lib/localTime";
+import { isValidTimeZone, localDate, zonedParts } from "../../lib/localTime";
 import { VELO_LOOKS } from "../../lib/veloAvatars";
 import { toE164, showPhone, twilioReady, veloNumber } from "../../lib/twilio";
 import { PHONE_MSG } from "../../lib/contact";
 import { scrub } from "../../lib/secrets";
 import { BIO_SECTIONS, BIO_MAX } from "../../lib/bioSections";
-import { availableModels, CHAT_MODELS, MODEL_INFO, type ChatModel } from "../../lib/models";
+import { availableModels, availableBrains, CHAT_MODELS, MODEL_INFO, type ChatModel } from "../../lib/models";
 import { PERSONALITIES } from "../../lib/persona";
 import { deleteFile, ownFile } from "../../lib/files";
-import { getCharacterFor, trustFor, activeScene } from "../../lib/characters";
+import { roomForMore } from "../../lib/together";
+import { planLabel, isUrgent, tagged } from "../../lib/planTag";
+import { maybeInvite } from "../../lib/meetups";
+import { getCharacterFor, trustFor, happyFor, loveFor, activeScene, saveFeelings, referenceUrls, pictureOf } from "../../lib/characters";
 import { US_STATES } from "../../lib/states";
-import { acceptMedia, declineMedia, mediaNote, checkMedia, sweepMedia, getMedia, listGallery, deleteMedia, VIDEO_MODELS, DEFAULT_VIDEO_MODEL, mediaReady, MediaError, launch } from "../../lib/media";
+import { mediaMood, allowsSuggestive } from "../../lib/traits";
+import { myRefs } from "../../lib/picagram";
+import { BITS, merge, keepEdits } from "../../lib/wording";
+import { SECTIONS as TALK_SECTIONS, merge as talkMerge, keepEdits as talkKeep } from "../../lib/words";
+import { acceptMedia, declineMedia, mediaNote, startMedia, checkMedia, sweepMedia, getMedia, listGallery, deleteMedia, VIDEO_MODELS, DEFAULT_VIDEO_MODEL, mediaReady, MediaError } from "../../lib/media";
 
 // 📦 Everything the app reads and changes, for the signed-in person only.
 // POST { action, ...args } → { ... }. Every query is scoped to their user_id.
@@ -28,6 +44,13 @@ const REACTIONS: string[] = [...REACTION_LIST];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const clean = (v: unknown, n: number) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, n);
 const bad = (error: string) => NextResponse.json({ error }, { status: 400 });
+
+// 🧠 Who writes a peek / ICU description: the brain they picked in the dropdown ('' or 'claude' = Claude),
+// defaulting to hers. An unknown or unavailable brain falls back to hers, never to a stranger's model.
+function writerBrain(picked: unknown, theirs: string): string {
+  const p = typeof picked === "string" ? picked : "";
+  return p === "claude" || p === "" || availableBrains().includes(p) ? p : theirs;
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -39,8 +62,45 @@ export async function POST(req: NextRequest) {
     const needId = () => UUID.test(id);
 
     switch (String(b.action || "")) {
+      // 🛠️ Settings → Admin → Messaging & wording: every line that shapes how a character talks.
+      case "talk.get": {
+        const [u] = await db`select talk_words, is_admin from users where id = ${me}`;
+        if (!u?.is_admin) return bad("That's for admins.");
+        return NextResponse.json({ sections: talkSections(talkMerge(u?.talk_words)) });
+      }
+      case "talk.set": {
+        const [u] = await db`select is_admin from users where id = ${me}`;
+        if (!u?.is_admin) return bad("That's for admins.");
+        await db`update users set talk_words = ${JSON.stringify(talkKeep(b.words))}::jsonb, updated_at = now() where id = ${me}`;
+        const [after] = await db`select talk_words from users where id = ${me}`;
+        return NextResponse.json({ sections: talkSections(talkMerge(after?.talk_words)) });
+      }
+      // 📍 Admin: make someone local ask you over right now, instead of waiting for the round.
+      case "invite.now": {
+        const [u] = await db`select is_admin from users where id = ${me}`;
+        if (!u?.is_admin) return bad("That's for admins.");
+        return NextResponse.json({ invite: await maybeInvite(me, true) });
+      }
+      // ⏰ A plan whose time has come: the pop-up that starts it.
+      case "plan.now": {
+        const [u] = await db`select time_zone from users where id = ${me}`;
+        // 🚗 Coming over while you're not marked home: she texts rather than waiting in silence.
+        await arriving(me).catch(e => console.error("plans: arriving", e instanceof Error ? e.message : e));
+        return NextResponse.json({ plan: await planNow(me, String(u?.time_zone || "")) });
+      }
+      case "plan.later": return (await planLater(me, String(b.id || ""))) ? NextResponse.json({ ok: true }) : bad("That plan wasn't found.");
+      // 📝 Settings → Photo wording: every standing line that goes on a picture, theirs to edit.
+      case "wording.get": {
+        const [u] = await db`select prompt_words from users where id = ${me}`;
+        return NextResponse.json({ bits: withDefaults(merge(u?.prompt_words)) });
+      }
+      case "wording.set": {
+        await db`update users set prompt_words = ${JSON.stringify(keepEdits(b.words))}::jsonb, updated_at = now() where id = ${me}`;
+        const [u] = await db`select prompt_words from users where id = ${me}`;
+        return NextResponse.json({ bits: withDefaults(merge(u?.prompt_words)) });
+      }
       case "profile.get": {
-        const [u] = await db`select name, look, time_zone, plan, phone, phone_verified_at, chat_model, personality, adult_confirmed_at, video_model, reply_length, checkins, bio, birthday::text, age, home_state, (select url from velo_files where id = users.bio_photo_file_id) as bio_photo, (select thumb_url from velo_files where id = users.bio_photo_file_id) as bio_thumb, bio_photo_note, bio_more from users where id = ${me}`;
+        const [u] = await db`select name, look, time_zone, plan, phone, phone_verified_at, chat_model, personality, adult_confirmed_at, video_model, reply_length, checkins, bio, birthday::text, age, home_town, home_state, (select url from velo_files where id = users.bio_photo_file_id) as bio_photo, (select thumb_url from velo_files where id = users.bio_photo_file_id) as bio_thumb, bio_photo_note, bio_more from users where id = ${me}`;
         const [{ n }] = await db`select count(*)::int as n from velo_memories where user_id = ${me} and kind = 'call' and character_id is null`;
         const [face] = await db`select url from velo_files where user_id = ${me} and kind = 'face' order by created_at desc limit 1`;
         return NextResponse.json({
@@ -50,7 +110,7 @@ export async function POST(req: NextRequest) {
           phone: u?.phone ? showPhone(String(u.phone)) : "", phoneVerified: !!u?.phone_verified_at, veloNumber: veloNumber(),
           chatModel: availableModels().includes(u?.chat_model) ? u?.chat_model : "claude",
           models: availableModels().map(id => ({ id, ...MODEL_INFO[id] })),
-          bio: { text: u?.bio || "", birthday: u?.birthday || "", age: u?.age || null, state: u?.home_state || "", photo: u?.bio_thumb || u?.bio_photo || "", photoNote: u?.bio_photo_note || "", more: u?.bio_more && typeof u.bio_more === "object" ? u.bio_more : {} },
+          bio: { text: u?.bio || "", birthday: u?.birthday || "", age: u?.age || null, town: u?.home_town || "", state: u?.home_state || "", photo: u?.bio_thumb || u?.bio_photo || "", photoNote: u?.bio_photo_note || "", photos: await myPhotos(me), more: u?.bio_more && typeof u.bio_more === "object" ? u.bio_more : {} },
           checkins: u?.checkins || "sometimes",
           videoModel: VIDEO_MODELS.some(m => m.id === u?.video_model) ? u?.video_model : DEFAULT_VIDEO_MODEL,
           videoModels: VIDEO_MODELS.map(m => ({ id: m.id, label: m.label })),
@@ -81,11 +141,12 @@ export async function POST(req: NextRequest) {
           const bday = typeof x.birthday === "string" && /^\d{4}-\d{2}-\d{2}$/.test(x.birthday) && !Number.isNaN(Date.parse(x.birthday)) && x.birthday > "1900-01-01" && Date.parse(x.birthday) < Date.now() ? x.birthday : null;
           const age = bday ? null : Number.isInteger(Number(x.age)) && Number(x.age) >= 13 && Number(x.age) <= 120 ? Number(x.age) : null;
           const st = US_STATES.includes(x.state as (typeof US_STATES)[number]) ? String(x.state) : null;
+          const town = scrub(String(x.town ?? "").replace(/\s+/g, " ").trim().slice(0, 80)) || null;
           // 👤 The extra sections: only known ones, trimmed, secrets hidden.
           const raw = x.more && typeof x.more === "object" ? (x.more as Record<string, unknown>) : {};
           const more: Record<string, string> = {};
           for (const sct of BIO_SECTIONS) { const v = scrub(String(raw[sct.key] ?? "").replace(/[ \t]+/g, " ").trim().slice(0, BIO_MAX)); if (v) more[sct.key] = v; }
-          await db`update users set bio = ${text}, birthday = ${bday}, age = ${age}, home_state = ${st}, bio_more = ${JSON.stringify(more)}::jsonb, updated_at = now() where id = ${me}`;
+          await db`update users set bio = ${text}, birthday = ${bday}, age = ${age}, home_town = ${town}, home_state = ${st}, bio_more = ${JSON.stringify(more)}::jsonb, updated_at = now() where id = ${me}`;
         }
         if (["off", "sometimes", "often"].includes(b.checkins)) await db`update users set checkins = ${b.checkins}, updated_at = now() where id = ${me}`;
         if (VIDEO_MODELS.some(m => m.id === b.videoModel)) await db`update users set video_model = ${b.videoModel}, updated_at = now() where id = ${me}`;
@@ -97,16 +158,36 @@ export async function POST(req: NextRequest) {
         // Velo's chat (no characterId) or one character's chat.
         const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
         if (b.characterId && !ch) return bad("That character wasn't found.");
-        const rows = await db`select m.id, m.role, m.content, m.peek, m.reaction, m.their_reaction, f.id as file_id, f.url as file_url, f.thumb_url as file_thumb, f.name as file_name, f.content_type as file_type,
-            md.id as media_id, md.kind as media_kind, md.status as media_status, md.reaction as media_reaction, md.description as media_description, md.kept as media_kept, mf.url as media_url, coalesce(mt.url, md.poster_url) as media_thumb
+        const rows = await db`select m.id, m.role, m.content, m.peek, m.reaction, m.their_reaction, m.created_at::text as at, f.id as file_id, f.url as file_url, f.thumb_url as file_thumb, f.name as file_name, f.content_type as file_type,
+            md.id as media_id, md.kind as media_kind, md.status as media_status, md.reaction as media_reaction, md.description as media_description, md.kept as media_kept, md.subject as media_subject,
+            (md.id is not null and exists (select 1 from pica_accounts pa where pa.user_id = m.user_id and (pa.avatar_media_id = md.id or (coalesce(md.subject, '') not in ('', 'me', 'none') and lower(pa.name) = lower(md.subject))))) as media_social, mf.url as media_url, coalesce(mt.url, md.poster_url) as media_thumb
           from velo_messages m left join velo_files f on f.id = m.file_id and f.user_id = m.user_id
           left join velo_media md on md.id = m.media_id and md.user_id = m.user_id
           left join velo_files mf on mf.id = md.file_id
           left join velo_files mt on mt.id = md.thumb_file_id
           where m.user_id = ${me} and m.character_id is not distinct from ${ch?.id || null} order by m.created_at desc, m.id desc limit 60`;
-        return NextResponse.json({ messages: rows.reverse().filter(r => r.role === "user" || r.file_id || r.media_id || cleanTags(String(r.content))).map(r => ({ id: r.id, role: r.role, ...(r.peek ? { peek: true } : {}), content: r.role === "assistant" ? cleanTags(String(r.content)) : r.content, reaction: r.reaction || null, theirReaction: r.their_reaction || null,
+        // 📅 What you two have on: a quiet line under a few of her messages, a 🚨 in the last hour.
+        let tag: { text: string; urgent: boolean } | null = null;
+        let carry = new Set<string>();
+        if (ch) {
+          const zone = isValidTimeZone(b.timeZone) ? String(b.timeZone) : "America/Chicago";
+          const day = localDate(Date.now(), zone);
+          const { hour, minute } = zonedParts(Date.now(), zone);
+          const now = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+          const [plan] = await db`select title, details, day::text, at_time, kind from chat_plans
+            where user_id = ${me} and character_id = ${ch.id} and status = 'planned' and day >= ${day}::date
+            order by day, at_time nulls last limit 1`;
+          if (plan) {
+            const p = { title: String(plan.title || ""), details: String(plan.details || ""), day: String(plan.day), at_time: String(plan.at_time || ""), kind: String(plan.kind || "video") };
+            const urgent = isUrgent(p, day, now);
+            tag = { text: planLabel(p, day), urgent };
+            carry = tagged(rows.map(r => ({ id: String(r.id), role: String(r.role), at: String(r.at) })), urgent ? Date.now() - 3600_000 : null, Date.now());
+          }
+        }
+        return NextResponse.json({ messages: rows.reverse().filter(r => r.role === "user" || r.file_id || r.media_id || cleanTags(String(r.content))).map(r => ({ id: r.id, role: r.role, at: r.at,
+          ...(tag && carry.has(String(r.id)) ? { plan: tag } : {}), ...(r.peek ? { peek: true } : {}), content: r.role === "assistant" ? cleanTags(String(r.content)) : r.content, reaction: r.reaction || null, theirReaction: r.their_reaction || null,
           ...(r.file_id ? { file: { id: r.file_id, url: r.file_url, thumb: r.file_thumb || null, name: r.file_name, type: r.file_type } } : {}),
-          ...(r.media_id ? { media: { id: r.media_id, kind: r.media_kind, status: r.media_status, url: r.media_status === "done" ? r.media_url : null, thumb: r.media_thumb || null, reaction: r.media_reaction || null, description: r.media_description || null, kept: !!r.media_kept } } : {}) })) });
+          ...(r.media_id ? { media: { id: r.media_id, kind: r.media_kind, status: r.media_status, url: r.media_status === "done" ? r.media_url : null, thumb: r.media_thumb || null, reaction: r.media_reaction || null, description: r.media_description || null, kept: !!r.media_kept, subject: r.media_subject || null, created_at: r.at, ...(r.media_social ? { social: true } : {}) } } : {}) })) });
       }
       case "messages.add": {
         const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
@@ -140,14 +221,36 @@ export async function POST(req: NextRequest) {
         const [m] = await db`update velo_messages set reaction = ${reaction} where id = ${id} and user_id = ${me} and role = 'assistant' returning id`;
         return m ? NextResponse.json({ ok: true }) : bad("Unknown message.");
       }
+      // 🗣️ Typing "@": everyone they could name — their characters and the women on their Picagram.
+      case "people": {
+        const q = String(b.q || "").trim().toLowerCase().slice(0, 40);
+        const chars = await db`select name from chat_characters where owner_id is null or (owner_id = ${me} and intro_status = 'accepted') order by name`;
+        const accts = await db`select name, handle from pica_accounts where user_id = ${me} order by followed desc, name`;
+        const all = [
+          ...chars.map(c => ({ name: String(c.name), what: "character" as const, handle: "" })),
+          ...accts.map(a => ({ name: String(a.name), what: "picagram" as const, handle: String(a.handle) })),
+        ];
+        const hit = q ? all.filter(p => p.name.toLowerCase().includes(q) || p.handle.toLowerCase().includes(q)) : all;
+        return NextResponse.json({ people: hit.slice(0, 8) });
+      }
+      // ✏️ Reword a message — hers or yours — by double-tapping it. The text is simply replaced;
+      // nothing else about the chat changes, and she carries on from what it says now.
+      case "messages.edit": {
+        if (!needId()) return bad("Unknown message.");
+        const text = scrub(String(b.text ?? "").replace(/\r/g, "").trim()).slice(0, 4000);
+        if (!text) return bad("A message can't be empty — delete it instead.");
+        const [m] = await db`update velo_messages set content = ${text}, edited = true
+          where id = ${id} and user_id = ${me} and media_id is null and not peek returning id, role, content`;
+        return m ? NextResponse.json({ id: String(m.id), role: m.role, content: String(m.content) }) : bad("That one can't be edited.");
+      }
+      // 🗑 Delete up to 10 messages; she forgets whatever she learned only from them.
       case "messages.delete": {
-        const ids = Array.isArray(b.ids) ? b.ids.map(String).filter(Boolean).slice(0, 50) : (id ? [id] : []);
-        if (!ids.length) return bad("No messages to delete.");
-        const rows = await db`delete from velo_messages where id = any(${ids}) and user_id = ${me} returning id, character_id`;
-        if (!rows.length) return bad("Unknown message.");
-        const charId = rows[0]?.character_id;
-        if (charId) await db`delete from velo_memories where user_id = ${me} and character_id = ${charId} and created_at > now() - interval '2 minutes'`;
-        return NextResponse.json({ ok: true, deleted: rows.length });
+        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
+        if (b.characterId && !ch) return bad("That character wasn't found.");
+        const ids = Array.isArray(b.ids) ? b.ids.map(String) : [];
+        if (!ids.length || ids.length > 10) return bad("Pick 1 to 10 messages.");
+        const [u] = await db`select name from users where id = ${me}`;
+        return NextResponse.json(await deleteMessages(me, ch?.id || null, ids, ch?.brain || "", String(u?.name || "").split(/\s+/)[0], ch?.name || "Velo"));
       }
       case "messages.clear":
         // Velo's chat only; each character's chat goes when the character is deleted.
@@ -166,7 +269,18 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true, note });
       }
       case "bio.photoRemove": {
-        await db`update users set bio_photo_file_id = null, bio_photo_note = null where id = ${me}`;
+        // One photo (by id), or all of them.
+        if (UUID.test(id)) {
+          await deleteFile(me, id);
+          const [next] = await db`select id from velo_files where user_id = ${me} and kind = 'bio' order by created_at desc limit 1`;
+          const [u2] = await db`select bio_photo_notes from users where id = ${me}`;
+          const notes = (u2?.bio_photo_notes && typeof u2.bio_photo_notes === "object" ? u2.bio_photo_notes : {}) as Record<string, string>;
+          delete notes[id];
+          await db`update users set bio_photo_file_id = ${next?.id || null}, bio_photo_note = ${next ? notes[String(next.id)] || null : null}, bio_photo_notes = ${JSON.stringify(notes)}::jsonb, updated_at = now() where id = ${me}`;
+          return NextResponse.json({ ok: true });
+        }
+        for (const f of await db`select id from velo_files where user_id = ${me} and kind = 'bio'`) await deleteFile(me, String(f.id));
+        await db`update users set bio_photo_file_id = null, bio_photo_note = null, bio_photo_notes = '{}'::jsonb where id = ${me}`;
         const old = await db`select id from velo_files where user_id = ${me} and kind = 'bio'`;
         for (const o of old) await deleteFile(me, String(o.id));
         return NextResponse.json({ ok: true });
@@ -175,22 +289,6 @@ export async function POST(req: NextRequest) {
       case "media.accept": {
         const m = needId() ? await acceptMedia(me, id) : null;
         return m ? NextResponse.json({ media: m }) : bad("That offer isn't open anymore.");
-      }
-      case "media.resend": {
-        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
-        if (!ch) return bad("That character was not found.");
-        // First try to retrieve an existing image (done or working).
-        const [existing] = await db`select id, status from velo_media where user_id = ${me} and character_id = ${ch.id} and status in ('done', 'working') and not peek order by created_at desc limit 1`;
-        if (existing) {
-          const m = await checkMedia(me, String(existing.id));
-          if (m) return NextResponse.json({ media: m });
-        }
-        // Nothing existing — create a new one from the last prompt.
-        const [last] = await db`select id, prompt, kind, model, refs, description from velo_media where user_id = ${me} and character_id = ${ch.id} order by created_at desc limit 1`;
-        if (!last) return bad("Nothing to resend.");
-        const [row] = await db`insert into velo_media (user_id, character_id, kind, prompt, model, description, refs, status, peek) values (${me}, ${ch.id}, ${last.kind}, ${last.prompt}, ${last.model}, ${last.description}, ${last.refs}, 'working', false) returning id`;
-        const m = await launch(String(row.id), last.kind, last.model, last.prompt, last.refs || [], last.description);
-        return NextResponse.json({ media: m });
       }
       case "media.decline": {
         const m = needId() ? await declineMedia(me, id) : null;
@@ -207,6 +305,11 @@ export async function POST(req: NextRequest) {
         const cur = await activeScene(me, ch.id);
         if (action === "scene.active") return NextResponse.json({ scene: cur });
         const day = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+        // What she said when she turned it down goes into the chat as her own message.
+        const said = async (content: string) => {
+          const [row] = await db`insert into velo_messages (user_id, role, content, character_id) values (${me}, 'assistant', ${content}, ${ch.id}) returning id`;
+          return { id: String(row.id), role: "assistant", content };
+        };
         const marker = async (content: string, sceneId: string | null) => {
           const [row] = await db`insert into velo_messages (user_id, role, content, character_id, scene_id) values (${me}, 'user', ${content}, ${ch.id}, ${sceneId}) returning id`;
           return { id: String(row.id), role: "user", content };
@@ -214,12 +317,17 @@ export async function POST(req: NextRequest) {
         if (action === "scene.end") {
           if (!cur) return bad("There's no scene going on.");
           await db`update chat_scenes set status = 'ended', ended_at = now() where id = ${cur.id}`;
+          // 🌙 The memory is dated the day it STARTED, not the day they got round to ending it: a
+          // video chat begun last night is a memory of last night, however late it was closed.
+          const began = Date.parse(String(cur.started_at || "")) || Date.now();
+          const onDay = new Date(began).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: isValidTimeZone(b.timeZone) ? String(b.timeZone) : undefined });
           // A lasting memory for her (the play-by-play summary comes from the chat itself).
-          await db`insert into velo_memories (user_id, character_id, kind, text) values (${me}, ${ch.id}, 'fact', ${`We did this together (${day}): ${cur.title}`.slice(0, 300)})`;
-          return NextResponse.json({ ok: true, marker: await marker(`🎬 Scene ended: ${cur.title}`, null) });
+          await db`insert into velo_memories (user_id, character_id, kind, text) values (${me}, ${ch.id}, 'fact', ${`We did this together (${onDay}): ${cur.title}`.slice(0, 300)})`;
+          return NextResponse.json({ ok: true, marker: await marker(`🎥 Video chat ended: ${cur.title}`, null) });
         }
+        let extra = "";
         const title = scrub(clean(b.title, 120)), details = scrub(String(b.details ?? "").replace(/\s+/g, " ").trim().slice(0, 1000));
-        if (!title) return bad("Say what the scene is (e.g. a dinner date at Luigi's).");
+        if (!title) return bad("Say what you're doing together (e.g. dinner on video).");
         if (cur) await db`update chat_scenes set status = 'ended', ended_at = now() where id = ${cur.id}`;
         // 🕒 Its clock: real time ("now"), or its own scheduled time ("set"). A plan's time is kept, so she knows if it got pushed back.
         const [plan] = b.planId ? await db`select at_time from chat_plans where id = ${String(b.planId)} and user_id = ${me}` : [];
@@ -232,9 +340,24 @@ export async function POST(req: NextRequest) {
         // Started from a plan's "today" card: that plan is done.
         if (b.planId) await setPlanStatus(me, String(b.planId), "done");
         if (action === "scene.start") {
-          await endInPerson(me, ch.id); // a scene takes over from just hanging out
-          const [s] = await db`insert into chat_scenes (user_id, character_id, kind, title, details, clock, set_time, planned_time, pushed) values (${me}, ${ch.id}, 'live', ${title}, ${details}, ${clock}, ${setTime}, ${plannedTime}, ${pushed}) returning id, kind, title, details, status, started_at::text, clock, set_time, planned_time`;
-          return NextResponse.json({ scene: s, marker: await marker(`🎬 Scene: ${title}${details ? ` — ${details}` : ""}`, String(s.id)) });
+          // 🧍🎥 Two times together at once is the most — the rest of them carry on texting.
+          const full = await roomForMore(me, ch.name).catch(() => null);
+          if (full) return bad(full);
+          const gone = await awayFor(me, ch.id);
+          if (gone && b.anyway !== true) return bad(awayText(ch.name, gone));
+          // 🙋‍♀️ She has her own evening: now and then she'd rather do it another time, and says so.
+          if (b.anyway !== true) {
+            const [who] = await db`select adult_confirmed_at from users where id = ${me}`;
+            const her: Answer = await canShe(me, ch, "scene", b.timeZone, !!who?.adult_confirmed_at, luckOf(b)).catch(() => ({ ok: true }));
+            if (!her.ok) return NextResponse.json({ no: her.say, marker: await said(her.say) });
+            // 🙈 Sneaking it in from work: she carries that into the video chat.
+            if (her.note) extra = her.note;
+          }
+          // A video chat takes over from just hanging out — but never from someone who LIVES here:
+          // she doesn't leave her own home to be on camera, and 👁️ ICU keeps working afterwards.
+          if (!(ch.live_in && (await isHome(me, ch)))) await endInPerson(me, ch.id);
+          const [s] = await db`insert into chat_scenes (user_id, character_id, kind, title, details, clock, set_time, planned_time, pushed) values (${me}, ${ch.id}, 'live', ${title}, ${[details, extra].filter(Boolean).join(" ")}, ${clock}, ${setTime}, ${plannedTime}, ${pushed}) returning id, kind, title, details, status, started_at::text, clock, set_time, planned_time`;
+          return NextResponse.json({ scene: s, marker: await marker(`🎥 Video chat: ${title}${details ? ` — ${details}` : ""}`, String(s.id)) });
         }
         const [s] = await db`insert into chat_scenes (user_id, character_id, kind, title, details, status, ended_at) values (${me}, ${ch.id}, 'past', ${title}, ${details}, 'ended', now()) returning id`;
         await db`insert into velo_memories (user_id, character_id, kind, text) values (${me}, ${ch.id}, 'fact', ${`We did this together (${day}): ${title}${details ? ` — ${details}` : ""}`.slice(0, 300)})`;
@@ -278,7 +401,7 @@ export async function POST(req: NextRequest) {
         if (!allow(`peek:${me}`, [{ ms: 60_000, max: 10 }, { ms: 86_400_000, max: 300 }])) return NextResponse.json({ error: "That's a lot of peeks — try again in a bit." }, { status: 429 });
         const [u] = await db`select adult_confirmed_at from users where id = ${me}`;
         try {
-          if (b.action === "scene.peek.draft") return NextResponse.json({ description: await draftPeek(me, ch, cur, !!u?.adult_confirmed_at) });
+          if (b.action === "scene.peek.draft") return NextResponse.json({ description: await draftPeek(me, ch, cur, !!u?.adult_confirmed_at, writerBrain(b.writer, ch.brain)) });
           const description = String(b.description || "").trim();
           if (description.length < 10) return bad("Describe the moment in a few words first.");
           const p = await peekAt(me, ch, cur, !!u?.adult_confirmed_at, description);
@@ -289,7 +412,99 @@ export async function POST(req: NextRequest) {
           return bad(e instanceof MediaError ? "Couldn't peek right now — try again in a moment." : "Couldn't peek right now.");
         }
       }
+      // 📞 Calling her: she doesn't always pick up — she's at work, in class, or can't talk — and
+      // then she texts back instead of the phone just ringing out.
+      case "call.try": {
+        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
+        if (!ch) return bad("That character wasn't found.");
+        const [who] = await db`select adult_confirmed_at from users where id = ${me}`;
+        const her: Answer = await canShe(me, ch, "call", b.timeZone, !!who?.adult_confirmed_at, luckOf(b)).catch(() => ({ ok: true }));
+        if (her.ok) return NextResponse.json({ ok: true });
+        const [row] = await db`insert into velo_messages (user_id, role, content, character_id) values (${me}, 'assistant', ${her.say}, ${ch.id}) returning id`;
+        return NextResponse.json({ ok: false, say: her.say, message: { id: String(row.id), role: "assistant", content: her.say } });
+      }
       // 🧍 Together in person (not a scene): she talks face to face, and 👁️ ICU works.
+      // ↻ Redo a picture from the prompt that made it: her headshot, her gallery, a photo in a chat.
+      case "redo.draft": {
+        if (!UUID.test(id)) return bad("Unknown picture.");
+        const d = await redoDraft(me, id);
+        return d ? NextResponse.json(d) : bad("That picture can't be redone.");
+      }
+      case "redo": {
+        if (!UUID.test(id)) return bad("Unknown picture.");
+        if (!allow(`redo:${me}`, [{ ms: 60_000, max: 4 }, { ms: 86_400_000, max: 60 }])) return bad("Slow down a little — try again in a bit.");
+        return NextResponse.json({ media: await redoMake(me, id, String(b.prompt || "")) });
+      }
+      // 💭 Written straight into her feelings: anything you type in [brackets] in her chat.
+      case "feelings.set": {
+        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
+        if (!ch) return bad("That character wasn't found.");
+        const text = scrub(clean(b.text, 499)).replace(/\s+/g, " ").trim();
+        if (text.length < 5) return bad("Say a little more about how she feels.");
+        const [who] = await db`select adult_confirmed_at from users where id = ${me}`;
+        await saveFeelings(me, ch.id, text, true);
+        const line = `💭 ${text}`;
+        const [row] = await db`insert into velo_messages (user_id, role, content, character_id) values (${me}, 'user', ${line}, ${ch.id}) returning id`;
+        // Her feelings only reach her when romance is on for her, and once you've confirmed 18+.
+        const idle = !ch.romantic ? `Saved, but ${ch.name} isn't romantic — turn on 💕 Romantic on her card for it to reach her.`
+          : !who?.adult_confirmed_at ? "Saved — it reaches her once you've confirmed you're 18+."
+          : "";
+        return NextResponse.json({ ok: true, feelings: text, note: idle, marker: { id: String(row.id), role: "user", content: line } });
+      }
+      // 🏠 A live-in character: is she in or out? (Her own toggle, no asking involved — she lives here.)
+      case "home.get":
+      case "home.set": {
+        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
+        if (!ch) return bad("That character wasn't found.");
+        if (!ch.live_in) return bad("She doesn't live with you — tick Lives with me on her card first.");
+        if (b.action === "home.get") return NextResponse.json({ home: await isHome(me, ch), liveIn: true });
+        const home = b.home === true;
+        if ((await isHome(me, ch)) === home) return NextResponse.json({ home });
+        await setHome(me, ch.id, home);
+        const line = home ? `🏠 ${ch.name} is home` : `🏠 ${ch.name} went out`;
+        const [row] = await db`insert into velo_messages (user_id, role, content, character_id) values (${me}, 'user', ${line}, ${ch.id}) returning id`;
+        return NextResponse.json({ home, marker: { id: String(row.id), role: "user", content: line } });
+      }
+      // 🏘️ Neighbours. "home" is one switch for the whole street: while it's on, someone who lives
+      // a few doors down might knock, or spot your car and ask you over. Leaving it costs nothing.
+      case "athome.get": return NextResponse.json({ home: await atHome(me), dropIn: await waitingDropIn(me) });
+      case "athome.set": return NextResponse.json({ home: await setAtHome(me, b.home === true) });
+      case "dropin.check": return NextResponse.json({ dropIn: await maybeDropIn(me, typeof b.chance === "number" ? Math.max(0, Math.min(1, b.chance)) : undefined) });
+      case "dropin.ignore": return NextResponse.json({ ok: await ignoreDropIn(me, String(b.id || "")) });
+      case "dropin.answer": {
+        const r = await answerDropIn(me, String(b.id || ""), typeof b.meetChance === "number" ? Math.max(0, Math.min(1, b.meetChance)) : undefined);
+        if (!r) return bad("Nobody's at the door.");
+        // 👥 They met in the doorway: it carries on in their group chat, so the one-on-one just gets the note.
+        if (r.groupId) return NextResponse.json({ characterId: r.characterId, groupId: r.groupId, met: r.met });
+        const [row] = await db`insert into velo_messages (user_id, role, content, character_id) values (${me}, 'user', ${r.marker}, ${r.characterId}) returning id`;
+        return NextResponse.json({ characterId: r.characterId, marker: { id: String(row.id), role: "user", content: r.marker } });
+      }
+      // 📸 The picture they asked her for: they've seen the prompt (and maybe changed it), so it
+      // goes to the picture service exactly as it stands, like a peek.
+      case "photo.make": {
+        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
+        if (b.characterId && !ch) return bad("That character wasn't found.");
+        const text = scrub(String(b.description || "")).replace(/\s+/g, " ").trim().slice(0, 1500);
+        if (text.length < 5) return bad("Say what the picture shows.");
+        if (!allow(`photo:${me}`, [{ ms: 60_000, max: 6 }, { ms: 86_400_000, max: 200 }])) return NextResponse.json({ error: "Slow down a little — try again in a bit." }, { status: 429 });
+        const [u2] = await db`select adult_confirmed_at, name, bio_photo_note from users where id = ${me}`;
+        const adult = !!u2?.adult_confirmed_at;
+        let other: { name: string; refs: string[]; appearance: string } | null = null;
+        if (b.with_them === true) {
+          const mine = await myRefs(me).catch(() => []);
+          if (!mine.length) return bad("There's no photo of you to work from — add one in Settings → About you.");
+          other = { name: String(u2?.name || "them"), refs: mine, appearance: String(u2?.bio_photo_note || "") };
+        } else if (typeof b.of_person === "string" && b.of_person.trim()) {
+          const who = await pictureOf(me, ch?.id || null, String(b.of_person));
+          if (typeof who === "string") return bad(who);
+          other = who;
+        }
+        const media = await startMedia(me, { kind: b.kind === "video" ? "video" : "image", with_me: b.with_me !== false, they_asked: true, description: text, same_moment: b.same_moment === true },
+          { characterId: ch?.id || null, who: ch?.name || "Velo", appearance: ch?.appearance || "", refs: ch ? await referenceUrls(ch) : [], romantic: adult && !!ch?.romantic && allowsSuggestive(ch?.traits), mood: ch ? mediaMood(ch.traits) : "", offer: false, other, raw: true });
+        const sc = ch ? await activeScene(me, ch.id).catch(() => null) : null;
+        const [row] = await db`insert into velo_messages (user_id, role, content, media_id, character_id, scene_id) values (${me}, 'assistant', ${mediaNote(media.kind, media.status, media.description, null, media.subject)}, ${media.id}, ${ch?.id || null}, ${sc?.id || null}) returning id`;
+        return NextResponse.json({ media, messageId: String(row.id) });
+      }
       case "inperson.get":
       case "inperson.start":
       case "inperson.end": {
@@ -304,9 +519,28 @@ export async function POST(req: NextRequest) {
           if (!(await endInPerson(me, ch.id))) return bad("You two aren't together right now.");
           return NextResponse.json({ ok: true, marker: await note(`🧍 We went our separate ways`) });
         }
-        if (await activeScene(me, ch.id)) return bad("End the scene first.");
+        if (await activeScene(me, ch.id)) return bad("End the video chat first.");
+        const full = await roomForMore(me, ch.name).catch(() => null);
+        if (full) return bad(full);
+        const gone = await awayFor(me, ch.id);
+        if (gone) return bad(awayText(ch.name, gone));
+        // 🙋‍♀️ She has to be free (and up for it): at work or in class she usually can't, though she
+        // does sometimes slip out, call off or skip a class for them.
+        const hers = async (content: string) => {
+          const [row] = await db`insert into velo_messages (user_id, role, content, character_id) values (${me}, 'assistant', ${content}, ${ch.id}) returning id`;
+          return { id: String(row.id), role: "assistant", content };
+        };
+        if (b.anyway !== true) {
+          const [who] = await db`select adult_confirmed_at from users where id = ${me}`;
+          const her: Answer = await canShe(me, ch, "person", b.timeZone, !!who?.adult_confirmed_at, luckOf(b)).catch(() => ({ ok: true }));
+          if (!her.ok) return NextResponse.json({ no: her.say, marker: await hers(her.say) });
+          if (her.mark) await db`insert into velo_messages (user_id, role, content, character_id) values (${me}, 'user', ${`🧍 (${her.mark})`}, ${ch.id})`;
+
+        }
         const place = scrub(clean(b.place, 120)).replace(/\n/g, " ");
-        const p = await startInPerson(me, ch.id, place);
+        // 🏠 At yours or at theirs? It decides whether you're home to answer the door.
+        const atMine = /\b(my (place|house|home|flat|apartment|room|sofa|couch|kitchen|garden|yard)|mine|here at mine|at mine|my end|round mine|at home|home)\b/i.test(place) || !place;
+        const p = await startInPerson(me, ch.id, place, atMine);
         return NextResponse.json({ inPerson: p, marker: await note(`🧍 Together in person${place ? ` — ${place}` : ""}`) });
       }
       // 👁️ ICU: together in person (no scene) — the same two steps as a peek: a description to check, then exactly that.
@@ -314,12 +548,12 @@ export async function POST(req: NextRequest) {
       case "icu": {
         const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
         if (!ch) return bad("That character wasn't found.");
-        if (!(await inPersonFor(me, ch.id))) return bad("ICU works when you two are together in person — tap 🧍 first.");
+        if (!(await inPersonFor(me, ch.id))) return bad(ch.live_in ? `ICU and *peek* work when ${ch.name}'s home — flip the 🏠 Home toggle.` : "ICU works when you two are together in person — tap 🧍 first.");
         if (!mediaReady()) return bad("Photos aren't set up yet.");
         if (!allow(`peek:${me}`, [{ ms: 60_000, max: 10 }, { ms: 86_400_000, max: 300 }])) return NextResponse.json({ error: "That's a lot of peeks — try again in a bit." }, { status: 429 });
         const [u] = await db`select adult_confirmed_at from users where id = ${me}`;
         try {
-          if (b.action === "icu.draft") return NextResponse.json({ description: await draftIcu(me, ch, !!u?.adult_confirmed_at) });
+          if (b.action === "icu.draft") return NextResponse.json({ description: await draftIcu(me, ch, !!u?.adult_confirmed_at, writerBrain(b.writer, ch.brain)) });
           const description = String(b.description || "").trim();
           if (description.length < 10) return bad("Describe what you see in a few words first.");
           const p = await peekAt(me, ch, null, !!u?.adult_confirmed_at, description);
@@ -331,9 +565,13 @@ export async function POST(req: NextRequest) {
       }
       // 🔴 Unread: messages from Velo / each character since they last looked at that chat.
       case "chats.unread": {
+        // 📸 A picture that lands after you've read the chat counts too: it's new to you even
+        // though the message it came with is older.
         const rows = await db`select m.character_id, count(*)::int as n from velo_messages m
           left join chat_reads r on r.user_id = m.user_id and r.character_id is not distinct from m.character_id
-          where m.user_id = ${me} and m.role = 'assistant' and m.created_at > coalesce(r.read_at, '-infinity'::timestamptz)
+          left join velo_media md on md.id = m.media_id and md.status = 'done'
+          where m.user_id = ${me} and m.role = 'assistant'
+            and greatest(m.created_at, coalesce(md.done_at, m.created_at)) > coalesce(r.read_at, '-infinity'::timestamptz)
           group by m.character_id`;
         return NextResponse.json({ unread: Object.fromEntries(rows.map(r => [r.character_id ? String(r.character_id) : "velo", Number(r.n)])) });
       }
@@ -349,22 +587,9 @@ export async function POST(req: NextRequest) {
       case "relationship.get": {
         const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
         if (!ch) return bad("That character wasn't found.");
-        let [rel] = await db`select trust, updated_at from chat_relationships where user_id = ${me} and character_id = ${ch.id}`;
-        if (!rel) { await db`insert into chat_relationships (user_id, character_id, trust) values (${me}, ${ch.id}, 50) on conflict do nothing`; rel = { trust: 50, updated_at: new Date() }; }
-        if (rel && rel.trust < 100) {
-          const days = Math.floor((Date.now() - new Date(rel.updated_at).getTime()) / 86400000);
-          if (days > 0) {
-            const refill = Math.min(100, rel.trust + days * 3);
-            await db`update chat_relationships set trust = ${refill}, updated_at = now() where user_id = ${me} and character_id = ${ch.id}`;
-            return NextResponse.json({ trust: refill });
-          }
-        }
-        return NextResponse.json({ trust: rel?.trust ?? null });
-      }
-      case "relationship.get_old": {
-        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
-        if (!ch) return bad("That character wasn't found.");
-        return NextResponse.json({ trust: await trustFor(me, ch) });
+        const [who] = await db`select adult_confirmed_at from users where id = ${me}`;
+        const romance = !!ch.romantic && !!who?.adult_confirmed_at;
+        return NextResponse.json({ trust: await trustFor(me, ch), happy: await happyFor(me, ch), love: await loveFor(me, ch, romance) });
       }
       case "media.check": {
         const m = needId() ? await checkMedia(me, id) : null;
@@ -376,6 +601,15 @@ export async function POST(req: NextRequest) {
         if (b.characterId && !ch) return bad("That character wasn't found.");
         const before = typeof b.before === "string" && !Number.isNaN(Date.parse(b.before)) ? b.before : null;
         return NextResponse.json({ items: await listGallery(me, ch?.id || null, before) });
+      }
+      // 🖼️ Every picture they have (from any chat, peeks, Picagram), newest first — to attach one to a message.
+      case "gallery.pick": {
+        const before = typeof b.before === "string" && !Number.isNaN(Date.parse(b.before)) ? b.before : null;
+        const rows = await db`select f.id, m.id as media_id, f.url, f.name, f.content_type, m.created_at::text as at, t.url as thumb, c.name as who, m.pica
+          from velo_media m join velo_files f on f.id = m.file_id and f.user_id = m.user_id left join velo_files t on t.id = m.thumb_file_id left join chat_characters c on c.id = m.character_id
+          where m.user_id = ${me} and m.kind = 'image' and m.status = 'done' and (${before}::timestamptz is null or m.created_at < ${before}::timestamptz)
+          order by m.created_at desc limit 30`;
+        return NextResponse.json({ items: rows.map(r => ({ id: String(r.id), mediaId: String(r.media_id), url: String(r.url), thumb: r.thumb ? String(r.thumb) : null, name: String(r.name || "photo.jpg"), type: String(r.content_type || "image/jpeg"), at: String(r.at), from: r.pica ? "Picagram" : r.who ? String(r.who) : "Velo" })) });
       }
       case "gallery.keep":
         if (!needId()) return bad("Unknown picture.");
@@ -467,47 +701,6 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true });
       }
 
-      case "livein.set": {
-        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
-        if (!ch) return bad("That character wasn't found.");
-        await db`insert into chat_relationships (user_id, character_id, at_home) values (${me}, ${ch.id}, ${!!b.atHome}) on conflict (user_id, character_id) do update set at_home = ${!!b.atHome}, updated_at = now()`;
-        return NextResponse.json({ atHome: !!b.atHome });
-      }
-      case "user.home": {
-        await db`update users set at_home = ${!!b.atHome}, updated_at = now() where id = ${me}`;
-        return NextResponse.json({ atHome: !!b.atHome });
-      }
-      case "user.home.get": {
-        const [u] = await db`select at_home from users where id = ${me}`;
-        return NextResponse.json({ atHome: !!u?.at_home });
-      }
-      case "livein.get": {
-        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
-        if (!ch) return bad("That character wasn't found.");
-        const [rel] = await db`select at_home from chat_relationships where user_id = ${me} and character_id = ${ch.id}`;
-        return NextResponse.json({ atHome: !!rel?.at_home });
-      }
-      case "feelings.add": {
-        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
-        if (!ch) return bad("That character wasn't found.");
-        const text = String(b.text || "").trim().slice(0, 500);
-        if (!text) return bad("Nothing to save.");
-        const [rel] = await db`select feelings from chat_relationships where user_id = ${me} and character_id = ${ch.id}`;
-        const current = rel?.feelings || "";
-        const updated = current ? `${current} ${text}`.slice(0, 500) : text;
-        await db`insert into chat_relationships (user_id, character_id, feelings) values (${me}, ${ch.id}, ${updated}) on conflict (user_id, character_id) do update set feelings = ${updated}, updated_at = now()`;
-        return NextResponse.json({ ok: true });
-      }
-      case "trust.boost": {
-        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
-        if (!ch) return bad("That character wasn't found.");
-        const [rel] = await db`select trust, boosted_trust from chat_relationships where user_id = ${me} and character_id = ${ch.id}`;
-        const base = rel?.trust || 50;
-        const boosted = Math.min(100, (rel?.boosted_trust || base) + 1);
-        const until = new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString();
-        await db`insert into chat_relationships (user_id, character_id, trust, boosted_trust, boost_until) values (${me}, ${ch.id}, ${base}, ${boosted}, ${until}) on conflict (user_id, character_id) do update set boosted_trust = ${boosted}, boost_until = ${until}, updated_at = now()`;
-        return NextResponse.json({ trust: boosted });
-      }
       default:
         return bad("Unknown action.");
     }
@@ -516,3 +709,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Something went wrong. Please try again." }, { status: 500 });
   }
 }
+
+/** 📝 Each standing line as Settings shows it: their wording, and the default to put back. */
+const withDefaults = (mine: Record<string, string>) =>
+  BITS.map(x => ({ key: x.key, label: x.label, about: x.about, text: mine[x.key], fallback: x.text }));
+
+/** 🛠️ Each section as the Admin tab shows it: their wording, and the default to put back. */
+const talkSections = (mine: Record<string, string>) =>
+  TALK_SECTIONS.map(sec => ({ key: sec.key, title: sec.title, about: sec.about, fixed: !!sec.fixed,
+    slots: sec.slots.map(x => ({ key: x.key, label: x.label, about: x.about, text: sec.fixed ? x.text : mine[x.key], fallback: x.text, romantic: !!x.romantic })) }));

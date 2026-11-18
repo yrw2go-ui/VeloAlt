@@ -9,6 +9,7 @@ import { checkPortrait, getCharacter, startPortrait, type Character } from "./ch
 import { closeness, type Closeness } from "./momentPics";
 import { makeCharacter } from "./makeCharacter";
 import { scrub } from "./secrets";
+import { homeOf, livesNote } from "./where";
 
 export const MAX_INTROS = 5;
 const RANGE: Record<Closeness, [number, number] | null> = { new: null, warm: [70, 120], close: [45, 90] };
@@ -50,7 +51,7 @@ export async function makeIntro(userId: string, introId: string, ch: Character, 
     const fam = FAMILY.includes(kind);
     const d = await makeCharacter({
       vibe: `${ch.name}'s ${kind}. ${fam ? `A family resemblance to ${ch.name} (${ch.appearance || "similar coloring"}) and the same hometown, but her own personality.` : `Knows ${ch.name} well, but has her own personality.`}`,
-      romantic: !!ch.romantic, male: false, avoidNames: names,
+      romantic: !!ch.romantic, male: false, avoidNames: names, lives: livesNote(await homeOf(userId)),
     });
     const relation = `${ch.name}'s ${kind} — ${ch.name} introduced you`;
     const [c] = await sql()`insert into chat_characters (created_by, owner_id, intro_status, name, personality, backstory, relation, appearance, job, casual_wear, hobbies, voice, voice_name, voice_kind, romantic, romance_arc, traits, birthday, time_zone, work_attire, work_days, work_start, work_end, part_time)

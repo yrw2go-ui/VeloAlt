@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runCheckins } from "../../../lib/checkins";
 import { planNudges } from "../../../lib/plans";
+import { runInvites } from "../../../lib/meetups";
 
 // ⏰ Run by Vercel's scheduler (see vercel.json): sends this round's check-ins.
 // With CRON_SECRET set in Vercel, only calls carrying it are accepted; otherwise only Vercel's
@@ -10,6 +11,11 @@ export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
   const ok = secret ? req.headers.get("authorization") === `Bearer ${secret}` : /vercel-cron/i.test(req.headers.get("user-agent") || "");
   if (!ok) return NextResponse.json({ error: "Not allowed." }, { status: 401 });
-  try { const plans = await planNudges().catch(e => { console.error("cron plans", e instanceof Error ? e.message : e); return 0; }); return NextResponse.json({ ...(await runCheckins()), plans }); }
+  try {
+    const plans = await planNudges().catch(e => { console.error("cron plans", e instanceof Error ? e.message : e); return 0; });
+    // 📍 …and the odd "come round?" from someone local you're close to.
+    const invites = await runInvites().catch(e => { console.error("cron invites", e instanceof Error ? e.message : e); return 0; });
+    return NextResponse.json({ ...(await runCheckins()), plans, invites });
+  }
   catch (e) { console.error("cron checkins", e instanceof Error ? e.message : e); return NextResponse.json({ error: "failed" }, { status: 500 }); }
 }

@@ -8,7 +8,7 @@ export const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"
 export const DOC_TYPES = ["application/pdf", "text/plain"];
 /** Uploads pass through the server, which Vercel caps at 4.5 MB per request. */
 export const MAX_BYTES = 4 * 1024 * 1024;
-export const MAX_FILES = 500;
+export const MAX_FILES = 2500;
 
 const SUPABASE_URL = () => (process.env.SUPABASE_URL || "").replace(/\/$/, "");
 const SUPABASE_KEY = () => process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "";
@@ -66,13 +66,19 @@ export async function ownFile(userId: string, id: string): Promise<VeloFile | nu
 
 /** Deletes a file's storage object and row. */
 export async function deleteFile(userId: string, id: string): Promise<boolean> {
-  const [f] = await sql()`delete from velo_files where id = ${id} and user_id = ${userId} returning url, thumb_url, pathname`;
-  if (!f) return false;
-  const paths = [f.pathname, f.thumb_url].filter(Boolean).map(String);
-  // Best-effort: also try to derive path from URL if pathname missing
-  if (f.url && !f.pathname) {
-    const m = String(f.url).match(/\/object\/public\/[^/]+\/(.+)$/);
-    if (m) paths.push(m[1]);
+  // A photo and its thumbnail are two files: deleting either takes both, and the photo they belong to.
+  const [m] = await sql()`delete from velo_media where user_id = ${userId} and (file_id = ${id} or thumb_file_id = ${id}) returning file_id, thumb_file_id, character_id`;
+  if (m?.character_id) await sql()`update chat_characters set portrait_file_id = case when portrait_file_id in (${m.file_id}, ${m.thumb_file_id}) then null else portrait_file_id end where id = ${m.character_id}`;
+  const ids = [...new Set([id, ...(m ? [m.file_id, m.thumb_file_id] : [])].filter(Boolean).map(String))];
+  const gone = await sql()`delete from velo_files where id = any(${ids}::uuid[]) and user_id = ${userId} returning url, thumb_url, pathname`;
+  if (!gone.length) return false;
+  const paths: string[] = [];
+  for (const f of gone) {
+    if (f.pathname) paths.push(String(f.pathname));
+    for (const u of [f.url, f.thumb_url].filter(Boolean)) {
+      const hit = String(u).match(/\/object\/public\/[^/]+\/(.+)$/);
+      if (hit) paths.push(hit[1]);
+    }
   }
   await storageDel(paths);
   return true;

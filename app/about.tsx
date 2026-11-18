@@ -10,31 +10,34 @@ import { US_STATES } from "./lib/states";
 import type { Profile } from "./pro";
 import { BIO_SECTIONS, BIO_MAX, type BioMore } from "./lib/bioSections";
 
-export type Bio = { text: string; birthday: string; age: number | null; state: string; photo: string; photoNote: string; more?: BioMore };
+export type MyPhoto = { id: string; url: string; note: string; main: boolean };
+export type Bio = { text: string; birthday: string; age: number | null; town?: string; state: string; photo: string; photoNote: string; photos?: MyPhoto[]; more?: BioMore };
 
 export default function AboutCard({ profile, onChange }: { profile: Profile; onChange: () => void }) {
-  const bio: Bio = profile.bio || { text: "", birthday: "", age: null, state: "", photo: "", photoNote: "" };
+  const bio: Bio = profile.bio || { text: "", birthday: "", age: null, town: "", state: "", photo: "", photoNote: "" };
   const [text, setText] = useState(bio.text);
   const [birthday, setBirthday] = useState(bio.birthday);
   const [age, setAge] = useState(bio.age ? String(bio.age) : "");
+  const [town, setTown] = useState(bio.town || "");
   const [state, setState] = useState(bio.state);
   const moreJson = JSON.stringify(bio.more || {});
   const [more, setMore] = useState<BioMore>(bio.more || {});
-  const [open, setOpen] = useState(() => Object.values(bio.more || {}).some(Boolean));
+  // 📕 Always starts closed, filled in or not: the card stays short until you ask for the rest.
+  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState("");
   const input = useRef<HTMLInputElement>(null);
-  useEffect(() => { setText(bio.text); setBirthday(bio.birthday); setAge(bio.age ? String(bio.age) : ""); setState(bio.state); setMore(JSON.parse(moreJson)); }, [bio.text, bio.birthday, bio.age, bio.state, moreJson]);
+  useEffect(() => { setText(bio.text); setBirthday(bio.birthday); setAge(bio.age ? String(bio.age) : ""); setTown(bio.town || ""); setState(bio.state); setMore(JSON.parse(moreJson)); }, [bio.text, bio.birthday, bio.age, bio.town, bio.state, moreJson]);
   const clean = (m: BioMore) => JSON.stringify(Object.fromEntries(BIO_SECTIONS.map(s => [s.key, (m[s.key] || "").trim()]).filter(([, v]) => v)));
-  const dirty = text !== bio.text || birthday !== bio.birthday || (birthday ? false : age !== (bio.age ? String(bio.age) : "")) || state !== bio.state || clean(more) !== clean(bio.more || {});
+  const dirty = text !== bio.text || birthday !== bio.birthday || (birthday ? false : age !== (bio.age ? String(bio.age) : "")) || town !== (bio.town || "") || state !== bio.state || clean(more) !== clean(bio.more || {});
   const ageNum = Number(age);
   const ageBad = !birthday && age !== "" && !(Number.isInteger(ageNum) && ageNum >= 13 && ageNum <= 120);
 
   const save = async () => {
     if (ageBad) { setErr("Age should be a number between 13 and 120."); return; }
     setBusy(true); setErr("");
-    try { await data("profile.update", { bio: { text, birthday, age: birthday ? null : age ? ageNum : null, state, more } }); setSaved(true); setTimeout(() => setSaved(false), 1500); onChange(); }
+    try { await data("profile.update", { bio: { text, birthday, age: birthday ? null : age ? ageNum : null, town, state, more } }); setSaved(true); setTimeout(() => setSaved(false), 1500); onChange(); }
     catch (e) { setErr(e instanceof Error ? e.message : "Couldn't save."); }
     finally { setBusy(false); }
   };
@@ -45,20 +48,33 @@ export default function AboutCard({ profile, onChange }: { profile: Profile; onC
     catch (e) { setErr(e instanceof Error ? e.message : "Upload didn't go through."); }
     finally { setBusy(false); if (input.current) input.current.value = ""; }
   };
-  const removePhoto = async () => {
-    if (!(await confirmAsk("Remove your photo? Are you sure?"))) return;
+  const removePhoto = async (id?: string) => {
+    if (!(await confirmAsk(id ? "Remove this photo? Are you sure?" : "Remove your photos? Are you sure?"))) return;
     setBusy(true);
-    try { await data("bio.photoRemove"); onChange(); } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't remove it."); }
+    try { await data("bio.photoRemove", id ? { id } : {}); onChange(); } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't remove it."); }
     finally { setBusy(false); }
   };
-  const lab = { fontSize: 15, fontWeight: 700, display: "block" } as const;
+  const photos = bio.photos || [];
+  const lab = { fontSize: 13, fontWeight: 700, display: "block" } as const;
 
   return (
     <div className="card" data-testid="about-you" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div>
-        <div style={{ fontWeight: 700 }}>👤 About you <span className="muted" style={{ fontWeight: 500, fontSize: 15 }}>· all optional</span></div>
-        <div className="muted" style={{ fontSize: 15, marginTop: 2 }}>Velo and your characters use this to know you — like noticing your glasses or your birthday. Your photo is only described to them in words; it&apos;s never used to make pictures.</div>
+        <div style={{ fontWeight: 700 }}>👤 About you <span className="muted" style={{ fontWeight: 500, fontSize: 13 }}>· all optional</span></div>
+        <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>Velo and your characters use this to know you — like noticing your glasses or your birthday. Your photos are only described to them in words, never used to make pictures of you in chat. Add a few (up to 6) and Picagram uses them to keep photos of you looking like you.</div>
       </div>
+      {photos.length > 1 && (
+        <div data-testid="about-photos" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {photos.map(p => (
+            <span key={p.id} style={{ position: "relative" }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={p.url} alt="You" style={{ width: 64, height: 64, borderRadius: 12, objectFit: "cover", display: "block" }} />
+              <button type="button" aria-label="Remove this photo" data-testid="about-photo-remove" disabled={busy} onClick={() => removePhoto(p.id)}
+                style={{ position: "absolute", top: -6, right: -6, width: 22, height: 22, borderRadius: "50%", border: "none", background: "var(--bad)", color: "#fff", fontSize: 12, cursor: "pointer", lineHeight: "22px", padding: 0 }}>✕</button>
+            </span>
+          ))}
+        </div>
+      )}
       <div className="row" style={{ gap: 12, alignItems: "center" }}>
         {bio.photo
           // eslint-disable-next-line @next/next/no-img-element
@@ -66,10 +82,10 @@ export default function AboutCard({ profile, onChange }: { profile: Profile; onC
           : <div style={{ width: 72, height: 72, borderRadius: "50%", border: "2px dashed var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, flexShrink: 0 }}>🙂</div>}
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 6 }}>
           <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-            <button type="button" className="ghost" disabled={busy} onClick={() => input.current?.click()} data-testid="about-upload" style={{ padding: "6px 12px", fontSize: 15 }}>{bio.photo ? "Change photo" : "Add a photo"}</button>
-            {bio.photo && <button type="button" className="ghost" disabled={busy} onClick={removePhoto} style={{ padding: "6px 12px", fontSize: 15, color: "var(--bad)" }}>Remove</button>}
+            <button type="button" className="ghost" disabled={busy || photos.length >= 6} onClick={() => input.current?.click()} data-testid="about-upload" style={{ padding: "6px 12px", fontSize: 13 }}>{photos.length ? `Add another photo (${photos.length}/6)` : "Add a photo"}</button>
+            {bio.photo && <button type="button" className="ghost" disabled={busy} onClick={() => removePhoto()} style={{ padding: "6px 12px", fontSize: 13, color: "var(--bad)" }}>Remove all</button>}
           </div>
-          {bio.photoNote && <div className="muted" data-testid="about-photo-note" style={{ fontSize: 14 }}>They&apos;ll know: {bio.photoNote}</div>}
+          {bio.photoNote && <div className="muted" data-testid="about-photo-note" style={{ fontSize: 12 }}>They&apos;ll know: {bio.photoNote}</div>}
         </div>
         <input ref={input} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={e => upload(e.target.files?.[0])} data-testid="about-file-input" />
       </div>
@@ -86,6 +102,9 @@ export default function AboutCard({ profile, onChange }: { profile: Profile; onC
             placeholder={birthday ? "from birthday" : "e.g. 40"} style={{ marginTop: 4 }} />
         </label>
       </div>
+      <label style={lab}>Hometown <span className="muted" style={{ fontWeight: 500, fontSize: 12 }}>· the city you live in — most new characters and Picagram women live near it</span>
+        <input value={town} onChange={e => setTown(e.target.value)} maxLength={80} aria-label="Hometown" data-testid="about-town" placeholder="e.g. Valparaiso" style={{ marginTop: 4 }} />
+      </label>
       <label style={lab}>State you live in
         <select value={state} onChange={e => setState(e.target.value)} aria-label="State you live in" style={{ marginTop: 4, display: "block", width: "100%" }}>
           <option value="">— Not set —</option>
@@ -93,7 +112,7 @@ export default function AboutCard({ profile, onChange }: { profile: Profile; onC
         </select>
       </label>
       <button type="button" className="ghost" onClick={() => setOpen(o => !o)} aria-expanded={open} data-testid="about-more-toggle" style={{ textAlign: "left", fontWeight: 700 }}>
-        {open ? "▾" : "▸"} More about you <span className="muted" style={{ fontWeight: 500, fontSize: 14 }}>· work, hobbies, favorites, family, goals…</span>
+        {open ? "▾" : "▸"} More about you <span className="muted" style={{ fontWeight: 500, fontSize: 12 }}>· work, hobbies, favorites, family, goals…</span>
       </button>
       {open && BIO_SECTIONS.map(sct => (
         <label key={sct.key} style={lab}>{sct.label}
@@ -101,7 +120,7 @@ export default function AboutCard({ profile, onChange }: { profile: Profile; onC
             data-testid={`about-${sct.key}`} placeholder={sct.placeholder} style={{ marginTop: 4, resize: "vertical" }} />
         </label>
       ))}
-      {err && <div style={{ color: "var(--bad)", fontSize: 15 }}>⚠️ {err}</div>}
+      {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
       <button className="btn" disabled={!dirty || busy} onClick={save} data-testid="about-save">{saved ? "Saved ✓" : busy ? "…" : "Save"}</button>
     </div>
   );

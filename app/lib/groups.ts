@@ -4,6 +4,7 @@
 // as acquaintances, and become friends the more they all chat together (see chat_bonds, friends.ts).
 import { sql } from "./db";
 import { askVelo, type Turn } from "./brain";
+import { maybeRevealSecrets } from "./standing";
 import { getCharacter, referenceUrls, type Character } from "./characters";
 import { friendsOf, writeStory } from "./friends";
 import { scrub } from "./secrets";
@@ -12,6 +13,8 @@ import { startMedia, type Media } from "./media";
 import { allowsSuggestive } from "./traits";
 import { writeText } from "./llm";
 import { sceneFallback } from "./peek";
+import { roomForMore } from "./together";
+import { forgetLines } from "./forget";
 import { sceneClockNote, sceneTime, HHMM } from "./sceneClock";
 import { isValidTimeZone } from "./localTime";
 
@@ -122,8 +125,8 @@ function pickSpeakers(text: string, chars: Character[], rows: GroupMsg[]): Chara
 }
 
 /** They said something: it's saved, then each character who answers replies in turn, seeing the others' replies. */
-async function sendPrivate(caller: Caller, g: Group, chars: Character[], c: Character, body: string, timeZone: unknown, personName: string): Promise<{ replies: GroupMsg[]; banter: boolean; mine: { id: string; their_reactions: Record<string, string>; private_to: string } }> {
-  const [mineRow] = await sql()`insert into chat_group_messages (group_id, user_id, content, private_to) values (${g.id}, ${caller.userId}, ${body}, ${c.id}) returning id`;
+async function sendPrivate(caller: Caller, g: Group, chars: Character[], c: Character, body: string, timeZone: unknown, personName: string, existingId?: string): Promise<{ replies: GroupMsg[]; banter: boolean; mine: { id: string; their_reactions: Record<string, string>; private_to: string } }> {
+  const [mineRow] = existingId ? [{ id: existingId }] : await sql()`insert into chat_group_messages (group_id, user_id, content, private_to) values (${g.id}, ${caller.userId}, ${body}, ${c.id}) returning id`;
   await sql()`update chat_groups set updated_at = now(), banter_left = 0 where id = ${g.id}`;
   const names = new Map(chars.map(x => [x.id, x.name]));
   const rows = await groupMessages(caller.userId, g.id, 40);
@@ -150,6 +153,12 @@ export async function sendToGroup(caller: Caller, g: Group, text: string, timeZo
   const [mineRow] = await sql()`insert into chat_group_messages (group_id, user_id, content) values (${g.id}, ${caller.userId}, ${clean}) returning id`;
   // They spoke: any back-and-forth between the characters stops right here.
   await sql()`update chat_groups set updated_at = now(), banter_left = 0, since_banter = since_banter + 1 where id = ${g.id}`;
+  return answerGroup(caller, g, chars, clean, String(mineRow.id), timeZone, personName);
+}
+
+/** Who answers their message (already saved), and their replies. */
+async function answerGroup(caller: Caller, g: Group, chars: Character[], clean: string, mineId: string, timeZone: unknown, personName: string): Promise<{ replies: GroupMsg[]; banter: boolean; mine: { id: string; their_reactions: Record<string, string> } }> {
+  const mineRow = { id: mineId };
   const names = new Map(chars.map(c => [c.id, c.name]));
   const out: GroupMsg[] = [];
   let rows = await groupMessages(caller.userId, g.id, 40);
@@ -206,6 +215,9 @@ async function closer(userId: string, chars: Character[]) {
     await sql()`update chat_bonds set messages = messages + 1, occasions = occasions + case when last_at < now() - interval '6 hours' then 1 else 0 end, last_at = now()
       where user_id = ${userId} and a_id = ${a} and b_id = ${b}`;
   }
+  // 🤫 Once two of them are really close, one may work out a secret relationship in the room.
+  const out = await maybeRevealSecrets(userId, chars).catch(e => { console.error("groups: secret", e instanceof Error ? e.message : e); return []; });
+  for (const o of out) console.log(`velo: ${o.knower} worked out ${o.who}'s secret`);
 }
 
 /** Each character saves her own memory of the group chat (what they shared, what she learned about the others). */
@@ -228,7 +240,12 @@ export async function deleteGroup(userId: string, id: string): Promise<boolean> 
 export async function startGroupScene(userId: string, g: Group, kind: "live" | "past", title: string, details: string, setTime = ""): Promise<GroupMsg> {
   const t = scrub(title).trim().slice(0, 120), d = scrub(details).trim().slice(0, 1000);
   if (!t) throw new GroupError("Give the scene a title.");
-  const marker = kind === "live" ? `🎬 Scene: ${t}${d ? ` — ${d}` : ""}` : `🎬 Scene (already happened, all of us together): ${t}${d ? ` — ${d}` : ""}`;
+  // 🧍🎥 Two times together at once is the most, this meet-up included.
+  if (kind === "live") {
+    const full = await roomForMore(userId, g.title).catch(() => null);
+    if (full) throw new GroupError(full);
+  }
+  const marker = kind === "live" ? `🎥 Group video chat: ${t}${d ? ` — ${d}` : ""}` : `🎬 Something we all did together: ${t}${d ? ` — ${d}` : ""}`;
   const at = HHMM.test(setTime) ? setTime : "";
   if (kind === "live") await sql()`update chat_groups set in_person_place = null, catch_up = '{}'::jsonb, scene_title = ${t}, scene_details = ${d}, scene_clock = ${at ? "set" : "now"}, scene_set_time = ${at}, scene_started_at = now(), updated_at = now() where id = ${g.id} and user_id = ${userId}`;
   const [m] = await sql()`insert into chat_group_messages (group_id, user_id, content) values (${g.id}, ${userId}, ${marker}) returning id, speaker_id, content, created_at`;
@@ -237,7 +254,7 @@ export async function startGroupScene(userId: string, g: Group, kind: "live" | "
 export async function endGroupScene(userId: string, g: Group): Promise<GroupMsg | null> {
   if (!g.scene_title) return null;
   await sql()`update chat_groups set scene_title = null, scene_details = null where id = ${g.id} and user_id = ${userId}`;
-  const [m] = await sql()`insert into chat_group_messages (group_id, user_id, content) values (${g.id}, ${userId}, ${`🎬 Scene ended: ${g.scene_title}`}) returning id, speaker_id, content, created_at`;
+  const [m] = await sql()`insert into chat_group_messages (group_id, user_id, content) values (${g.id}, ${userId}, ${`🎥 Video chat ended: ${g.scene_title}`}) returning id, speaker_id, content, created_at`;
   return { ...(m as GroupMsg), speaker_id: null };
 }
 
@@ -249,7 +266,7 @@ async function pickedMembers(g: Group, ids: string[]): Promise<Character[]> {
   if (!chars.length) throw new GroupError("Pick who's in the picture.");
   return chars;
 }
-export async function draftGroupPeek(userId: string, g0: Group, ids: string[], adult: boolean, personName: string): Promise<string> {
+export async function draftGroupPeek(userId: string, g0: Group, ids: string[], adult: boolean, personName: string, writer?: string): Promise<string> {
   if (!g0.scene_title && g0.in_person_place == null) throw new GroupError("Peeks are for scenes or when you're together in person — start one first.");
   // 🧍 Together in person: the "scene" is just hanging out where you are, right now.
   const g = g0.scene_title ? g0 : { ...g0, scene_title: "Hanging out together in person", scene_details: g0.in_person_place || "", scene_clock: "now" };
@@ -261,7 +278,7 @@ export async function draftGroupPeek(userId: string, g0: Group, ids: string[], a
   const transcript = rows.filter((r, i) => (!r.peek || i === lastIdx) && !r.private_to).map(r => (r.peek ? "— (your last peek was here) —" : `${r.speaker_id ? names.get(r.speaker_id) || "Someone" : personName || "Them"}: ${r.content}`)).join("\n");
   const who = chars.map(c => c.name).join(" and ");
   const romantic = chars.every(c => romanticFor(c, adult));
-  const raw = await writeText(chars[0].brain, `You write the description for ONE photo for an image generator. The person is out with a group (the scene below) and is quietly looking at ${who} right now — the photo is exactly what they see: they are behind the camera and NOT in the picture. Show ONLY ${who}${chars.length < all.length ? ` (not ${all.filter(c => !chars.some(x => x.id === c.id)).map(c => c.name).join(" or ")})` : ""}. Describe the place (time of day, lighting), what each of them is wearing, what each is doing, their poses and expressions — candid and unaware, or glancing at the camera.
+  const raw = await writeText(writer ?? chars[0].brain, `You write the description for ONE photo for an image generator. The person is on a group VIDEO CHAT (below) and this is what they see of ${who} on their screen right now — wherever each of them is: the person is not in the picture. Show ONLY ${who}${chars.length < all.length ? ` (not ${all.filter(c => !chars.some(x => x.id === c.id)).map(c => c.name).join(" or ")})` : ""}. Describe the place (time of day, lighting), what each of them is wearing, what each is doing, their poses and expressions — candid and unaware, or glancing at the camera.
 OUTFIT CONTINUITY: each of them wears ONE outfit for the whole scene. ${lastPeek ? "Start from what they wore in THE LAST PEEK" : "Start from the outfits in the scene's details or what they said they're wearing (else what fits the outing and their usual style)"}, then apply only the changes that actually happened, in order (a jacket taken off stays off until it's put back on, and so on). Keep every other detail identical. The same goes for the place.
 ${romantic ? "Tasteful and PG-13: flattering and flirty is fine; they're dressed (or in swimwear at the beach or pool)." : "Family-friendly, fully clothed."} Two or three sentences, under 380 characters, no names of real people, output only the description.`, `SCENE: ${g.scene_title}${g.scene_details ? ` — ${g.scene_details}` : ""}\nTIME IN THE SCENE: ${sceneTime(groupClock(g), await userTz(userId)).label} (match the light and sky to it)\n${chars.map(c => `${c.name.toUpperCase()}'S LOOK: ${c.appearance || "(see reference pictures)"}${c.casual_wear ? `; usual style: ${c.casual_wear}` : ""}`).join("\n")}${lastPeek ? `\nTHE LAST PEEK: ${lastPeek}` : ""}\n\nTHE SCENE SO FAR:\n${(transcript.length > 12000 ? "…" + transcript.slice(-12000) : transcript) || "(it just started)"}`, 350);
   const text = raw.replace(/\s+/g, " ").trim();
@@ -304,7 +321,7 @@ export async function bringTogether(userId: string, fromId: string, otherIds: st
   await sql()`insert into chat_group_messages (group_id, user_id, content) values (${g.id}, ${userId}, ${`🧍 Together in person${where ? ` — ${where}` : ""}: ${names.slice(0, -1).join(", ")} and ${names.at(-1)}`})`;
   // Their one-on-one chats move over: in-person there ends, with a note.
   for (const c of chars) {
-    const ended = await sql()`delete from chat_in_person where user_id = ${userId} and character_id = ${c.id} returning 1`;
+    const ended = await sql()`update chat_in_person set ended_at = now() where user_id = ${userId} and character_id = ${c.id} and ended_at is null returning 1`;
     const with_ = names.filter(n => n !== c.name).join(" and ");
     await sql()`insert into velo_messages (user_id, role, content, character_id) values (${userId}, 'user', ${`🧍 ${ended.length ? "We met up" : "I came over"} with ${with_}${where ? ` — ${where}` : ""} (continued in our group)`}, ${c.id})`;
   }
@@ -315,4 +332,31 @@ export async function endGroupInPerson(userId: string, g: Group): Promise<GroupM
   await sql()`update chat_groups set in_person_place = null, catch_up = '{}'::jsonb where id = ${g.id} and user_id = ${userId}`;
   const [m] = await sql()`insert into chat_group_messages (group_id, user_id, content) values (${g.id}, ${userId}, '🧍 Everyone went their separate ways') returning id, speaker_id, content, created_at`;
   return { ...(m as GroupMsg), speaker_id: null };
+}
+
+// 🗑 Deleting up to 10 messages in a group: gone from the thread, and each character forgets what she
+// learned only from the ones she could see. If their own message is now the latest, it gets answered again.
+export async function deleteGroupMessages(caller: Caller, g: Group, ids: string[], timeZone: unknown, personName: string): Promise<{ deleted: number; replies: GroupMsg[] }> {
+  const want = [...new Set(ids.filter(x => /^[0-9a-f-]{36}$/i.test(x)))].slice(0, 10);
+  if (!want.length) return { deleted: 0, replies: [] };
+  const gone = await sql()`delete from chat_group_messages where group_id = ${g.id} and user_id = ${caller.userId} and id = any(${want}::uuid[])
+    returning speaker_id, content, created_at::text, peek, private_to`;
+  if (!gone.length) return { deleted: 0, replies: [] };
+  const chars = await members(g);
+  const names = new Map(chars.map(c => [c.id, c.name]));
+  for (const c of chars) {
+    const mine = gone.filter(r => !r.peek && (!r.private_to || String(r.private_to) === c.id));
+    if (!mine.length) continue;
+    const lines = mine.map(r => `${r.speaker_id ? names.get(String(r.speaker_id)) || "Someone" : personName || "Them"}: ${String(r.content).slice(0, 600)}`).join("\n");
+    await forgetLines(caller.userId, c.id, lines, mine.map(r => String(r.created_at)).sort()[0], c.brain).catch(e => console.error("groups: forget", e instanceof Error ? e.message : e));
+  }
+  // Their message is now the last thing said: it gets answered again.
+  const rows = seen(await groupMessages(caller.userId, g.id, 5));
+  const last = rows[rows.length - 1];
+  let replies: GroupMsg[] = [];
+  if (last && !last.speaker_id && !last.content.startsWith("🎬") && !last.content.startsWith("🎥") && !last.content.startsWith("🧍") && chars.length >= 2) {
+    const to = last.private_to ? chars.find(c => c.id === last.private_to) : null;
+    replies = (to ? await sendPrivate(caller, g, chars, to, last.content, timeZone, personName, last.id) : await answerGroup(caller, g, chars, last.content, last.id, timeZone, personName)).replies;
+  }
+  return { deleted: gone.length, replies };
 }

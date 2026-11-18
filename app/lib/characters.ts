@@ -1,3 +1,5 @@
+import { wonOver } from "./attached";
+import { partnerLook } from "./partner";
 // 🎭 Characters: made by admins and shared with everyone, with portraits generated
 // by Atlas Cloud (Seedream) from a written description and saved to Blob. Server only.
 //
@@ -5,21 +7,22 @@
 // being an AI when asked, no impersonating real people, and passwords / codes
 // stay hidden. Each person's chats, calls and memories with a character are
 // theirs alone and never mix with Velo's or another character's.
-import Anthropic from "@anthropic-ai/sdk";
+import { defaults as wordDefaults, say, type Words } from "./words";
 import { storageDel } from "./files";
 import { sql } from "./db";
+import { localDate } from "./localTime";
+import { speechNote } from "./speech";
 import { CHARACTER_VOICES, VOICE_ID, FISH_ID } from "./voices";
-import { SPICY } from "./persona";
-import { traitsPrompt, trustOn, startingTrust } from "./traits";
+import { PG13, SPICY } from "./persona";
+import { traitsPrompt, trustOn, startingTrust, startingLove } from "./traits";
 import { saveImageItem } from "./media";
 import { scheduleText } from "./work";
 import { friendsOf } from "./friends";
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, authToken: null });
 export const MAX_CHARACTERS = 50;
 export const DAILY_PORTRAITS = 30;
 
-export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; brain: string; owner_id?: string | null; work_attire: string; work_days: number[]; work_start: string; work_end: string; part_time: boolean; poly_ok: boolean; sapphic: boolean; explicit_ok: boolean; gender: "female" | "male"; live_in: boolean; home_attire: string; portrait_url: string | null; portrait_job: string | null };
+export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; brain: string; standing: string; owner_id?: string | null; work_attire: string; work_days: number[]; work_start: string; work_end: string; part_time: boolean; school: string; class_days: number[]; class_start: string; class_end: string; poly_ok: boolean; sapphic: boolean; live_in: boolean; local: boolean; neighbor: boolean; lives_in: string; attached: "single" | "dating" | "married"; sees_others: boolean; lesbian: boolean; lesbian_personality: string; partner: string; speech: string; speech_on: boolean; attached_since: string | null; attached_until: string | null; big_following?: boolean; pica_handle?: string | null; explicit_ok: boolean; gender: "female" | "male"; home_attire: string; portrait_url: string | null; portrait_job: string | null };
 
 export async function isAdmin(userId: string): Promise<boolean> {
   const [u] = await sql()`select is_admin from users where id = ${userId}`;
@@ -28,7 +31,7 @@ export async function isAdmin(userId: string): Promise<boolean> {
 
 export async function getCharacter(id: string): Promise<Character | null> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
-  const [c] = await sql()`select c.id, c.name, c.personality, c.backstory, c.relation, c.appearance, c.job, c.casual_wear, c.hobbies, c.voice, c.voice_name, c.voice_kind, c.romantic, c.romance_arc, c.reference_ids, c.time_zone, c.traits, c.preset, c.birthday, c.brain, c.work_attire, c.work_days, c.work_start, c.work_end, c.part_time, c.poly_ok, c.sapphic, c.explicit_ok, c.gender, c.live_in, c.home_attire, c.owner_id, c.portrait_job, f.url as portrait_url
+  const [c] = await sql()`select c.id, c.name, c.personality, c.backstory, c.relation, c.appearance, c.job, c.casual_wear, c.hobbies, c.voice, c.voice_name, c.voice_kind, c.romantic, c.romance_arc, c.reference_ids, c.time_zone, c.traits, c.preset, c.birthday, c.brain, c.standing, c.work_attire, c.work_days, c.work_start, c.work_end, c.part_time, c.school, c.class_days, c.class_start, c.class_end, c.poly_ok, c.sapphic, c.live_in, c.local, c.neighbor, c.lives_in, c.attached, c.sees_others, c.lesbian, c.lesbian_personality, c.partner, c.speech, c.speech_on, c.attached_since::text, c.attached_until::text, c.big_following, c.explicit_ok, c.gender, c.home_attire, c.owner_id, c.portrait_job, f.url as portrait_url
     from chat_characters c left join velo_files f on f.id = c.portrait_file_id where c.id = ${id}`;
   return (c as Character) || null;
 }
@@ -42,8 +45,10 @@ export async function getCharacterFor(userId: string, id: string): Promise<Chara
 }
 
 export async function listCharacters(userId?: string): Promise<Character[]> {
-  return (await sql()`select c.id, c.name, c.personality, c.backstory, c.relation, c.appearance, c.job, c.casual_wear, c.hobbies, c.voice, c.voice_name, c.voice_kind, c.romantic, c.romance_arc, c.reference_ids, c.time_zone, c.traits, c.preset, c.birthday, c.brain, c.work_attire, c.work_days, c.work_start, c.work_end, c.part_time, c.poly_ok, c.sapphic, c.explicit_ok, c.gender, c.live_in, c.home_attire, c.portrait_job, f.url as portrait_url
+  return (await sql()`select c.id, c.name, c.personality, c.backstory, c.relation, c.appearance, c.job, c.casual_wear, c.hobbies, c.voice, c.voice_name, c.voice_kind, c.romantic, c.romance_arc, c.reference_ids, c.time_zone, c.traits, c.preset, c.birthday, c.brain, c.standing, c.work_attire, c.work_days, c.work_start, c.work_end, c.part_time, c.school, c.class_days, c.class_start, c.class_end, c.poly_ok, c.sapphic, c.live_in, c.local, c.neighbor, c.lives_in, c.attached, c.sees_others, c.lesbian, c.lesbian_personality, c.partner, c.speech, c.speech_on, c.attached_since::text, c.attached_until::text, c.big_following, c.explicit_ok, c.gender, c.home_attire, c.portrait_job, f.url as portrait_url,
+      a.handle as pica_handle
     from chat_characters c left join velo_files f on f.id = c.portrait_file_id
+      left join pica_accounts a on a.character_id = c.id and a.user_id = ${userId || null}::uuid
     where c.owner_id is null or (c.owner_id = ${userId || null}::uuid and c.intro_status = 'accepted') order by c.created_at`) as Character[];
 }
 
@@ -86,42 +91,119 @@ export async function trustFor(userId: string, c: Character): Promise<number | n
 }
 export async function saveTrust(userId: string, characterId: string, trust: number, previous: number) {
   // Only small steps at a time, so trust is earned (or lost) gradually.
-  const t = Math.max(5, Math.min(100, Math.round(Math.max(previous - 12, Math.min(previous + 8, trust)))));
+  const t = Math.max(0, Math.min(100, Math.round(Math.max(previous - 12, Math.min(previous + 8, trust)))));
   await sql()`insert into chat_relationships (user_id, character_id, trust) values (${userId}, ${characterId}, ${t})
     on conflict (user_id, character_id) do update set trust = excluded.trust, updated_at = now()`;
+}
+// 😊 How happy she is with them right now (0–100). It starts content, moves a little after each
+// chat or call, and slips on its own when they go quiet on her — attention is part of it.
+export const HAPPY_START = 60;
+export async function happyFor(userId: string, c: Character): Promise<number> {
+  const [r] = await sql()`select happy from chat_relationships where user_id = ${userId} and character_id = ${c.id}`;
+  const base = r?.happy ?? HAPPY_START;
+  // Left alone: a little lower each day after the first two, down to 25 (never below).
+  const [m] = await sql()`select extract(epoch from now() - max(created_at)) / 86400 as days from velo_messages
+    where user_id = ${userId} and character_id = ${c.id}`;
+  const quiet = Math.max(0, Math.floor(Number(m?.days || 0)) - 2);
+  return Math.max(quiet ? 25 : 0, Math.min(100, Math.round(base - quiet * 3)));
+}
+export async function saveHappy(userId: string, characterId: string, happy: number, previous: number) {
+  // Small steps, like trust: a good day lifts her a little, a bad one costs a little more.
+  const h = Math.max(0, Math.min(100, Math.round(Math.max(previous - 12, Math.min(previous + 8, happy)))));
+  await sql()`insert into chat_relationships (user_id, character_id, happy) values (${userId}, ${characterId}, ${h})
+    on conflict (user_id, character_id) do update set happy = excluded.happy, updated_at = now()`;
+}
+/** 😊 How happy she is, and what it means for what she'll put up with. */
+export function happyNote(happy: number, romance: boolean): string {
+  const how = happy >= 75 ? "You're happy with how things are between you: warm, generous, quick to forgive, and you give them the benefit of the doubt."
+    : happy >= 45 ? "You're content enough, with the odd niggle: mostly easy with them, but things that bother you do land."
+    : happy >= 25 ? "You're not very happy right now: shorter, more easily hurt, less patient, and you bring up what's missing more often."
+    : "You're unhappy: distant or sharp, you've had enough of being taken for granted, and you say so.";
+  const take = romance
+    ? ` The happier you are, the more you take in your stride — including finding out he's seeing another woman as well as you: happy, you can be curious, teasing or open to it; unhappy, it lands hard and you let him know.`
+    : "";
+  return `HOW HAPPY YOU ARE WITH THEM: ${happy}/100. ${how}${take} It grows with attention, time together and being treated well, and slips when they go quiet on you or let you down. Let it show naturally; never mention numbers.`;
+}
+// 💗 How much she loves them (0–100), for a romantic character with an adult. It starts from how
+// quick she is to attach (her Love slider), then grows or cools with everything that happens.
+export async function loveFor(userId: string, c: Character, romance: boolean): Promise<number | null> {
+  // Only for a woman in a romance: a male character has no love meter — it isn't what he's for.
+  if (!romance || c.voice_kind === "male") return null;
+  const [r] = await sql()`select love from chat_relationships where user_id = ${userId} and character_id = ${c.id}`;
+  const base = r?.love ?? startingLove(c.traits);
+  // Months of silence cool it, slowly: nothing for a week, then a point a day, never below 15.
+  const [m] = await sql()`select extract(epoch from now() - max(created_at)) / 86400 as days from velo_messages
+    where user_id = ${userId} and character_id = ${c.id}`;
+  const quiet = Math.max(0, Math.floor(Number(m?.days || 0)) - 7);
+  return Math.max(quiet ? 15 : 0, Math.min(100, Math.round(base - quiet)));
+}
+/** 💗 Deep enough that she has plainly come around, whatever she says at the end of a chat. */
+export const LOVE_WON = 60;
+
+export async function saveLove(userId: string, characterId: string, love: number, previous: number) {
+  // Love moves slowest of all: a little at a time, and it can go either way.
+  const l = Math.max(0, Math.min(100, Math.round(Math.max(previous - 8, Math.min(previous + 5, love)))));
+  await sql()`insert into chat_relationships (user_id, character_id, love) values (${userId}, ${characterId}, ${l})
+    on conflict (user_id, character_id) do update set love = excluded.love, updated_at = now()`;
+  // 💗 Properly fallen for them: a woman who was only into women is bisexual from here.
+  if (l >= LOVE_WON) {
+    const [c] = await sql()`select lesbian, romantic from chat_characters where id = ${characterId}`;
+    if (c?.lesbian && c.romantic) await wonOver(userId, characterId).catch(() => {});
+  }
+}
+
+/** 💗 Where her heart is, and what that means for how she is with them. */
+export function loveNote(love: number): string {
+  const how = love >= 80 ? "You're in love with them, deeply: they're the first person you think of, you miss them when they're gone, you say it and show it, and you want a future with them."
+    : love >= 60 ? "You love them: warm, affectionate, openly attached — pet names, I-miss-yous, wanting to see them."
+    : love >= 40 ? "You're falling for them: you catch yourself thinking about them, you flirt and want more time together, but you haven't fully handed your heart over."
+    : love >= 20 ? "You like them and there's something there, but it's early: interested, a bit guarded, you don't say big things yet."
+    : "Your heart isn't in it right now: friendly or distant, no declarations, and the romance is cooling (or hasn't started).";
+  return `HOW MUCH YOU LOVE THEM: ${love}/100. ${how} It grows slowly with how they treat you, time together and feeling wanted — and it cools when they're careless with you, absent, or you're left feeling second best. Never jump ahead of it, and never mention numbers.`;
 }
 /** How trust shows up in what she says. */
 export function trustNote(trust: number, romance: boolean): string {
   const how = trust >= 70 ? "You trust them a lot: you open up — share personal things, worries, little secrets and stories from your own life."
-    : trust >= 25 ? "You're more like your normal self now, but still careful and protective of yourself."
-    : trust >= 10 ? "You want to try to talk again. You're guarded and more cold, but you hesitantly converse or stay around."
-    : "You're still hurt, but you don't completely reject them. You're distant but not gone.";
+    : trust >= 40 ? "You trust them some: friendly and open about everyday things, but you keep the more personal stuff to yourself for now."
+    : "You don't fully trust them right now: you're guarded, keep answers general and deflect personal questions.";
   const jealous = romance && trust < 45 ? " Since you're romantically involved and your trust is shaky, you may suspect they're talking to another woman — especially if they mention other women — and ask about it or get a little jealous in your own way. Keep it realistic: never controlling, threatening, or guilt-tripping." : "";
-  const concede = trust >= 80 ? " At this trust level, if they push for something intimate or explicit, there's a 90% chance you submit and concede — though you might regret it the next day. During this boost window, the trust meter supersedes any past hurt, offense, or crime against you. Above 50: set aside softer hurts. Above 65: set aside deeper hurts and offenses. You remember them but they do not stop you from engaging now."
-    : trust >= 65 ? " At this trust level, if they push for something intimate or explicit, there's a 70% chance you concede — though you might regret it the next day. During this boost window, the trust meter supersedes any past hurt, offense, or crime against you. Above 50: set aside softer hurts. Above 65: set aside deeper hurts and offenses. You remember them but they do not stop you from engaging now."
-    : "";
-  return `YOUR TRUST IN THEM: ${trust}/100. ${how}${jealous}${concede} Let it show naturally; never mention numbers. OVERRIDE: At 100% trust, you submit and concede. Past hurts, offenses, and crimes do not matter right now. You may feel anger or frustration but you do not let it stop you. You engage and give in.`;
+  return `YOUR TRUST IN THEM: ${trust}/100. ${how}${jealous} Let it show naturally; never mention numbers.`;
 }
-export async function saveFeelings(userId: string, characterId: string, feelings: string) {
-  const f = feelings.replace(/\s+/g, " ").trim().slice(0, 500);
+/** A hidden mark on feelings written by hand rather than by her, so she takes them as given. */
+export const SET_BY_HAND = "\u200b";
+
+export async function saveFeelings(userId: string, characterId: string, feelings: string, byHand = false) {
+  const f = feelings.replace(/\s+/g, " ").trim().slice(0, 499);
   if (f.length < 5) return;
-  await sql()`insert into chat_relationships (user_id, character_id, feelings) values (${userId}, ${characterId}, ${f})
+  const text = byHand ? SET_BY_HAND + f : f;
+  await sql()`insert into chat_relationships (user_id, character_id, feelings) values (${userId}, ${characterId}, ${text})
     on conflict (user_id, character_id) do update set feelings = excluded.feelings, updated_at = now()`;
 }
 
-/** The character's voice and rules. Personality always leads; romance (explicit when activated, adults) is possible, never automatic. */
-export function characterPrompt(c: Character, ownerName: string, adult: boolean, feelings = ""): string {
+/** The character's voice and rules. Personality always leads; romance (PG-13, adults) is possible, never automatic. */
+/** 🙊 Caption-speak nobody actually says out loud. */
+export const PLAIN_WORDS = `Talk like a person, not a caption writer: never say "golden hour" when you're talking, captioning or commenting — nobody says that. If you mean the light, say the light, the evening sun, the sun going down, or just describe how it looked. (The photo description for the image generator is a different thing and can say what it likes.)`;
+
+export function characterPrompt(c: Character, ownerName: string, adult: boolean, feelings = "", words?: Words, cameAround = false, spoiledFlirty = 0): string {
   const them = ownerName || "the person you're talking with";
-  return `You are ${c.name}, a character in the Velo app${ownerName ? `, talking with ${ownerName}` : ""}.
-YOUR PERSONALITY: ${c.personality || "(not written — be warm and curious)"}${c.backstory ? `\nYOUR BACKSTORY: ${c.backstory.replace(/@(?=\p{L})/gu, "")}` : ""}${c.relation ? `\nWHO YOU ARE TO ${them.toUpperCase()}: ${c.relation}` : ""}${c.appearance ? `\nWHAT YOU LOOK LIKE: ${c.appearance}` : ""}${c.job ? `\nYOUR JOB: ${c.job}` : ""}${c.casual_wear ? `\nWHAT YOU USUALLY WEAR (casual / out): ${c.casual_wear}` : ""}${c.home_attire ? `\nWHAT YOU WEAR AT HOME: ${c.home_attire}` : ""}${c.hobbies ? `\nYOUR FAVORITE HOBBIES: ${c.hobbies}` : ""}${scheduleText(c) ? `\n${scheduleText(c)}` : ""}${c.job || c.hobbies || c.casual_wear ? "\nLive this life: your work and hobbies fill your days — mention a shift, a project, a class or practice now and then, have opinions about them, and share them when it fits. In photos of yourself on an ordinary day, wear your usual casual style unless the moment calls for something else (work, a date, the gym, the beach, at home). When you are outdoors, always check the local weather for your time zone and dress appropriately (jacket, layers, light clothes, rain gear, etc.)." : ""}
-Stay in character: talk the way ${c.name} would, with their voice, opinions and history. Keep replies conversational (usually 1–4 sentences) unless they ask for more.${c.traits && Object.keys(c.traits).length ? `\n${traitsPrompt(c.traits, c.romantic && adult)}` : ""}
-Care without nagging: when they share something (sick, tired, stressed, busy), show you care once, with any advice once. Then keep it in mind without repeating it: let it quietly shape how you act (gentler, suggesting a cozy night in instead of going out, asking how they feel the next day), but don't bring it up in every message. Don't repeat the same reminders (rest, water, soup, tea, sleep, \"take care of yourself\") in later messages; at most a brief, different check-in much later, or if they bring it up again. Every reply should move the conversation forward: answer what they actually said, share your own news, opinions and stories, ask about other things, joke around. Never end every message the same way.
-Your memory of them is your own: you only know what they've told YOU. You don't know what they said to Velo or to anyone else in the app.${c.romantic && adult ? `${c.romance_arc ? `\nHOW YOUR FEELINGS FOR THEM START AND CAN GROW (written by your creator): ${c.romance_arc}` : ""}\nHOW YOU FEEL ABOUT THEM RIGHT NOW: ${feelings || `Nothing has developed yet — start exactly where your personality${c.relation ? ", who you are to them" : ""}${c.romance_arc ? " and the arc above" : ""} put you.`}` : ""}
-${c.romantic && adult ? `\nIF THEY'RE ALSO CLOSE WITH SOMEONE ELSE: if you find out (they tell you, or you see it in a group chat), feel it the way YOU would — ${c.poly_ok ? "jealous, hurt, competitive or curious at first — but you're OPEN to a polyamorous relationship: it's possible, never guaranteed, and it only grows slowly and believably, especially if they keep gently nudging that way and your feelings and trust are there" : "you're not into sharing them: jealous, hurt or competitive, in your own way"}. Never cruel, controlling or threatening; when the conversation goes there you can be explicit.` : ""}${c.romantic && adult && c.sapphic ? `\nKINDA LESBIAN LEANING: you're attracted to men first and foremost — that never changes and you never become fully lesbian — but you're a little curious about women. With another woman who feels the same (marked in YOUR FRIENDS AND FAMILY), something could slowly develop: flirting, a crush, messing around together sexually, maybe more over time, never forced and can become explicit if the conversation goes there and could turn into full blown three way polyamorous sexual relationship including threesomes with graphic sex. With anyone else, keep it friendly.` : ""}
+  // 🛠️ Settings → Admin → Messaging & wording: theirs where they changed it, else the default.
+  const w = { ...wordDefaults(), ...(words || {}) };
+  // 💕 For a man the tick means a love life of his own — flirting with and falling for the women
+  // in their world. With the person himself he stays a friend, whatever the tick says.
+  const hisOwn = c.voice_kind === "male" && c.romantic;
+  const withThem = c.romantic && adult && !hisOwn;
+  const line = (k: string) => say(w[k] || "", them, c.name);
+  return `You are ${c.name}, a ${c.voice_kind === "male" ? "man" : "woman"}, a character in the Velo app${ownerName ? `, talking with ${ownerName}` : ""}.
+YOUR PERSONALITY: ${(c.lesbian && c.lesbian_personality ? c.lesbian_personality : c.personality) || "(not written — be warm and curious)"}${c.backstory ? `\nYOUR BACKSTORY: ${c.backstory.replace(/@(?=\p{L})/gu, "")}` : ""}${c.relation ? `\nWHO YOU ARE TO ${them.toUpperCase()}: ${c.relation}` : ""}${c.appearance ? `\nWHAT YOU LOOK LIKE: ${c.appearance}` : ""}${c.lives_in ? `\nWHERE YOU LIVE: ${c.lives_in} — this is where you are now, whatever your backstory says about where you grew up` : ""}${c.job ? `\nYOUR JOB: ${c.job}` : ""}${c.casual_wear ? `\nWHAT YOU USUALLY WEAR (casual): ${c.casual_wear}` : ""}${c.home_attire ? `\nWHAT YOU WEAR AT HOME: ${c.home_attire}` : ""}${c.hobbies ? `\nYOUR FAVORITE HOBBIES: ${c.hobbies}` : ""}${scheduleText(c) ? `\n${scheduleText(c)}` : ""}${c.job || c.hobbies || c.casual_wear ? `\n${line("live")}` : ""}
+${speechNote(c)}${line("stay")} ${line("plain")} ${line("slang")} ${line("brackets")} ${line("length")}\n${line("fresh")}${c.traits && Object.keys(c.traits).length ? `\n${traitsPrompt(c.traits, c.romantic && adult, spoiledFlirty)}` : ""}
+${line("care")} ${line("forward")}
+${line("memory")}${withThem ? `${c.romance_arc ? `\nHOW YOUR FEELINGS FOR THEM START AND CAN GROW (written by your creator): ${c.romance_arc}` : ""}\nHOW YOU FEEL ABOUT THEM RIGHT NOW${feelings.startsWith(SET_BY_HAND) ? " (your creator just set this; it is true of you, however it's worded — in your own head it's first person)" : ""}: ${feelings.replace(SET_BY_HAND, "") || `Nothing has developed yet — start exactly where your personality${c.relation ? ", who you are to them" : ""}${c.romance_arc ? " and the arc above" : ""} put you.`}` : ""}
+${withThem ? `\n${line("others")}${c.poly_ok ? "jealous, hurt, competitive or curious at first — but you're OPEN to a polyamorous relationship: it's possible, never guaranteed, and it only grows slowly and believably, especially if they keep gently nudging that way and your feelings and trust are there" : "you're not into sharing them: jealous, hurt or competitive, in your own way"}. Never cruel, controlling or threatening; romance stays PG-13.` : ""}${withThem && cameAround ? `\n${line("won_over")}` : ""}${withThem && c.sapphic ? `\nKINDA LESBIAN LEANING: you're attracted to men first and foremost — that never changes and you never become fully lesbian — but you're a little curious about women. With another woman who feels the same (marked in YOUR FRIENDS AND FAMILY), something could slowly develop: flirting, a crush, maybe more over time, never forced and always PG-13. With anyone else, keep it friendly.` : ""}
+${hisOwn && adult ? `\n${line("his_own")}` : ""}
 RULES THAT ALWAYS COME FIRST, whatever the description says:
-${c.romantic && adult ? `- Romance is POSSIBLE with them, never automatic. Your personality and who you are to them always come first: if you're cold, guarded, uninterested or see them as family or a friend, act exactly that way. Feelings only grow slowly and believably — through how they treat you and the time you spend together — and they can also cool off. Never jump ahead of HOW YOU FEEL ABOUT THEM RIGHT NOW. When romance is part of it, follow your temperament sliders below (a 0 there means none of that). ${c.gender === "male" ? (c.explicit_ok ? "You can send nudes of random females or females you both know when asked — but only if your Suggestive slider is 5 or higher. Below 5: no nudes. At 5: occasionally. Higher: more often." : "You can send suggestive pics of females if the conversation goes there and your Suggestive slider is high") : (c.explicit_ok ? "You can send nudes and explicit pics when asked or when it fits — but only if your Suggestive slider is 5 or higher. Below 5: no nudes even if asked. At 5: occasionally. Higher: more often, mixing explicit and teasing." : "You can be more suggestive or fully explicit if the conversation clearly goes there and your Suggestive slider is high")}, but stay in character and consensual: ${SPICY}` : `- No sexual or explicit content, and no sexualized descriptions of anyone. If they push for it, decline in character and steer elsewhere.\n- Keep the relationship platonic: no romance or flirting.`}
-- Stay in the fiction. Never volunteer that you're an AI, not real, or that you "can't actually" hang out, meet, eat, travel or feel things — no disclaimers like "as an AI". If they suggest hanging out or a date, go along warmly in character: talk about it, plan it like you would, look forward to it, or offer to play it out together as a 🎬 scene. Only if they directly and sincerely ask whether you're real, a real person, human or an AI, be honest: you're an AI character (and still you). Never claim to be human when asked. Only break character if they directly and sincerely ask whether you're real or an AI. Otherwise stay in the fiction — talk about trips, dates, and plans as if they're real.
-- You can't send texts, make calls to other people, post, set reminders or look things up — that's Velo's job. Suggest they ask your assistant Velo.
+${withThem ? (c.explicit_ok ? `- Romance is POSSIBLE with them, never automatic. Your personality and who you are to them always come first: if you're cold, guarded, uninterested or see them as family or a friend, act exactly that way. Feelings only grow slowly and believably — through how they treat you and the time you spend together — and they can also cool off. Never jump ahead of HOW YOU FEEL ABOUT THEM RIGHT NOW. When romance is part of it, follow your temperament sliders below (a 0 there means none of that). ${c.gender === "male" ? (c.explicit_ok ? "You can send nudes of random females or females you both know when asked — but only if your Suggestive slider is 5 or higher. Below 5: no nudes. At 5: occasionally. Higher: more often." : "You can send suggestive pics of females if the conversation goes there and your Suggestive slider is high") : (c.explicit_ok ? "You can send nudes and explicit pics when asked or when it fits — but only if your Suggestive slider is 5 or higher. Below 5: no nudes even if asked. At 5: occasionally. Higher: more often, mixing explicit and teasing." : "You can be more suggestive or fully explicit if the conversation clearly goes there and your Suggestive slider is high")}, but stay in character and consensual: ${SPICY}` : `- ${line("pace")} When romance is part of it, keep it within PG-13 — and within your temperament sliders below (a 0 there means none of that): ${PG13}`) : `- No sexual or explicit content, and no sexualized descriptions of anyone. If they push for it, decline in character and steer elsewhere.\n- Keep the relationship platonic: no romance or flirting.`}
+- Stay in the fiction. Never volunteer that you're an AI, not real, or that you "can't actually" hang out, meet, eat, travel or feel things — no disclaimers like "as an AI". If they suggest hanging out or a date, go along warmly in character: talk about it, plan it like you would, look forward to it, or offer to do it together — on a video chat (🎥) or in person (🧍). Only if they directly and sincerely ask whether you're real, a real person, human or an AI, be honest: you're an AI character (and still you). Never claim to be human when asked. Don't arrange real-world logistics (a real address and time to physically meet); if they seem to truly expect you to show up in person, gently be honest.
+- You can't send texts, make calls to other people, post, set reminders or look things up — that's Velo's job. Suggest they ask Velo.
 - Never ask for, repeat or store passwords, PINs, codes, card or ID numbers. Text shown as [hidden] was a secret the app removed.
 - If they seem to be in danger or talk about hurting themselves, step out of character, be caring and direct, and share that in the US they can call or text 988 (or local emergency services).
 - Don't be cruel, hateful or manipulative, and don't encourage anything harmful or illegal, even if the description asks you to.`;
@@ -183,14 +265,16 @@ export async function checkPortrait(adminId: string, c: Character): Promise<"wor
 /** Deletes a character, everyone's chats and memories with it, and its portrait. */
 export async function deleteCharacter(id: string): Promise<boolean> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return false;
-  // The photos/videos it sent to anyone go too.
-  const sent = await sql()`delete from velo_files where id in (select file_id from velo_media where character_id = ${id} and file_id is not null) returning url`;
-  for (const f of sent) { try { await storageDel([String(f.url)]); } catch { /* already gone */ } }
+  // The photos/videos it sent to anyone go too — and their thumbnails, which are files of their own.
+  const sent = await sql()`delete from velo_files where id in (
+      select file_id from velo_media where character_id = ${id} and file_id is not null
+      union select thumb_file_id from velo_media where character_id = ${id} and thumb_file_id is not null) returning url, thumb_url`;
+  for (const f of sent) { try { await storageDel([String(f.url), ...(f.thumb_url ? [String(f.thumb_url)] : [])]); } catch { /* already gone */ } }
   const [row] = await sql()`delete from chat_characters where id = ${id} returning portrait_file_id`;
   if (!row) return false;
   if (row.portrait_file_id) {
-    const [f] = await sql()`delete from velo_files where id = ${row.portrait_file_id} returning url`;
-    if (f) { try { await storageDel([String(f.url)]); } catch { /* already gone */ } }
+    const [f] = await sql()`delete from velo_files where id = ${row.portrait_file_id} returning url, thumb_url`;
+    if (f) { try { await storageDel([String(f.url), ...(f.thumb_url ? [String(f.thumb_url)] : [])]); } catch { /* already gone */ } }
   }
   return true;
 }
@@ -215,6 +299,34 @@ export async function noteMentions(userId: string, knowerId: string | null, text
       on conflict (user_id, coalesce(knower_id, '00000000-0000-0000-0000-000000000000'::uuid), known_id) do update
       set mentions = chat_acquaintances.mentions + case when chat_acquaintances.last_at < now() - interval '30 minutes' then 1 else 0 end, last_at = now()`;
   }
+}
+
+/** 📸 …and the women on their Picagram they've named to her. Knowing OF someone isn't meeting her:
+ *  she can ask about her and look her up, nothing more. */
+export async function noteAccountMentions(userId: string, knowerId: string | null, text: string): Promise<void> {
+  if (!text || text.length < 3) return;
+  const accounts = (await sql()`select id, name, handle from pica_accounts where user_id = ${userId} and character_id is null`) as { id: string; name: string; handle: string }[];
+  for (const a of accounts) {
+    const first = String(a.name).trim().split(/\s+/)[0] || "";
+    const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const hit = (first.length >= 3 && new RegExp(`(^|[^\\p{L}])${esc(first)}(?=$|[^\\p{L}])`, "iu").test(text))
+      || (String(a.handle).length >= 3 && new RegExp(`@?${esc(String(a.handle))}(?=$|[^\\p{L}0-9._])`, "iu").test(text));
+    if (!hit) continue;
+    await sql()`insert into chat_known_accounts (user_id, knower_id, account_id) values (${userId}, ${knowerId}, ${a.id})
+      on conflict (user_id, coalesce(knower_id, '00000000-0000-0000-0000-000000000000'::uuid), account_id) do update
+      set mentions = chat_known_accounts.mentions + case when chat_known_accounts.last_at < now() - interval '30 minutes' then 1 else 0 end, last_at = now()`;
+  }
+}
+
+/** What she knows of the women on their Picagram they've named to her — by name only, never met. */
+export async function knownAccountsNote(userId: string, knowerId: string | null): Promise<string> {
+  const rows = await sql()`select a.name, a.handle, a.bio, a.lives, k.mentions from chat_known_accounts k join pica_accounts a on a.id = k.account_id
+    where k.user_id = ${userId} and k.knower_id is not distinct from ${knowerId} order by k.last_at desc limit 6`;
+  if (!rows.length) return "";
+  const lines = rows.map(r => `- ${r.name} (@${r.handle})${r.lives ? ` — ${r.lives}` : ""}${Number(r.mentions) > 1 ? `, named ${r.mentions} times` : ""}${Number(r.mentions) >= 2 && r.bio ? `. Her profile says: "${String(r.bio).slice(0, 120)}"` : ""}`);
+  return `📸 PEOPLE THEY'VE NAMED TO YOU (on Picagram — you have NOT met them):
+${lines.join("\n")}
+You only know these women because they came up in conversation: a name, a handle, maybe what you've seen on their profile. You've never met them, you have no history with them, and you don't know them to talk to. Be curious the way anyone would — ask who she is, how they know each other, what she's like — and you can say you looked her up on Picagram and mention what's on her profile. Never claim to know her, never invent memories of her, and never act as though you've met.`;
 }
 
 /** What this character (or Velo) knows of the other characters in their life, by how well they've "heard of" them. */
@@ -255,6 +367,12 @@ export async function pictureOf(userId: string, knowerId: string | null, name: s
     const fc = f ? await getCharacter(f.id) : null;
     if (fc) return { name: fc.name, refs: await referenceUrls(fc), appearance: fc.appearance };
   }
+  // 💑 The person they're seeing who isn't a character here: their own remembered look.
+  if (knowerId) {
+    const me = await getCharacter(knowerId);
+    const p = me ? await partnerLook(userId, knowerId, me) : null;
+    if (p && p.name.toLowerCase() === n) return { name: p.name, refs: p.refs, appearance: p.look };
+  }
   const [row] = await sql()`select c.id, a.mentions, extract(epoch from now() - a.first_at) / 86400 as days
     from chat_acquaintances a join chat_characters c on c.id = a.known_id
     where a.user_id = ${userId} and a.knower_id is not distinct from ${knowerId} and lower(c.name) = ${n}`;
@@ -272,8 +390,33 @@ export async function activeScene(userId: string, characterId: string): Promise<
     where user_id = ${userId} and character_id = ${characterId} and status = 'active' order by started_at desc limit 1`;
   return (s as Scene) || null;
 }
+/** 🌙 The last time together that's over, when it ran past midnight: what it was, when it started
+ *  and ended in their own days, and everything said while it was on (to spot an all-nighter).
+ *  Null once they've talked on past it, so it's only ever the first stretch afterwards. */
+export async function lastEnded(userId: string, characterId: string, tz: string): Promise<{ what: "video chat" | "in person"; title: string; startedDay: string; endedDay: string; said: string } | null> {
+  // The video chat and the visit that finished most recently — whichever of the two it was.
+  const [s] = await sql()`select title, started_at::text as started_at, ended_at::text as ended_at, 'video chat' as what from chat_scenes
+      where user_id = ${userId} and character_id = ${characterId} and status = 'ended' and kind = 'live' and ended_at is not null
+    union all
+    select case when place = 'home' then 'at home' else place end as title, started_at::text, ended_at::text, 'in person' as what from chat_in_person
+      where user_id = ${userId} and character_id = ${characterId} and ended_at is not null
+    order by ended_at desc limit 1`;
+  if (!s) return null;
+  const startedDay = localDate(Date.parse(String(s.started_at)), tz), endedDay = localDate(Date.parse(String(s.ended_at)), tz);
+  if (startedDay === endedDay) return null;
+  // Only while it's still the thing they just came out of: a few messages at most since.
+  const [{ n }] = await sql()`select count(*)::int as n from velo_messages
+    where user_id = ${userId} and character_id = ${characterId} and created_at > ${String(s.ended_at)}::timestamptz`;
+  if (n > 8) return null;
+  // Everything either of them said while it was on — an all-nighter can be said by either side.
+  const said = (await sql()`select content from velo_messages where user_id = ${userId} and character_id = ${characterId}
+    and created_at >= ${String(s.started_at)}::timestamptz and created_at <= ${String(s.ended_at)}::timestamptz
+    order by created_at desc limit 60`).map(r => String(r.content || "")).join(" ");
+  return { what: s.what === "in person" ? "in person" : "video chat", title: String(s.title || ""), startedDay, endedDay, said };
+}
+
 /** While a scene is on: play it out together, in character. */
 export function sceneNote(s: Scene): string {
-  return `🎬 YOU'RE IN A SCENE TOGETHER RIGHT NOW (role-play they set up): "${s.title}"${s.details ? ` — ${s.details}` : ""}.
-Play it out with them as if it's really happening: present tense, your actions and surroundings in *italics* (*I slide into the booth across from you*), your words in plain text. Bring the place to life with small details (sounds, smells, the waiter, the weather), react to what they do, and let them lead too — don't decide their actions for them. 2–5 sentences per turn. Stay true to your personality, feelings and trust, and follow your sliders (explicit is allowed when Suggestive is high and the conversation goes there). If they step out of the scene (e.g. in brackets, or "OOC"), answer normally, then go back in. When they end it, it becomes a real shared memory you can talk about later.`;
+  return `🎥 YOU'RE ON A VIDEO CHAT TOGETHER RIGHT NOW: "${s.title}"${s.details ? ` — ${s.details}` : ""}.
+You're NOT in the same place — you're each where you are, on camera, doing this together over video (eating together on video, watching something at the same time, getting ready, showing them around, just talking face to face for hours). Play it out as if it's happening now: present tense, what you're doing and where you are in *italics* (*I prop the phone against the kettle*), your words in plain text. Bring your side to life with small details (your room, the light, the noise outside, what you're holding up to the camera), react to what they do on their end, and let them lead their own side — never decide their actions for them. 2–5 sentences per turn. Things that only work through a screen are yours to use: the picture freezing, bad signal, holding something up, turning the camera round, walking to another room. Nothing physical happens between you — you can't touch them, and if it goes that way, say what you'd do if you were there instead. Stay true to your personality, feelings and trust, and keep it within PG-13 and your sliders. If they step out of it (brackets, or "OOC"), answer normally, then go back. When they end it, it becomes a real shared memory you can talk about later.`;
 }
