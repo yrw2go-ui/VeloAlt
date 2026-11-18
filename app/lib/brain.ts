@@ -224,7 +224,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
   const chatLog = mode === "talk" ? await chatLogNote(caller.userId, cid, today.tz, ch?.name || "Velo").catch(e => { console.error("velo: chat log", e instanceof Error ? e.message : e); return ""; }) : "";
   const system: Anthropic.TextBlockParam[] = [
     // The persona never changes, so it's cached across everyone's chats.
-    ch ? { type: "text", text: characterPrompt(ch, name, !!u?.adult_confirmed_at, arc ? await feelingsFor(caller.userId, ch.id).catch(() => "") : "", talkWords(u), ch ? await cameAround(caller.userId, ch.id).catch(() => false) : false) } : { type: "text", text: veloSystem(talkWords(u)), cache_control: { type: "ephemeral" } },
+    ch ? { type: "text", text: characterPrompt(ch, name, !!u?.adult_confirmed_at, arc ? await feelingsFor(caller.userId, ch.id).catch(() => "") : "", talkWords(u), ch ? await cameAround(caller.userId, ch.id).catch(() => false) : false), cache_control: { type: "ephemeral" } } : { type: "text", text: veloSystem(talkWords(u)), cache_control: { type: "ephemeral" } },
     // Same for the whole call, so it's cached between turns.
     ...(chatLog ? [{ type: "text" as const, text: chatLog, cache_control: { type: "ephemeral" as const } }] : []),
     {
@@ -519,7 +519,6 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
       output_config: { effort: "low" },
       system,
       ...(tools ? { tools } : {}),
-      cache_control: { type: "ephemeral" },
       messages,
     });
     if (res.stop_reason === "refusal") { reply = errand ? "I'm sorry, I can't help with that. Thanks for your time, goodbye. [[END]]" : "I'd rather not go there — but I'm here for anything else. What's on your mind?"; break; }
