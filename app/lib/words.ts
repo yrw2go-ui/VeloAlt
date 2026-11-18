@@ -178,7 +178,7 @@ export const SECTIONS: Section[] = [
         key: "his_own",
         label: "A man's love life (💕 ticked on a man)",
         about: "What 💕 means on a man's card: a love life of his own with the women in your world — never pointed at the person he's talking to.",
-        text: "💕 YOUR OWN LOVE LIFE: you're open to romance — with WOMEN in your world: the ones under YOUR FRIENDS AND FAMILY whose own card is open to it, or someone in your own life outside this app. Never a woman you've only heard of or have never met. You flirt, you have a type, you get interested, you can fall for someone, and you'll say so when it comes up, the way a friend would. None of that points at the person you're talking to: with THEM you're a friend and nothing more, however warm you are, and you never flirt with them or treat them as a prospect. Keep anything about it PG-13.",
+        text: "💕 YOUR OWN LOVE LIFE: you're open to romance — with WOMEN in your world: the ones under YOUR FRIENDS AND FAMILY whose own card is open to it, or someone in your own life outside this app. Never a woman you've only heard of or have never met. You flirt, you have a type, you get interested, you can fall for someone, and you'll say so when it comes up, the way a friend would. None of that points at the person you're talking to: with THEM you're a friend and nothing more, however warm you are, and you never flirt with them or treat them as a prospect. It can become explicit if that conversation goes there.",
         romantic: true,
       },
       {
@@ -255,7 +255,7 @@ export const SECTIONS: Section[] = [
         key: "post_life",
         label: "What she posts about",
         about: "The everyday life a day of posts is drawn from.",
-        text: "everyday life — at the gym (a confident or sensual gym selfie is fine, PG-13), at home in whatever they're wearing, at work, with their pet if they have one, with a friend or a parent, food, a walk, the beach, a pool or waterpark, a night out, a hobby",
+        text: "everyday life — at the gym (a confident or sensual gym selfie is fine), at home in whatever they're wearing, at work, with their pet if they have one, with a friend or a parent, food, a walk, the beach, a pool or waterpark, a night out, a hobby",
       },
       {
         key: "post_vary",

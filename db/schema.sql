@@ -231,7 +231,7 @@ alter table velo_files drop constraint if exists velo_files_kind_check;
 alter table velo_files add constraint velo_files_kind_check check (kind in ('file', 'face', 'portrait', 'media'));
 -- 🎬 Which video model makes their videos.
 alter table users add column if not exists video_model text not null default 'wan-2.6' check (char_length(video_model) <= 40);
--- 💕 A character can be romantic (PG-13, adults only). 🖼️ 2–4 reference images
+-- 💕 A character can be romantic (adults who confirmed they are 18+). 🖼️ 2–4 reference images
 -- (from its gallery) keep it looking the same in every photo and video.
 alter table chat_characters add column if not exists romantic boolean not null default false;
 alter table chat_characters add column if not exists reference_ids uuid[] not null default '{}' check (cardinality(reference_ids) <= 4);

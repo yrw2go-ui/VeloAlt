@@ -570,10 +570,10 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     } catch { /* a reaction reply is a bonus; skip it on errors */ }
     finally { setBusy(false); }
   };
-  // 💕 A romantic character: romance (PG-13) needs a one-time 18+ confirmation; until then it's friendly.
+  // 💕 A romantic character: romance needs a one-time 18+ confirmation; until then it's friendly.
   const [skipRomance, setSkipRomance] = useState(false);
   const confirmAdult = async () => {
-    if (!(await confirmAsk(`${character?.name} is a romantic character (PG-13: flirty and affectionate, never explicit). Romance is for adults. Are you 18 or older?`, { yes: "I'm 18 or older" }))) return;
+    if (!(await confirmAsk(`${character?.name} is a romantic character. Romance can be explicit, and it is for adults. Are you 18 or older?`, { yes: "I'm 18 or older" }))) return;
     try { await data("profile.update", { adultConfirmed: true }); onAdult?.(); } catch { setErr("Couldn't save that. Try again."); }
   };
   const openingLine = msgs && !msgs.length && !name ? INTRO : HELLO(name.split(" ")[0])[hello];
@@ -585,7 +585,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       {character?.romantic && !adult && !skipRomance && (
         <div data-testid="romance-confirm" className="row" style={{ gap: 10, padding: "10px 14px", borderBottom: "1px solid var(--border)", background: "rgba(236,72,153,0.10)", fontSize: 13, flexWrap: "wrap" }}>
-          <div style={{ flex: "1 1 200px" }}>💕 {character.name} is a romantic character. Confirm you&apos;re 18+ to unlock romance (PG-13) — until then {character.name} keeps it friendly.</div>
+          <div style={{ flex: "1 1 200px" }}>💕 {character.name} is a romantic character. Confirm you&apos;re 18+ to unlock romance — until then {character.name} keeps it friendly.</div>
           <button className="btn" onClick={confirmAdult} style={{ padding: "6px 12px", fontSize: 13 }}>I&apos;m 18+</button>
           <button className="ghost" onClick={() => setSkipRomance(true)} aria-label="Keep it friendly" style={{ padding: "6px 10px", fontSize: 13 }}>Not now</button>
         </div>

@@ -88,7 +88,7 @@ const NONE = {
 export const trustOn = (raw: unknown) => !!raw && typeof raw === "object" && Object.keys(raw).length > 0 && cleanTraits(raw).trust > 0;
 export const startingLove = (raw: unknown) => Math.max(5, Math.min(60, cleanTraits(raw).love * 6));
 export const startingTrust = (raw: unknown) => Math.max(5, Math.min(90, cleanTraits(raw).trust * 9));
-/** PG-13 mode with Suggestive at 0: photos stay family-friendly. */
+/** Romantic mode with Suggestive at 0: photos stay family-friendly. */
 export const allowsSuggestive = (raw: unknown) => !raw || typeof raw !== "object" || !Object.keys(raw).length || cleanTraits(raw).suggestive > 0;
 
 /** The temperament part of a character's instructions. Flirty, Suggestive and Language only count in
