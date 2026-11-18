@@ -471,6 +471,8 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       {editing && (
         <CharacterEditor key={editing === "new" ? `new-${draft?.name || ""}` : editing.id} initial={editing === "new" ? null : editing} draft={editing === "new" ? draft : null} portraits={portraits} brains={brains} brainModels={brainModels}
           onClose={() => setEditing(null)} onSaved={savedChar}
+          onSocial={id => { setEditing(null); setPicaOpen(id); setTab("pica");
+            api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => setChars(r.characters)).catch(() => {}); }}
           onDeleted={id => { setChars(cs => cs.filter(c => c.id !== id)); setWithId(null); setEditing(null); }}
           onDuplicated={c => { setChars(cs => [...cs, c]); setEditing(c); }} />
       )}

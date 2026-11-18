@@ -89,8 +89,8 @@ export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdi
 }
 
 /** Create or edit a character, and generate their portrait. */
-export function CharacterEditor({ initial, draft, portraits, brains = [], brainModels = [], onClose, onSaved, onDeleted, onDuplicated }: {
-  initial: Character | null; draft?: Partial<Character> | null; portraits: boolean; brains?: string[]; brainModels?: { id: string; model: string }[]; onClose: () => void; onSaved: (c: Character) => void; onDeleted: (id: string) => void; onDuplicated?: (c: Character) => void;
+export function CharacterEditor({ initial, draft, portraits, brains = [], brainModels = [], onClose, onSaved, onDeleted, onDuplicated, onSocial }: {
+  initial: Character | null; draft?: Partial<Character> | null; portraits: boolean; brains?: string[]; brainModels?: { id: string; model: string }[]; onClose: () => void; onSaved: (c: Character) => void; onDeleted: (id: string) => void; onDuplicated?: (c: Character) => void; onSocial?: (accountId: string) => void;
 }) {
   useBack(true, onClose); // the phone's back button closes her card
   const [c, setC] = useState<Character | null>(initial);
@@ -198,6 +198,21 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
     return () => clearInterval(t);
   }, [c?.id, c?.portrait_job]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 📸 Not on Picagram yet: one button makes the account from their card and opens it.
+  const [handle, setHandle] = useState<string | null>(initial?.pica_handle || null);
+  const [socialBusy, setSocialBusy] = useState(false);
+  const makeSocial = async () => {
+    if (!c || socialBusy) return;
+    setSocialBusy(true); setMsg("");
+    try {
+      const r = await api<{ account: { id: string; handle: string } }>("/api/pica", { action: "profile", id: c.id });
+      setHandle(r.account.handle);
+      onSocial?.(r.account.id);
+    }
+    catch (e) { setMsg(e instanceof Error ? e.message : `Couldn't make ${G.their} account.`); }
+    finally { setSocialBusy(false); }
+  };
+
   const payload = () => ({ gender, name, personality, backstory, relation, appearance, job, casualWear: wear, hobbies, workAttire: attire,
     romantic, romanceArc: romantic ? arc : "", workDays, workStart, workEnd, partTime, school, classDays, classStart, classEnd,
     liveIn, neighbor, local: local || neighbor, livesIn: livesIn.trim(), attached, partner, seesOthers, lesbian: romantic && lesbian, bigFollowing,
@@ -287,6 +302,14 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
           <button className="ghost" onClick={scan} disabled={!!scanning || !name.trim()} data-testid="character-scan" title={`Check where ${G.they} lives, ${G.their} job and the ticks against ${G.their} description — it never blocks saving`} style={{ padding: "4px 10px", fontSize: 12 }}>{scanning || "🛡️ Check"}</button>
           <button className="ghost" onClick={onClose} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
         </div>
+        {c && !handle && (
+          <button type="button" data-testid="character-social" onClick={makeSocial} disabled={socialBusy}
+            title={`${G.They} has no Picagram account — make one from ${G.their} card`}
+            style={{ width: "100%", borderRadius: 10, padding: "9px 12px", fontSize: 13, fontWeight: 700, cursor: socialBusy ? "default" : "pointer",
+              color: "var(--text)", background: "rgba(96,165,250,.16)", border: "1px solid rgba(96,165,250,.5)" }}>
+            {socialBusy ? "Making it…" : "📸 Create social"}
+          </button>
+        )}
         {scanned && (() => {
           const bad = "error" in scanned ? [{ what: "boxes" as const, note: scanned.error }] : scanned.findings;
           const clear = !bad.length;
