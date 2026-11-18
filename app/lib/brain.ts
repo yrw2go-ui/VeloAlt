@@ -7,8 +7,8 @@
 //   "remember" / "memo" — after a call / chat: save a summary, goals and facts to memory
 //   "errand"    — a turn on a call Velo is making FOR the owner to someone else
 //   "errandsum" — a short report to the owner after that call
-import { CLAIMS_MEDIA, MENTIONS_MEDIA, ASKED_FOR_MEDIA, AGREES_MEDIA } from "./mediaWords";
-import { cleanReply, isMeta, writtenCall } from "./text";
+import { claimsMedia, mentionsMedia, askedForMedia, agreesMedia, plain } from "./mediaWords";
+import { cleanReply, isMeta, writtenCall, orphanDescription, dropOrphanDescription } from "./text";
 
 // 💭 She wrote something, but it was all thoughts in brackets: nothing to say out loud.
 const nothingButThoughts = (t: string) => /[\p{L}\p{N}]/u.test(t) && !cleanReply(t);
@@ -126,6 +126,8 @@ const REACT_HINT = `REACTIONS: they can react to your messages with ${REACTIONS.
 const REACT_NOW = "THIS TIME: react to their latest message — start your reply with [react:…] using the one that fits it best, then reply in words as usual.";
 // "Sending you a pic", "here's a selfie", "snapping one now 📸" (CLAIMS_MEDIA, ./mediaWords) — and a refusal to tell them apart.
 const STRONG_CLAIM = /\b(sending|sent|snapping|snapped|taking one|took one|coming (your way|right up))\b|📸|🤳|\b(hope|hoping)\b[\s\S]{0,25}\b(came through|comes through|went through|lands|landed|arrives|arrived|shows up|showed up)\b|\b(resend|resending|re-send|re-sending)\b|\bon (its|it's) way\b|\bjust sent\b|\b(here'?s|here is)\b[\s\S]{0,12}\b(the |my |your )?(view|viewer)\b|\benjoy\b[\s\S]{0,12}\b(the |this )?(view|viewer)\b|\bhope\b[\s\S]{0,14}\b(you|u)\b[\s\S]{0,8}\b(like|love|enjoy)\b[\s\S]{0,10}\b(it|this|that|the view)\b/i;
+// 📸 The line that says one is coming, so it's never added twice.
+const SENDING_NOTE = /\*\s*sending\s+(image|photo|picture|video|clip)\s*\*/i;
 const REFUSES_MEDIA = /\b(can'?t|cannot|won'?t|not (going to|gonna)|no (pics?|photos?|selfies?)|maybe later|not right now|limit)\b/i;
 const REACT_TAG = /\[react:\s*([^\]\s]+)\s*\]\s*/gu;
 // The same reaction written out as a note instead of the tag: "(they reacted ❤️ to this)", "*reacted 🔥*".
@@ -408,7 +410,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
           // Their own idea → only an offer (nothing is made until they accept). Asked for → made now.
           // They asked (in their last message, or "yes" to her offering one) → made now, no Accept step.
           // Only her own unprompted idea becomes an offer they accept or decline.
-          const asked = (input as { they_asked?: unknown })?.they_asked === true || ASKED_FOR_MEDIA.test(String(lastSaid)) || (YES.test(String(lastSaid)) && MENTIONS_MEDIA.test(String(lastHers)));
+          const asked = (input as { they_asked?: unknown })?.they_asked === true || askedForMedia(String(lastSaid)) || (YES.test(plain(String(lastSaid))) && mentionsMedia(String(lastHers)));
           const who = (input as { of_person?: unknown })?.of_person;
           let other = typeof who === "string" && who.trim() ? await pictureOf(caller.userId, cid, who) : null;
           if (typeof other === "string") throw new MediaError(other);
@@ -583,6 +585,16 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
   // 🧰 She wrote the tool call out as words — "(send_media(kind='image', description='…'))" —
   // instead of making it. Read it, make that picture, and the words themselves never show (they're
   // cut from her reply by cleanReply).
+  // 📸 …or only its description survived the scaffolding being stripped off, stranded at the end
+  // of what she said. Same thing: make that picture, and take the words out of her message.
+  const stranded = canSend && reply && !writtenCall(reply) ? orphanDescription(reply) : null;
+  if (stranded && !media.some(m => m.status !== "failed")) {
+    reply = dropOrphanDescription(reply);
+    try {
+      const out = await runTool("send_media", { kind: "image", description: stranded, with_me: false, they_asked: true });
+      if (out.isError) console.warn("velo: stranded description", out.content.slice(0, 200));
+    } catch (e) { if (!(e instanceof HandledRetry)) console.error("velo: stranded description", e instanceof Error ? e.message : e); }
+  }
   const written = canSend && reply ? writtenCall(reply) : null;
   if (written && !media.some(m => m.status !== "failed")) {
     try {
@@ -593,12 +605,12 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
   // 📸 She said a photo/video is on its way but never actually sent one (the model skipped the tool):
   // send it now, as she described — so what she says and what arrives always match.
   // 🙋 They asked for a picture (or said yes to her offering one).
-  const theyAsked = ASKED_FOR_MEDIA.test(String(lastSaid)) || (YES.test(String(lastSaid)) && MENTIONS_MEDIA.test(String(lastHers)));
+  const theyAsked = askedForMedia(String(lastSaid)) || (YES.test(plain(String(lastSaid))) && mentionsMedia(String(lastHers)));
   // 👍 …and she said yes, in whatever words — "sure", "here ya go", "enjoy the view". That's a
   // picture on its way as far as they're concerned, so one is actually made.
   if (canSend && (mode === "chat" || mode === "talk") && reply && !media.some(m => m.status !== "failed")
-    && !REFUSES_MEDIA.test(reply)
-    && ((CLAIMS_MEDIA.test(reply) && (theyAsked || STRONG_CLAIM.test(reply))) || (theyAsked && AGREES_MEDIA.test(reply)))) {
+    && !REFUSES_MEDIA.test(plain(reply))
+    && ((claimsMedia(reply) && (theyAsked || STRONG_CLAIM.test(plain(reply)))) || (theyAsked && agreesMedia(reply)))) {
     try {
       const input = await photoInput([{ role: "assistant", content: reply }], "(Your photo/video didn't actually go out. Send it now with send_media — exactly what you just told them you're sending.)");
       // 🛟 No brain would write the tool call: send the plain version rather than let her words and
@@ -649,6 +661,12 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
   reply = cleanReply(reply);
   const onlyThoughts = !reply && thoughtsOnly;
   if (!reply && media?.length) reply = media.some(m => m.kind === "video") ? "Here you go 😊" : "Here you go — what do you think? 😊";
+  // 📸 She agreed to send one and one is on its way: say so in the message itself, so it's plain
+  // that a picture is coming even before it arrives.
+  const onTheWay = media.filter(m => m.status !== "failed");
+  if (reply && onTheWay.length && !SENDING_NOTE.test(reply)) {
+    reply = `${reply.trim()}\n\n*sending ${onTheWay.some(m => m.kind === "video") ? "video" : "image"}*`;
+  }
   return { reply: reply || ((react || onlyThoughts) && mode === "chat" ? "" : errand ? "Sorry, could you say that again?" : "Sorry, I lost my train of thought — could you say that again?"), changed, drafts, media, ...(ask ? { ask } : {}), ...(mode === "chat" && react ? { react } : {}), by: answeredByAlt ? "alt" : "claude" };
 }
 

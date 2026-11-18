@@ -1,4 +1,26 @@
 // 📸 Words for a photo or video, so "I sent an image" counts the same as "I sent a pic".
+//
+// ✍️ Everything here is matched against `plain(text)`, never the raw message. Models type curly
+// quotes — "here’s a pic", "I didn’t get it" — and a pattern written with a straight apostrophe
+// misses every one of them, which is how "here’s a pic" went unnoticed for so long.
+
+/** The same words with the typography flattened: curly quotes, dashes and ellipses made plain. */
+export function plain(s: string): string {
+  return String(s || "")
+    .replace(/[\u2018\u2019\u02BC\u02B9\u2032\u0060\u00B4]/g, "'")
+    .replace(/[\u201C\u201D\u2033]/g, '"')
+    .replace(/[\u2013\u2014\u2015]/g, "-")
+    .replace(/\u2026/g, "...");
+}
+
+/** 📸 Does she say a picture is on its way? */
+export const claimsMedia = (s: string) => CLAIMS_MEDIA.test(plain(s));
+/** 🙋 Did they ask for one? */
+export const askedForMedia = (s: string) => ASKED_FOR_MEDIA.test(plain(s));
+/** 👍 Is her reply a yes to that? */
+export const agreesMedia = (s: string) => AGREES_MEDIA.test(plain(s));
+/** 💬 Is a picture even being talked about? */
+export const mentionsMedia = (s: string) => MENTIONS_MEDIA.test(plain(s));
 
 /** They mention a picture: "want a pic?", "check your phone", "I'll send you an image". */
 export const MENTIONS_MEDIA = /\b(phone|pics?|pictures?|photos?|images?|selfies?|videos?|vids?|clips?|snaps?|show you|send you)\b/i;

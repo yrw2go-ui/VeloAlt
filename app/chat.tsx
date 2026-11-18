@@ -19,7 +19,7 @@ import { EditSheet } from "./edit";
 import { MentionPicker, putName } from "./mention";
 import { isHot } from "./lib/reactions";
 import { dropThoughts, noJargon, dropSentNote } from "./lib/text";
-import { CLAIMS_MEDIA } from "./lib/mediaWords";
+import { claimsMedia } from "./lib/mediaWords";
 
 /** Who this chat is with: Velo (no character) or one of their characters. */
 export type ChatWith = { id: string; name: string; portrait_url: string | null; romantic?: boolean; brain?: string; live_in?: boolean; neighbor?: boolean; home?: boolean };
@@ -442,7 +442,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   const pendingPic = !!character && !busy && !!lastReal && lastReal.role === "assistant" && !lastReal.media
     // 📣 The same words the server uses to spot a claim, so the button shows whenever she says
     // one went out — "here's a sneaky peek…" counts too.
-    && CLAIMS_MEDIA.test(lastReal.content);
+    && claimsMedia(lastReal.content);
   const [picBusy, setPicBusy] = useState(false);
   const sendPic = async () => {
     setPicBusy(true); setErr("");

@@ -66,6 +66,25 @@ export function writtenCall(t: string): WrittenCall | null {
 export const dropWrittenCall = (t: string) =>
   t.replace(WRITTEN_CALL, " ").replace(/[ \t]{2,}/g, " ").replace(/^[ \t]+|[ \t]+$/gm, "").replace(/\n{3,}/g, "\n\n").trim();
 
+// 📸 The other way a picture leaks into the words. Stripping the scaffolding off a written-out
+// call can leave the argument behind on its own — `… she never stops talking. : "Gorgeous young
+// woman with warm caramel skin…")` — which is the picture's description, not something she said.
+// It's long, it's quoted, it sits at the very end, and it reads like a photograph.
+const ORPHAN = /[\s:\-]*["\u201C]([^"\u201D]{25,})["\u201D]\s*\)?\s*$/;
+const LOOKS_LIKE_A_PHOTO = /\b(wearing|hair|skin|standing|sitting|leaning|holding|smiling|laughing|grinning|background|lighting|sunlight|golden hour|close-?up|mid-|shot of|photo of|picture of|selfie|camera)\b/i;
+
+/** The picture description left stranded at the end of a reply, if there is one. */
+export function orphanDescription(t: string): string | null {
+  const m = ORPHAN.exec(t || "");
+  if (!m) return null;
+  const d = m[1].replace(/\s+/g, " ").trim();
+  return LOOKS_LIKE_A_PHOTO.test(d) ? d.slice(0, 1500) : null;
+}
+
+/** What she said, with that stranded description taken out of it. */
+export const dropOrphanDescription = (t: string) =>
+  (orphanDescription(t) ? t.replace(ORPHAN, "") : t).replace(/[\s:\-]+$/, "").trim();
+
 /** Strips tool-call scaffolding and code fences a model leaked into its reply. */
 export function stripScaffolding(t: string): string {
   const out = t.replace(/<\s*(invoke|antml:invoke|function_calls|antml:function_calls|tool_use|parameter|antml:parameter|thinking|antml:thinking)\b[^>]*>[\s\S]*?<\/\s*\1\s*>/gi, " ")
