@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { duePlans, setPlanStatus, planNow, planLater, arriving } from "../../lib/plans";
+import { todayList } from "../../lib/todayList";
 import { readyIntros, acceptIntro, declineIntro, IntroError } from "../../lib/intros";
 import { peekAt, draftPeek, draftIcu } from "../../lib/peek";
 import { inPersonFor, startInPerson, endInPerson } from "../../lib/inPerson";
@@ -635,6 +636,11 @@ export async function POST(req: NextRequest) {
         await db`update velo_reminders set status = 'dismissed' where id = ${id} and user_id = ${me}`;
         return NextResponse.json({ ok: true });
 
+      // ☀️ What today holds: who you're seeing, and who's worth a word.
+      case "today.list": {
+        const tz = isValidTimeZone(b.timeZone) ? String(b.timeZone) : "America/Chicago";
+        return NextResponse.json(await todayList(me, tz));
+      }
       case "tasks.list": {
         const rows = await db`select id, text, due_date::text as due_date, done from velo_tasks
           where user_id = ${me} and (done = false or done_at > now() - interval '1 day') order by created_at limit 100`;
