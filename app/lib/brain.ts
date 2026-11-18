@@ -142,7 +142,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
   const cid = ch?.id || null;
   const today = localNow(opts.timeZone);
   const name = String(opts.name || "").trim().split(/\s+/)[0].slice(0, 40);
-  const [u] = await sql()`select plan, chat_model, personality, adult_confirmed_at, look, reply_length, talk_words from users where id = ${caller.userId}`;
+  const [u] = await sql()`select plan, chat_model, personality, adult_confirmed_at, look, reply_length, (to_jsonb(users)->'talk_words') as talk_words from users where id = ${caller.userId}`;
   // 💬 Their chosen personality (romantic only after the adult confirmation). Calls Velo makes
   // to other people and memory notes always use her plain voice.
   let personality: Personality = PERSONALITIES.includes(u?.personality) ? u.personality : "friend";

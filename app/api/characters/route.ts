@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sql } from "../../lib/db";
+import { missingSchema, sql } from "../../lib/db";
 import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import { scrub } from "../../lib/secrets";
@@ -49,19 +49,27 @@ export async function POST(req: NextRequest) {
 
     if (action === "list") {
       const list = await listCharacters(me);
+      // Newer tables and columns (chat_off, ended_at, at_mine) may not be on this database yet.
+      const ids = async (q: () => Promise<{ character_id: unknown }[]>) => {
+        try { return (await q()).map(r => String(r.character_id)); }
+        catch (e) { if (!missingSchema(e)) throw e; return [] as string[]; }
+      };
       // 💼🎓 Where each one is right now, for the chips: at work, in class, or nowhere she's due.
       // Her own day, not the server's: "today" for someone two zones over isn't today here.
-      const off = new Set((await sql()`select character_id, day::text as day from chat_off where user_id = ${me} and day >= current_date - 1`).map(r => `${r.character_id}:${r.day}`));
+      const off = new Set(await (async () => {
+        try { return (await sql()`select character_id, day::text as day from chat_off where user_id = ${me} and day >= current_date - 1`).map(r => `${r.character_id}:${r.day}`); }
+        catch (e) { if (!missingSchema(e)) throw e; return [] as string[]; }
+      })());
       // 🏠 Live-in characters who are in right now (a faint green ring on their chip).
-      const home = new Set((await sql()`select character_id from chat_in_person where user_id = ${me} and place = 'home' and ended_at is null`).map(r => String(r.character_id)));
+      const home = new Set(await ids(() => sql()`select character_id from chat_in_person where user_id = ${me} and place = 'home' and ended_at is null`));
       // 🔴 Someone who's dropped a hint lately: a red dot by their name until it's dealt with.
       const hinting = await liveHints(me).catch(() => new Map());
       // ⭐ At YOUR place right now: round at yours, or someone who lives with you and is in.
-      const atYours = new Set((await sql()`select character_id from chat_in_person where user_id = ${me} and at_mine and ended_at is null`).map(r => String(r.character_id)));
+      const atYours = new Set(await ids(() => sql()`select character_id from chat_in_person where user_id = ${me} and at_mine and ended_at is null`));
       // 🧍🎥 Together right now — in person somewhere, or on a video chat: a faint blue ring.
       const with_ = new Set([
-        ...(await sql()`select character_id from chat_in_person where user_id = ${me} and place <> 'home' and ended_at is null`).map(r => String(r.character_id)),
-        ...(await sql()`select character_id from chat_scenes where user_id = ${me} and status = 'active' and kind = 'live'`).map(r => String(r.character_id)),
+        ...await ids(() => sql()`select character_id from chat_in_person where user_id = ${me} and place <> 'home' and ended_at is null`),
+        ...await ids(() => sql()`select character_id from chat_scenes where user_id = ${me} and status = 'active' and kind = 'live'`),
       ]);
       const characters = list.map(c => {
         const zone = isValidTimeZone(c.time_zone) ? c.time_zone : "America/Chicago";

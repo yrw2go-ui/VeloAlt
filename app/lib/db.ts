@@ -32,3 +32,9 @@ export function envAny(...names: string[]): string {
 export function dbUrl(): string {
   return process.env.DATABASE_URL || process.env.POSTGRES_URL || "";
 }
+
+/** True when a query named a table or column this database does not have yet. */
+export function missingSchema(e: unknown): boolean {
+  const code = (e as { code?: string })?.code;
+  return code === "42703" || code === "42P01";
+}

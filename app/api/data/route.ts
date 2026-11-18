@@ -13,7 +13,7 @@ const luckOf = (b: Record<string, unknown>): "yes" | "no" | undefined =>
 import { awayFor, awayText, myPhotos } from "../../lib/picagram";
 import { cleanTags } from "../../lib/text";
 import { deleteMessages } from "../../lib/forget";
-import { sql } from "../../lib/db";
+import { missingSchema, sql } from "../../lib/db";
 import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import { isValidTimeZone, localDate, zonedParts } from "../../lib/localTime";
@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ bits: withDefaults(merge(u?.prompt_words)) });
       }
       case "profile.get": {
-        const [u] = await db`select name, look, time_zone, plan, phone, phone_verified_at, chat_model, personality, adult_confirmed_at, video_model, reply_length, checkins, bio, birthday::text, age, home_town, home_state, (select url from velo_files where id = users.bio_photo_file_id) as bio_photo, (select thumb_url from velo_files where id = users.bio_photo_file_id) as bio_thumb, bio_photo_note, bio_more from users where id = ${me}`;
+        const [u] = await db`select name, look, time_zone, plan, phone, phone_verified_at, chat_model, personality, adult_confirmed_at, video_model, reply_length, checkins, bio, birthday::text, age, (to_jsonb(users)->>'home_town') as home_town, home_state, (select url from velo_files where id = users.bio_photo_file_id) as bio_photo, (select thumb_url from velo_files where id = users.bio_photo_file_id) as bio_thumb, bio_photo_note, bio_more from users where id = ${me}`;
         const [{ n }] = await db`select count(*)::int as n from velo_memories where user_id = ${me} and kind = 'call' and character_id is null`;
         const [face] = await db`select url from velo_files where user_id = ${me} and kind = 'face' order by created_at desc limit 1`;
         return NextResponse.json({
@@ -158,7 +158,9 @@ export async function POST(req: NextRequest) {
         // Velo's chat (no characterId) or one character's chat.
         const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
         if (b.characterId && !ch) return bad("That character wasn't found.");
-        const rows = await db`select m.id, m.role, m.content, m.peek, m.reaction, m.their_reaction, m.created_at::text as at, f.id as file_id, f.url as file_url, f.thumb_url as file_thumb, f.name as file_name, f.content_type as file_type,
+        let rows;
+        try {
+          rows = await db`select m.id, m.role, m.content, m.peek, m.reaction, m.their_reaction, m.created_at::text as at, f.id as file_id, f.url as file_url, f.thumb_url as file_thumb, f.name as file_name, f.content_type as file_type,
             md.id as media_id, md.kind as media_kind, md.status as media_status, md.reaction as media_reaction, md.description as media_description, md.kept as media_kept, md.subject as media_subject,
             (md.id is not null and exists (select 1 from pica_accounts pa where pa.user_id = m.user_id and (pa.avatar_media_id = md.id or (coalesce(md.subject, '') not in ('', 'me', 'none') and lower(pa.name) = lower(md.subject))))) as media_social, mf.url as media_url, coalesce(mt.url, md.poster_url) as media_thumb
           from velo_messages m left join velo_files f on f.id = m.file_id and f.user_id = m.user_id
@@ -166,23 +168,36 @@ export async function POST(req: NextRequest) {
           left join velo_files mf on mf.id = md.file_id
           left join velo_files mt on mt.id = md.thumb_file_id
           where m.user_id = ${me} and m.character_id is not distinct from ${ch?.id || null} order by m.created_at desc, m.id desc limit 60`;
+        } catch (e) {
+          if (!missingSchema(e)) throw e;
+          // Picagram tables and newer media columns are not on this database yet. The old messages are.
+          rows = await db`select m.id, m.role, m.content, m.peek, m.reaction, m.their_reaction, m.created_at::text as at, f.id as file_id, f.url as file_url, f.thumb_url as file_thumb, f.name as file_name, f.content_type as file_type,
+            md.id as media_id, md.kind as media_kind, md.status as media_status, md.reaction as media_reaction, md.description as media_description, md.kept as media_kept, mf.url as media_url, coalesce(mt.url, md.poster_url) as media_thumb
+          from velo_messages m left join velo_files f on f.id = m.file_id and f.user_id = m.user_id
+          left join velo_media md on md.id = m.media_id and md.user_id = m.user_id
+          left join velo_files mf on mf.id = md.file_id
+          left join velo_files mt on mt.id = md.thumb_file_id
+          where m.user_id = ${me} and m.character_id is not distinct from ${ch?.id || null} order by m.created_at desc, m.id desc limit 60`;
+        }
         // 📅 What you two have on: a quiet line under a few of her messages, a 🚨 in the last hour.
         let tag: { text: string; urgent: boolean } | null = null;
         let carry = new Set<string>();
         if (ch) {
-          const zone = isValidTimeZone(b.timeZone) ? String(b.timeZone) : "America/Chicago";
-          const day = localDate(Date.now(), zone);
-          const { hour, minute } = zonedParts(Date.now(), zone);
-          const now = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
-          const [plan] = await db`select title, details, day::text, at_time, kind from chat_plans
-            where user_id = ${me} and character_id = ${ch.id} and status = 'planned' and day >= ${day}::date
-            order by day, at_time nulls last limit 1`;
-          if (plan) {
-            const p = { title: String(plan.title || ""), details: String(plan.details || ""), day: String(plan.day), at_time: String(plan.at_time || ""), kind: String(plan.kind || "video") };
-            const urgent = isUrgent(p, day, now);
-            tag = { text: planLabel(p, day), urgent };
-            carry = tagged(rows.map(r => ({ id: String(r.id), role: String(r.role), at: String(r.at) })), urgent ? Date.now() - 3600_000 : null, Date.now());
-          }
+          try {
+            const zone = isValidTimeZone(b.timeZone) ? String(b.timeZone) : "America/Chicago";
+            const day = localDate(Date.now(), zone);
+            const { hour, minute } = zonedParts(Date.now(), zone);
+            const now = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+            const [plan] = await db`select title, details, day::text, at_time, kind from chat_plans
+              where user_id = ${me} and character_id = ${ch.id} and status = 'planned' and day >= ${day}::date
+              order by day, at_time nulls last limit 1`;
+            if (plan) {
+              const p = { title: String(plan.title || ""), details: String(plan.details || ""), day: String(plan.day), at_time: String(plan.at_time || ""), kind: String(plan.kind || "video") };
+              const urgent = isUrgent(p, day, now);
+              tag = { text: planLabel(p, day), urgent };
+              carry = tagged(rows.map(r => ({ id: String(r.id), role: String(r.role), at: String(r.at) })), urgent ? Date.now() - 3600_000 : null, Date.now());
+            }
+          } catch (e) { if (!missingSchema(e)) throw e; }
         }
         return NextResponse.json({ messages: rows.reverse().filter(r => r.role === "user" || r.file_id || r.media_id || cleanTags(String(r.content))).map(r => ({ id: r.id, role: r.role, at: r.at,
           ...(tag && carry.has(String(r.id)) ? { plan: tag } : {}), ...(r.peek ? { peek: true } : {}), content: r.role === "assistant" ? cleanTags(String(r.content)) : r.content, reaction: r.reaction || null, theirReaction: r.their_reaction || null,
@@ -605,7 +620,7 @@ export async function POST(req: NextRequest) {
       // 🖼️ Every picture they have (from any chat, peeks, Picagram), newest first — to attach one to a message.
       case "gallery.pick": {
         const before = typeof b.before === "string" && !Number.isNaN(Date.parse(b.before)) ? b.before : null;
-        const rows = await db`select f.id, m.id as media_id, f.url, f.name, f.content_type, m.created_at::text as at, t.url as thumb, c.name as who, m.pica
+        const rows = await db`select f.id, m.id as media_id, f.url, f.name, f.content_type, m.created_at::text as at, t.url as thumb, c.name as who, coalesce((to_jsonb(m)->>'pica')::boolean, false) as pica
           from velo_media m join velo_files f on f.id = m.file_id and f.user_id = m.user_id left join velo_files t on t.id = m.thumb_file_id left join chat_characters c on c.id = m.character_id
           where m.user_id = ${me} and m.kind = 'image' and m.status = 'done' and (${before}::timestamptz is null or m.created_at < ${before}::timestamptz)
           order by m.created_at desc limit 30`;
