@@ -60,19 +60,47 @@ const EMOJI = ["😍", "🔥", "😍😍😍", "🔥🔥", "❤️", "❤️❤�
   "😂😂", "👀", "👀🔥", "💪", "💪🔥", "🌊☀️", "🐾😍", "🤤", "🙌🔥", "😍🔥", "❤️🔥", "💯💯", "✨😍", "🥹", "😳🔥", "💅", "👑", "🫶", "😊", "😎",
   "🌸", "🌞", "😻", "💥", "🤍", "💙", "🖤", "💜", "😆", "🤗", "🤭", "😌", "🎉", "🍑🔥", "💐", "🌺", "🏝️", "✈️😍", "🍕😋", "🐶❤️"];
 
-// 😘 Every so often a stranger shoots their shot. One per post at most, never on the person's own posts.
-export const FLIRTY = [
+// 😘 Every so often a stranger shoots their shot. One per post at most. Lines that work on anyone,
+// then the ones that only fit a woman's post or a man's.
+export const FLIRTY_ANY = [
   "Can we go out sometime?", "You're hot!", "Wanna get a coffee with me?", "Okay you're gorgeous 😍", "Are you single??",
   "Marry me", "Drop a pin, I'm on my way", "Let me take you to dinner", "You're actually stunning", "Sliding into the DMs now 👀",
   "Is it weird to ask you out in the comments?", "Please tell me you're taken because otherwise I have to shoot my shot",
-  "Hey beautiful 😊", "Coffee? My treat", "You free this weekend?", "I'd walk a long way for a smile like that",
-  "Prettiest girl on here", "Can I buy you a drink sometime?", "You're the reason I open this app", "Okay but are you dating anyone?",
-  "My DMs are open if yours are 😏", "Date? Yes? No? Maybe?", "Hi, hello, hey, how are you 😅", "Seriously, you're beautiful",
-  "Breakfast tomorrow? I'll cook", "I have got to ask — are you seeing someone?", "You + me + tacos, think about it",
+  "Coffee? My treat", "You free this weekend?", "I'd walk a long way for a smile like that",
+  "Can I buy you a drink sometime?", "You're the reason I open this app", "Okay but are you dating anyone?",
+  "My DMs are open if yours are 😏", "Date? Yes? No? Maybe?", "Hi, hello, hey, how are you 😅", "Breakfast tomorrow? I'll cook", "I have got to ask — are you seeing someone?", "You + me + tacos, think about it",
   "Not me falling in love in a comment section", "Say the word and I'm there", "Drinks sometime? No pressure 😊",
-  "Someone's lucky to have you. Or should I apply?", "Honestly? Wife material", "Dinner's on me if you say yes",
-  "I'll be the guy in the corner working up the nerve", "You're unreal 😍 call me?", "Let me know if you ever want company",
+  "Someone's lucky to have you. Or should I apply?", "Dinner's on me if you say yes",
+  "You're unreal 😍 call me?", "Let me know if you ever want company",
 ];
+
+// 👩 Said to a woman.
+export const FLIRTY_HER = [
+  "Prettiest girl on here", "Honestly? Wife material", "I'll be the guy in the corner working up the nerve",
+  "You're the prettiest thing on my feed", "Whoever gets to take you out is a lucky man",
+  "Tell me there's a chance 😅", "Okay I have to ask — can I take you out?", "You'd make a great first date story",
+  "Is your boyfriend going to come after me for this comment?", "Beautiful girl", "You're way out of my league but here I am",
+  "Hey beautiful 😊", "Seriously, you're beautiful",
+];
+// 👨 Said to a man.
+export const FLIRTY_HIM = [
+  "Okay handsome 😍", "Whoever has you is lucky", "You can take me out whenever", "Tell me you're single",
+  "Checking for a ring 👀", "My friends all think you're cute, and so do I", "Buy me a drink?",
+  "Looking good 🔥", "Someone take him off the market before I do", "Call me 😉", "That smile should be illegal",
+  "Taking you out for dinner, no arguments", "You're trouble and I'm into it", "Hi, I'm free this weekend 😊",
+  "Okay but who IS this", "Is it too forward to ask you out here?", "Save a dance for me",
+];
+
+// 👩 Everyday lines that only really fit a woman's post — left out of a man's.
+const HER_ONLY = new Set(["Okay but this is so cute", "Stunning as always", "So pretty!!", "Absolutely gorgeous", "Beautiful!",
+  "Slayyy", "Cutest thing I've seen all day", "Glowing \u2728", "Okay queen", "Okay this is cute cute", "You're glowing", "Too cute",
+  "Okay model \ud83d\udc40", "How are you so photogenic", "Adorable", "Serving looks", "That smile tho", "Okay fitness queen",
+  "Strong and gorgeous \ud83d\udcaa", "\ud83d\udc85", "\ud83d\udc51"]);
+// 👨 And the everyday lines a man's post gets instead.
+const HIM_ONLY = ["Looking sharp", "Okay sir \ud83d\udc4f", "Clean 🔥", "That fit is clean", "Man knows what he's doing",
+  "Respect 🙌", "Solid", "Okay king \ud83d\udc51", "Living right", "Built different", "He's got it figured out",
+  "Good man", "That's the energy", "Strong work 💪", "Okay big dog 👀", "Legend", "Fresh 🔥", "Looking well, man",
+  "The man, the myth", "Handsome devil", "Rugged \ud83d\udd25", "Doing it right"];
 
 const FIRST = ["jess", "mike", "tay", "sam", "alex", "jordan", "chris", "brit", "kayla", "ty", "mia", "nate", "lexi", "dani", "zoe", "rob", "luis", "ana", "emma", "liv",
   "kat", "ben", "sara", "max", "jade", "nick", "ellie", "josh", "maddie", "drew", "bella", "cam", "rae", "leo", "nina", "matt", "ivy", "aj", "sky", "dev"];
@@ -87,8 +115,11 @@ export function randomUser(): string {
 /** A few random strangers' comments for a post (some emoji-only).
  *  They're told what the picture shows — what she's doing and what she's wearing — so the
  *  comments land on it ("love the crop top", "wish I was on the beach too!"), not just "Love this!". */
-export function randomComments(text: string, kind: "image" | "text", n: number, flirty = true): { name: string; text: string }[] {
+export function randomComments(text: string, kind: "image" | "text", n: number, who: "her" | "him" = "her"): { name: string; text: string }[] {
   const t = text.toLowerCase();
+  // 👨 A man's post: the lines that only fit a woman are dropped, and ones that fit him take their place.
+  const him = who === "him";
+  const ok = (a: string[]) => (him ? a.filter(x => !HER_ONLY.has(x)) : a);
   const themed = [
     /gym|workout|lift|weights|run|jog|yoga|pilates|fit|sweat|treadmill|squat/.test(t) ? GYM : [],
     /food|dinner|lunch|brunch|breakfast|cook|bake|pizza|taco|pasta|eat|meal|plate/.test(t) ? FOOD : [],
@@ -106,10 +137,11 @@ export function randomComments(text: string, kind: "image" | "text", n: number, 
     /sunset|sunrise|golden hour|skyline|dusk/.test(t) ? SUNSET : [],
     /danc|club floor|choreo/.test(t) ? DANCE : [],
   ].flat();
+  const general = him ? [...ok(GENERAL), ...HIM_ONLY] : GENERAL;
   // 👗 Anything she's actually wearing, named.
   const wearing = kind === "image" ? WEAR.filter(([re]) => re.test(t)).slice(0, 3).flatMap(([, item]) => ABOUT_WEAR(item)) : [];
   // Comments that are about THIS picture — what she's doing and what she has on.
-  const about = [...themed, ...wearing];
+  const about = ok([...themed, ...wearing]);
   const out: { name: string; text: string }[] = [];
   const used = new Set<string>();
   // At least one lands on the picture itself when there's something to land on.
@@ -117,19 +149,19 @@ export function randomComments(text: string, kind: "image" | "text", n: number, 
   for (let i = 0; i < n * 4 && out.length < n; i++) {
     const r = Math.random();
     const c = r < 0.3 ? pick(EMOJI)
-      : kind === "text" ? (r < 0.8 ? pick(TEXT) : pick(GENERAL))
-      : wearing.length && r < 0.45 ? pick(wearing)
+      : kind === "text" ? (r < 0.8 ? pick(ok(TEXT)) : pick(general))
+      : wearing.length && r < 0.45 ? pick(ok(wearing))
       : about.length && r < 0.72 ? pick(about)
-      : pick(GENERAL);
+      : pick(general);
     if (used.has(c)) continue;
     used.add(c);
     out.push({ name: randomUser(), text: c });
   }
   // 😘 Now and then one of them shoots their shot instead of just saying something nice. Never the
   // comment about the picture itself (that one stays), and never more than one on the same post.
-  if (flirty && out.length > 1 && Math.random() < 0.35) {
+  if (out.length > 1 && Math.random() < 0.35) {
     const at = 1 + Math.floor(Math.random() * (out.length - 1));
-    out[at] = { name: randomUser(), text: pick(FLIRTY) };
+    out[at] = { name: randomUser(), text: pick([...FLIRTY_ANY, ...(him ? FLIRTY_HIM : FLIRTY_HER)]) };
   }
   return out;
 }

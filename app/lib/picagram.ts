@@ -166,7 +166,7 @@ async function generateDay(userId: string, day: string, isToday: boolean): Promi
       values (${userId}, ${c.id}, ${accountOf.get(c.id) || null}, ${media ? "image" : "text"}, ${caption || (media ? "" : photo)}, ${media ? photo : ""}, ${media?.id || null}, ${big ? rand(200, 1500) : rand(20, 300)}, ${likers}, ${likerSecs}, ${p.vacation?.place ? scrub(String(p.vacation.place)).slice(0, 80) : ""}, ${at.toISOString()}) returning id`;
     for (const x of fc) await sql()`insert into pica_comments (post_id, user_id, author_id, text, created_at) values (${post.id}, ${userId}, ${x.c!.id}, ${x.text}, ${new Date(times[i] + rand(10, 240) * 60_000).toISOString()})`;
     // Her followers comment: more with a big following (up to 5 comments in all, counting a friend's).
-    for (const s of randomComments(`${caption} ${photo}`, media ? "image" : "text", Math.max(0, (big ? rand(3, 5) : rand(1, 3)) - fc.length)))
+    for (const s of randomComments(`${caption} ${photo}`, media ? "image" : "text", Math.max(0, (big ? rand(3, 5) : rand(1, 3)) - fc.length), c.voice_kind === "male" ? "him" : "her"))
       await sql()`insert into pica_comments (post_id, user_id, name, text, created_at) values (${post.id}, ${userId}, ${s.name}, ${s.text}, ${new Date(times[i] + rand(2, 360) * 60_000).toISOString()})`;
     // ✈️🏡 A (rare) stretch of time off: away somewhere, or a staycation at home.
     const vac = p.vacation, home = !!vac?.home || (!!vac && !String(vac.place || "").trim());
@@ -359,8 +359,8 @@ export async function picaPost(userId: string, caption: string, photo: string, u
   }
   const now = Date.now();
   const [post] = await sql()`insert into pica_posts (user_id, author_id, kind, caption, photo, media_id, likes_target, seen_at) values (${userId}, null, ${media ? "image" : "text"}, ${cap}, ${media ? desc : ""}, ${media?.id || null}, ${rand(10, 300)}, now()) returning id`;
-  // Nobody shoots their shot at the person themselves — their own posts get ordinary comments.
-  for (const s of randomComments(`${cap} ${desc}`, media ? "image" : "text", rand(1, 4), false))
+  // Women shoot their shot at the person too, on their own posts.
+  for (const s of randomComments(`${cap} ${desc}`, media ? "image" : "text", rand(1, 4), "him"))
     await sql()`insert into pica_comments (post_id, user_id, name, text, created_at) values (${post.id}, ${userId}, ${s.name}, ${s.text}, ${new Date(now + rand(3, 240) * 60_000).toISOString()})`;
   // 🏷️ Who's in it and who it's about: the one in the picture with you, and anyone you named in
   // the caption or the photo. They all hear about it, whether or not you talk to them much.

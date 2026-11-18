@@ -1,5 +1,5 @@
 // Run: node --experimental-strip-types tests/comments.test.ts
-import { randomComments, FLIRTY } from "../app/lib/picaComments.ts";
+import { randomComments, FLIRTY_ANY, FLIRTY_HER, FLIRTY_HIM } from "../app/lib/picaComments.ts";
 
 let bad = 0;
 const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m); if (!c) bad++; };
@@ -41,7 +41,7 @@ ok(plain.length === 3 && plain.every(c => c.text.length > 0 && c.name.length > 0
 ok(new Set(says("At the beach in a crop top")).size > 40, "and they're never the same few lines over and over");
 
 // 😘 Some of them shoot their shot.
-const shot = new Set(FLIRTY);
+const shot = new Set([...FLIRTY_ANY, ...FLIRTY_HER, ...FLIRTY_HIM]);
 const many = says("At the pool in a red bikini, sunglasses on");
 ok(many.some(c => /can we go out|wanna get a coffee|you're hot/i.test(c)), `someone asks her out (e.g. "${many.find(c => /go out|coffee|hot!/i.test(c))}")`);
 
@@ -58,11 +58,27 @@ ok(!tooMany, "never two pickup lines on the same post");
 ok(!lostPicture, "…and never in place of the comment about the picture itself");
 ok(withFlirt > 40 && withFlirt < 280, `it stays occasional, not every post (${withFlirt} of 400)`);
 
-// 🙅 Not on the person's own posts.
-const mine = new Set<string>();
-for (let i = 0; i < 300; i++) for (const c of randomComments("At the beach in a white crop top, laughing", "image", 4, false)) mine.add(c.text);
-ok(![...mine].some(c => /can we go out|you're hot!|wanna get a coffee|are you single|marry me|buy you a drink/i.test(c)),
-  "nobody hits on the person on their own posts");
+// 👨 A man's post gets women shooting their shot — in their own words, not lines meant for her.
+const him = new Set<string>();
+for (let i = 0; i < 400; i++) for (const c of randomComments("Out on the trail at sunrise in a grey hoodie", "image", 4, "him")) him.add(c.text);
+const atHim = [...him].filter(c => shot.has(c));
+ok(atHim.some(c => FLIRTY_HIM.includes(c)), `women ask him out too (e.g. "${atHim.find(c => FLIRTY_HIM.includes(c))}")`);
+ok(!atHim.some(c => FLIRTY_HER.includes(c)), "…and he's never called the prettiest girl on here");
+
+// 👩 Hers stay the other way round.
+const her = new Set<string>();
+for (let i = 0; i < 400; i++) for (const c of randomComments("At the beach in a white crop top, laughing", "image", 4, "her")) her.add(c.text);
+const atHer = [...her].filter(c => shot.has(c));
+ok(atHer.some(c => FLIRTY_HER.includes(c)) && !atHer.some(c => FLIRTY_HIM.includes(c)), "a woman's post never gets the lines written for a man");
+
+// 👨 And the everyday comments on his post don't call him pretty either.
+const everyday = [...him].filter(c => !shot.has(c));
+ok(!everyday.some(c => /so pretty|stunning as always|absolutely gorgeous|okay queen|too cute|you're glowing|fitness queen/i.test(c)),
+  "a man's post is never called pretty, stunning or a queen");
+ok(everyday.some(c => /looking sharp|okay king|clean|respect|legend|handsome|big dog|strong work/i.test(c)),
+  `…he gets his own (e.g. "${everyday.find(c => /looking sharp|okay king|clean|respect|legend/i.test(c))}")`);
+ok([...her].some(c => /so pretty|stunning as always|absolutely gorgeous|okay queen/i.test(c)), "hers are untouched");
+ok(![...her].some(c => /okay king|big dog|handsome devil|the man, the myth/i.test(c)), "…and she never gets his");
 
 console.log(bad ? `\n${bad} failed` : "\nall good");
 process.exit(bad ? 1 : 0);
