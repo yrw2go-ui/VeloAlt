@@ -44,7 +44,7 @@ export async function setAtHome(userId: string, home: boolean): Promise<boolean>
 /** 👥 Whoever you already have round: answering the door with her here can mean they meet. */
 export async function hostingNow(userId: string, except?: string): Promise<{ id: string; name: string } | null> {
   const [r] = await sql()`select c.id, c.name from chat_in_person p join chat_characters c on c.id = p.character_id
-    where p.user_id = ${userId} and (${except || null}::uuid is null or p.character_id <> ${except || null}::uuid)
+    where p.user_id = ${userId} and p.ended_at is null and (${except || null}::uuid is null or p.character_id <> ${except || null}::uuid)
     order by p.started_at desc limit 1`;
   return r ? { id: String(r.id), name: String(r.name) } : null;
 }
@@ -52,7 +52,7 @@ export async function hostingNow(userId: string, except?: string): Promise<{ id:
 /** 🚶 Out at someone else's place right now: you're not home to answer your own door. */
 export async function outAtTheirs(userId: string): Promise<{ id: string; name: string; place: string } | null> {
   const [r] = await sql()`select c.id, c.name, p.place from chat_in_person p join chat_characters c on c.id = p.character_id
-    where p.user_id = ${userId} and not p.at_mine order by p.started_at desc limit 1`;
+    where p.user_id = ${userId} and p.ended_at is null and not p.at_mine order by p.started_at desc limit 1`;
   return r ? { id: String(r.id), name: String(r.name), place: String(r.place || "") } : null;
 }
 
@@ -126,7 +126,7 @@ export async function maybeDropIn(userId: string, chance = 0.08): Promise<DropIn
   const rows = await sql()`select c.id from chat_characters c
     where c.created_by = ${userId} and c.neighbor and (c.owner_id is null or c.intro_status = 'accepted')
       and not exists (select 1 from chat_dropins d where d.character_id = c.id and d.created_at > now() - interval '6 hours')
-      and not exists (select 1 from chat_in_person p where p.user_id = ${userId} and p.character_id = c.id)`;
+      and not exists (select 1 from chat_in_person p where p.user_id = ${userId} and p.character_id = c.id and p.ended_at is null)`;
   if (!rows.length) return null;
   const [u] = await sql()`select name from users where id = ${userId}`;
   // Shuffle, then take the first one who's close enough and actually free.

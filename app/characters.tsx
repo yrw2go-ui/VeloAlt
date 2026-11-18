@@ -16,7 +16,7 @@ import { BRAIN_OPTIONS } from "./lib/brainOptions";
 
 type VoiceOption = { id: string; name: string; kind: "female" | "male"; about: string; preview: string; owner?: string };
 
-export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; brain?: string; standing?: string; work_attire?: string; work_days?: number[]; work_start?: string; work_end?: string; part_time?: boolean; school?: string; class_days?: number[]; class_start?: string; class_end?: string; poly_ok?: boolean; sapphic?: boolean; live_in?: boolean; neighbor?: boolean; local?: boolean; lives_in?: string; attached?: "single" | "dating" | "married"; sees_others?: boolean; lesbian?: boolean; lesbian_personality?: string; partner?: string; speech?: string; speech_on?: boolean; big_following?: boolean; busy?: "work" | "class" | null; ditched?: boolean; home?: boolean; together?: boolean; pica_handle?: string | null; portrait_url: string | null; portrait_job: string | null };
+export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; brain?: string; standing?: string; work_attire?: string; work_days?: number[]; work_start?: string; work_end?: string; part_time?: boolean; school?: string; class_days?: number[]; class_start?: string; class_end?: string; poly_ok?: boolean; sapphic?: boolean; live_in?: boolean; neighbor?: boolean; local?: boolean; lives_in?: string; attached?: "single" | "dating" | "married"; sees_others?: boolean; lesbian?: boolean; lesbian_personality?: string; partner?: string; speech?: string; speech_on?: boolean; big_following?: boolean; busy?: "work" | "class" | null; ditched?: boolean; home?: boolean; together?: boolean; at_yours?: boolean; pica_handle?: string | null; portrait_url: string | null; portrait_job: string | null };
 
 /** A character's picture in a circle (their initial until a portrait exists). */
 export function CharacterFace({ c, size }: { c: Pick<Character, "name" | "portrait_url">; size: number }) {
@@ -37,6 +37,10 @@ const chip = (on: boolean, busy?: "work" | "class" | null, home?: boolean, toget
 /** The chips above the chat. Tap a chip to switch chats; admins tap the open one again to edit it. */
 /** 🔴 A small number on a chip: their unread messages there. */
 const Badge = ({ n }: { n?: number }) => (n ? <span data-testid="unread-badge" aria-label={`${n} unread`} style={{ position: "absolute", top: -6, right: -4, minWidth: 18, height: 18, padding: "0 5px", borderRadius: 999, background: "#ef4444", color: "#fff", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid var(--bg, #0b0d17)" }}>{n > 99 ? "99+" : n}</span> : null);
+
+/** ⭐ At your place right now — round at yours, or living with you and in. */
+const AtYours = ({ c }: { c: Character }) =>
+  c.at_yours ? <span data-testid="at-yours" title={`${c.name} is at your place right now`} aria-label="at your place" style={{ fontSize: 12 }}>⭐</span> : null;
 
 /** 😏 She should be in class or at work, and she's skipped it — for you. */
 const Ditched = ({ c }: { c: Character }) =>
@@ -72,7 +76,7 @@ export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdi
       {characters.map(c => (
         <button key={c.id} style={{ ...chip(active === c.id, c.busy, c.home, c.together), position: "relative" }} aria-pressed={active === c.id} data-busy={c.busy || undefined} data-ditched={c.ditched ? "yes" : undefined} data-home={c.home ? "yes" : undefined} data-together={c.together ? "yes" : undefined}
           title={c.together ? `You're with ${c.name} right now` : c.ditched ? `${c.name} should be ${c.busy === "class" ? "in class" : "at work"} — ${c.voice_kind === "male" ? "he's" : "she's"} not` : c.busy === "work" ? `${c.name} is at work` : c.busy === "class" ? `${c.name} is in class` : undefined} onClick={() => (active !== c.id ? onPick(c.id) : admin ? onEdit(c) : undefined)}>
-          <CharacterFace c={c} size={26} /> {c.name}<Ditched c={c} /><Attached c={c} /><Standing c={c} />{admin && active === c.id ? " ✎" : ""}<Badge n={active === c.id ? 0 : unread[c.id]} />
+          <CharacterFace c={c} size={26} /> <AtYours c={c} />{c.name}<Ditched c={c} /><Attached c={c} /><Standing c={c} />{admin && active === c.id ? " ✎" : ""}<Badge n={active === c.id ? 0 : unread[c.id]} />
         </button>
       ))}
       {groups.map(g => (

@@ -321,7 +321,7 @@ export async function bringTogether(userId: string, fromId: string, otherIds: st
   await sql()`insert into chat_group_messages (group_id, user_id, content) values (${g.id}, ${userId}, ${`🧍 Together in person${where ? ` — ${where}` : ""}: ${names.slice(0, -1).join(", ")} and ${names.at(-1)}`})`;
   // Their one-on-one chats move over: in-person there ends, with a note.
   for (const c of chars) {
-    const ended = await sql()`delete from chat_in_person where user_id = ${userId} and character_id = ${c.id} returning 1`;
+    const ended = await sql()`update chat_in_person set ended_at = now() where user_id = ${userId} and character_id = ${c.id} and ended_at is null returning 1`;
     const with_ = names.filter(n => n !== c.name).join(" and ");
     await sql()`insert into velo_messages (user_id, role, content, character_id) values (${userId}, 'user', ${`🧍 ${ended.length ? "We met up" : "I came over"} with ${with_}${where ? ` — ${where}` : ""} (continued in our group)`}, ${c.id})`;
   }

@@ -41,9 +41,13 @@ async function pushedLately(userId: string, sceneId: string): Promise<number> {
 import { soreFor, setSore, mend as mendSore, soreNote, SORE_REMEMBER } from "./sore";
 import { partnerLook, partnerPicNote } from "./partner";
 import { TOGETHER_TIME } from "./together";
+import { afterSceneNote, nightsBetween, stayedUpAllNight } from "./afterScene";
+import { boostFor, lastGiftWords, wishlistOf } from "./giftsDb";
+import { wealthNote, hintsNow } from "./money";
+import { boostNote } from "./gifts";
 import { timeOfDay } from "./localTime";
 import { attachedNote, lesbianNote, maybeStartDating, maybeEndIt, endedNote, wonOver, cameAround, WON_OVER, type Her } from "./attached";
-import { characterPrompt, feelingsFor, saveFeelings, trustFor, saveTrust, trustNote, happyFor, saveHappy, happyNote, loveFor, saveLove, loveNote, activeScene, sceneNote, noteMentions, noteAccountMentions, acquaintancesNote, knownAccountsNote, referenceUrls, pictureOf, type Character } from "./characters";
+import { characterPrompt, feelingsFor, saveFeelings, trustFor, saveTrust, trustNote, happyFor, saveHappy, happyNote, loveFor, saveLove, loveNote, activeScene, sceneNote, noteMentions, noteAccountMentions, acquaintancesNote, knownAccountsNote, referenceUrls, pictureOf, type Character, lastEnded } from "./characters";
 import { talkWords } from "./words";
 import { askNote, askThisTime } from "./asking";
 import { aboutThem } from "./bio";
@@ -213,6 +217,22 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
   const together = ch && (mode === "chat" || mode === "talk") && !scene && !group ? await inPersonFor(caller.userId, ch.id).catch(() => null) : null;
   // 🧍🎥 Are you two actually together right now? (A live-in simply being home isn't a meet-up.)
   const occasion = !!(scene && scene.kind === "live") || !!(together && !(ch?.live_in && together.place === HOME)) || !!group?.scene;
+  // 🌙 Just come out of a video chat that ran past midnight: it was last night, today is a new day,
+  // and they both slept in between — unless they said they were up the whole night.
+  const lastTogether = ch && !occasion && (mode === "chat" || mode === "talk") && !group
+    ? await lastEnded(caller.userId, ch.id, today.tz).catch(e => { console.error("velo: last time together", e instanceof Error ? e.message : e); return null; }) : null;
+  const afterNote = lastTogether
+    ? afterSceneNote({ what: lastTogether.what, title: lastTogether.title, nights: nightsBetween(lastTogether.startedDay, lastTogether.endedDay), allNighter: stayedUpAllNight(lastTogether.said) })
+    : "";
+  // 🎁 A present or some money they sent her in the last couple of days: she's warmer, keener to
+  // see them, and readier to take a chance she wouldn't normally take.
+  const spoil = ch && !errand ? await boostFor(caller.userId, { kind: "character", id: ch.id }).catch(() => null) : null;
+  const giftWords = spoil && ch ? await lastGiftWords(caller.userId, ch.id).catch(() => "") : "";
+  // 💭 Someone close works out that they're comfortable — never a number, just the shape of it —
+  // and now and then lets slip something she wants.
+  const closeness = Math.max(love ?? 0, trust ?? 0, ch && (happy ?? 0) > 80 ? 56 : 0);
+  const wealth = ch && !errand && (mode === "chat" || mode === "talk") && !group
+    ? wealthNote(closeness, spoil ? 1 : 0, hintsNow(closeness, Math.random()), wishlistOf(ch.id).map(g => `${g.brand} ${g.name}`)) : "";
   const photoMoment = ch && mode === "chat" && canSend && !scene && !group && !together ? await tickPics(caller.userId, ch).catch(() => false) : false;
   // 👋 Every so often (once she's close to them), she wants them to meet someone of hers.
   const introKind = ch && mode === "chat" && !scene && !group ? await tickIntro(caller.userId, ch, !!u?.adult_confirmed_at).catch(e => { console.error("velo: intro", e instanceof Error ? e.message : e); return null; }) : null;
@@ -224,7 +244,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
   const chatLog = mode === "talk" ? await chatLogNote(caller.userId, cid, today.tz, ch?.name || "Velo").catch(e => { console.error("velo: chat log", e instanceof Error ? e.message : e); return ""; }) : "";
   const system: Anthropic.TextBlockParam[] = [
     // The persona never changes, so it's cached across everyone's chats.
-    ch ? { type: "text", text: characterPrompt(ch, name, !!u?.adult_confirmed_at, arc ? await feelingsFor(caller.userId, ch.id).catch(() => "") : "", talkWords(u), ch ? await cameAround(caller.userId, ch.id).catch(() => false) : false), cache_control: { type: "ephemeral" } } : { type: "text", text: veloSystem(talkWords(u)), cache_control: { type: "ephemeral" } },
+    ch ? { type: "text", text: characterPrompt(ch, name, !!u?.adult_confirmed_at, arc ? await feelingsFor(caller.userId, ch.id).catch(() => "") : "", talkWords(u), ch ? await cameAround(caller.userId, ch.id).catch(() => false) : false, spoil?.flirty || 0), cache_control: { type: "ephemeral" } } : { type: "text", text: veloSystem(talkWords(u)), cache_control: { type: "ephemeral" } },
     // Same for the whole call, so it's cached between turns.
     ...(chatLog ? [{ type: "text" as const, text: chatLog, cache_control: { type: "ephemeral" as const } }] : []),
     {
@@ -235,6 +255,9 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
         // gaps, no "where have you been". Ordinary time starts again when you two part.
         occasion ? `Right now it is ${timeOfDay(today.label)}.` : `Right now it is ${today.label}${errand ? "" : " where they are"}.`,
         occasion ? TOGETHER_TIME : "",
+        afterNote,
+        spoil ? boostNote(spoil, giftWords || "a present", name || "they") : "",
+        wealth,
         errand || occasion ? "" : "The evening runs late: people here are up and talking until around 1am, so don't start winding the conversation down, saying goodnight or telling them to get some sleep just because it's gone eleven — only once it's properly the small hours, and even then only if it fits.",
         chClock,
         ch && !occasion ? workNow(ch, chZone || today.tz, Date.now(), skived, ch.id).text : "",

@@ -5,6 +5,8 @@
 //
 // Nothing here is a hard no for long: a turn-down is about tonight, not about them.
 import { sql } from "./db";
+import { chanceOfYes } from "./willing";
+import { boostFor } from "./giftsDb";
 import { soreFor } from "./sore";
 import { busyWithTheirs, type Her } from "./attached";
 import type { Character } from "./characters";
@@ -26,13 +28,6 @@ const ASKS: Record<Ask, string> = {
 };
 
 /** How likely she is to say yes: she wants to, and being happy and in love makes her keener. */
-function chanceOfYes(happy: number, love: number | null, busy: boolean, sore = 0): number {
-  const base = busy ? 0.3 : 0.92; // at work or in class she usually can't; otherwise she's nearly always up for it
-  const mood = (happy - 60) / 400 + (love === null ? 0 : (love - 50) / 500); // ±~0.2 in total
-  // 💔 Still sore: a bit less up for things while it wears off. Never a wall — sweet talk still works.
-  const hurt = sore * 0.08;
-  return Math.max(busy ? 0.1 : 0.45, Math.min(busy ? 0.55 : 0.98, base + mood - hurt));
-}
 
 // ⏱️ She's writing one short line while they wait on a spinner. If her brain is being slow,
 // her plain words go out instead — nobody waits a minute for "not tonight".
@@ -145,7 +140,9 @@ async function decide(userId: string, ch: Character, ask: Ask, timeZone: unknown
   const busy = at.atWork;
   // 💔 Something that hurt her and hasn't worn off: she's a little less up for things.
   const sore = await soreFor(userId, ch.id).catch(() => null);
-  const yes = roll() < chanceOfYes(happy, love, busy, sore?.level || 0);
+  // 🎁 Still in the glow of a present or some money they sent her.
+  const spoiled = (await boostFor(userId, { kind: "character", id: ch.id }).catch(() => null))?.eager || 0;
+  const yes = roll() < chanceOfYes(happy, love, busy, sore?.level || 0, spoiled);
   // 💬 They're asking again after a no: sweet talk can change her mind.
   if (await askedBefore(userId, ch.id, ask).catch(() => false)) {
     const r = await persuaded(userId, ch, ask, String(name), happy, love, luck).catch(() => ({ ok: true as const }));
@@ -170,7 +167,7 @@ async function decide(userId: string, ch: Character, ask: Ask, timeZone: unknown
   if (busy && yes) {
     // 🙈 She ditches: slips out, takes a long break, calls off, skips the class.
     await callOff(userId, ch.id, tz).catch(() => {});
-    return { ok: true, mark: "she slipped away from work for me", note: `You're supposed to be at work right now and you're slipping away for them anyway (a long break, calling off, sneaking out) — be a bit giddy and guilty about it, and keep an ear out for getting caught.` };
+    return { ok: true, mark: "she slipped away from work for me", note: `You're supposed to be at work right now and you're slipping away for them anyway (a long break, calling off, sneaking out) — be a bit giddy and guilty about it, and keep an ear out for getting caught.${spoiled ? " They've just spoiled you rotten, so you're taking a chance you wouldn't normally take — and you know it." : ""}` };
   }
   if (!yes) {
     const reason = sore && Math.random() < 0.6 ? "sore"

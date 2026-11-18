@@ -14,6 +14,7 @@ type DropIn = { id: string; characterId: string; who: string; portrait: string |
 import { CallMedia, type Media } from "./media";
 import Picagram from "./picagram";
 import { CharacterStrip, CharacterEditor, CharacterFace, NewCharacterSheet, type Character } from "./characters";
+import Gifts from "./gifts";
 import { GroupChat, GroupMaker, type Group } from "./groups";
 import Gallery from "./gallery";
 import AboutCard from "./about";
@@ -23,10 +24,11 @@ import Memory from "./memory";
 import { timeZone } from "./lib/tz";
 import ProCard, { AdminCard, BrainCard, PersonalityCard, ReplyLengthCard, VideoCard, WordingCard, type Profile } from "./pro";
 
-type Tab = "chat" | "pica" | "today" | "memory" | "settings";
+type Tab = "chat" | "pica" | "gifts" | "today" | "memory" | "settings";
 const TABS: { id: Tab; icon: string; label: string }[] = [
   { id: "chat", icon: "💬", label: "Chat" },
   { id: "pica", icon: "📸", label: "Picagram" },
+  { id: "gifts", icon: "🎁", label: "Gifts" },
   { id: "today", icon: "☀️", label: "Today" },
   { id: "memory", icon: "🧠", label: "Memory" },
   { id: "settings", icon: "⚙️", label: "Settings" },
@@ -436,6 +438,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
           onNewCharacter={() => api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => setChars(r.characters)).catch(() => {})}
           others={chars.map(c => ({ id: c.id, name: c.name, pica_handle: c.pica_handle || null }))} onSocial={id => { setPicaOpen(id); setTab("pica"); }} onGroup={g => { setGroups(gs => [g, ...gs.filter(x => x.id !== g.id)]); setGroupId(g.id); }} />}
         {tab === "pica" && <Picagram name={name} userId={userId} openProfile={picaOpen} onProfileOpened={() => setPicaOpen(null)} onChat={id => api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => { setChars(r.characters); setTab("chat"); pickChat(id); }).catch(() => {})} />}
+        {tab === "gifts" && <Gifts />}
         {tab === "today" && <Today refresh={refresh} />}
         {tab === "memory" && <Memory refresh={refresh} />}
         {tab === "settings" && <Settings name={name} setName={setName} onOut={onOut} profile={profile} onProfile={() => setProfileTick(t => t + 1)}

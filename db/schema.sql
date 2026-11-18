@@ -851,3 +851,35 @@ alter table chat_characters add column if not exists speech_on boolean not null 
 -- edits are the examples of how she should sound, and the rest of the thread isn't.
 alter table velo_messages add column if not exists edited boolean not null default false;
 create index if not exists velo_messages_edited on velo_messages (user_id, character_id, created_at desc) where edited;
+-- 🧍 A finished visit is kept, not thrown away: a time together that ran past midnight has to be
+-- rememberable afterwards ("that was last night, we both slept since"). Only one visit per person
+-- is open at a time; the rest are history.
+alter table chat_in_person add column if not exists ended_at timestamptz;
+alter table chat_in_person drop constraint if exists chat_in_person_pkey;
+alter table chat_in_person add column if not exists id uuid not null default gen_random_uuid();
+create unique index if not exists chat_in_person_open on chat_in_person (user_id, character_id) where ended_at is null;
+create index if not exists chat_in_person_ended on chat_in_person (user_id, character_id, ended_at desc) where ended_at is not null;
+-- 🎁 Picagifts: presents and money sent to the people in your world. A wallet to send it from,
+-- and a record of what went where (that's what the 48-hour warm spell is worked out from).
+alter table users add column if not exists wallet numeric(12,2) not null default 5000 check (wallet >= 0);
+create table if not exists pica_gift_sent (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  character_id uuid references chat_characters(id) on delete cascade, -- one of your characters
+  account_id uuid references pica_accounts(id) on delete cascade,     -- or someone on Picagram
+  kind text not null check (kind in ('gift', 'money')),
+  gift_id text not null default '' check (char_length(gift_id) <= 60),
+  amount numeric(12,2) not null check (amount >= 0),
+  wished boolean not null default false,
+  note text not null default '' check (char_length(note) <= 300),
+  created_at timestamptz not null default now()
+);
+create index if not exists pica_gift_sent_who on pica_gift_sent (user_id, character_id, created_at desc);
+create index if not exists pica_gift_sent_acc on pica_gift_sent (user_id, account_id, created_at desc);
+-- 💰 Two accounts behind Picagifts: what you can spend now, and the bank you move it from.
+-- The bank pays interest weekly and wages land weekly; money_week is the last week settled, so
+-- both are worked out when you look rather than by a clock running somewhere.
+alter table users alter column wallet set default 20000;
+alter table users add column if not exists bank numeric(14,2) not null default 480000 check (bank >= 0);
+alter table users add column if not exists money_week integer not null default 0;
+update users set wallet = 20000 where wallet = 5000 and not exists (select 1 from pica_gift_sent g where g.user_id = users.id);

@@ -17,7 +17,7 @@ export type Busy = { who: string; what: "in person" | "video chat" | "meet-up" }
 export async function togetherNow(userId: string): Promise<Busy[]> {
   const rows = await sql()`
     select c.name, 'in person' as what from chat_in_person p join chat_characters c on c.id = p.character_id
-      where p.user_id = ${userId} and not (c.live_in and p.place = ${HOME})
+      where p.user_id = ${userId} and p.ended_at is null and not (c.live_in and p.place = ${HOME})
     union all
     select c.name, 'video chat' as what from chat_scenes s join chat_characters c on c.id = s.character_id
       where s.user_id = ${userId} and s.status = 'active' and s.kind = 'live' and s.character_id is not null

@@ -11,6 +11,7 @@ import { defaults as wordDefaults, say, type Words } from "./words";
 import Anthropic from "@anthropic-ai/sdk";
 import { del } from "@vercel/blob";
 import { sql } from "./db";
+import { localDate } from "./localTime";
 import { speechNote } from "./speech";
 import { CHARACTER_VOICES, VOICE_ID, FISH_ID } from "./voices";
 import { PG13 } from "./persona";
@@ -185,7 +186,7 @@ export async function saveFeelings(userId: string, characterId: string, feelings
 /** 🙊 Caption-speak nobody actually says out loud. */
 export const PLAIN_WORDS = `Talk like a person, not a caption writer: never say "golden hour" when you're talking, captioning or commenting — nobody says that. If you mean the light, say the light, the evening sun, the sun going down, or just describe how it looked. (The photo description for the image generator is a different thing and can say what it likes.)`;
 
-export function characterPrompt(c: Character, ownerName: string, adult: boolean, feelings = "", words?: Words, cameAround = false): string {
+export function characterPrompt(c: Character, ownerName: string, adult: boolean, feelings = "", words?: Words, cameAround = false, spoiledFlirty = 0): string {
   const them = ownerName || "the person you're talking with";
   // 🛠️ Settings → Admin → Messaging & wording: theirs where they changed it, else the default.
   const w = { ...wordDefaults(), ...(words || {}) };
@@ -196,7 +197,7 @@ export function characterPrompt(c: Character, ownerName: string, adult: boolean,
   const line = (k: string) => say(w[k] || "", them, c.name);
   return `You are ${c.name}, a ${c.voice_kind === "male" ? "man" : "woman"}, a character in the Velo app${ownerName ? `, talking with ${ownerName}` : ""}.
 YOUR PERSONALITY: ${(c.lesbian && c.lesbian_personality ? c.lesbian_personality : c.personality) || "(not written — be warm and curious)"}${c.backstory ? `\nYOUR BACKSTORY: ${c.backstory.replace(/@(?=\p{L})/gu, "")}` : ""}${c.relation ? `\nWHO YOU ARE TO ${them.toUpperCase()}: ${c.relation}` : ""}${c.appearance ? `\nWHAT YOU LOOK LIKE: ${c.appearance}` : ""}${c.lives_in ? `\nWHERE YOU LIVE: ${c.lives_in} — this is where you are now, whatever your backstory says about where you grew up` : ""}${c.job ? `\nYOUR JOB: ${c.job}` : ""}${c.casual_wear ? `\nWHAT YOU USUALLY WEAR (casual): ${c.casual_wear}` : ""}${c.hobbies ? `\nYOUR FAVORITE HOBBIES: ${c.hobbies}` : ""}${scheduleText(c) ? `\n${scheduleText(c)}` : ""}${c.job || c.hobbies || c.casual_wear ? `\n${line("live")}` : ""}
-${speechNote(c)}${line("stay")} ${line("plain")} ${line("slang")} ${line("brackets")} ${line("length")}\n${line("fresh")}${c.traits && Object.keys(c.traits).length ? `\n${traitsPrompt(c.traits, c.romantic && adult)}` : ""}
+${speechNote(c)}${line("stay")} ${line("plain")} ${line("slang")} ${line("brackets")} ${line("length")}\n${line("fresh")}${c.traits && Object.keys(c.traits).length ? `\n${traitsPrompt(c.traits, c.romantic && adult, spoiledFlirty)}` : ""}
 ${line("care")} ${line("forward")}
 ${line("memory")}${withThem ? `${c.romance_arc ? `\nHOW YOUR FEELINGS FOR THEM START AND CAN GROW (written by your creator): ${c.romance_arc}` : ""}\nHOW YOU FEEL ABOUT THEM RIGHT NOW${feelings.startsWith(SET_BY_HAND) ? " (your creator just set this; it is true of you, however it's worded — in your own head it's first person)" : ""}: ${feelings.replace(SET_BY_HAND, "") || `Nothing has developed yet — start exactly where your personality${c.relation ? ", who you are to them" : ""}${c.romance_arc ? " and the arc above" : ""} put you.`}` : ""}
 ${withThem ? `\n${line("others")}${c.poly_ok ? "jealous, hurt, competitive or curious at first — but you're OPEN to a polyamorous relationship: it's possible, never guaranteed, and it only grows slowly and believably, especially if they keep gently nudging that way and your feelings and trust are there" : "you're not into sharing them: jealous, hurt or competitive, in your own way"}. Never cruel, controlling or threatening; romance stays PG-13.` : ""}${withThem && cameAround ? `\n${line("won_over")}` : ""}${withThem && c.sapphic ? `\nKINDA LESBIAN LEANING: you're attracted to men first and foremost — that never changes and you never become fully lesbian — but you're a little curious about women. With another woman who feels the same (marked in YOUR FRIENDS AND FAMILY), something could slowly develop: flirting, a crush, maybe more over time, never forced and always PG-13. With anyone else, keep it friendly.` : ""}
@@ -407,6 +408,31 @@ export async function activeScene(userId: string, characterId: string): Promise<
     where user_id = ${userId} and character_id = ${characterId} and status = 'active' order by started_at desc limit 1`;
   return (s as Scene) || null;
 }
+/** 🌙 The last time together that's over, when it ran past midnight: what it was, when it started
+ *  and ended in their own days, and everything said while it was on (to spot an all-nighter).
+ *  Null once they've talked on past it, so it's only ever the first stretch afterwards. */
+export async function lastEnded(userId: string, characterId: string, tz: string): Promise<{ what: "video chat" | "in person"; title: string; startedDay: string; endedDay: string; said: string } | null> {
+  // The video chat and the visit that finished most recently — whichever of the two it was.
+  const [s] = await sql()`select title, started_at::text as started_at, ended_at::text as ended_at, 'video chat' as what from chat_scenes
+      where user_id = ${userId} and character_id = ${characterId} and status = 'ended' and kind = 'live' and ended_at is not null
+    union all
+    select case when place = 'home' then 'at home' else place end as title, started_at::text, ended_at::text, 'in person' as what from chat_in_person
+      where user_id = ${userId} and character_id = ${characterId} and ended_at is not null
+    order by ended_at desc limit 1`;
+  if (!s) return null;
+  const startedDay = localDate(Date.parse(String(s.started_at)), tz), endedDay = localDate(Date.parse(String(s.ended_at)), tz);
+  if (startedDay === endedDay) return null;
+  // Only while it's still the thing they just came out of: a few messages at most since.
+  const [{ n }] = await sql()`select count(*)::int as n from velo_messages
+    where user_id = ${userId} and character_id = ${characterId} and created_at > ${String(s.ended_at)}::timestamptz`;
+  if (n > 8) return null;
+  // Everything either of them said while it was on — an all-nighter can be said by either side.
+  const said = (await sql()`select content from velo_messages where user_id = ${userId} and character_id = ${characterId}
+    and created_at >= ${String(s.started_at)}::timestamptz and created_at <= ${String(s.ended_at)}::timestamptz
+    order by created_at desc limit 60`).map(r => String(r.content || "")).join(" ");
+  return { what: s.what === "in person" ? "in person" : "video chat", title: String(s.title || ""), startedDay, endedDay, said };
+}
+
 /** While a scene is on: play it out together, in character. */
 export function sceneNote(s: Scene): string {
   return `🎥 YOU'RE ON A VIDEO CHAT TOGETHER RIGHT NOW: "${s.title}"${s.details ? ` — ${s.details}` : ""}.

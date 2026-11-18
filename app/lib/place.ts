@@ -4,7 +4,7 @@
 // A refresh, an update, or coming back later puts them right back there instead of at the top.
 
 export type PicaPlace = { inbox?: boolean; thread?: string | null; profile?: string | null; following?: boolean; saved?: boolean; mine?: boolean };
-export type Tab = "chat" | "pica" | "today" | "memory" | "settings";
+export type Tab = "chat" | "pica" | "gifts" | "today" | "memory" | "settings";
 export type Place = { tab?: Tab; withId?: string | null; groupId?: string | null; scroll?: Partial<Record<Tab, number>>; pica?: PicaPlace };
 
 const placeKey = (userId: string) => `velo:place:${userId}`;

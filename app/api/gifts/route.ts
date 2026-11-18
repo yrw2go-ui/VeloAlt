@@ -1,0 +1,60 @@
+import { NextRequest, NextResponse } from "next/server";
+import { resolveCaller } from "../../lib/caller";
+import { allow } from "../../lib/rateLimit";
+import { sql } from "../../lib/db";
+import { getCharacterFor } from "../../lib/characters";
+import { thankThem } from "../../lib/thanks";
+import { shopNow, peopleToGift, sendGift, giftHistory, accountsFor, moveAcross, GiftError, BANK, WEEKLY_RATE, PAY_LOW, PAY_HIGH } from "../../lib/giftsDb";
+
+const UUID = /^[0-9a-f-]{36}$/i;
+const bad = (error: string, status = 400) => NextResponse.json({ error }, { status });
+
+// 🎁 Picagifts: the shop, who you can send to and what they're hoping for, and sending it.
+export async function POST(req: NextRequest) {
+  const caller = await resolveCaller(req);
+  if (!caller) return bad("Sign in first.", 401);
+  const me = caller.userId;
+  let b: Record<string, unknown> = {};
+  try { b = (await req.json()) as Record<string, unknown>; } catch { /* no body */ }
+  const action = String(b.action || "");
+  try {
+    switch (action) {
+      // 🛍️ Everything on one screen: what's in stock this week, who to send to, your wallet.
+      case "shop": {
+        const acc = await accountsFor(me);
+        return NextResponse.json({ shop: shopNow(), people: await peopleToGift(me), history: await giftHistory(me, 20),
+          wallet: acc.spend, bank: acc.bank, paid: acc.paid, interest: acc.interest, weeks: acc.weeks,
+          bankName: BANK, rate: WEEKLY_RATE, payLow: PAY_LOW, payHigh: PAY_HIGH });
+      }
+      // 💸 Bring money across from the bank into what you can spend.
+      case "funds": {
+        if (!allow(`funds:${me}`, [{ ms: 60_000, max: 20 }])) return bad("Slow down a moment.", 429);
+        const r = await moveAcross(me, Number(b.amount) || 1000);
+        return NextResponse.json({ wallet: r.spend, bank: r.bank });
+      }
+      case "send": {
+        if (!allow(`gift:${me}`, [{ ms: 60_000, max: 12 }, { ms: 86_400_000, max: 200 }])) return bad("That's a lot of presents at once — try again in a minute.", 429);
+        const kind = b.toKind === "account" ? "account" as const : "character" as const;
+        const id = String(b.toId || "");
+        if (!UUID.test(id)) return bad("Who's it for?");
+        const note = String(b.note || "");
+        const r = await sendGift(me, { kind, id }, { giftId: b.giftId ? String(b.giftId) : undefined, money: Number(b.money) || 0, note });
+        // 💌 She writes back the moment it lands, usually with a photo of herself with it.
+        let said = null;
+        if (kind === "character") {
+          const ch = await getCharacterFor(me, id);
+          const [u] = await sql()`select adult_confirmed_at from users where id = ${me}`;
+          if (ch) said = await thankThem(me, ch, r.gift ? `${r.gift.brand} ${r.gift.name}` : `$${r.amount.toLocaleString()}`,
+            r.gift ? "gift" : "money", r.gift?.id || "", note, !!u?.adult_confirmed_at)
+            .catch(e => { console.error("gifts: thank you", e instanceof Error ? e.message : e); return null; });
+        }
+        return NextResponse.json({ sent: r, said, wallet: r.wallet, bank: (await accountsFor(me)).bank, history: await giftHistory(me, 20) });
+      }
+      default: return bad("Unknown action.");
+    }
+  } catch (e) {
+    if (e instanceof GiftError) return bad(e.message);
+    console.error("gifts:", e instanceof Error ? e.message : e);
+    return bad("Something went wrong — try again.", 500);
+  }
+}

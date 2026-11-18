@@ -317,8 +317,12 @@ export async function POST(req: NextRequest) {
         if (action === "scene.end") {
           if (!cur) return bad("There's no scene going on.");
           await db`update chat_scenes set status = 'ended', ended_at = now() where id = ${cur.id}`;
+          // 🌙 The memory is dated the day it STARTED, not the day they got round to ending it: a
+          // video chat begun last night is a memory of last night, however late it was closed.
+          const began = Date.parse(String(cur.started_at || "")) || Date.now();
+          const onDay = new Date(began).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: isValidTimeZone(b.timeZone) ? String(b.timeZone) : undefined });
           // A lasting memory for her (the play-by-play summary comes from the chat itself).
-          await db`insert into velo_memories (user_id, character_id, kind, text) values (${me}, ${ch.id}, 'fact', ${`We did this together (${day}): ${cur.title}`.slice(0, 300)})`;
+          await db`insert into velo_memories (user_id, character_id, kind, text) values (${me}, ${ch.id}, 'fact', ${`We did this together (${onDay}): ${cur.title}`.slice(0, 300)})`;
           return NextResponse.json({ ok: true, marker: await marker(`🎥 Video chat ended: ${cur.title}`, null) });
         }
         let extra = "";
@@ -349,7 +353,9 @@ export async function POST(req: NextRequest) {
             // 🙈 Sneaking it in from work: she carries that into the video chat.
             if (her.note) extra = her.note;
           }
-          await endInPerson(me, ch.id); // a scene takes over from just hanging out
+          // A video chat takes over from just hanging out — but never from someone who LIVES here:
+          // she doesn't leave her own home to be on camera, and 👁️ ICU keeps working afterwards.
+          if (!(ch.live_in && (await isHome(me, ch)))) await endInPerson(me, ch.id);
           const [s] = await db`insert into chat_scenes (user_id, character_id, kind, title, details, clock, set_time, planned_time, pushed) values (${me}, ${ch.id}, 'live', ${title}, ${[details, extra].filter(Boolean).join(" ")}, ${clock}, ${setTime}, ${plannedTime}, ${pushed}) returning id, kind, title, details, status, started_at::text, clock, set_time, planned_time`;
           return NextResponse.json({ scene: s, marker: await marker(`🎥 Video chat: ${title}${details ? ` — ${details}` : ""}`, String(s.id)) });
         }

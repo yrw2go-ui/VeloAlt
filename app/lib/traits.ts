@@ -93,8 +93,11 @@ export const allowsSuggestive = (raw: unknown) => !raw || typeof raw !== "object
 
 /** The temperament part of a character's instructions. Flirty, Suggestive and Language only count in
  *  PG-13 mode (a romantic character with someone who confirmed they're 18+); otherwise she keeps it clean. */
-export function traitsPrompt(raw: unknown, romance: boolean): string {
-  const t = cleanTraits(raw);
+export function traitsPrompt(raw: unknown, romance: boolean, spoiledFlirty = 0): string {
+  const t = { ...cleanTraits(raw) };
+  // 🎁 A present in the last couple of days nudges Flirty up while the glow lasts. It never pushes
+  // past 10, and a 0 stays a 0 — switching it off means off, whatever anyone sent her.
+  if (romance && spoiledFlirty > 0 && t.flirty > 0) t.flirty = Math.min(10, Math.round(t.flirty + spoiledFlirty));
   const lines = TRAITS.filter(x => romance || !("romantic" in x)).map(x => `- ${x.label} ${t[x.key]}/10: ${t[x.key] === 0 && x.key in NONE ? NONE[x.key as keyof typeof NONE] : x.bands[band(t[x.key])]}`);
   if (!romance) lines.push("- Language: clean — no swearing or crude talk of your own. You still understand it perfectly well when they swear: never act confused by it, and never tell them off for it.");
   // 🤬 The f-word is its own line: the bands are too coarse for it, and it's the one most people

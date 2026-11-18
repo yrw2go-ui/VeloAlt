@@ -18,6 +18,7 @@ import { makeCharacter } from "./makeCharacter";
 import { noteMentions, PLAIN_WORDS } from "./characters";
 import { wordingFor } from "./wording";
 import { wordsFor } from "./wordsDb";
+import { hobbyRule } from "./hobbies";
 
 
 
@@ -487,7 +488,8 @@ async function newFolk(userId: string, f: Folk): Promise<Record<string, unknown>
   const near = home ? ` ${localNote(homeText(home))} Put that town in "lives" as "Town, ST".` : "";
   const raw = await writeText("", `Invent ONE woman who posts on Picagram (a social photo app like Instagram).
 ${folkNote(f, tied ? String(tied.name) : "", t.pica_folk)}
-${t.pica_unique}${near} JSON only: {"name":"First Last (a plain modern American name)","handle":"lowercase_handle from her name","bio":"short bio, the way a small ordinary account reads","look":"${t.pica_look} — no glamour","lives":"City, State"}`,
+${t.pica_unique}${near} ${hobbyRule(Math.random())}
+JSON only: {"name":"First Last (a plain modern American name)","handle":"lowercase_handle from her name","bio":"short bio, the way a small ordinary account reads","look":"${t.pica_look} — no glamour","lives":"City, State"}`,
     `ALREADY TAKEN — avoid these entirely:\n${taken.map(t => t.name).slice(-60).join(", ") || "(nobody yet)"}`, 1200).catch(() => "");
   let a: { name?: string; handle?: string; bio?: string; look?: string; lives?: string } = {};
   try { a = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); } catch { return null; }
@@ -536,7 +538,8 @@ async function newAccount(userId: string): Promise<Record<string, unknown> | nul
   for (let go = 0; go < 3; go++) {
     const raw = await writeText("", `Invent ONE woman who posts on Picagram (a social photo app like Instagram).
 ${vibeNote()}
-${intoWomen ? "⚢ SHE IS A LESBIAN — into women, not men. Let her bio say so the way a real profile would (a flag, \"she/her 🏳️‍🌈\", \"girls only\", a line about her girlfriend or ex-girlfriend) without making it the whole bio, and keep the rest of her exactly as the lane says.\n" : ""}${t.pica_unique}${where} JSON only: {"name":"First Last (a plain modern American name, as described above)","handle":"lowercase_handle (from her name, like ava.miller or mia_russo — no made-up words)","bio":"short bio with emojis","look":"${t.pica_look}","lives":"City, State","followers":12000}`,
+${intoWomen ? "⚢ SHE IS A LESBIAN — into women, not men. Let her bio say so the way a real profile would (a flag, \"she/her 🏳️‍🌈\", \"girls only\", a line about her girlfriend or ex-girlfriend) without making it the whole bio, and keep the rest of her exactly as the lane says.\n" : ""}${t.pica_unique}${where} ${hobbyRule(Math.random())}
+JSON only: {"name":"First Last (a plain modern American name, as described above)","handle":"lowercase_handle (from her name, like ava.miller or mia_russo — no made-up words)","bio":"short bio with emojis","look":"${t.pica_look}","lives":"City, State","followers":12000}`,
       `${names.length ? `ALREADY TAKEN — avoid these names, surnames and handles entirely:\n${names.slice(-60).join(", ")}` : "(nobody yet)"}${clash ? `\n\nYour last try clashed with ${clash} — pick a completely different name.` : ""}`, 1600).catch(() => "");
     let a: { name?: string; handle?: string; bio?: string; look?: string; lives?: string; followers?: number } = {};
     try { a = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); } catch { continue; }

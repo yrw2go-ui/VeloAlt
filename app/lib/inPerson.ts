@@ -5,18 +5,20 @@ import { sql } from "./db";
 export type InPerson = { place: string; started_at: string };
 
 export async function inPersonFor(userId: string, characterId: string): Promise<InPerson | null> {
-  const [r] = await sql()`select place, started_at::text from chat_in_person where user_id = ${userId} and character_id = ${characterId}`;
+  const [r] = await sql()`select place, started_at::text from chat_in_person where user_id = ${userId} and character_id = ${characterId} and ended_at is null`;
   return r ? { place: String(r.place || ""), started_at: String(r.started_at) } : null;
 }
 
 export async function startInPerson(userId: string, characterId: string, place: string, atMine = false): Promise<InPerson> {
   const [r] = await sql()`insert into chat_in_person (user_id, character_id, place, at_mine) values (${userId}, ${characterId}, ${place}, ${atMine})
-    on conflict (user_id, character_id) do update set place = excluded.place, at_mine = excluded.at_mine, started_at = now() returning place, started_at::text`;
+    on conflict (user_id, character_id) where ended_at is null do update set place = excluded.place, at_mine = excluded.at_mine, started_at = now() returning place, started_at::text`;
   return { place: String(r.place || ""), started_at: String(r.started_at) };
 }
 
 export async function endInPerson(userId: string, characterId: string): Promise<boolean> {
-  const rows = await sql()`delete from chat_in_person where user_id = ${userId} and character_id = ${characterId} returning 1`;
+  // The visit is kept, with the time it ended: afterwards she can look back on it (and know a
+  // night has passed since, if one has).
+  const rows = await sql()`update chat_in_person set ended_at = now() where user_id = ${userId} and character_id = ${characterId} and ended_at is null returning 1`;
   return rows.length > 0;
 }
 
@@ -34,7 +36,7 @@ export const homeFor = (userId: string, characterId: string) =>
 /** Is she in? A live-in character is home unless you've said she's out. */
 export async function isHome(userId: string, c: { id: string; live_in?: boolean }): Promise<boolean> {
   if (!c.live_in) return false;
-  const [r] = await sql()`select 1 from chat_in_person where user_id = ${userId} and character_id = ${c.id} and place = ${HOME}`;
+  const [r] = await sql()`select 1 from chat_in_person where user_id = ${userId} and character_id = ${c.id} and place = ${HOME} and ended_at is null`;
   return !!r;
 }
 

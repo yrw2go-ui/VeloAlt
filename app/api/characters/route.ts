@@ -52,10 +52,12 @@ export async function POST(req: NextRequest) {
       // Her own day, not the server's: "today" for someone two zones over isn't today here.
       const off = new Set((await sql()`select character_id, day::text as day from chat_off where user_id = ${me} and day >= current_date - 1`).map(r => `${r.character_id}:${r.day}`));
       // 🏠 Live-in characters who are in right now (a faint green ring on their chip).
-      const home = new Set((await sql()`select character_id from chat_in_person where user_id = ${me} and place = 'home'`).map(r => String(r.character_id)));
+      const home = new Set((await sql()`select character_id from chat_in_person where user_id = ${me} and place = 'home' and ended_at is null`).map(r => String(r.character_id)));
+      // ⭐ At YOUR place right now: round at yours, or someone who lives with you and is in.
+      const atYours = new Set((await sql()`select character_id from chat_in_person where user_id = ${me} and at_mine and ended_at is null`).map(r => String(r.character_id)));
       // 🧍🎥 Together right now — in person somewhere, or on a video chat: a faint blue ring.
       const with_ = new Set([
-        ...(await sql()`select character_id from chat_in_person where user_id = ${me} and place <> 'home'`).map(r => String(r.character_id)),
+        ...(await sql()`select character_id from chat_in_person where user_id = ${me} and place <> 'home' and ended_at is null`).map(r => String(r.character_id)),
         ...(await sql()`select character_id from chat_scenes where user_id = ${me} and status = 'active' and kind = 'live'`).map(r => String(r.character_id)),
       ]);
       const characters = list.map(c => {
@@ -65,7 +67,7 @@ export async function POST(req: NextRequest) {
         const at = workNow(c, zone, Date.now(), skived, c.id);
         const due = skived ? workNow(c, zone, Date.now(), false, c.id) : at;
         const busy = due.atWork ? (due.kind || (inClass(c) ? "class" : "work")) : null;
-        return { ...c, busy, ditched: !!busy && skived, home: c.live_in && home.has(c.id), together: with_.has(c.id) };
+        return { ...c, busy, ditched: !!busy && skived, home: c.live_in && home.has(c.id), together: with_.has(c.id), at_yours: atYours.has(c.id) };
       });
       return NextResponse.json({ characters, portraits: portraitsReady(), admin, brains: admin ? availableBrains() : [], brainModels: admin ? brainList() : [] });
     }

@@ -626,7 +626,9 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
             {atHome ? <>🏠 <b>{character.name}&apos;s home</b> <span className="muted">· you&apos;re in the house together</span></> : <>🚪 <b>{character.name}&apos;s out</b> <span className="muted">· you&apos;re texting</span></>}
           </span>
           <div className="row" style={{ gap: 0, borderRadius: 999, border: "1px solid var(--border)", overflow: "hidden" }}>
-            {([[true, "🏠 Home"], [false, "🚪 Out"]] as const).map(([v, label]) => (
+            {/* 🏷️ Her name on the buttons: this switch is about HER, and the street switch below
+                 (🏠 I'm home / 🚪 I'm out) is about you — they used to read the same. */}
+            {([[true, `🏠 ${character.name.split(" ")[0]} in`], [false, `🚪 ${character.name.split(" ")[0]} out`]] as const).map(([v, label]) => (
               <button key={label} type="button" onClick={() => setHome(v)} disabled={busy} aria-pressed={atHome === v}
                 data-testid={v ? "home-on" : "home-off"}
                 style={{ padding: "4px 10px", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer", color: "var(--text)",
@@ -641,7 +643,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
             {iAmHome ? <>🏠 <b>You&apos;re home</b> <span className="muted">· {character.name} lives a few doors down</span></> : <>🚪 <b>You&apos;re out</b> <span className="muted">· nobody comes by</span></>}
           </span>
           <div className="row" style={{ gap: 0, borderRadius: 999, border: "1px solid var(--border)", overflow: "hidden" }}>
-            {([[true, "🏠 I'm home"], [false, "🚪 Out"]] as const).map(([v, label]) => (
+            {([[true, "🏠 I'm home"], [false, "🚪 I'm out"]] as const).map(([v, label]) => (
               <button key={label} type="button" onClick={() => setMyHome(v)} aria-pressed={iAmHome === v}
                 data-testid={v ? "iam-home-on" : "iam-home-off"}
                 style={{ padding: "4px 10px", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer", color: "var(--text)",

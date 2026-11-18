@@ -50,7 +50,7 @@ export async function maybeInvite(userId: string, force = false): Promise<{ char
   const rows = await sql()`select c.id from chat_characters c
     where (c.owner_id is null or (c.owner_id = ${userId} and c.intro_status = 'accepted')) and c.local and not c.live_in
       and not exists (select 1 from chat_invites i where i.character_id = c.id and i.user_id = ${userId} and i.created_at > now() - interval '3 days')
-      and not exists (select 1 from chat_in_person p where p.user_id = ${userId} and p.character_id = c.id)
+      and not exists (select 1 from chat_in_person p where p.user_id = ${userId} and p.character_id = c.id and p.ended_at is null)
       and not exists (select 1 from chat_scenes s where s.user_id = ${userId} and s.character_id = c.id and s.status = 'active')
       and exists (select 1 from velo_messages m where m.user_id = ${userId} and m.character_id = c.id and m.role = 'user')`;
   for (const r of rows.sort(() => Math.random() - 0.5)) {
