@@ -8,7 +8,7 @@ import { confirmAsk } from "./lib/dialog";
 import { isMyGift } from "./lib/gifts";
 
 type Gift = { id: string; name: string; brand: string; kind: string; price: number; emoji: string };
-type Person = { id: string; kind: "character" | "account"; name: string; handle: string | null; face: string | null; wishlist: Gift[] };
+type Person = { id: string; kind: "character" | "account"; name: string; handle: string | null; face: string | null; wishlist: Gift[]; hinting?: boolean };
 type Sent = { id: string; kind: string; who: string; handle: string | null; what: string; amount: number; wished: boolean; note: string; at: string };
 
 const money = (n: number) => `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
@@ -122,7 +122,7 @@ export default function Gifts() {
               style={{ display: "flex", alignItems: "center", gap: 7, padding: "5px 11px 5px 5px", borderRadius: 999, cursor: "pointer", fontSize: 13, fontWeight: 700,
                 color: "var(--text)", background: chosen?.id === p.id ? "rgba(96,165,250,.18)" : "var(--surface2)",
                 border: `1px solid ${chosen?.id === p.id ? "rgba(96,165,250,.6)" : "var(--border)"}` }}>
-              <Face p={p} size={26} />{p.name}
+              <Face p={p} size={26} />{p.hinting && <span data-testid="hint-dot" title={`${p.name} has hinted at something`} style={{ width: 8, height: 8, borderRadius: "50%", background: "#ef4444", display: "inline-block" }} />}{p.name}
             </button>
           ))}
           {!people.length && <span className="muted" style={{ fontSize: 13 }}>Make a character first, or follow someone on Picagram.</span>}
@@ -133,7 +133,8 @@ export default function Gifts() {
         <>
           {/* 💭 Their wishlist, which moves on each week. */}
           <div data-testid="wishlist" style={{ padding: "10px 12px", borderRadius: 12, background: "rgba(244,114,182,.10)", border: "1px solid rgba(244,114,182,.35)" }}>
-            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>💭 {chosen.name}&apos;s wishlist this week</div>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>💭 {chosen.name}&apos;s wishlist this week
+              {chosen.hinting && <span data-testid="has-hinted" style={{ fontWeight: 500, marginLeft: 6 }}>· 🔴 {chosen.name} has been hinting</span>}</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               {chosen.wishlist.map(g => (
                 <div key={g.id} className="row" style={{ justifyContent: "space-between", gap: 8, fontSize: 13 }}>

@@ -4,6 +4,7 @@ import { sql } from "./db";
 import { scrub } from "./secrets";
 import { GIFTS, giftById, shopFor, weekOf, wishlistFor, onWishlist, boostFrom, myGift, isMyGift, MAX_MY_GIFTS, type Boost, type Gift } from "./gifts";
 import { settle, transfer, BANK, WEEKLY_RATE, PAY_LOW, PAY_HIGH } from "./money";
+import { hintsThisWeek, hintPick, hintLive, hintDealtWith, moneyTier, lovePoints, MONEY_LAVISH } from "./hints";
 
 export class GiftError extends Error {}
 
@@ -88,12 +89,14 @@ export async function peopleToGift(userId: string) {
   // What you listed yourself counts — but only for someone close enough to want one of yours.
   const mine = await myGifts(userId);
   const close = await closenessMap(userId);
+  const hints = await liveHints(userId, now).catch(() => new Map());
   return [
     ...chars.map(r => ({ id: String(r.id), kind: "character" as const, name: String(r.name), handle: null as string | null,
-      face: r.face ? String(r.face) : null, wishlist: wishlistOf(String(r.id), now, mine, close.get(String(r.id)) || 0) })),
+      face: r.face ? String(r.face) : null, wishlist: wishlistOf(String(r.id), now, mine, close.get(String(r.id)) || 0),
+      hinting: hints.has(String(r.id)) })),
     // Someone you only follow on Picagram is never close enough for one of yours.
     ...accounts.map(r => ({ id: String(r.id), kind: "account" as const, name: String(r.name), handle: String(r.handle || ""),
-      face: r.face ? String(r.face) : null, wishlist: wishlistOf(String(r.id), now, [], 0) })),
+      face: r.face ? String(r.face) : null, wishlist: wishlistOf(String(r.id), now, [], 0), hinting: false })),
   ];
 }
 
@@ -118,7 +121,13 @@ export async function sendGift(userId: string, to: { kind: "character" | "accoun
   const [row] = await sql()`insert into pica_gift_sent (user_id, character_id, account_id, kind, gift_id, amount, wished, note)
     values (${userId}, ${to.kind === "character" ? to.id : null}, ${to.kind === "account" ? to.id : null},
       ${gift ? "gift" : "money"}, ${gift?.id || ""}, ${amount}, ${wished}, ${note}) returning id, created_at::text`;
-  return { id: String(row.id), at: String(row.created_at), amount, wished, gift, wallet: wallet - amount };
+  // 💅 If they'd hinted, that's that dealt with and the dot comes down.
+  const dealt = to.kind === "character"
+    ? await dealWithHint(userId, to.id, { giftId: gift?.id, money: gift ? 0 : amount }).catch(() => false) : false;
+  // 💗 Money that was more than a gesture (over $99) moves the love slider a point.
+  const tier = gift ? "small" as const : moneyTier(amount);
+  if (to.kind === "character" && lovePoints(tier) > 0) await nudgeLove(userId, to.id, lovePoints(tier)).catch(() => {});
+  return { id: String(row.id), at: String(row.created_at), amount, wished, gift, tier, dealt, wallet: wallet - amount };
 }
 
 /** 💞 Is she still in the glow of something? Null once two days have gone by. */
@@ -127,6 +136,15 @@ export async function boostFor(userId: string, who: { kind: "character" | "accou
     ? await sql()`select amount, wished, kind, created_at from pica_gift_sent where user_id = ${userId} and character_id = ${who.id} and created_at > now() - interval '48 hours'`
     : await sql()`select amount, wished, kind, created_at from pica_gift_sent where user_id = ${userId} and account_id = ${who.id} and created_at > now() - interval '48 hours'`;
   return boostFrom(rows.map(r => ({ amount: Number(r.amount), wished: !!r.wished, money: String(r.kind) === "money", at: Date.parse(String(r.created_at)) })), now);
+}
+
+/** 💸 $500 or more in cash in the last couple of days: for that stretch there isn't much she
+ *  wouldn't be up for. Gives back what was sent, or null. */
+export async function lavishFor(userId: string, characterId: string): Promise<string | null> {
+  const [r] = await sql()`select amount from pica_gift_sent
+    where user_id = ${userId} and character_id = ${characterId} and kind = 'money' and amount >= ${MONEY_LAVISH}
+      and created_at > now() - interval '48 hours' order by amount desc limit 1`;
+  return r ? `$${Number(r.amount).toLocaleString()}` : null;
 }
 
 /** What she was actually sent, in words, for the line she reads. */
@@ -154,6 +172,59 @@ export async function giftHistory(userId: string, limit = 30) {
       what: String(r.kind) === "money" ? `$${Number(r.amount).toLocaleString()}` : g ? `${g.emoji} ${g.brand} ${g.name}` : "a present",
       amount: Number(r.amount), wished: !!r.wished, note: String(r.note || ""), at: String(r.at) };
   });
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 💅 Hints: who's dropped one, whether the dot is still up, and dealing with it.
+
+/** Raise this week's hints for anyone who has one, and give back everyone with a live one. */
+export async function liveHints(userId: string, now = Date.now()): Promise<Map<string, { kind: string; giftId: string; at: number }>> {
+  const week = weekOf(now);
+  const chars = await sql()`select id from chat_characters where owner_id is null or owner_id = ${userId}`;
+  const mine = await myGifts(userId);
+  const close = await closenessMap(userId);
+  // Whoever is due one this week and hasn't got a row yet gets one now.
+  for (const c of chars) {
+    const id = String(c.id);
+    if (!hintsThisWeek(userId, id, week)) continue;
+    const pick = hintPick(userId, id, week, wishlistOf(id, now, mine, close.get(id) || 0));
+    await sql()`insert into chat_hints (user_id, character_id, week, kind, gift_id)
+      values (${userId}, ${id}, ${week}, ${pick.kind}, ${pick.giftId}) on conflict do nothing`;
+  }
+  const rows = await sql()`select character_id, kind, gift_id, created_at, done_at from chat_hints
+    where user_id = ${userId} and done_at is null and created_at > now() - interval '48 hours'`;
+  const shop = new Set([...shopNow(now).map(g => g.id), ...mine.map(g => g.id)]);
+  const out = new Map<string, { kind: string; giftId: string; at: number }>();
+  for (const r of rows) {
+    const h = { created_at: Date.parse(String(r.created_at)), done_at: r.done_at ? Date.parse(String(r.done_at)) : null, kind: String(r.kind), gift_id: String(r.gift_id || "") };
+    if (hintLive(h, now, id => shop.has(id))) out.set(String(r.character_id), { kind: h.kind, giftId: h.gift_id, at: h.created_at });
+  }
+  return out;
+}
+
+/** ✅ Something arrived: if it deals with their hint, the dot comes down. */
+export async function dealWithHint(userId: string, characterId: string, sent: { giftId?: string; money?: number }): Promise<boolean> {
+  const rows = await sql()`select week, kind, gift_id from chat_hints
+    where user_id = ${userId} and character_id = ${characterId} and done_at is null and created_at > now() - interval '48 hours'`;
+  let any = false;
+  for (const r of rows) {
+    if (!hintDealtWith({ kind: String(r.kind), gift_id: String(r.gift_id || "") }, sent)) continue;
+    await sql()`update chat_hints set done_at = now() where user_id = ${userId} and character_id = ${characterId} and week = ${Number(r.week)}`;
+    any = true;
+  }
+  return any;
+}
+
+
+/** 💗 A point on the love slider — never past 100, and only for a woman in a romance. */
+export async function nudgeLove(userId: string, characterId: string, by: number) {
+  const [c] = await sql()`select romantic, voice_kind from chat_characters where id = ${characterId}`;
+  if (!c?.romantic || String(c.voice_kind) === "male") return;
+  await sql()`insert into chat_relationships (user_id, character_id, feelings, love) values (${userId}, ${characterId}, '', 50)
+    on conflict (user_id, character_id) do nothing`;
+  await sql()`update chat_relationships set love = least(100, coalesce(love, 50) + ${by}), updated_at = now()
+    where user_id = ${userId} and character_id = ${characterId}`;
 }
 
 export { GIFTS, BANK, WEEKLY_RATE, PAY_LOW, PAY_HIGH };

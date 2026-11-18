@@ -42,7 +42,9 @@ import { soreFor, setSore, mend as mendSore, soreNote, SORE_REMEMBER } from "./s
 import { partnerLook, partnerPicNote } from "./partner";
 import { TOGETHER_TIME } from "./together";
 import { afterSceneNote, nightsBetween, stayedUpAllNight } from "./afterScene";
-import { boostFor, lastGiftWords, wishlistOf, myGifts } from "./giftsDb";
+import { boostFor, lastGiftWords, liveHints, lavishFor } from "./giftsDb";
+import { lavishNote } from "./hints";
+import { giftById } from "./gifts";
 import { wealthNote, hintsNow } from "./money";
 import { boostNote } from "./gifts";
 import { timeOfDay } from "./localTime";
@@ -231,11 +233,21 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
   // 💭 Someone close works out that they're comfortable — never a number, just the shape of it —
   // and now and then lets slip something she wants.
   const closeness = Math.max(love ?? 0, trust ?? 0, ch && (happy ?? 0) > 80 ? 56 : 0);
-  const hinting = !!ch && closeness >= 55 && hintsNow(closeness, Math.random());
-  // What she'd hint at is off her own wishlist — which includes anything you listed yourself.
-  const wishes = hinting && ch ? wishlistOf(ch.id, Date.now(), await myGifts(caller.userId).catch(() => []), closeness).map(g => `${g.brand ? `${g.brand} ` : ""}${g.name}`) : [];
+  // 💅 A hint is a thing she has this week, not something she makes up each message: about one
+  // of them in ten has one going, and it's the same thing until it's dealt with or it lapses.
+  const hint = ch && !errand && (mode === "chat" || mode === "talk") && !group
+    ? (await liveHints(caller.userId).catch(() => new Map())).get(ch.id) || null : null;
+  // She brings it up now and then, not in every message.
+  const hinting = !!hint && hintsNow(closeness, Math.random());
+  const wishes = hinting && hint
+    ? (hint.kind === "money" ? ["a bit of help with something — never a number, never an ask"]
+      : [giftById(hint.giftId)?.name ? `${giftById(hint.giftId)!.brand ? `${giftById(hint.giftId)!.brand} ` : ""}${giftById(hint.giftId)!.name}` : ""].filter(Boolean))
+    : [];
   const wealth = ch && !errand && (mode === "chat" || mode === "talk") && !group
     ? wealthNote(closeness, spoil ? 1 : 0, hinting, wishes) : "";
+  // 💸 $500 or more in cash in the last couple of days.
+  const lavish = ch && !errand && (mode === "chat" || mode === "talk") && !group
+    ? await lavishFor(caller.userId, ch.id).catch(() => null) : null;
   const photoMoment = ch && mode === "chat" && canSend && !scene && !group && !together ? await tickPics(caller.userId, ch).catch(() => false) : false;
   // 👋 Every so often (once she's close to them), she wants them to meet someone of hers.
   const introKind = ch && mode === "chat" && !scene && !group ? await tickIntro(caller.userId, ch, !!u?.adult_confirmed_at).catch(e => { console.error("velo: intro", e instanceof Error ? e.message : e); return null; }) : null;
@@ -261,6 +273,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
         afterNote,
         spoil ? boostNote(spoil, giftWords || "a present", name || "they") : "",
         wealth,
+        lavish ? lavishNote(name || "they", lavish) : "",
         errand || occasion ? "" : "The evening runs late: people here are up and talking until around 1am, so don't start winding the conversation down, saying goodnight or telling them to get some sleep just because it's gone eleven — only once it's properly the small hours, and even then only if it fits.",
         chClock,
         ch && !occasion ? workNow(ch, chZone || today.tz, Date.now(), skived, ch.id).text : "",
