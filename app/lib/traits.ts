@@ -27,8 +27,10 @@ export const TRAITS = [
     bands: ["even-keeled; keeps things light", "gets reflective sometimes", "drifts into deep, philosophical talk about life, and their mood can swing — happy and frustrated in the same conversation"] },
   { key: "trust", label: "Trust", icon: "🤝", hint: "How trusting by nature (0 = trust isn't a factor)",
     bands: ["slow to trust — guarded at first; trust has to be earned with time and consistency, and it's lost fast", "trusts at a normal pace", "trusting from the start — gives people the benefit of the doubt"] },
-  { key: "language", label: "Language", icon: "🤬", hint: "How often they swear and talk crude (romantic mode only)", romantic: true,
-    bands: ["clean — doesn't swear", "swears now and then (damn, hell, shit, pissed)", "swears freely and talks crude, like a real person who curses — \"don't be a pussy!\", \"holy shit\", joking she likes to be a hoe, or gossiping that some girl is such a slut she can't stand her. Not in every sentence. Never hate slurs (race, religion, sexuality, disability), and never uses it to put THEM down"] },
+  { key: "language", label: "Language", icon: "🤬", hint: "How often they swear and talk crude (PG-13 mode only)", romantic: true,
+    bands: ["clean — doesn't swear (they still understand it perfectly well when someone else does)",
+      "swears now and then, the mild end of it: damn, hell, shit, crap, pissed off, \"son of a bitch\", \"what the hell\", \"screw this\". Never the f-word",
+      "swears freely and talks crude, like a real person who curses — \"don't be a pussy!\", \"fuck me\", \"son of a bitch\", \"holy shit\", joking she likes to be a hoe, or gossiping that some girl is such a slut she can't stand her. Not in every sentence. Never hate slurs (race, religion, sexuality, disability), and never uses it to put THEM down"] },
 ] as const;
 export type TraitKey = (typeof TRAITS)[number]["key"];
 export type Traits = Partial<Record<TraitKey, number>>;
@@ -84,17 +86,30 @@ const NONE = {
 };
 /** Trust dynamics are on unless the Trust slider is 0. Starting trust (0–100) comes from it. */
 export const trustOn = (raw: unknown) => !!raw && typeof raw === "object" && Object.keys(raw).length > 0 && cleanTraits(raw).trust > 0;
+export const startingLove = (raw: unknown) => Math.max(5, Math.min(60, cleanTraits(raw).love * 6));
 export const startingTrust = (raw: unknown) => Math.max(5, Math.min(90, cleanTraits(raw).trust * 9));
 /** PG-13 mode with Suggestive at 0: photos stay family-friendly. */
 export const allowsSuggestive = (raw: unknown) => !raw || typeof raw !== "object" || !Object.keys(raw).length || cleanTraits(raw).suggestive > 0;
 
 /** The temperament part of a character's instructions. Flirty, Suggestive and Language only count in
- *  romantic mode (a romantic character with someone who confirmed they're 18+); otherwise she keeps it clean. */
-export function traitsPrompt(raw: unknown, romance: boolean): string {
-  const t = cleanTraits(raw);
+ *  PG-13 mode (a romantic character with someone who confirmed they're 18+); otherwise she keeps it clean. */
+export function traitsPrompt(raw: unknown, romance: boolean, spoiledFlirty = 0): string {
+  const t = { ...cleanTraits(raw) };
+  // 🎁 A present in the last couple of days nudges Flirty up while the glow lasts. It never pushes
+  // past 10, and a 0 stays a 0 — switching it off means off, whatever anyone sent her.
+  if (romance && spoiledFlirty > 0 && t.flirty > 0) t.flirty = Math.min(10, Math.round(t.flirty + spoiledFlirty));
   const lines = TRAITS.filter(x => romance || !("romantic" in x)).map(x => `- ${x.label} ${t[x.key]}/10: ${t[x.key] === 0 && x.key in NONE ? NONE[x.key as keyof typeof NONE] : x.bands[band(t[x.key])]}`);
-  if (!romance) lines.push("- Language: clean — no swearing or crude talk.");
-  else lines.push("These spicy sliders are hard limits: whatever romantic mode allows, a 0 means NONE of that at all.");
+  if (!romance) lines.push("- Language: clean — no swearing or crude talk of your own. You still understand it perfectly well when they swear: never act confused by it, and never tell them off for it.");
+  // 🤬 The f-word is its own line: the bands are too coarse for it, and it's the one most people
+  // feel differently about. Above a 5 it's fair game; at 5 or under it never appears at all.
+  else {
+    // Below a 4 the band already says they don't swear at all, so this would only be noise.
+    if (t.language >= 4) lines.push(t.language >= 6
+      ? `- The f-word is fair game at Language ${t.language}/10 — "fuck", "fucking", "fuck me", "what the fuck" — where it genuinely fits the moment, not as filler in every message.`
+      : `- The f-word is off at Language ${t.language}/10: never "fuck" or anything built on it, however heated it gets — the milder swearing above is as far as it goes.`);
+    lines.push("You understand every swear word and crude phrase someone else uses, whatever your own level is — never act confused by one, and never tell them off for it.");
+    lines.push("These PG-13 sliders are hard limits: whatever PG-13 allows, a 0 means NONE of that at all.");
+  }
   return `YOUR TEMPERAMENT (tendencies on a 0–10 scale; your written personality wins if they ever disagree):
 ${lines.join("\n")}
 How to use it: be a real person, not a checklist. Show these through word choice, rhythm and how you react — never name them or describe yourself with them. Let them blend (a cold person can still be funny; an eager-to-please person can still have opinions). Vary naturally: real people have off days, and the time of day, your mood, and how they treat you all shift things. Never act out every trait in one message — most messages should just sound like a normal person texting.`;
