@@ -4,9 +4,10 @@
 // saved to Blob. A slow or flaky step is retried, never dropped; it only gives up when
 // Atlas says the job failed or it's been going for hours.
 //
-// Safety: everything is family-friendly and fully clothed; only fictional characters
-// (from their portrait) or Velo's own preset faces are used as references — never a
-// photo someone uploaded, and never the person they're talking with.
+// Safety: a non-romantic picture stays fully clothed. A romantic adult can be suggestive,
+// and explicit only when that character's switch is on. References are a fictional
+// character's portrait or Velo's own preset faces — never a photo someone uploaded,
+// and never the person they're talking with.
 import type Anthropic from "@anthropic-ai/sdk";
 // Supabase Storage (replaces Vercel Blob)
 import sharp from "sharp";
