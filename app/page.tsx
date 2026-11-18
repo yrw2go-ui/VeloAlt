@@ -352,9 +352,9 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   };
 
   return (
-    <div style={{ height: "100dvh", display: "flex", flexDirection: "column", width: "100%", minWidth: 0, maxWidth: 720, margin: "0 auto", overflowX: "hidden" }}>
+    <div style={{ height: "100dvh", display: "flex", flexDirection: "column", width: "100%", minWidth: 0, maxWidth: "min(720px, 100%)", margin: "0 auto", overflowX: "hidden" }}>
       {calling && callMini && <div aria-hidden style={{ height: "calc(max(8px, env(safe-area-inset-top)) + 50px)", flexShrink: 0 }} />}
-      <header className="row" style={{ gap: 8, padding: "max(6px, env(safe-area-inset-top)) 12px 6px", borderBottom: "1px solid var(--border)" }}>
+      <header className="row" style={{ gap: 8, width: "100%", minWidth: 0, maxWidth: "100%", overflow: "hidden", padding: "max(6px, env(safe-area-inset-top)) 12px 6px", borderBottom: "1px solid var(--border)" }}>
         <VeloLogo size={32} />
         <div className="row" style={{ flex: 1, minWidth: 0, gap: 6, alignItems: "baseline" }}>
           <div style={{ fontWeight: 800, fontSize: 15 }}>Velo 2</div>
@@ -430,7 +430,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
         </div>
       )}
 
-      <main ref={mainRef} onScroll={onMainScroll} style={{ flex: 1, minHeight: 0, overflowY: tab === "chat" ? "hidden" : "auto", display: "flex", flexDirection: "column" }}>
+      <main ref={mainRef} onScroll={onMainScroll} style={{ flex: 1, width: "100%", minWidth: 0, maxWidth: "100%", minHeight: 0, overflowX: "hidden", overflowY: tab === "chat" ? "hidden" : "auto", display: "flex", flexDirection: "column" }}>
         {tab === "chat" && <CharacterStrip characters={chars} active={withChar?.id || null} admin={admin} onPick={pickChat} onNew={() => setNewChar(true)} onEdit={setEditing} onGallery={() => setGallery(true)} unread={unread}
           groups={groups} activeGroup={inGroup?.id || null} onPickGroup={setGroupId} onNewGroup={() => setMakingGroup(true)} />}
         {inGroup && <GroupChat key={inGroup.id} group={inGroup} chars={chars} name={name} brains={brains} onDeleted={id => { setGroups(gs => gs.filter(g => g.id !== id)); setGroupId(null); }} />}
@@ -445,10 +445,10 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
           chars={chars} admin={admin} brains={brains} brainModels={brainModels} onCharChange={c => setChars(cs => cs.map(x => (x.id === c.id ? { ...x, brain: c.brain } : x)))} />}
       </main>
 
-      <nav style={{ display: "flex", borderTop: "1px solid var(--border)", paddingBottom: "env(safe-area-inset-bottom)", background: "var(--surface)" }}>
+      <nav style={{ display: "flex", width: "100%", minWidth: 0, maxWidth: "100%", overflow: "hidden", borderTop: "1px solid var(--border)", paddingBottom: "env(safe-area-inset-bottom)", background: "var(--surface)" }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} aria-current={tab === t.id ? "page" : undefined}
-            style={{ flex: 1, background: "none", border: "none", padding: "10px 0 12px", color: tab === t.id ? "var(--accent)" : "var(--muted)", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, fontSize: 12, fontWeight: 700 }}>
+            style={{ flex: "1 1 0", minWidth: 0, background: "none", border: "none", padding: "10px 0 12px", color: tab === t.id ? "var(--accent)" : "var(--muted)", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, fontSize: 12, fontWeight: 700 }}>
             <span style={{ fontSize: 20, position: "relative" }}>{t.icon}
               {t.id === "pica" && picaNew > 0 && tab !== "pica" && <span data-testid="pica-badge" aria-label={`${picaNew} new posts`} style={{ position: "absolute", top: -6, right: -14, minWidth: 18, height: 18, padding: "0 5px", borderRadius: 999, background: "#ef4444", color: "#fff", fontSize: 11, fontWeight: 800, lineHeight: "18px", textAlign: "center" }}>{picaNew > 99 ? "99+" : picaNew}</span>}
             </span>{t.label}
@@ -497,7 +497,7 @@ function Settings({ name, setName, onOut, profile, onProfile, chars = [], admin 
     if (ok) { setName(n); setSaved(true); setTimeout(() => setSaved(false), 1500); }
   };
   return (
-    <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={{ width: "100%", minWidth: 0, maxWidth: "100%", overflowX: "hidden", padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
       <div className="card">
         <div style={{ fontWeight: 700, marginBottom: 8 }}>What should Velo call you?</div>
         <div className="row">

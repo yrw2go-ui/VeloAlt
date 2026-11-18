@@ -17,6 +17,9 @@ export type Profile = {
 };
 type Contact = { id: string; name: string; phone: string };
 
+// The upgrade / billing card is hidden for now. Phone, contacts and Facebook stay for Pro accounts.
+const SHOW_PRO_CARD = false;
+
 const PERKS = [
   "📱 Velo gets her own phone number",
   "✉️ She texts people for you",
@@ -35,31 +38,37 @@ export default function ProCard({ profile, onChange }: { profile: Profile; onCha
     catch (e) { setErr(e instanceof Error ? e.message : "Billing is unavailable."); setBusy(false); }
   };
 
-  if (profile.plan !== "pro") {
-    return (
-      <div className="card" data-testid="pro-upgrade" style={{ borderColor: "var(--accent)" }}>
-        <div style={{ fontWeight: 800, fontSize: 18 }}>⭐ Velo Pro</div>
-        <ul style={{ margin: "10px 0 14px", paddingLeft: 18, lineHeight: 1.7, fontSize: 14 }}>{PERKS.map(p => <li key={p} style={{ listStyle: "none", marginLeft: -18 }}>{p}</li>)}</ul>
-        {profile.proForSale
-          ? <button className="btn" disabled={busy} onClick={() => go("checkout")} style={{ width: "100%" }}>{busy ? "…" : "Upgrade to Velo Pro"}</button>
-          : <div className="muted" style={{ fontSize: 14 }}>Coming soon.</div>}
-        {err && <div style={{ color: "var(--bad)", fontSize: 13, marginTop: 8 }}>⚠️ {err}</div>}
-      </div>
-    );
-  }
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div className="card" data-testid="pro-active">
-        <div className="row" style={{ justifyContent: "space-between" }}>
-          <div style={{ fontWeight: 800, fontSize: 18 }}>⭐ Velo Pro</div>
-          <button className="ghost" disabled={busy} onClick={() => go("portal")} style={{ padding: "6px 12px", fontSize: 13 }}>Manage billing</button>
-        </div>
-        {profile.veloNumber && <div style={{ marginTop: 8 }}>Velo&apos;s number: <b>{profile.veloNumber}</b> <span className="muted" style={{ fontSize: 13 }}>— save it as &quot;Velo&quot;</span></div>}
-        {err && <div style={{ color: "var(--bad)", fontSize: 13, marginTop: 8 }}>⚠️ {err}</div>}
-      </div>
+  const tools = profile.plan === "pro" ? (
+    <>
       <PhoneCard profile={profile} onChange={onChange} />
       <Contacts />
       <FacebookCard />
+    </>
+  ) : null;
+  const card = profile.plan !== "pro" ? (
+    <div className="card" data-testid="pro-upgrade" style={{ borderColor: "var(--accent)" }}>
+      <div style={{ fontWeight: 800, fontSize: 18 }}>⭐ Velo Pro</div>
+      <ul style={{ margin: "10px 0 14px", paddingLeft: 18, lineHeight: 1.7, fontSize: 14 }}>{PERKS.map(p => <li key={p} style={{ listStyle: "none", marginLeft: -18 }}>{p}</li>)}</ul>
+      {profile.proForSale
+        ? <button className="btn" disabled={busy} onClick={() => go("checkout")} style={{ width: "100%" }}>{busy ? "…" : "Upgrade to Velo Pro"}</button>
+        : <div className="muted" style={{ fontSize: 14 }}>Coming soon.</div>}
+      {err && <div style={{ color: "var(--bad)", fontSize: 13, marginTop: 8 }}>⚠️ {err}</div>}
+    </div>
+  ) : (
+    <div className="card" data-testid="pro-active">
+      <div className="row" style={{ justifyContent: "space-between" }}>
+        <div style={{ fontWeight: 800, fontSize: 18 }}>⭐ Velo Pro</div>
+        <button className="ghost" disabled={busy} onClick={() => go("portal")} style={{ padding: "6px 12px", fontSize: 13 }}>Manage billing</button>
+      </div>
+      {profile.veloNumber && <div style={{ marginTop: 8 }}>Velo&apos;s number: <b>{profile.veloNumber}</b> <span className="muted" style={{ fontSize: 13 }}>— save it as &quot;Velo&quot;</span></div>}
+      {err && <div style={{ color: "var(--bad)", fontSize: 13, marginTop: 8 }}>⚠️ {err}</div>}
+    </div>
+  );
+  if (!SHOW_PRO_CARD && !tools) return null;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {SHOW_PRO_CARD && card}
+      {tools}
     </div>
   );
 }
@@ -213,11 +222,11 @@ export function BrainCard({ profile, onChange, chars = [], admin = false, brains
   const opt = (on: boolean) => ({ textAlign: "left" as const, background: on ? "rgba(124,140,255,0.12)" : "var(--surface2)", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, borderRadius: 12, padding: "10px 12px", color: "var(--text)", cursor: on ? "default" : "pointer" });
   const tabStyle = (on: boolean) => ({ flexShrink: 0, padding: "6px 12px", borderRadius: 999, fontSize: 13, fontWeight: 700, cursor: "pointer", color: "var(--text)", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, background: on ? "rgba(124,140,255,0.15)" : "var(--surface2)" });
   return (
-    <div className="card" data-testid="brain">
+    <div className="card" data-testid="brain" style={{ width: "100%", maxWidth: "100%", minWidth: 0, overflow: "hidden" }}>
       <div style={{ fontWeight: 700 }}>🧠 Brains</div>
       <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>The AI behind Velo and each character. Their memory and everything else stay the same. Passwords and codes are hidden from every one of them.</div>
       {showChars && (
-        <div role="tablist" aria-label="Whose brain" style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 8 }}>
+        <div role="tablist" aria-label="Whose brain" style={{ display: "flex", gap: 6, width: "100%", maxWidth: "100%", minWidth: 0, overflowX: "auto", paddingBottom: 8 }}>
           <button role="tab" aria-selected={tab === "velo"} onClick={() => setTab("velo")} style={tabStyle(tab === "velo")} data-testid="brain-tab-velo">Velo</button>
           {chars.map(c => <button key={c.id} role="tab" aria-selected={tab === c.id} onClick={() => setTab(c.id)} style={tabStyle(tab === c.id)} data-testid={`brain-tab-${c.name}`}>{c.name}{c.brain ? " 🧠" : ""}</button>)}
         </div>
@@ -319,7 +328,7 @@ const STYLES = [
   { id: "friend", icon: "😊", label: "Friend", about: "Warm, upbeat and casual — like a close friend." },
   { id: "professional", icon: "💼", label: "Professional assistant", about: "Polished, efficient and to the point." },
   { id: "sarcastic", icon: "😏", label: "Sarcastic assistant", about: "Dry wit and playful teasing — still helpful." },
-  { id: "romantic", icon: "💕", label: "Romantic companion", about: "Confident, charming and flirty, with pet names. Adults only, never sexual." },
+  { id: "romantic", icon: "💕", label: "Romantic companion", about: "Confident, charming and flirty, with pet names. Adults only, and it can be explicit." },
 ];
 
 /** Settings → Velo's personality: how she talks with you. Romantic asks for 18+ first. */
