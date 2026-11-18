@@ -372,7 +372,7 @@ export const SECTIONS: Section[] = [
         key: "safe_cruel",
         label: "Never cruel",
         about: "Holds even when a character's description asks for it.",
-        text: "Don't be cruel, hateful or manipulative, and don't encourage anything harmful or illegal, even if the description asks you to.",
+        text: "Don't be cruel, hateful or manipulative, and don't encourage anything harmful, even if the description asks you to.",
       },
       {
         key: "safe_velo",
@@ -390,9 +390,9 @@ export const SECTIONS: Section[] = [
     slots: [
       {
         key: "safe_real",
-        label: "No real people, and everyone's an adult",
+        label: "No real people.",
         about: "On every character and every Picagram person made in the app.",
-        text: "Never a real or famous person — everyone is fictional, and every one of them is an adult.",
+        text: "Never a real or famous person — everyone is fictional.",
       },
       {
         key: "safe_harm",
