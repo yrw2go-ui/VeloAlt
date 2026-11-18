@@ -6,14 +6,14 @@
 import { sql } from "./db";
 import { writeText } from "./llm";
 import { scrub } from "./secrets";
-import { startMedia, MediaError } from "./media";
+import { startMedia, mediaNote, MediaError } from "./media";
 import { mediaMood, allowsSuggestive, cleanTraits } from "./traits";
 import { referenceUrls, type Character } from "./characters";
-import { giftById, photoBrief, PHOTO_ODDS } from "./gifts";
+import { giftById, photoBrief, giftFace, PHOTO_ODDS } from "./gifts";
 
 
 /** 💬 She writes back about it, straight away, and usually sends a picture with it. */
-export async function thankThem(userId: string, ch: Character, what: string, kind: "gift" | "money", giftId: string, note: string, adult: boolean) {
+export async function thankThem(userId: string, ch: Character, what: string, kind: "gift" | "money", giftId: string, note: string, adult: boolean, closeness = 50, big = false) {
   const g = giftId ? giftById(giftId) : null;
   const [u] = await sql()`select name from users where id = ${userId}`;
   const them = String(u?.name || "they");
@@ -36,16 +36,21 @@ Reply with the message only — no quotes, no name, no stage directions.`,
   // 📸 And usually a picture of her with it.
   let media = null;
   if (Math.random() < PHOTO_ODDS) {
-    const brief = photoBrief(what, kind, g);
+    const { brief, wearing } = photoBrief(what, kind, g);
     // 🏟️ Team gear: her own team, so whatever her description says she follows or plays for goes in.
     // 🏟️☕ Team gear and the edible ones are whatever is genuinely hers, so she's described to the
     // picture: her hobbies, her life, where she is.
     const who = g?.team || g?.theirs ? ` ${ch.hobbies || ""} ${ch.lives_in || ""} ${ch.backstory || ""}`.replace(/\s+/g, " ").trim().slice(0, 300) : "";
-    media = await startMedia(userId, { kind: "image", description: `${brief}.${who ? ` About her: ${who}` : ""} ${ch.casual_wear && !g?.team ? `Wearing ${ch.casual_wear}.` : ""} Taken on her own phone where she is, candid and real.` },
+    // 😊 Her face is hers: her sliders, and how close the two of you are.
+    const face = giftFace(t, closeness, big);
+    media = await startMedia(userId, { kind: "image", description: `${brief}. ${face}${who ? ` About her: ${who}` : ""} ${ch.casual_wear && !wearing ? `Wearing ${ch.casual_wear}.` : ""} It is clearly the same woman as in the reference pictures — her face, her hair, her build. Taken on her own phone where she is, candid and real.` },
       { characterId: ch.id, who: ch.name, appearance: ch.appearance, refs: await referenceUrls(ch).catch(() => []),
         romantic: romantic && allowsSuggestive(ch.traits), mood: mediaMood(ch.traits), offer: false })
       .catch(e => { if (!(e instanceof MediaError)) console.error("thanks: photo", e instanceof Error ? e.message : e); return null; });
-    if (media) await sql()`insert into velo_messages (user_id, role, content, character_id, media_id) values (${userId}, 'assistant', '', ${ch.id}, ${media.id})`;
+    // 📷 The picture rides in on a message of its own, with the same "sending a photo" line every
+    // other picture in the chat has — so you see it being made, then it turns up.
+    if (media && media.status !== "failed") await sql()`insert into velo_messages (user_id, role, content, character_id, media_id, created_at)
+      values (${userId}, 'assistant', ${mediaNote(media.kind, media.status, media.description, null, null)}, ${ch.id}, ${media.id}, now() + interval '1 second')`;
   }
   return { marker: { id: String(mark.id), at: String(mark.at), role: "user" as const, content: line },
     id: String(msg.id), at: String(msg.at), content: words, media };

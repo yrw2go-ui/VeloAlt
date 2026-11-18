@@ -24,7 +24,13 @@ export function dropMeta(t: string): string {
 }
 
 /** True when nothing usable is left once the stage directions and leaked tool calls are gone. */
+// 😏 A reply that's only an emoji says plenty — it's an answer, not an empty message. (Before
+// this, "no letters in it" meant "she said nothing", and a one-emoji reply was thrown away.)
+const ONLY_EMOJI = /^(?:\p{Extended_Pictographic}|\p{Emoji_Component}|[\uFE0F\u200D\s])+$/u;
+export const isOnlyEmoji = (t: string) => { const s = String(t || "").trim(); return !!s && ONLY_EMOJI.test(s); };
+
 export function isMeta(t: string): boolean {
+  if (isOnlyEmoji(t)) return false; // 😏 on its own is an answer, not an empty message
   const left = cleanReply(t);
   return !!t.trim() && (!left || !SAYS.test(left));
 }

@@ -31,15 +31,15 @@ ok(staples.every(g => shopFor(w).some(x => x.id === g.id) && shopFor(w + 7).some
 ok(giftById("iced-latte")!.price === 10 && giftById("ice-cream")!.price === 8 && giftById("food-delivery")!.price === 30
   && giftById("gift-card")!.price === 50 && giftById("team-gear")!.price === 60, "…priced as the small things they are");
 ok(!staples.some(g => ["aaa", "bbb", "ccc", "ddd"].some(who => [w, w + 1, w + 5].some(k => wishlistFor(who, k).some(x => x.id === g.id)))), "…and never what someone puts on a wishlist");
-ok(/their OWN team/.test(photoBrief("team gear", "gift", giftById("team-gear"))), "team gear is their own team, not a random one");
+ok(/their OWN team/.test(photoBrief("team gear", "gift", giftById("team-gear")).brief), "team gear is their own team, not a random one");
 // ☕🍦🥡 And the edible ones are whatever THIS person actually orders.
 for (const id of ["iced-latte", "ice-cream", "food-delivery"]) {
-  const brief = photoBrief(giftById(id)!.name, "gift", giftById(id));
+  const brief = photoBrief(giftById(id)!.name, "gift", giftById(id)).brief;
   ok(/their OWN usual/.test(brief) && /THIS person actually orders/.test(brief), `a ${giftById(id)!.name} is their own usual, not a stock one`);
   ok(/never tacos unless tacos are genuinely theirs/.test(brief), `…and nobody defaults to tacos (${id})`);
 }
-ok(!/OWN usual/.test(photoBrief("Gucci GG Marmont purse", "gift", giftById("gucci-purse"))), "a purse is just a purse — it isn't theirs to choose");
-ok(/follow or play for/.test(photoBrief("team gear", "gift", giftById("team-gear"))), "…the one they follow or play for");
+ok(!/OWN usual/.test(photoBrief("Gucci GG Marmont purse", "gift", giftById("gucci-purse")).brief), "a purse is just a purse — it isn't theirs to choose");
+ok(/follow or play for/.test(photoBrief("team gear", "gift", giftById("team-gear")).brief), "…the one they follow or play for");
 ok(a.some(g => g.price > 1000) || b.some(g => g.price > 1000), "and the dear things come round");
 
 // 💭 Everyone keeps a wishlist of their own, and it moves on.
@@ -106,7 +106,7 @@ ok(!wants(0) && !wants(30), "a new one who barely knows you certainly doesn't");
 ok(wishlistFor(her, w, ownPool, 100).length === 3 && wishlistFor(her, w, ownPool, 0).length === 3, "either way a wishlist is three things");
 ok(!wishlistFor(her, w, ownPool, 0).some(g => isMyGift(g.id)), "…and theirs is only ever the catalogue until then");
 ok(onWishlist(her, w, wishlistFor(her, w, ownPool, 100)[0].id, ownPool, 100), "something on it reads as wished for, yours or not");
-ok(/holding up the courtside tickets/.test(photoBrief("courtside tickets", "gift", own)), `in the photo she holds one of yours up: "${photoBrief("courtside tickets", "gift", own)}"`);
+ok(/holding up the courtside tickets/.test(photoBrief("courtside tickets", "gift", own).brief), `in the photo she holds one of yours up: "${photoBrief("courtside tickets", "gift", own).brief}"`);
 
 console.log(bad ? `\n${bad} failed` : "\nall good");
 process.exit(bad ? 1 : 0);

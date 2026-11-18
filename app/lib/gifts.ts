@@ -130,19 +130,48 @@ export function boostNote(boost: Boost | null, what: string, who: string): strin
   return `🎁 ${who} sent you ${what} in the last couple of days, and it landed: you're warmer with them than usual, quicker to want to see them, and you'd bend your day around them — slip out of work, skip a class, take the call you shouldn't — more readily than you normally would. Bring it up the way anyone would (pleased, teasing, a bit spoiled), never as a transaction, and never as something that bought you.`;
 }
 
+// 😊 Her face in the picture. The same present lands differently on different people: someone
+// cold gives you the smallest smile she's got, someone daft is already laughing, someone flirty is
+// looking at the camera over her shoulder. And how close you are changes it again — a woman who's
+// mad about you looks at the lens like it's you; one who barely knows you is politer about it.
+export function giftFace(t: { humor?: number; coldness?: number; flirty?: number; energetic?: number; moody?: number }, closeness: number, big = false): string {
+  const n = (v: unknown) => Math.max(0, Math.min(10, Number(v) || 0));
+  const humor = n(t.humor), cold = n(t.coldness), flirty = n(t.flirty), lively = n(t.energetic), moody = n(t.moody);
+  const face = cold >= 7 ? "barely smiling — pleased, and not about to make a fuss of it"
+    : humor >= 7 ? "mid-laugh, caught enjoying herself"
+    : flirty >= 7 ? "a slow pleased smile, looking straight down the lens"
+    : lively >= 7 ? "beaming, caught mid-bounce"
+    : moody >= 7 ? "a small, almost shy smile that doesn't quite reach the camera"
+    : "a warm, genuine smile";
+  const toward = closeness >= 70 ? "Looking right at the camera as though it's them."
+    : closeness >= 45 ? "Half looking at the camera."
+    : "Not quite looking at the camera — a little shy about it.";
+  const more = big ? " Caught off guard by it — it's more than she expected." : "";
+  return `Her expression: ${face}. ${toward}${more}`;
+}
+
 /** 📸 How often a thank-you comes with a photo: most of the time, not always. */
 export const PHOTO_ODDS = 0.7;
 
-/** What the picture is of, when there is one. */
-export function photoBrief(what: string, kind: "gift" | "money", g: Pick<Gift, "emoji" | "name" | "brand" | "kind"> & { team?: true; theirs?: true } | null): string {
-  if (kind === "money") return `holding up a fan of cash — ${what} in notes — grinning at the camera`;
+/**
+ * What the picture is of, when there is one.
+ *
+ * `wearing` says she has the present ON. When she has, nothing else is described for her to wear:
+ * telling the picture she's in the new boots AND her usual white sneakers is how you get a photo of
+ * someone holding boots. Something she can wear is held up about half the time anyway — both are
+ * worth seeing.
+ */
+export function photoBrief(what: string, kind: "gift" | "money", g: Pick<Gift, "emoji" | "name" | "brand" | "kind"> & { team?: true; theirs?: true } | null, roll = Math.random()): { brief: string; wearing: boolean } {
+  const held = (brief: string) => ({ brief, wearing: false });
+  if (kind === "money") return held(`holding up a fan of cash — ${what} in notes — grinning at the camera`);
   // One of yours, or something we don't know: she holds it up. ("a present" reads as "the present".)
-  if (!g || g.kind === "mine") return `holding up the ${what.replace(/^(?:an?|the)\s+/i, "") || "present"} they've just been sent, pleased with it`;
+  if (!g || g.kind === "mine") return held(`holding up the ${what.replace(/^(?:an?|the)\s+/i, "") || "present"} they've just been sent, pleased with it`);
   // 🏟️ Team gear is whatever team is actually theirs — the one they follow, or the one they play for.
-  if (g.team) return `wearing the team gear they've just been sent — their OWN team, the one they follow or play for (from their description: their college side, their city's team, the sport they play), in that team's real colours — showing it off to the camera`;
+  if (g.team) return { brief: `wearing the team gear they've just been sent — their OWN team, the one they follow or play for (from their description: their college side, their city's team, the sport they play), in that team's real colours — showing it off to the camera`, wearing: true };
   // ☕🍦🥡 A coffee, a pudding, dinner: whatever THIS person actually orders, not a stock answer.
-  if (g.theirs) return `with the ${g.name} they've just been sent — their OWN usual, the drink or the food THIS person actually orders (from their description, where they live, what they're like), never a stock answer and never tacos unless tacos are genuinely theirs — holding it up to the camera, pleased`;
-  const worn = ["clothes", "shoes", "jewellery", "bag"].includes(g.kind);
-  return worn ? `wearing the ${g.brand} ${g.name} they've just been sent, showing it off to the camera`
-    : `holding up the ${g.brand} ${g.name} they've just been sent, pleased with it`;
+  if (g.theirs) return held(`with the ${g.name} they've just been sent — their OWN usual, the drink or the food THIS person actually orders (from their description, where they live, what they're like), never a stock answer and never tacos unless tacos are genuinely theirs — holding it up to the camera, pleased`);
+  // 👗 Something she can wear: on about half the time, held up to the camera the other half.
+  const canWear = ["clothes", "shoes", "jewellery", "bag"].includes(g.kind);
+  if (canWear && roll < 0.5) return { brief: `wearing the ${g.brand} ${g.name} they've just been sent, showing it off to the camera`, wearing: true };
+  return held(`holding up the ${g.brand} ${g.name} they've just been sent${canWear ? ", showing it off to the camera" : ", pleased with it"}`);
 }

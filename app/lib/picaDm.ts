@@ -16,6 +16,8 @@ import { refsOf, myPhotoDraft, myPhotoMake } from "./picagram";
 import { BRAIN_OPTIONS } from "./brainOptions";
 import { isValidTimeZone, zonedParts, formatClock } from "./localTime";
 import { partOfDay } from "./calendar";
+import { cleanTraits } from "./traits";
+import { giftById, photoBrief, giftFace, PHOTO_ODDS } from "./gifts";
 
 export type Dm = { id: string; role: "user" | "assistant"; content: string; created_at: string; media: Media | null };
 export class DmError extends Error {}
@@ -252,6 +254,23 @@ async function remember(userId: string, a: Record<string, unknown>, list: Dm[], 
     // 📅 Each note carries the day it was made ("Nov 12, 2026: Sam told me…").
     if (t.length >= 6 && !known.some(k => undated(k) === undated(t))) await sql()`insert into pica_memories (user_id, account_id, text) values (${userId}, ${a.id}, ${`${today}: ${undated(t)}`.slice(0, 600)})`;
   }
+}
+
+/**
+ * 🎁 A present landed in her DMs: she usually sends a photo of herself with it, the same as a
+ * character does in the chat — her own face from her reference pictures, her own expression.
+ */
+export async function dmGiftPhoto(userId: string, accountId: string, what: string, kind: "gift" | "money", giftId: string, closeness = 50, big = false): Promise<void> {
+  if (Math.random() >= PHOTO_ODDS) return;
+  const a = await account(userId, accountId);
+  const u = await userInfo(userId);
+  const g = giftId ? giftById(giftId) : null;
+  const t = cleanTraits((a.traits || {}) as Record<string, unknown>);
+  const who = g?.team || g?.theirs ? ` ${a.bio || ""} ${a.lives || ""}`.replace(/\s+/g, " ").trim().slice(0, 300) : "";
+  const desc = `${photoBrief(what, kind, g).brief}. ${giftFace(t, closeness, big)}${who ? ` About her: ${who}` : ""} It is clearly the same woman as in the reference pictures — her face, her hair, her build. Taken on her own phone where she is, candid and real.`;
+  const m = await sendPhotoOf(userId, a, scrub(desc).replace(/\s+/g, " ").trim().slice(0, 1500), u.adult)
+    .catch(e => { if (!(e instanceof MediaError)) console.error("pica dm: gift photo", e instanceof Error ? e.message : e); return null; });
+  if (m && m.status !== "failed") await addDm(userId, accountId, "assistant", "", m.id, 1000);
 }
 
 /** 📸 A photo of YOU in her DMs: the same two steps as a peek — a description to check, then exactly that. */

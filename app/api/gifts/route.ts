@@ -4,8 +4,8 @@ import { allow } from "../../lib/rateLimit";
 import { sql } from "../../lib/db";
 import { getCharacterFor } from "../../lib/characters";
 import { thankThem } from "../../lib/thanks";
-import { dmSend } from "../../lib/picaDm";
-import { shopFull, peopleToGift, sendGift, giftHistory, accountsFor, moveAcross, listMyGift, unlistMyGift, myGifts, GiftError, BANK, WEEKLY_RATE, PAY_LOW, PAY_HIGH } from "../../lib/giftsDb";
+import { dmSend, dmGiftPhoto } from "../../lib/picaDm";
+import { shopFull, peopleToGift, sendGift, giftHistory, accountsFor, moveAcross, listMyGift, unlistMyGift, myGifts, closenessMap, GiftError, BANK, WEEKLY_RATE, PAY_LOW, PAY_HIGH } from "../../lib/giftsDb";
 import { MAX_MY_GIFTS } from "../../lib/gifts";
 
 const UUID = /^[0-9a-f-]{36}$/i;
@@ -48,11 +48,16 @@ export async function POST(req: NextRequest) {
         if (kind === "account") {
           // 📸 Someone on Picagram: it lands in her DMs, and she answers there.
           await dmSend(me, id, `🎁 Received: ${what}`).catch(e => { console.error("gifts: dm", e instanceof Error ? e.message : e); return null; });
+          // 📸 And, as in the chat, usually a photo of her with it.
+          await dmGiftPhoto(me, id, what, r.gift ? "gift" : "money", r.gift?.id || "", 50, r.amount >= 500 || r.wished)
+            .catch(e => { console.error("gifts: dm photo", e instanceof Error ? e.message : e); });
         }
         if (kind === "character") {
           const ch = await getCharacterFor(me, id);
           const [u] = await sql()`select adult_confirmed_at from users where id = ${me}`;
-          if (ch) said = await thankThem(me, ch, what, r.gift ? "gift" : "money", r.gift?.id || "", note, !!u?.adult_confirmed_at)
+          // How close she is, and whether this was a big one — both show in her face.
+          const close = (await closenessMap(me)).get(id) || 0;
+          if (ch) said = await thankThem(me, ch, what, r.gift ? "gift" : "money", r.gift?.id || "", note, !!u?.adult_confirmed_at, close, r.amount >= 500 || r.wished)
             .catch(e => { console.error("gifts: thank you", e instanceof Error ? e.message : e); return null; });
         }
         return NextResponse.json({ sent: r, said, wallet: r.wallet, bank: (await accountsFor(me)).bank, history: await giftHistory(me, 20) });

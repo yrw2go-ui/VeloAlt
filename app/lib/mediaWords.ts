@@ -40,5 +40,36 @@ export const AGREES_MEDIA = /^\s*(yes|yeah|yep|yup|sure|ok(ay)?|alright|fine|of 
 // 👄 Lip-biting comes out deformed every time, so it never reaches the picture service: it's cut
 // from the description (the rest of the sentence stands) wherever it's written.
 const LIP_BITE = /\s*,?\s*\b(?:(?:gently|softly|slightly|playfully|teasingly|nervously|absently|lightly)\s+)?(?:biting|bites|bite|chewing|chews|nibbling|nibbles|tugging at|tugs at)\s+(?:her|his|their|the)?\s*(?:lower |bottom |upper )?lips?\b(?:\s+(?:\w+ly))?(?:\s+and\b)?|\s*,?\s*\blip[- ]?(?:bite|biting|bitten|nibble|nibbling)\b|\s*,?\s*\b(?:her|his|their|the)?\s*(?:lower |bottom |upper )?lips?\s+(?:caught|held|pinned)\s+(?:between|in)\s+(?:her|his|their)\s+teeth\b/gi;
+// 🎨 Her looks are the reference photos' job. Spelling them out in words as well pulls the picture
+// away from her — the model follows the words and you get someone else's face with her name on it.
+// So when there ARE references, the look words come out of the description and only what the
+// photos can't know is left: where she is, what she's wearing, her pose, the light.
+const HAIR = /\b(?:(?:very|long|short|shoulder[- ]length|mid[- ]length|cropped|waist[- ]length|wavy|curly|straight|coiled|braided|tousled|sleek|silky|blonde?|brunette|black|jet[- ]black|dark|light|red|auburn|ginger|chestnut|platinum|honey|caramel|ash|silver|grey|gray|brown)\s+){1,4}hair\b/gi;
+const EYES = /\b(?:(?:bright|warm|pale|deep|dark|light|piercing|striking|big|wide|blue|green|brown|hazel|grey|gray|amber)\s+){1,3}eyes\b/gi;
+const SKIN = /\b(?:(?:warm|cool|pale|fair|light|deep|rich|caramel|olive|tan|tanned|bronzed|porcelain|ebony|dark|brown|golden|sun[- ]kissed)\s+){1,3}(?:skin|complexion)\b/gi;
+const CALLED = /\b(?:a\s+)?(?:gorgeous|beautiful|pretty|stunning)?\s*(?:blonde|brunette|redhead)\b(?=[\s,.]|$)/gi;
+const LOOKS = [HAIR, EYES, SKIN, CALLED];
+
+/** The description with her looks taken out — used only when reference photos are carrying them. */
+export function noLooks(s: string): string {
+  let out = String(s || "");
+  for (const re of LOOKS) out = out.replace(re, " ");
+  // Tidying what's left of the sentence takes a couple of passes: taking "long dark hair" out of
+  // "with pale skin and long dark hair," leaves "with and ,", which only reads properly once the
+  // leftovers have been swept twice.
+  const tidy = (t: string) => t
+    .replace(/\b(?:with|and)\s+(?:and|with)\b/gi, "and")
+    .replace(/\b(?:with|has|have|having|and)\s*(?=[,.;]|$)/gi, "")
+    .replace(/\b(she|he|they)\s+(?:and|with|has|have)\s*(?=[,.;])/gi, "$1")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([,.;!?])/g, "$1")
+    .replace(/(?:,\s*){2,}/g, ", ");
+  for (let i = 0; i < 3; i++) out = tidy(out);
+  return out
+    .replace(/^\s*(?:she|he|they)\s*,\s*/i, "")
+    .replace(/^[\s,]+|[\s,]+$/g, "")
+    .trim();
+}
+
 export const noLipBite = (s: string) => s.replace(LIP_BITE, "").replace(/\s{2,}/g, " ").replace(/\s+([,.;!?])/g, "$1").replace(/^[\s,]+|[\s,]+$/g, "").trim();
 

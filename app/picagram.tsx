@@ -6,7 +6,7 @@ import { useBack } from "./lib/back";
 import { api, data, uploadFile, uploadPicaPicture } from "./lib/api";
 import { hideSecrets } from "./lib/secrets";
 import { noJargon } from "./lib/text";
-import { MediaView, type Media } from "./media";
+import { MediaView, useSwipeNav, SwipeArrow, type Media } from "./media";
 import { EditSheet } from "./edit";
 import { MentionPicker, putName } from "./mention";
 import { RedoSheet } from "./redo";
@@ -320,12 +320,13 @@ function Composer({ onClose, onPosted }: { onClose: () => void; onPosted: () => 
 type Photo = { media_id: string; url: string; thumb: string | null; caption?: string; saved: boolean; at?: string };
 
 /** 🖼️ A picture, full screen, with Save. */
-function Viewer({ photo, onClose, onSaved, onRedo, onAvatar, onRef, isRef }: { photo: Photo; onClose: () => void; onSaved: (on: boolean) => void; onRedo?: (mediaId: string) => void; onAvatar?: (mediaId: string) => void; onRef?: (mediaId: string) => void; isRef?: boolean }) {
+function Viewer({ photo, onClose, onSaved, onRedo, onAvatar, onRef, isRef, onPrev, onNext }: { photo: Photo; onClose: () => void; onSaved: (on: boolean) => void; onRedo?: (mediaId: string) => void; onAvatar?: (mediaId: string) => void; onRef?: (mediaId: string) => void; isRef?: boolean; onPrev?: () => void; onNext?: () => void }) {
   useBack(true, onClose); // the phone's back button closes this, one step at a time
+  const { bind, tapped } = useSwipeNav(onPrev, onNext); // 👆 swipe (or ← →) between them
   const [saved, setSaved] = useState(photo.saved);
   const toggle = async () => { const on = !saved; setSaved(on); onSaved(on); await api("/api/pica", { action: "save", id: photo.media_id, on }).catch(() => { setSaved(!on); onSaved(!on); }); };
   return (
-    <div role="dialog" aria-modal="true" data-testid="pica-viewer" onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.95)", zIndex: 2700, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 12 }}>
+    <div role="dialog" aria-modal="true" data-testid="pica-viewer" {...bind} onClick={() => { if (tapped()) onClose(); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.95)", zIndex: 2700, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 12 }}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={photo.url} alt={photo.caption || "Photo"} onClick={e => e.stopPropagation()} style={{ maxWidth: "100%", maxHeight: "80dvh", objectFit: "contain", borderRadius: 12 }} />
       <When at={photo.at} align="center" />
@@ -336,8 +337,21 @@ function Viewer({ photo, onClose, onSaved, onRedo, onAvatar, onRef, isRef }: { p
         {onRedo && <button className="ghost" onClick={() => onRedo(photo.media_id)} data-testid="pica-viewer-redo">↻ Redo</button>}
         <button className="ghost" onClick={onClose}>Close</button>
       </div>
+      {onPrev && <SwipeArrow side="left" onGo={onPrev} />}
+      {onNext && <SwipeArrow side="right" onGo={onNext} />}
     </div>
   );
+}
+
+/** 👆 Where this one sits in the grid, so you can swipe through them. */
+function step(list: Photo[] | null | undefined, open: Photo, go: (p: Photo) => void) {
+  const all = list || [];
+  const i = all.findIndex(x => x.media_id === open.media_id);
+  if (i < 0 || all.length < 2) return {};
+  return {
+    ...(i > 0 ? { onPrev: () => go(all[i - 1]) } : {}),
+    ...(i < all.length - 1 ? { onNext: () => go(all[i + 1]) } : {}),
+  };
 }
 
 function Grid({ photos, onOpen }: { photos: Photo[]; onOpen: (p: Photo) => void }) {
@@ -561,6 +575,7 @@ function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: 
         </div>
       )}
       {view && <Viewer photo={view} onClose={() => setView(null)} onRedo={m => { setView(null); setRedo(m); }} onAvatar={m => { setView(null); setAvatar(m); }}
+        {...step(data?.photos, view, setView)}
         {...(data && !data.account.character_id ? { onRef: (m: string) => { toggleRef(m); setView(null); }, isRef: isRef(view.media_id) } : {})}
         onSaved={on => {
           if (view.media_id === data?.account.avatar_media_id) setSavedAvatar(on);
@@ -680,7 +695,8 @@ function Saved({ onClose }: { onClose: () => void }) {
         {items && !items.length && <div className="muted" style={{ textAlign: "center", padding: 24 }}>Tap 📑 on a photo to save it here</div>}
         {items && <Grid photos={items} onOpen={setView} />}
       </div>
-      {view && <Viewer photo={view} onClose={() => setView(null)} onSaved={on => { if (!on) setItems(l => (l || []).filter(x => x.media_id !== view.media_id)); }} />}
+      {view && <Viewer photo={view} onClose={() => setView(null)} {...step(items, view, setView)}
+        onSaved={on => { if (!on) setItems(l => (l || []).filter(x => x.media_id !== view.media_id)); }} />}
     </div>
   );
 }
@@ -1285,7 +1301,8 @@ function MyProfile({ name, onClose }: { name: string; onClose: () => void }) {
           {!me.photos.length && <div className="muted" style={{ textAlign: "center", padding: 24 }}>Nothing posted yet — tap ＋ Post</div>}
         </div>
       )}
-      {view && <Viewer photo={view} onClose={() => setView(null)} onSaved={on => setMe(m => (m ? { ...m, photos: m.photos.map(x => (x.media_id === view.media_id ? { ...x, saved: on } : x)) } : m))} />}
+      {view && <Viewer photo={view} onClose={() => setView(null)} {...step(me?.photos, view, setView)}
+        onSaved={on => setMe(m => (m ? { ...m, photos: m.photos.map(x => (x.media_id === view.media_id ? { ...x, saved: on } : x)) } : m))} />}
     </div>
   );
 }

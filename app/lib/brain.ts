@@ -8,7 +8,7 @@
 //   "errand"    — a turn on a call Velo is making FOR the owner to someone else
 //   "errandsum" — a short report to the owner after that call
 import { claimsMedia, mentionsMedia, askedForMedia, agreesMedia, plain } from "./mediaWords";
-import { cleanReply, isMeta, writtenCall, orphanDescription, dropOrphanDescription } from "./text";
+import { cleanReply, isMeta, isOnlyEmoji, writtenCall, orphanDescription, dropOrphanDescription } from "./text";
 
 // 💭 She wrote something, but it was all thoughts in brackets: nothing to say out loud.
 const nothingButThoughts = (t: string) => /[\p{L}\p{N}]/u.test(t) && !cleanReply(t);
@@ -41,6 +41,7 @@ async function pushedLately(userId: string, sceneId: string): Promise<number> {
 import { soreFor, setSore, mend as mendSore, soreNote, SORE_REMEMBER } from "./sore";
 import { partnerLook, partnerPicNote } from "./partner";
 import { TOGETHER_TIME } from "./together";
+import { onlyAction, answerTo, actionNote } from "./actions";
 import { afterSceneNote, nightsBetween, stayedUpAllNight } from "./afterScene";
 import { boostFor, lastGiftWords, liveHints, lavishFor } from "./giftsDb";
 import { lavishNote } from "./hints";
@@ -253,6 +254,9 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
   const photoMoment = ch && mode === "chat" && canSend && !scene && !group && !together ? await tickPics(caller.userId, ch).catch(() => false) : false;
   // 👋 Every so often (once she's close to them), she wants them to meet someone of hers.
   const introKind = ch && mode === "chat" && !scene && !group ? await tickIntro(caller.userId, ch, !!u?.adult_confirmed_at).catch(e => { console.error("velo: intro", e instanceof Error ? e.message : e); return null; }) : null;
+  // 🫱 "*moves closer and cuddles*" — something they did, not something they said.
+  const actionAnswer = (mode === "chat" || mode === "sms") && !opts.sendPhoto && onlyAction(String(lastSaid))
+    ? answerTo(Math.random()) : null;
   const modeText = {
     chat: "", checkin: opts.promise ? (talkWords(u).checkin_promised || PROMISED) : (talkWords(u).checkin_first || CHECKIN), sms: SMS_TALK, talk: CALL_TALK, recap: CALL_RECAP, remember: CALL_REMEMBER, memo: CHAT_REMEMBER,
     errand: errandPrompt(name, opts.toName || "", opts.goal || ""), errandsum: ERRAND_SUMMARY,
@@ -312,6 +316,9 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
         ch ? "YOUR HISTORY TOGETHER: lines starting with 🎬 are things you two actually did together, 🎥 are video chats you spent together, and 🧍 mark when you were together in person. All of them are real shared memories — bring them up, tease about them, look back on them." : "",
         mode === "chat" ? REACT_HINT : "",
         mode === "chat" && !opts.sendPhoto && opts.messages.at(-1)?.role === "user" && reactsThisTime(String(lastSaid), !!opts.messages.at(-1)?.fileId, Math.random()) ? REACT_NOW : "",
+        // 🫱 They sent nothing but an action: sometimes one emoji is the whole answer, sometimes
+        // an action straight back, and the rest of the time she talks as usual.
+        actionAnswer ? actionNote(actionAnswer, name || "they") : "",
         // 👋 Winding down: a heart on their last message can be the whole answer.
         mode === "chat" ? (talkWords(u).sign_off || "") : "",
         photoMoment && !introKind ? PHOTO_MOMENT : "",
@@ -658,7 +665,9 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
   reply = reply.replace(NOTE_ECHO, (m: string, e: string) => { if (REACTIONS.includes(e)) { if (!react) react = e; return ""; } return m; });
   // 💭 If all she sent was a thought in brackets, there's nothing to say — not a lost train of thought.
   if (nothingButThoughts(reply)) thoughtsOnly = true;
-  reply = cleanReply(reply);
+  // 😏 A reply that's only an emoji is left exactly as it is: the cleaning has nothing to find in
+  // it and would hand back an empty message.
+  reply = isOnlyEmoji(reply) ? reply.trim() : cleanReply(reply);
   const onlyThoughts = !reply && thoughtsOnly;
   if (!reply && media?.length) reply = media.some(m => m.kind === "video") ? "Here you go 😊" : "Here you go — what do you think? 😊";
   // 📸 She agreed to send one and one is on its way: say so in the message itself, so it's plain

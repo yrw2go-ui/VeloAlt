@@ -10,6 +10,18 @@ import { RedoSheet } from "./redo";
 
 type Item = { id: string; kind: "image" | "video"; kept: boolean; created_at: string; url: string; thumb: string | null };
 
+
+/** 👆 Where the one you're looking at sits in the list, so you can swipe to the next and back. */
+function step<T extends { id: string }>(list: T[] | null, open: T, go: (x: T) => void) {
+  const all = list || [];
+  const i = all.findIndex(x => x.id === open.id);
+  if (i < 0 || all.length < 2) return {};
+  return {
+    ...(i > 0 ? { onPrev: () => go(all[i - 1]) } : {}),
+    ...(i < all.length - 1 ? { onNext: () => go(all[i + 1]) } : {}),
+  };
+}
+
 export default function Gallery({ characterId, name, onClose }: { characterId: string | null; name: string; onClose: () => void }) {
   const [items, setItems] = useState<Item[] | null>(null);
   const [more, setMore] = useState(false);
@@ -71,7 +83,8 @@ export default function Gallery({ characterId, name, onClose }: { characterId: s
         {more && !onlyKept && <button className="ghost" style={{ display: "block", margin: "14px auto" }} onClick={() => load(items!.at(-1)!.created_at)}>Load more</button>}
       </div>
       {open && (
-        <Viewer m={open} onClose={() => setOpen(null)}>
+        <Viewer m={open} onClose={() => setOpen(null)}
+          {...step(items, open, setOpen)}>
           <button className="btn" onClick={() => keep(open)} data-testid="gallery-keep" style={{ padding: "10px 16px" }}>{open.kept ? "⭐ Kept" : "☆ Keep"}</button>
           {open.kind === "image" && <button className="ghost" onClick={() => { setRedo(open.id); setOpen(null); }} data-testid="gallery-redo" style={{ padding: "10px 16px", background: "rgba(0,0,0,.4)" }}>↻ Redo</button>}
           <button className="ghost" onClick={() => remove(open)} data-testid="gallery-delete" style={{ padding: "10px 16px", color: "var(--bad)", background: "rgba(0,0,0,.4)" }}>Delete</button>

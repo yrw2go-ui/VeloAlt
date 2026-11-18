@@ -14,7 +14,7 @@ import { randomUUID } from "node:crypto";
 import { sql } from "./db";
 import { wordsOf, fill } from "./wording";
 import { rememberPartnerPic } from "./partner";
-import { noLipBite } from "./mediaWords";
+import { noLipBite, noLooks } from "./mediaWords";
 import { scrub } from "./secrets";
 import { sendPush } from "./push";
 
@@ -147,7 +147,12 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
   const a = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
   const kind = a.kind === "video" ? "video" : "image";
   // ✏️ raw (their own peek edits): their words go to Atlas exactly as written — no rewording, no extra instructions, no word filter here (Atlas still checks it).
-  const desc = cut(noLipBite(scrub(String(a.description || "").replace(/\s+/g, " ").trim())), ctx.raw ? 1500 : 400);
+  // 🎨 Her looks come from the reference photos, so when there are any, the words describing them
+  // are taken out: saying "long dark hair, green eyes" as well pulls the picture off her face.
+  // (Their own peek edits go through exactly as written, as always.)
+  const hasRefs = !ctx.raw && (ctx.refs.length > 0 || !!ctx.other?.refs?.length || (ctx.people || []).some(p => p.refs.length > 0));
+  const said = scrub(String(a.description || "").replace(/\s+/g, " ").trim());
+  const desc = cut(noLipBite(hasRefs ? noLooks(said) : said), ctx.raw ? 1500 : 400);
   if (desc.length < 3) throw new MediaError("Describe what to show in a few words.");
   if (!ctx.raw && (NEVER.test(desc) || (!ctx.romantic && SUGGESTIVE.test(desc)))) throw new MediaError(ctx.romantic
     ? "That can't be sent — it can be flirty and PG-13, but never nudity, lingerie or anything explicit. Tell them so playfully and offer something else."

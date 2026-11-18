@@ -283,7 +283,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   const [scene, setScene] = useState<{ id: string; title: string; details: string } | null>(null);
   const [sceneSheet, setSceneSheet] = useState(false);
   // 🧍 Together in person (not a scene): she talks face to face, and 👁️ ICU works.
-  type InPerson = { place: string; started_at: string };
+  type InPerson = { place: string; started_at: string; at_mine?: boolean };
   const [inPerson, setInPerson] = useState<InPerson | null>(null);
   // 📸 A picture you asked for: the prompt comes to you first, like a peek.
   const [ask, setAsk] = useState<{ kind: "image" | "video"; description: string; with_me: boolean; with_them: boolean; of_person: string; same_moment: boolean } | null>(null);
@@ -369,13 +369,16 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   useEffect(() => {
     if (!cid) return;
     data<{ scene: { id: string; title: string; details: string } | null }>("scene.active", { characterId: cid }).then(r => setScene(r.scene)).catch(() => {});
-    setInPerson(character?.live_in && character.home ? { place: "home", started_at: new Date().toISOString() } : null);
+    setInPerson(character?.live_in && character.home ? { place: "home", started_at: new Date().toISOString(), at_mine: true } : null);
     data<{ inPerson: InPerson | null }>("inperson.get", { characterId: cid }).then(r => setInPerson(r.inPerson)).catch(() => {});
     data<{ plans: Plan[] }>("plans.due", { characterId: cid, today: todayYmd() }).then(r => setPlans(r.plans)).catch(() => {});
   }, [cid, userId]);
   // 🏠 She lives here: in or out? While she's in, you're in the same house (so it's the
   // in-person state, with "home" as the place) — she talks to you instead of texting.
-  const atHome = !!character?.live_in && inPerson?.place === "home";
+  // 🏠 She lives here, so being with her in person AT YOURS is her being home — whatever the time
+  // together is called. (It used to look for the word "home" alone, so "in person at my house"
+  // showed her as out.)
+  const atHome = !!character?.live_in && !!inPerson && inPerson.at_mine !== false;
   // 🏘️ Are YOU in? One switch for the whole street — a neighbour only comes by when you're home.
   const [iAmHome, setIAmHome] = useState<boolean | null>(null);
   useEffect(() => {
@@ -385,13 +388,13 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   const setMyHome = async (v: boolean) => { setIAmHome(v); await data("athome.set", { home: v }).catch(() => setIAmHome(!v)); };
   const setHome = async (home: boolean) => {
     if (!cid || busy) return;
-    setInPerson(home ? { place: "home", started_at: new Date().toISOString() } : null);
+    setInPerson(home ? { place: inPerson?.place || "home", started_at: inPerson?.started_at || new Date().toISOString(), at_mine: true } : null);
     try {
       const r = await data<{ home: boolean; marker?: ChatMsg }>("home.set", { characterId: cid, home });
       if (r.marker) setMsgs(m => [...(m || []), r.marker!]);
-      setInPerson(r.home ? { place: "home", started_at: new Date().toISOString() } : null);
+      setInPerson(r.home ? { place: inPerson?.place || "home", started_at: inPerson?.started_at || new Date().toISOString(), at_mine: true } : null);
       onChanged();
-    } catch { setInPerson(home ? null : { place: "home", started_at: new Date().toISOString() }); }
+    } catch { setInPerson(home ? null : { place: "home", started_at: new Date().toISOString(), at_mine: true }); }
   };
   const skipPlan = async (p: Plan) => {
     setPlans(ps => ps.filter(x => x.id !== p.id));
