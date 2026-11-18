@@ -911,7 +911,7 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
       {picking && m.id && <ReactionBar value={m.reaction} onPick={r => { onReactMsg(m.id!, r); setPicking(false); }} />}
       {/* 📅 What you two have on — quiet, until the last hour. */}
       {m.plan && (
-        <div data-testid={m.plan.urgent ? "plan-tag-urgent" : "plan-tag"} style={{ alignSelf: "flex-end", marginTop: 3, fontSize: 11, fontStyle: "italic",
+        <div data-testid={m.plan.urgent ? "plan-tag-urgent" : "plan-tag"} style={{ alignSelf: "flex-end", marginTop: 3, maxWidth: "100%", overflowWrap: "anywhere", fontSize: 11, fontStyle: "italic",
           color: m.plan.urgent ? "#f87171" : "var(--muted)", opacity: m.plan.urgent ? 1 : 0.75, fontWeight: m.plan.urgent ? 700 : 400 }}>
           {m.plan.urgent ? "🚨 " : ""}{m.plan.text}
         </div>

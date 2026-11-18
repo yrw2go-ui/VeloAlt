@@ -67,7 +67,11 @@ export function VeloAvatar({ size = 32, style, look: lookId }: { size?: number; 
 export function VeloLogo({ size = 40 }: { size?: number }) {
   // Same cloud "V". A little more contrast and a soft accent glow so it reads on the dark background.
   // eslint-disable-next-line @next/next/no-img-element
-  return <img src="/velo.png" width={size} height={size} alt="Velo" draggable={false} style={{ display: "block", flexShrink: 0, width: size, height: size, objectFit: "contain", filter: "contrast(1.12) drop-shadow(0 0 1px rgba(255,255,255,.75)) drop-shadow(0 0 8px rgba(124,140,255,.9))" }} />;
+  return (
+    <span style={{ display: "block", flexShrink: 0, width: size, height: size, overflow: "hidden" }}>
+      <img src="/velo.png" width={size} height={size} alt="Velo" draggable={false} style={{ display: "block", width: size, height: size, objectFit: "contain", filter: "contrast(1.12) drop-shadow(0 0 1px rgba(255,255,255,.75)) drop-shadow(0 0 8px rgba(124,140,255,.9))" }} />
+    </span>
+  );
 }
 
 const tile = (on: boolean) => ({ display: "block", borderRadius: "50%", padding: 3, border: `3px solid ${on ? "var(--accent)" : "transparent"}` } as const);
