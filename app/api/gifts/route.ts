@@ -4,7 +4,8 @@ import { allow } from "../../lib/rateLimit";
 import { sql } from "../../lib/db";
 import { getCharacterFor } from "../../lib/characters";
 import { thankThem } from "../../lib/thanks";
-import { shopNow, peopleToGift, sendGift, giftHistory, accountsFor, moveAcross, GiftError, BANK, WEEKLY_RATE, PAY_LOW, PAY_HIGH } from "../../lib/giftsDb";
+import { shopFull, peopleToGift, sendGift, giftHistory, accountsFor, moveAcross, listMyGift, unlistMyGift, myGifts, GiftError, BANK, WEEKLY_RATE, PAY_LOW, PAY_HIGH } from "../../lib/giftsDb";
+import { MAX_MY_GIFTS } from "../../lib/gifts";
 
 const UUID = /^[0-9a-f-]{36}$/i;
 const bad = (error: string, status = 400) => NextResponse.json({ error }, { status });
@@ -22,7 +23,7 @@ export async function POST(req: NextRequest) {
       // 🛍️ Everything on one screen: what's in stock this week, who to send to, your wallet.
       case "shop": {
         const acc = await accountsFor(me);
-        return NextResponse.json({ shop: shopNow(), people: await peopleToGift(me), history: await giftHistory(me, 20),
+        return NextResponse.json({ shop: await shopFull(me), mine: await myGifts(me), maxMine: MAX_MY_GIFTS, people: await peopleToGift(me), history: await giftHistory(me, 20),
           wallet: acc.spend, bank: acc.bank, paid: acc.paid, interest: acc.interest, weeks: acc.weeks,
           bankName: BANK, rate: WEEKLY_RATE, payLow: PAY_LOW, payHigh: PAY_HIGH });
       }
@@ -49,6 +50,16 @@ export async function POST(req: NextRequest) {
             .catch(e => { console.error("gifts: thank you", e instanceof Error ? e.message : e); return null; });
         }
         return NextResponse.json({ sent: r, said, wallet: r.wallet, bank: (await accountsFor(me)).bank, history: await giftHistory(me, 20) });
+      }
+      // 🛍️ Your own things to send: listed by hand, never rotated away.
+      case "list": {
+        if (!allow(`listgift:${me}`, [{ ms: 60_000, max: 10 }])) return bad("Slow down a moment.", 429);
+        const g = await listMyGift(me, String(b.name || ""), String(b.brand || ""), Number(b.price) || 0);
+        return NextResponse.json({ listed: g, shop: await shopFull(me), mine: await myGifts(me) });
+      }
+      case "unlist": {
+        if (!(await unlistMyGift(me, String(b.giftId || "")))) return bad("That one isn't on your list.");
+        return NextResponse.json({ shop: await shopFull(me), mine: await myGifts(me) });
       }
       default: return bad("Unknown action.");
     }

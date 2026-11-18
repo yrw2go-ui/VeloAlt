@@ -34,9 +34,13 @@ export default function Gifts() {
   const [err, setErr] = useState("");
   const [cash, setCash] = useState("");
   const [note, setNote] = useState("");
+  // 🛍️ Your own things to send: up to five, listed by hand, never rotated away.
+  const [mine, setMine] = useState<Gift[]>([]);
+  const [maxMine, setMaxMine] = useState(5);
+  const [newGift, setNewGift] = useState({ brand: "", name: "", price: "" });
 
-  const load = () => api<{ shop: Gift[]; people: Person[]; wallet: number; bank: number; history: Sent[]; paid: number; interest: number; weeks: number; bankName: string }>("/api/gifts", { action: "shop" })
-    .then(r => { setShop(r.shop); setPeople(r.people); setWallet(r.wallet); setBank(r.bank); setHistory(r.history); setBankName(r.bankName);
+  const load = () => api<{ shop: Gift[]; mine: Gift[]; maxMine: number; people: Person[]; wallet: number; bank: number; history: Sent[]; paid: number; interest: number; weeks: number; bankName: string }>("/api/gifts", { action: "shop" })
+    .then(r => { setShop(r.shop); setMine(r.mine); setMaxMine(r.maxMine); setPeople(r.people); setWallet(r.wallet); setBank(r.bank); setHistory(r.history); setBankName(r.bankName);
       if (r.weeks > 0) setPayday({ paid: r.paid, interest: r.interest, weeks: r.weeks }); })
     .catch(e => setErr(e instanceof Error ? e.message : "Couldn't open the shop."));
   useEffect(() => { load(); }, []);
@@ -58,6 +62,19 @@ export default function Gifts() {
   };
 
   // 💸 Bring money across from the bank. It's a transfer, not free money — the bank goes down.
+  // 🛍️ Put one of your own in the shop, or take it back off.
+  const listItem = async () => {
+    setErr("");
+    try {
+      const r = await api<{ shop: Gift[]; mine: Gift[] }>("/api/gifts", { action: "list", brand: newGift.brand.trim(), name: newGift.name.trim(), price: Number(newGift.price) });
+      setShop(r.shop); setMine(r.mine); setNewGift({ brand: "", name: "", price: "" });
+    } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't list that."); }
+  };
+  const unlist = async (g: Gift) => {
+    setErr("");
+    try { const r = await api<{ shop: Gift[]; mine: Gift[] }>("/api/gifts", { action: "unlist", giftId: g.id }); setShop(r.shop); setMine(r.mine); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't take that off the list."); }
+  };
   const topUp = async (amount: number) => {
     if (!amount || amount < 1) return;
     setErr("");
@@ -139,8 +156,38 @@ export default function Gifts() {
           </div>
 
           {/* 🛍️ This week's shop. */}
+          {/* 🛍️ Add your own: they go straight into the shop and stay there. */}
+          <div data-testid="my-gifts" style={{ padding: "10px 12px", borderRadius: 12, background: "var(--surface2)", border: "1px solid var(--border)" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>🛍️ Your own list <span className="muted" style={{ fontWeight: 500 }}>· {mine.length}/{maxMine}, and they never rotate out</span></div>
+            {!!mine.length && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 }}>
+                {mine.map(g => (
+                  <div key={g.id} className="row" style={{ justifyContent: "space-between", gap: 8, fontSize: 13 }}>
+                    <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>🛍️ {g.brand ? `${g.brand} ` : ""}{g.name}</span>
+                    <span className="row" style={{ gap: 8, alignItems: "center", whiteSpace: "nowrap" }}>
+                      <span className="muted">{money(g.price)}</span>
+                      <button className="ghost" data-testid={`unlist-${g.id}`} onClick={() => unlist(g)} style={{ padding: "2px 8px", fontSize: 11 }}>Remove</button>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {mine.length < maxMine ? (
+              <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+                <input value={newGift.brand} onChange={e => setNewGift(g => ({ ...g, brand: e.target.value.slice(0, 40) }))}
+                  data-testid="new-brand" aria-label="Brand" placeholder="Brand (optional)" style={{ flex: "1 1 90px", minWidth: 0 }} />
+                <input value={newGift.name} onChange={e => setNewGift(g => ({ ...g, name: e.target.value.slice(0, 60) }))}
+                  data-testid="new-name" aria-label="What it is" placeholder="What it is" style={{ flex: "2 1 130px", minWidth: 0 }} />
+                <input value={newGift.price} onChange={e => setNewGift(g => ({ ...g, price: e.target.value.replace(/[^\d]/g, "").slice(0, 7) }))}
+                  inputMode="numeric" data-testid="new-price" aria-label="Price" placeholder="$" style={{ flex: "0 1 80px", minWidth: 0 }} />
+                <button className="btn" data-testid="list-item" disabled={!newGift.name.trim() || !newGift.price} onClick={listItem}
+                  style={{ padding: "8px 14px", fontSize: 13, whiteSpace: "nowrap" }}>List item</button>
+              </div>
+            ) : <div className="muted" style={{ fontSize: 12 }}>That&apos;s all five. Remove one to list something else.</div>}
+          </div>
+
           <div>
-            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>🛍️ In the shop this week</div>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>🛍️ In the shop</div>
             <div data-testid="shop" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 8 }}>
               {(shop || []).map(g => (
                 <div key={g.id} data-testid={`gift-${g.id}`} style={{ padding: 10, borderRadius: 12, display: "flex", flexDirection: "column", gap: 6,

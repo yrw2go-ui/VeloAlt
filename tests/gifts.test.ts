@@ -1,5 +1,5 @@
 // Run: node --experimental-strip-types tests/gifts.test.ts
-import { GIFTS, giftById, shopFor, weekOf, wishlistFor, onWishlist, boostFrom, boostNote, BOOST_MS } from "../app/lib/gifts.ts";
+import { GIFTS, giftById, shopFor, weekOf, wishlistFor, onWishlist, boostFrom, boostNote, BOOST_MS, myGift, myGiftId, isMyGift, MAX_MY_GIFTS, MY_GIFT_EMOJI, photoBrief } from "../app/lib/gifts.ts";
 
 let bad = 0;
 const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m); if (!c) bad++; };
@@ -57,6 +57,18 @@ ok(/Sam sent you a Gucci purse/.test(note), "she knows what she was sent, and wh
 ok(/slip out of work|skip a class/.test(note), "…that she'd bend her day around them");
 ok(/never as a transaction/.test(note) && /never as something that bought you/.test(note), "…and that it never reads as buying her");
 ok(boostNote(null, "a purse", "Sam") === "", "nothing sent, nothing said");
+
+// 🛍️ Things you list yourself.
+ok(MAX_MY_GIFTS === 5, "you can list five of your own");
+const own = myGift({ id: "aaaaaaaa-1111-2222-3333-444444444444", name: "courtside tickets", brand: "Bulls", price: 900 });
+ok(own.emoji === MY_GIFT_EMOJI && own.emoji === "🛍️", "one of yours carries a plain shopping bag");
+ok(own.price === 900 && own.name === "courtside tickets" && own.brand === "Bulls", "…with what you said it was, and what you said it cost");
+ok(isMyGift(own.id) && !isMyGift("gucci-purse"), "…and is told apart from the thirty");
+ok(myGiftId("abc") === "mine:abc", "its id says whose it is");
+ok(!GIFTS.some(g => isMyGift(g.id)), "none of the thirty pretend to be yours");
+ok(!shopFor(w).some(g => isMyGift(g.id)) && !shopFor(w + 9).some(g => isMyGift(g.id)), "the weekly rotation never touches them");
+ok(!wishlistFor(her, w).some(g => isMyGift(g.id)), "and they're never on anyone's wishlist — that's hers to come up with");
+ok(/holding up the courtside tickets/.test(photoBrief("courtside tickets", "gift", own)), `in the photo she holds one of yours up: "${photoBrief("courtside tickets", "gift", own)}"`);
 
 console.log(bad ? `\n${bad} failed` : "\nall good");
 process.exit(bad ? 1 : 0);

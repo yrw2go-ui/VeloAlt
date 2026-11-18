@@ -6,7 +6,7 @@
 // at work or in class — even knowing she could get caught.
 
 export type Gift = { id: string; name: string; brand: string; kind: Kind; price: number; emoji: string };
-export type Kind = "bag" | "clothes" | "shoes" | "jewellery" | "beauty" | "tech" | "treat" | "home";
+export type Kind = "bag" | "clothes" | "shoes" | "jewellery" | "beauty" | "tech" | "treat" | "home" | "mine";
 
 /** Everything there is. Prices are what the real thing costs, near enough. */
 export const GIFTS: Gift[] = [
@@ -43,6 +43,16 @@ export const GIFTS: Gift[] = [
 ];
 
 export const giftById = (id: string) => GIFTS.find(g => g.id === id) || null;
+
+/** 🛍️ One of yours, added by hand. They carry a plain shopping bag rather than an emoji of their
+ *  own, they never rotate out of the shop, and they're never on anyone's wishlist — a wishlist is
+ *  what she came up with, and these are what you came up with. */
+export const MY_GIFT_EMOJI = "🛍️";
+export const MAX_MY_GIFTS = 5;
+export const myGiftId = (rowId: string) => `mine:${rowId}`;
+export const isMyGift = (id: string) => id.startsWith("mine:");
+export const myGift = (row: { id: string; name: string; brand: string; price: number }): Gift =>
+  ({ id: myGiftId(row.id), name: row.name, brand: row.brand, kind: "mine", price: Number(row.price), emoji: MY_GIFT_EMOJI });
 
 /** Which week it is, counted from a Monday, so the shop and the wishlists move on together. */
 export function weekOf(ms: number): number {
@@ -99,7 +109,8 @@ export const PHOTO_ODDS = 0.7;
 /** What the picture is of, when there is one. */
 export function photoBrief(what: string, kind: "gift" | "money", g: { emoji: string; name: string; brand: string; kind: string } | null): string {
   if (kind === "money") return `holding up a fan of cash — ${what} in notes — grinning at the camera`;
-  if (!g) return `holding up the present they just opened`;
+  // One of yours, or something we don't know: she holds it up. ("a present" reads as "the present".)
+  if (!g || g.kind === "mine") return `holding up the ${what.replace(/^(?:an?|the)\s+/i, "") || "present"} they've just been sent, pleased with it`;
   const worn = ["clothes", "shoes", "jewellery", "bag"].includes(g.kind);
   return worn ? `wearing the ${g.brand} ${g.name} they've just been sent, showing it off to the camera`
     : `holding up the ${g.brand} ${g.name} they've just been sent, pleased with it`;

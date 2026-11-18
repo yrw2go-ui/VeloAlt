@@ -2,7 +2,7 @@
 // whether someone is still in the glow of one.
 import { sql } from "./db";
 import { scrub } from "./secrets";
-import { GIFTS, giftById, shopFor, weekOf, wishlistFor, onWishlist, boostFrom, type Boost, type Gift } from "./gifts";
+import { GIFTS, giftById, shopFor, weekOf, wishlistFor, onWishlist, boostFrom, myGift, isMyGift, MAX_MY_GIFTS, type Boost, type Gift } from "./gifts";
 import { settle, transfer, BANK, WEEKLY_RATE, PAY_LOW, PAY_HIGH } from "./money";
 
 export class GiftError extends Error {}
@@ -37,8 +37,35 @@ export async function moveAcross(userId: string, amount: number) {
   return { spend: next.spend, bank: next.bank };
 }
 
-/** 🛍️ This week's shop, and what each person is hoping for. */
+/** 🛍️ Your own things to send: listed by hand, never rotated, up to five. */
+export async function myGifts(userId: string): Promise<Gift[]> {
+  const rows = await sql()`select id, name, brand, price from pica_my_gifts where user_id = ${userId} order by created_at`;
+  return rows.map(r => myGift({ id: String(r.id), name: String(r.name), brand: String(r.brand || ""), price: Number(r.price) }));
+}
+
+export async function listMyGift(userId: string, name: string, brand: string, price: number): Promise<Gift> {
+  const nm = scrub(String(name || "")).replace(/\s+/g, " ").trim().slice(0, 60);
+  if (nm.length < 2) throw new GiftError("What is it? Give it a name.");
+  const br = scrub(String(brand || "")).replace(/\s+/g, " ").trim().slice(0, 40);
+  const p = Math.round(Number(price) || 0);
+  if (p < 1 || p > 1_000_000) throw new GiftError("Put a price on it, between $1 and $1,000,000.");
+  const [{ n }] = await sql()`select count(*)::int as n from pica_my_gifts where user_id = ${userId}`;
+  if (n >= MAX_MY_GIFTS) throw new GiftError(`That's all five of your own listed — take one off the list first.`);
+  const [row] = await sql()`insert into pica_my_gifts (user_id, name, brand, price) values (${userId}, ${nm}, ${br}, ${p}) returning id, name, brand, price`;
+  return myGift({ id: String(row.id), name: String(row.name), brand: String(row.brand || ""), price: Number(row.price) });
+}
+
+export async function unlistMyGift(userId: string, giftId: string): Promise<boolean> {
+  const id = giftId.replace(/^mine:/, "");
+  const rows = await sql()`delete from pica_my_gifts where user_id = ${userId} and id = ${id} returning id`;
+  return rows.length > 0;
+}
+
+/** 🛍️ The shop as it stands: this week's rotation, plus everything you listed yourself. */
 export const shopNow = (now = Date.now()): Gift[] => shopFor(weekOf(now));
+export async function shopFull(userId: string, now = Date.now()): Promise<Gift[]> {
+  return [...(await myGifts(userId)), ...shopNow(now)];
+}
 export const wishlistOf = (whoId: string, now = Date.now()): Gift[] => wishlistFor(whoId, weekOf(now));
 
 /** 💝 Everyone you can send to: your characters, and the Picagram people you follow. */
@@ -61,15 +88,18 @@ export async function peopleToGift(userId: string) {
 /** 🎀 Send it. The money leaves the wallet, and it's remembered for the warm spell afterwards. */
 export async function sendGift(userId: string, to: { kind: "character" | "account"; id: string }, what: { giftId?: string; money?: number; note?: string }) {
   const now = Date.now();
-  const gift = what.giftId ? giftById(what.giftId) : null;
+  const mine = what.giftId && isMyGift(what.giftId) ? (await myGifts(userId)).find(g => g.id === what.giftId) || null : null;
+  const gift = mine || (what.giftId ? giftById(what.giftId) : null);
   if (what.giftId && !gift) throw new GiftError("That isn't something you can send.");
-  if (gift && !shopNow(now).some(g => g.id === gift.id)) throw new GiftError(`${gift.name} isn't in the shop this week.`);
+  // One of the thirty has to be in stock this week; one of yours always is.
+  if (gift && !mine && !shopNow(now).some(g => g.id === gift.id)) throw new GiftError(`${gift.name} isn't in the shop this week.`);
   const money = gift ? 0 : Math.round(Number(what.money) || 0);
   if (!gift && (money < 1 || money > 50_000)) throw new GiftError("Send between $1 and $50,000.");
   const amount = gift ? gift.price : money;
   const wallet = await walletFor(userId);
   if (amount > wallet) throw new GiftError(`That's $${(amount - wallet).toLocaleString()} more than you have. Add funds first.`);
-  const wished = !!gift && onWishlist(to.id, weekOf(now), gift.id);
+  // A wishlist is what she came up with, so something you listed yourself is never on it.
+  const wished = !!gift && !mine && onWishlist(to.id, weekOf(now), gift.id);
   const note = scrub(String(what.note || "")).replace(/\s+/g, " ").trim().slice(0, 300);
   await sql()`update users set wallet = wallet - ${amount} where id = ${userId}`;
   const [row] = await sql()`insert into pica_gift_sent (user_id, character_id, account_id, kind, gift_id, amount, wished, note)
@@ -93,8 +123,9 @@ export async function lastGiftWords(userId: string, characterId: string): Promis
     order by amount desc, created_at desc limit 1`;
   if (!r) return "";
   if (String(r.kind) === "money") return `$${Number(r.amount).toLocaleString()}`;
-  const g = giftById(String(r.gift_id));
-  return g ? `${g.brand} ${g.name}` : "a present";
+  const id = String(r.gift_id);
+  const g = giftById(id) || (isMyGift(id) ? (await myGifts(userId)).find(x => x.id === id) || null : null);
+  return g ? `${g.brand ? `${g.brand} ` : ""}${g.name}` : "a present";
 }
 
 /** 🧾 What you've sent lately. */
@@ -103,8 +134,9 @@ export async function giftHistory(userId: string, limit = 30) {
       coalesce(c.name, a.name) as who, a.handle
     from pica_gift_sent s left join chat_characters c on c.id = s.character_id left join pica_accounts a on a.id = s.account_id
     where s.user_id = ${userId} order by s.created_at desc limit ${limit}`;
+  const listed = new Map((await myGifts(userId)).map(g => [g.id, g]));
   return rows.map(r => {
-    const g = giftById(String(r.gift_id || ""));
+    const g = giftById(String(r.gift_id || "")) || listed.get(String(r.gift_id || "")) || null;
     return { id: String(r.id), kind: String(r.kind), who: String(r.who || "someone"), handle: r.handle ? String(r.handle) : null,
       what: String(r.kind) === "money" ? `$${Number(r.amount).toLocaleString()}` : g ? `${g.emoji} ${g.brand} ${g.name}` : "a present",
       amount: Number(r.amount), wished: !!r.wished, note: String(r.note || ""), at: String(r.at) };
