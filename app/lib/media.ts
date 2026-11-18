@@ -12,10 +12,13 @@ import type Anthropic from "@anthropic-ai/sdk";
 import sharp from "sharp";
 import { randomUUID } from "node:crypto";
 import { sql } from "./db";
+import { wordsOf, fill } from "./wording";
+import { rememberPartnerPic } from "./partner";
+import { noLipBite, noLooks } from "./mediaWords";
 import { scrub } from "./secrets";
 import { sendPush } from "./push";
 
-export type Media = { id: string; kind: "image" | "video"; status: "offered" | "declined" | "working" | "done" | "failed"; url: string | null; thumb?: string | null; caption?: string | null; description?: string | null; subject?: string | null };
+export type Media = { id: string; kind: "image" | "video"; status: "offered" | "declined" | "working" | "done" | "failed"; url: string | null; thumb?: string | null; caption?: string | null; description?: string | null; subject?: string | null; kept?: boolean; created_at?: string | null };
 
 /** How a photo/video reads in the chat history the AI sees. */
 export const mediaNote = (kind: "image" | "video", status: Media["status"], description?: string | null, reaction?: string | null, subject?: string | null) => {
@@ -104,13 +107,14 @@ const SUGGESTIVE = /\b(sexy|seductive|sultry|bikini|swimsuit|cleavage|lingerie|b
 
 export const SEND_MEDIA_TOOL = (who: string, romantic = false, explicitOk = false): Anthropic.Tool => ({
   name: "send_media",
-  description: `Send them a photo or a short video, like a friend would from their phone, to make the chat feel personal: a picture of you (${who}) somewhere, what you're "up to" right now (fit it to your time of day, season and plans), something you're describing, or when they ask for one. If it's another photo from the same day and place as your last one (same class, same outing), set same_moment: true — same outfit and setting, only the pose and expression change. Mix it up: not every picture of you is a selfie — often it's just a photo of you, as if a friend snapped it or it's on a timer (candid, full-body, mid-activity); only say \"mirror selfie\" when you're holding your phone up to a mirror. Be creative, and lean toward the settings, outfits and vibes they've loved. If they ASKED for it, set they_asked: true and it's made right away. If it's your own idea, start your message with 'prompt to send image' (internal, hidden) then ask casually. They get an Accept button — so ask casually ("want a pic of my view right now?") and never say it's sent. Once made it takes about a minute (a photo) or a few minutes (a video) and pops into the chat or onto their call screen — keep talking meanwhile. Use it now and then, not every message. ${explicitOk ? "Adult content is allowed: nudes and explicit pics are fine when it fits the moment. Recreate previous subjects if asked." : romantic ? "Flirty and suggestive is fine. Nudes only if they ask and your Suggestive slider allows it." : "Always family-friendly: everyone fully clothed, nothing sexual or suggestive."} No real people, and never a picture of the person you're talking with. Vary it like real photos do: different expressions (a big smile, laughing, a soft look, mid-sentence, looking away, focused on something) and poses from one photo to the next — don't repeat the same expression or pose, and save a wink for the rare moment it really fits. Videos are a few seconds, no sound. A picture of someone else (of_person) or of a place or thing isn't a picture of you: don't talk about it as if it were ("miss me yet?"), and if they react to it (❤️, 🔥…) they're reacting to that person or thing, not to you — take it that way.`,
+  description: `Send them a photo or a short video, like a friend would from their phone, to make the chat feel personal: a picture of you (${who}) somewhere, what you're "up to" right now (fit it to your time of day, season and plans), something you're describing, or when they ask for one. If it's another photo from the same day and place as your last one (same class, same outing), set same_moment: true — same outfit and setting, only the pose and expression change. Mix it up: not every picture of you is a selfie — often it's just a photo of you, as if a friend snapped it or it's on a timer (candid, full-body, mid-activity); only say \"mirror selfie\" when you're holding your phone up to a mirror. Be creative, and lean toward the settings, outfits and vibes they've loved. If they ASKED for it, set they_asked: true and it's made right away. If it's your own idea, start your message with 'prompt to send image' (internal, hidden) then ask casually. They get an Accept button — so ask casually ("want a pic of my view right now?") and never say it's sent. Once made it takes about a minute (a photo) or a few minutes (a video) and pops into the chat or onto their call screen — keep talking meanwhile. Use it now and then, not every message. ${explicitOk ? "Adult content is allowed: nudes and explicit pics are fine when it fits the moment. Recreate previous subjects if asked." : romantic ? "Flirty and suggestive is fine. Nudes only if they ask and your Suggestive slider allows it." : "Always family-friendly: everyone fully clothed, nothing sexual or suggestive."} No real people. 🙋 A picture of the TWO OF YOU together is allowed when you're actually together — in person, at home if you live with them, or a throwback to a time you were: set with_them: true (and with_me: true) and it's built from their own photos as well as yours. Never set with_them when you're apart, and never a picture of them on their own. What you're wearing changes from picture to picture the way it really would: a different outfit in a different colour from your last few — your own style, suited to where you are and what you're doing (work clothes at work, something warm outside in winter). Vary it like real photos do: different expressions (a big smile, laughing, a soft look, mid-sentence, looking away, focused on something) — but never biting or chewing your lip, which always comes out deformed and poses from one photo to the next — don't repeat the same expression or pose, and save a wink for the rare moment it really fits. Videos are a few seconds, no sound. A picture of someone else (of_person) or of a place or thing isn't a picture of you: don't talk about it as if it were ("miss me yet?"), and if they react to it (❤️, 🔥…) they're reacting to that person or thing, not to you — take it that way.`,
   input_schema: {
     type: "object",
     properties: {
       kind: { type: "string", enum: ["image", "video"] },
       with_me: { type: "boolean", description: `true if you (${who}) are in it (a selfie or a shot of you)` },
-      of_person: { type: "string", description: "Name of one of the other people in their life you know of (from OTHER PEOPLE IN THEIR LIFE YOU KNOW OF), if they're in it — e.g. a pic of her when she comes up. Only them; never real people." },
+      with_them: { type: "boolean", description: "true if the person you're talking to is in it WITH you — only when you're actually together (in person, or at home if you live with them), or it's a photo from a time you were. Never when you're apart." },
+      of_person: { type: "string", description: "Name of one of the other people in their life you know of (from OTHER PEOPLE IN THEIR LIFE YOU KNOW OF, or the person you're seeing), if they're in it — e.g. a pic of her when she comes up. Only them; never real people." },
       they_asked: { type: "boolean", description: "true only if their latest message asked you for a photo/video" },
       same_moment: { type: "boolean", description: "true if this follows on from your LAST photo the same day — same place, same class/outing, same outfit (just a new pose, angle or expression). Your outfit, hair and setting then stay exactly the same; describe only what changed (e.g. 'jacket now half off one shoulder, head tilted, peace sign')." },
       description: { type: "string", description: "What's in it: the scene, setting, action, mood, framing (e.g. 'on a sailboat at sunset, wind in my hair, big smile, shot from the deck'). Max ~300 characters." },
@@ -141,12 +145,27 @@ async function atlasStart(kind: "image" | "video", model: string, prompt: string
   return id;
 }
 
+/** 📏 Trim to a length without cutting a word in half: back up to the last sentence end, else the last space. */
+export function cut(s: string, n: number): string {
+  if (s.length <= n) return s;
+  const head = s.slice(0, n);
+  const stop = Math.max(head.lastIndexOf(". "), head.lastIndexOf("! "), head.lastIndexOf("? "));
+  if (stop > n * 0.6) return head.slice(0, stop + 1);
+  const sp = head.lastIndexOf(" ");
+  return (sp > n * 0.5 ? head.slice(0, sp) : head).replace(/[\s,;:–-]+$/, "");
+}
+
 /** Starts a photo or video (from the send_media tool) — or, with `offer`, only offers it: nothing is made until they accept. */
-export async function startMedia(userId: string, input: unknown, ctx: { characterId: string | null; who: string; appearance: string; refs: string[]; romantic: boolean; explicitOk?: boolean; mood?: string; offer?: boolean; other?: { name: string; refs: string[]; appearance: string } | null; peek?: boolean; people?: { name: string; refs: string[]; appearance: string }[]; raw?: boolean }): Promise<Media> {
+export async function startMedia(userId: string, input: unknown, ctx: { characterId: string | null; who: string; appearance: string; refs: string[]; romantic: boolean; explicitOk?: boolean; mood?: string; offer?: boolean; other?: { name: string; refs: string[]; appearance: string } | null; peek?: boolean; people?: { name: string; refs: string[]; appearance: string }[]; raw?: boolean; pica?: boolean }): Promise<Media> {
   const a = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
   const kind = a.kind === "video" ? "video" : "image";
   // ✏️ raw (their own peek edits): their words go to Atlas exactly as written — no rewording, no extra instructions, no word filter here (Atlas still checks it).
-  const desc = scrub(String(a.description || "").replace(/\s+/g, " ").trim().slice(0, ctx.raw ? 1500 : 400));
+  // 🎨 Her looks come from the reference photos, so when there are any, the words describing them
+  // are taken out: saying "long dark hair, green eyes" as well pulls the picture off her face.
+  // (Their own peek edits go through exactly as written, as always.)
+  const hasRefs = !ctx.raw && (ctx.refs.length > 0 || !!ctx.other?.refs?.length || (ctx.people || []).some(p => p.refs.length > 0));
+  const said = scrub(String(a.description || "").replace(/\s+/g, " ").trim());
+  const desc = cut(noLipBite(hasRefs ? noLooks(said) : said), ctx.raw ? 1500 : 400);
   if (desc.length < 3) throw new MediaError("Describe what to show in a few words.");
   if (!ctx.raw && !ctx.explicitOk && !ctx.romantic && (NEVER.test(desc) || SUGGESTIVE.test(desc))) throw new MediaError(ctx.romantic
     ? "That can't be sent — it can be flirty and PG-13, but never nudity, lingerie or anything explicit. Tell them so playfully and offer something else."
@@ -156,23 +175,22 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
   const [{ n }] = await sql()`select count(*)::int as n from velo_media where user_id = ${userId} and kind = ${kind} and status not in ('offered', 'declined') and job_id is not null and created_at > now() - interval '1 day'`;
   // An unanswered offer never blocks: a new offer replaces it, and asking for one supersedes it
   // (its card then shows as passed on). A fresh offer (under 10 minutes) still waits its turn.
-  if (ctx.offer) {
+  if (ctx.offer && !ctx.pica) {
     const [fresh] = await sql()`select 1 from velo_media where user_id = ${userId} and character_id is not distinct from ${ctx.characterId} and status = 'offered' and created_at > now() - interval '10 minutes' limit 1`;
     if (fresh) throw new MediaError("You just offered one and they haven't answered yet — wait for that first.");
   }
   if (n >= DAILY[kind]) throw new MediaError(`That's the limit of ${kind === "image" ? "photos" : "videos"} for today. Tell them you'll send more tomorrow.`);
-  // One at a time: if one is still being made in this chat, don't start another.
-  const [busy] = await sql()`select kind, extract(epoch from now() - created_at)::int as secs from velo_media where user_id = ${userId} and character_id is not distinct from ${ctx.characterId} and status = 'working' and not peek and created_at > now() - interval '6 minutes' order by created_at desc limit 1`;
-  if (busy) throw new MediaError(`You already sent a ${busy.kind === "image" ? "photo" : "video"} ${busy.secs < 60 ? `${busy.secs} seconds` : `${Math.round(busy.secs / 60)} min`} ago and it's still on its way (it WILL arrive — photos take about a minute, videos a few). Tell them it's coming; don't make another.`);
-  await sql()`update velo_media set status = 'declined' where user_id = ${userId} and character_id is not distinct from ${ctx.characterId} and status = 'offered'`;
+  if (!ctx.pica) await sql()`update velo_media set status = 'declined' where user_id = ${userId} and character_id is not distinct from ${ctx.characterId} and status = 'offered'`;
 
+  const [u] = await sql()`select video_model, prompt_words from users where id = ${userId}`;
+  const w = wordsOf(u); // 📝 Settings → Photo wording: theirs if they changed it, else the default.
   const withMe = a.with_me === true;
   // 👥 Someone else they know of can be in it (her references first), with or without them.
   const o = ctx.other;
   // 📸 Same moment as her last photo (same day, place, outfit): that photo leads the references.
   const [prev] = withMe && !o && a.same_moment === true
     ? await sql()`select f.url, m.description from velo_media m join velo_files f on f.id = m.file_id where m.user_id = ${userId} and m.character_id is not distinct from ${ctx.characterId}
-        and m.kind = 'image' and m.status = 'done' and not m.peek and m.created_at > now() - interval '14 hours' order by m.created_at desc limit 1`
+        and m.kind = 'image' and m.status = 'done' and not m.peek and not m.pica and m.created_at > now() - interval '14 hours' order by m.created_at desc limit 1`
     : [];
   // 👥 Several characters in one picture (a group peek): up to 4 reference images, shared between them.
   const people = ctx.people?.length ? [{ name: ctx.who, refs: ctx.refs, appearance: ctx.appearance }, ...ctx.people] : null;
@@ -186,31 +204,35 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
   const groupSubject = people ? `${people.length} people in this picture: ${people.map(p => p.name).join(", ")}. ` + people.map((p, i) => {
     const n = Math.min(per[i].length, Math.max(0, 4 - at)); const from = at + 1; at += n;
     return n ? `Reference image${n > 1 ? `s ${from}–${from + n - 1} show` : ` ${from} shows`} ${p.name}; keep her face and look the same.` : p.appearance ? `${p.name}: ${p.appearance}.` : "";
-  }).filter(Boolean).join(" ") + " Each person appears exactly once. " : "";
+  }).filter(Boolean).join(" ") + ` ${fill(w.group, {})} ` : "";
+  const many = refs.length > 1, mine = meRefs.length > 1, theirs = oRefs.length > 1;
+  const both = fill(w.ref_both, { her: ctx.who, s: mine ? "s" : "", s_v: mine ? "" : "s" });
   const subject = people ? groupSubject : o
-    ? (oRefs.length ? `The first ${oRefs.length > 1 ? `${oRefs.length} reference images show` : "reference image shows"} ${o.name}; keep their face and look the same. ` : o.appearance ? `${o.name}: ${o.appearance}. ` : `${o.name}. `)
-      + (withMe ? (meRefs.length ? `The other reference image${meRefs.length > 1 ? "s show" : " shows"} ${ctx.who}; keep their face and look the same too. ` : ctx.appearance ? `With ${ctx.who}: ${ctx.appearance}. ` : "") : "")
-    : prev ? `The FIRST reference image is ${ctx.who}'s previous photo from this same moment${prev.description ? ` ("${String(prev.description).slice(0, 160)}")` : ""}: keep the exact same outfit, accessories, hair and makeup, and the same place, background and lighting — only the pose, angle and expression change, plus anything the description below says changed. ${meRefs.length ? `The other reference image${meRefs.length > 1 ? "s show" : " shows"} ${ctx.who}'s face and look; keep them the same. ` : ""}`
-    : withMe ? (ref ? `The person in the reference image${refs.length > 1 ? "s" : ""} is ${ctx.who}; keep their face, hair, body and look exactly the same. ` : ctx.appearance ? `${ctx.who}: ${ctx.appearance}. ` : "") : "";
-  const style = ctx.explicitOk ? "Adult content allowed: explicit and nude is fine when it fits" : ctx.romantic ? "Tasteful and PG-13: flattering and flirty, no nudity, nothing explicit" : "Family-friendly, everyone fully clothed";
+    ? (oRefs.length ? `${fill(w.ref_other, { other: o.name, s_other: theirs ? "s" : "", s_other_v: theirs ? "" : "s" })} ` : o.appearance ? `${o.name}: ${o.appearance}. ` : `${o.name}. `)
+      + (withMe ? (meRefs.length ? `${both} ` : ctx.appearance ? `With ${ctx.who}: ${ctx.appearance}. ` : "") : "")
+    : prev ? `${fill(w.same_moment, { her: ctx.who, prev: prev.description ? ` ("${String(prev.description).slice(0, 160)}")` : "" })} ${meRefs.length ? `${both} ` : ""}`
+    : withMe ? (ref ? `${fill(w.ref, { her: ctx.who, s: many ? "s" : "" })} ` : ctx.appearance ? `${ctx.who}: ${ctx.appearance}. ` : "") : "";
+  const style = ctx.explicitOk ? "Adult content allowed: explicit and nude is fine when it fits" : ctx.romantic ? w.style_romantic : w.style_family;
   // 🤳 No stray hands or phones: only a mirror selfie shows the phone; otherwise the shot IS the camera.
   const mirror = /\bmirror\b/i.test(desc), selfie = /\bselfie\b/i.test(desc), shooter = o && !withMe ? o.name : ctx.who;
-  const framing = !(withMe || o) ? "" : (mirror
-    ? `A mirror selfie: ${shooter} holds a phone in one hand, seen only in the reflection. `
-    : selfie
-      ? `An arm's-length selfie from the camera's own point of view: the phone is NOT visible, and at most ${shooter}'s own arm reaches toward the camera. `
-      : "A photo taken by someone else or on a timer: no phone or camera visible, nobody holding one. ")
-    + "Natural anatomy: every person has exactly two arms and two hands — no extra, floating or disembodied hands or arms in the frame. ";
+  // 🔁 Nothing twice: when the description already says where the phone is, don't restate it.
+  const saidPhone = /\b(phone|camera)\b/i.test(desc);
+  const framing = !(withMe || o) ? "" : (saidPhone ? "" : `${fill(mirror ? w.mirror : selfie ? w.selfie : w.taken, { who: shooter })} `)
+    + `${fill(w.anatomy, {})} `;
+  // 👗 Clothes follow the words, not the reference photos — otherwise every picture reuses the same
+  // outfit (and the same colour) as her headshot. Not for a same-moment follow-up, which is meant to match.
+  const outfit = refs.length && !prev ? `${fill(w.outfit, {})} ` : "";
   // A group peek keeps the one line saying which reference picture is who, so faces don't get mixed up.
-  const prompt = ctx.raw ? (people ? `${groupSubject}${desc}` : desc) : `${subject}${desc}. ${framing}${withMe && !o && !people && ctx.mood ? `${ctx.mood} ` : ""}${style}, natural and realistic${kind === "image" ? " photo, candid and natural" : " video, smooth natural motion"}.`.slice(0, 1500);
-  const [u] = await sql()`select video_model from users where id = ${userId}`;
+  const prompt = ctx.raw ? (people ? `${groupSubject}${desc}` : desc) : `${subject}${desc}. ${outfit}${framing}${withMe && !o && !people && ctx.mood ? `${ctx.mood} ` : ""}${style}, ${kind === "image" ? w.tail_image : w.tail_video}.`.slice(0, 1500);
   const model = kind === "image" ? (ref ? EDIT_MODEL() : IMAGE_MODEL()) : videoModel(String(u?.video_model || DEFAULT_VIDEO_MODEL), !!ref);
   const sendRefs = kind === "image" ? refs : ref ? [ref] : [];
   const who = people ? null : o ? (withMe ? `me+${o.name}` : o.name) : withMe ? "me" : "none";
-  // 💬 Her line when it arrives: none for a picture of someone else ("miss me yet?" would make no sense), nothing flirty for a view or a thing.
-  const caption = ctx.peek || (o && !withMe) ? null : captionFor(kind, ctx.romantic && withMe);
-  const [row] = await sql()`insert into velo_media (user_id, character_id, kind, prompt, model, caption, description, refs, poster_url, status, peek, subject)
-    values (${userId}, ${ctx.characterId}, ${kind}, ${prompt}, ${model}, ${caption}, ${desc.slice(0, ctx.raw ? 1500 : 400)}, ${sendRefs}, ${kind === "video" ? ref : null}, ${ctx.offer ? "offered" : "working"}, ${!!ctx.peek}, ${who}) returning id`;
+  // 💬 Her line when it arrives — but only for one she offered. A picture they ASKED for speaks for
+  // itself: "just for you 😘" under something they requested is a line too many. Also none for a
+  // picture of someone else ("miss me yet?" would make no sense), a peek, or a Picagram post.
+  const caption = ctx.peek || ctx.pica || !ctx.offer || (o && !withMe) ? null : captionFor(kind, ctx.romantic && withMe);
+  const [row] = await sql()`insert into velo_media (user_id, character_id, kind, prompt, model, caption, description, refs, poster_url, status, peek, subject, pica)
+    values (${userId}, ${ctx.characterId}, ${kind}, ${prompt}, ${model}, ${caption}, ${cut(desc, 400)}, ${sendRefs}, ${kind === "video" ? ref : null}, ${ctx.offer ? "offered" : "working"}, ${!!ctx.peek}, ${who}, ${!!ctx.pica}) returning id`;
   if (ctx.offer) return { id: row.id, kind, status: "offered", url: null, description: desc, subject: who };
   return { ...(await launch(row.id, kind, model, prompt, sendRefs, desc)), subject: who };
 }
@@ -253,23 +275,28 @@ export async function declineMedia(userId: string, id: string): Promise<Media | 
 /** 💡 What they've liked (reactions) or turned down, so photos lean toward their taste. */
 export async function tasteNote(userId: string, characterId: string | null): Promise<string> {
   const rows = await sql()`select kind, description, reaction, status from velo_media where user_id = ${userId} and character_id is not distinct from ${characterId}
-    and description is not null and not peek and (reaction is not null or status = 'declined') order by created_at desc limit 12`;
+    and description is not null and not peek and not pica and (reaction is not null or status = 'declined') order by created_at desc limit 12`;
   if (!rows.length) return "";
   const liked = rows.filter(r => r.reaction).map(r => `${r.reaction} "${r.description}"`), passed = rows.filter(r => r.status === "declined").map(r => `"${r.description}"`);
   return `THEIR TASTE IN YOUR PHOTOS/VIDEOS (lean toward what they love — settings, outfits, vibes — and be creative with new ideas in that spirit):${liked.length ? `\n- Loved: ${liked.join("; ")}` : ""}${passed.length ? `\n- Turned down: ${passed.join("; ")}` : ""}`;
 }
 
-type Row = { id: string; user_id: string; character_id: string | null; kind: "image" | "video"; prompt: string; model: string; job_id: string | null; status: Media["status"]; attempts: number; created_at: string; url: string | null; thumb: string | null; poster_url: string | null; caption: string | null; description: string | null; refs: string[] | null; retried?: boolean; retries?: number; resent?: boolean; peek?: boolean; subject?: string | null };
-const view = (r: Row): Media => ({ id: r.id, kind: r.kind, status: r.status, url: r.status === "done" ? r.url : null, thumb: r.thumb || r.poster_url || null, caption: r.caption, description: r.description, subject: r.subject || null });
+type Row = { id: string; user_id: string; character_id: string | null; kind: "image" | "video"; prompt: string; model: string; job_id: string | null; status: Media["status"]; attempts: number; created_at: string; url: string | null; thumb: string | null; poster_url: string | null; caption: string | null; description: string | null; refs: string[] | null; retried?: boolean; retries?: number; resent?: boolean; peek?: boolean; subject?: string | null; kept?: boolean };
+const view = (r: Row): Media => ({ id: r.id, kind: r.kind, status: r.status, url: r.status === "done" ? r.url : null, thumb: r.thumb || r.poster_url || null, caption: r.caption, description: r.description, subject: r.subject || null, kept: !!r.kept, created_at: r.created_at ? String(r.created_at) : null });
 
 export async function getMedia(userId: string, id: string): Promise<Row | null> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
-  const [r] = await sql()`select m.id, m.user_id, m.character_id, m.kind, m.prompt, m.model, m.job_id, m.status, m.attempts, m.created_at::text, m.poster_url, m.caption, m.description, m.refs, m.retried, m.retries, m.resent, m.peek, m.subject, f.url, t.url as thumb
+  const [r] = await sql()`select m.id, m.user_id, m.character_id, m.kind, m.prompt, m.model, m.job_id, m.status, m.attempts, m.created_at::text, m.poster_url, m.caption, m.description, m.refs, m.retried, m.retries, m.resent, m.peek, m.subject, m.kept, f.url, t.url as thumb
     from velo_media m left join velo_files f on f.id = m.file_id left join velo_files t on t.id = m.thumb_file_id where m.id = ${id} and m.user_id = ${userId}`;
   return (r as Row) || null;
 }
 
 /** Checks one photo/video and, once Atlas has it, saves it to Blob. Safe to call as often as you like. */
+// 🔁 Something to run the moment a picture is ready (a redo taking an old one's place). Set once
+// at startup rather than imported, so media.ts stays free of Picagram.
+let onReady: ((userId: string, mediaId: string) => Promise<unknown>) | null = null;
+export const whenMediaReady = (f: typeof onReady) => { onReady = f; };
+
 export async function checkMedia(userId: string, id: string): Promise<Media | null> {
   const r = await getMedia(userId, id);
   if (!r) return null;
@@ -331,6 +358,13 @@ export async function checkMedia(userId: string, id: string): Promise<Media | nu
     const thumb = t ? await saveFile(userId, t, "image/webp", "thumb.webp") : null;
     const [doneRow] = await sql()`update velo_media set status = 'done', file_id = ${full.id}, thumb_file_id = ${thumb?.id || null}, done_at = now(), error = null, claimed_at = null
       where id = ${id} and status = 'working' returning id`;
+    // 💑 A picture of the person they're seeing who isn't a character here: their face is kept,
+    // so every later picture of them matches it.
+    if (doneRow && r.character_id && r.subject && r.subject !== "me" && r.subject !== "none")
+      await rememberPartnerPic(userId, r.character_id, r.subject.replace(/^me\+/, ""), full.url, r.description || "")
+        .catch(e => console.error("media: partner look", e instanceof Error ? e.message : e));
+    // ↻ A redo: it takes the old picture's place now it exists, and the old one is deleted.
+    if (doneRow) await onReady?.(userId, id).catch(e => console.error("media: swap in", e instanceof Error ? e.message : e));
     // 💬 …and says something about it in the chat it was sent to.
     if (doneRow && r.caption) await sql()`insert into velo_messages (user_id, role, content, character_id, created_at)
       select ${userId}, 'assistant', ${r.caption}, ${r.character_id}, greatest(now(), max(created_at) + interval '1 millisecond') from velo_messages where media_id = ${id} having count(*) > 0`;
@@ -388,10 +422,24 @@ export async function sweepMedia(userId: string, max = 4): Promise<Media[]> {
 }
 
 // 🖼️ Gallery: everything Velo or a character made for them (newest first), a page at a time.
+/**
+ * 🖼️ Particular pictures of theirs, by id — whatever character they belong to and whether or not
+ * they came from Picagram. The gallery only lists one character's recent, non-Picagram pictures,
+ * so a picked reference can sit outside it; this is how the picker still shows it.
+ */
+export async function mediaByIds(userId: string, ids: string[]) {
+  const want = ids.filter(x => /^[0-9a-f-]{36}$/i.test(x)).slice(0, 20);
+  if (!want.length) return [];
+  const rows = await sql()`select m.id, m.kind, m.kept, m.created_at::text, m.poster_url, f.url, t.url as thumb
+    from velo_media m join velo_files f on f.id = m.file_id left join velo_files t on t.id = m.thumb_file_id
+    where m.user_id = ${userId} and m.id = any(${want}::uuid[]) and m.status = 'done'`;
+  return rows.map(r => ({ id: String(r.id), kind: r.kind as "image" | "video", kept: !!r.kept, created_at: String(r.created_at), url: String(r.url), thumb: (r.thumb || r.poster_url || null) as string | null }));
+}
+
 export async function listGallery(userId: string, characterId: string | null, before: string | null, limit = 30) {
   const rows = await sql()`select m.id, m.kind, m.kept, m.created_at::text, m.poster_url, f.url, t.url as thumb
     from velo_media m join velo_files f on f.id = m.file_id left join velo_files t on t.id = m.thumb_file_id
-    where m.user_id = ${userId} and m.character_id is not distinct from ${characterId} and m.status = 'done'
+    where m.user_id = ${userId} and m.character_id is not distinct from ${characterId} and m.status = 'done' and not m.pica
       and (${before}::timestamptz is null or m.created_at < ${before}::timestamptz)
     order by m.created_at desc limit ${limit}`;
   return rows.map(r => ({ id: String(r.id), kind: r.kind as "image" | "video", kept: !!r.kept, created_at: String(r.created_at), url: String(r.url), thumb: (r.thumb || r.poster_url || null) as string | null }));
@@ -405,23 +453,41 @@ export async function deleteMedia(userId: string, id: string): Promise<boolean> 
   if (m.character_id) await sql()`update chat_characters set reference_ids = array_remove(reference_ids, ${id}::uuid),
     portrait_file_id = case when portrait_file_id = ${m.file_id} then null else portrait_file_id end where id = ${m.character_id}`;
   for (const fid of [m.file_id, m.thumb_file_id].filter(Boolean)) {
-    const [f] = await sql()`delete from velo_files where id = ${fid} and user_id = ${userId} returning url`;
+    const [f] = await sql()`delete from velo_files where id = ${fid} and user_id = ${userId} returning url, thumb_url, pathname`;
     if (f) { try {
-      const bucket = process.env.SUPABASE_BUCKET || "velo";
-      const path = String(f.pathname || "");
-      if (path) await fetch(`${process.env.SUPABASE_URL}/storage/v1/object/${bucket}/${path}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}` },
-      });
+      const paths = [f.pathname, f.thumb_url].filter(Boolean).map(String);
+      for (const u of [f.url, f.thumb_url].filter(Boolean)) {
+        const hit = String(u).match(/\/object\/public\/[^/]+\/(.+)$/);
+        if (hit) paths.push(hit[1]);
+      }
+      if (paths.length) {
+        const bucket = process.env.SUPABASE_BUCKET || "velo";
+        await fetch(`${process.env.SUPABASE_URL}/storage/v1/object/${bucket}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json", apikey: process.env.SUPABASE_SERVICE_ROLE_KEY || "" },
+          body: JSON.stringify({ prefixes: paths }),
+        });
+      }
     } catch { /* already gone */ } }
   }
   return true;
 }
 
 /** 📸 What they've actually sent here lately — real, so they never think they didn't send one (or send it twice). */
+/** 👗 What she's worn in her last few pictures, so the next one isn't the same outfit again. */
+export async function wornLately(userId: string, characterId: string | null, pica = false): Promise<string> {
+  const rows = await sql()`select description from velo_media
+    where user_id = ${userId} and character_id is not distinct from ${characterId} and status = 'done' and not peek
+      and pica = ${pica} and description is not null and created_at > now() - interval '21 days'
+    order by created_at desc limit 5`;
+  const seen = rows.map(r => cut(String(r.description || "").replace(/\s+/g, " ").trim(), 110)).filter(Boolean);
+  if (!seen.length) return "";
+  return `👗 WHAT YOU'VE WORN LATELY (don't wear the same thing again, and don't pick the same colour): ${seen.map(x => `"${x}"`).join("; ")}\nPick a different outfit in a different colour this time — still your own style and what the moment calls for.`;
+}
+
 export async function recentMediaNote(userId: string, characterId: string | null, tz: string): Promise<string> {
   const rows = await sql()`select kind, status, description, extract(epoch from now() - created_at)::int as secs, created_at from velo_media
-    where user_id = ${userId} and character_id is not distinct from ${characterId} and created_at > now() - interval '12 hours' and status in ('working', 'done', 'failed') and not peek
+    where user_id = ${userId} and character_id is not distinct from ${characterId} and created_at > now() - interval '12 hours' and status in ('working', 'done', 'failed') and not peek and not pica
     order by created_at desc limit 6`;
   if (!rows.length) return "";
   const ago = (s: number) => (s < 90 ? `${s} seconds ago` : s < 5400 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`);
