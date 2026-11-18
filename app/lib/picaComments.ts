@@ -60,6 +60,20 @@ const EMOJI = ["😍", "🔥", "😍😍😍", "🔥🔥", "❤️", "❤️❤�
   "😂😂", "👀", "👀🔥", "💪", "💪🔥", "🌊☀️", "🐾😍", "🤤", "🙌🔥", "😍🔥", "❤️🔥", "💯💯", "✨😍", "🥹", "😳🔥", "💅", "👑", "🫶", "😊", "😎",
   "🌸", "🌞", "😻", "💥", "🤍", "💙", "🖤", "💜", "😆", "🤗", "🤭", "😌", "🎉", "🍑🔥", "💐", "🌺", "🏝️", "✈️😍", "🍕😋", "🐶❤️"];
 
+// 😘 Every so often a stranger shoots their shot. One per post at most, never on the person's own posts.
+export const FLIRTY = [
+  "Can we go out sometime?", "You're hot!", "Wanna get a coffee with me?", "Okay you're gorgeous 😍", "Are you single??",
+  "Marry me", "Drop a pin, I'm on my way", "Let me take you to dinner", "You're actually stunning", "Sliding into the DMs now 👀",
+  "Is it weird to ask you out in the comments?", "Please tell me you're taken because otherwise I have to shoot my shot",
+  "Hey beautiful 😊", "Coffee? My treat", "You free this weekend?", "I'd walk a long way for a smile like that",
+  "Prettiest girl on here", "Can I buy you a drink sometime?", "You're the reason I open this app", "Okay but are you dating anyone?",
+  "My DMs are open if yours are 😏", "Date? Yes? No? Maybe?", "Hi, hello, hey, how are you 😅", "Seriously, you're beautiful",
+  "Breakfast tomorrow? I'll cook", "I have got to ask — are you seeing someone?", "You + me + tacos, think about it",
+  "Not me falling in love in a comment section", "Say the word and I'm there", "Drinks sometime? No pressure 😊",
+  "Someone's lucky to have you. Or should I apply?", "Honestly? Wife material", "Dinner's on me if you say yes",
+  "I'll be the guy in the corner working up the nerve", "You're unreal 😍 call me?", "Let me know if you ever want company",
+];
+
 const FIRST = ["jess", "mike", "tay", "sam", "alex", "jordan", "chris", "brit", "kayla", "ty", "mia", "nate", "lexi", "dani", "zoe", "rob", "luis", "ana", "emma", "liv",
   "kat", "ben", "sara", "max", "jade", "nick", "ellie", "josh", "maddie", "drew", "bella", "cam", "rae", "leo", "nina", "matt", "ivy", "aj", "sky", "dev"];
 const TAIL = ["_xo", ".fit", "_official", "lovesyou", "_vibes", "babyy", ".daily", "_travels", "_eats", "_gram", "x3", "__", "_ok", "_life", "_art", "_photo", "_99", "_21", "_07", ""];
@@ -73,7 +87,7 @@ export function randomUser(): string {
 /** A few random strangers' comments for a post (some emoji-only).
  *  They're told what the picture shows — what she's doing and what she's wearing — so the
  *  comments land on it ("love the crop top", "wish I was on the beach too!"), not just "Love this!". */
-export function randomComments(text: string, kind: "image" | "text", n: number): { name: string; text: string }[] {
+export function randomComments(text: string, kind: "image" | "text", n: number, flirty = true): { name: string; text: string }[] {
   const t = text.toLowerCase();
   const themed = [
     /gym|workout|lift|weights|run|jog|yoga|pilates|fit|sweat|treadmill|squat/.test(t) ? GYM : [],
@@ -110,6 +124,12 @@ export function randomComments(text: string, kind: "image" | "text", n: number):
     if (used.has(c)) continue;
     used.add(c);
     out.push({ name: randomUser(), text: c });
+  }
+  // 😘 Now and then one of them shoots their shot instead of just saying something nice. Never the
+  // comment about the picture itself (that one stays), and never more than one on the same post.
+  if (flirty && out.length > 1 && Math.random() < 0.35) {
+    const at = 1 + Math.floor(Math.random() * (out.length - 1));
+    out[at] = { name: randomUser(), text: pick(FLIRTY) };
   }
   return out;
 }

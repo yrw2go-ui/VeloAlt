@@ -1,5 +1,5 @@
 // Run: node --experimental-strip-types tests/comments.test.ts
-import { randomComments } from "../app/lib/picaComments.ts";
+import { randomComments, FLIRTY } from "../app/lib/picaComments.ts";
 
 let bad = 0;
 const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m); if (!c) bad++; };
@@ -39,6 +39,30 @@ ok(words.some(c => /felt|mood|same|real|true|facts|me\b/i.test(c)), "…it gets 
 const plain = randomComments("", "image", 3);
 ok(plain.length === 3 && plain.every(c => c.text.length > 0 && c.name.length > 0), "a picture with no description still gets normal comments");
 ok(new Set(says("At the beach in a crop top")).size > 40, "and they're never the same few lines over and over");
+
+// 😘 Some of them shoot their shot.
+const shot = new Set(FLIRTY);
+const many = says("At the pool in a red bikini, sunglasses on");
+ok(many.some(c => /can we go out|wanna get a coffee|you're hot/i.test(c)), `someone asks her out (e.g. "${many.find(c => /go out|coffee|hot!/i.test(c))}")`);
+
+// Never more than one per post, and never instead of the comment about the picture.
+let withFlirt = 0, tooMany = 0, lostPicture = 0;
+for (let i = 0; i < 400; i++) {
+  const c = randomComments("At the beach in a white crop top, laughing", "image", 4).map(x => x.text);
+  const n = c.filter(x => shot.has(x)).length;
+  if (n) withFlirt++;
+  if (n > 1) tooMany++;
+  if (shot.has(c[0])) lostPicture++;
+}
+ok(!tooMany, "never two pickup lines on the same post");
+ok(!lostPicture, "…and never in place of the comment about the picture itself");
+ok(withFlirt > 40 && withFlirt < 280, `it stays occasional, not every post (${withFlirt} of 400)`);
+
+// 🙅 Not on the person's own posts.
+const mine = new Set<string>();
+for (let i = 0; i < 300; i++) for (const c of randomComments("At the beach in a white crop top, laughing", "image", 4, false)) mine.add(c.text);
+ok(![...mine].some(c => /can we go out|you're hot!|wanna get a coffee|are you single|marry me|buy you a drink/i.test(c)),
+  "nobody hits on the person on their own posts");
 
 console.log(bad ? `\n${bad} failed` : "\nall good");
 process.exit(bad ? 1 : 0);

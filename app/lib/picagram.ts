@@ -359,7 +359,8 @@ export async function picaPost(userId: string, caption: string, photo: string, u
   }
   const now = Date.now();
   const [post] = await sql()`insert into pica_posts (user_id, author_id, kind, caption, photo, media_id, likes_target, seen_at) values (${userId}, null, ${media ? "image" : "text"}, ${cap}, ${media ? desc : ""}, ${media?.id || null}, ${rand(10, 300)}, now()) returning id`;
-  for (const s of randomComments(`${cap} ${desc}`, media ? "image" : "text", rand(1, 4)))
+  // Nobody shoots their shot at the person themselves — their own posts get ordinary comments.
+  for (const s of randomComments(`${cap} ${desc}`, media ? "image" : "text", rand(1, 4), false))
     await sql()`insert into pica_comments (post_id, user_id, name, text, created_at) values (${post.id}, ${userId}, ${s.name}, ${s.text}, ${new Date(now + rand(3, 240) * 60_000).toISOString()})`;
   // 🏷️ Who's in it and who it's about: the one in the picture with you, and anyone you named in
   // the caption or the photo. They all hear about it, whether or not you talk to them much.
