@@ -9,7 +9,7 @@ import { partnerLook } from "./partner";
 // theirs alone and never mix with Velo's or another character's.
 import { defaults as wordDefaults, say, type Words } from "./words";
 import { storageDel } from "./files";
-import { sql } from "./db";
+import { missingSchema, sql } from "./db";
 import { localDate } from "./localTime";
 import { speechNote } from "./speech";
 import { CHARACTER_VOICES, VOICE_ID, FISH_ID } from "./voices";
@@ -29,11 +29,26 @@ export async function isAdmin(userId: string): Promise<boolean> {
   return !!u?.is_admin;
 }
 
+const legacyCharacter = (c: Record<string, unknown> | undefined): Character | null => c ? {
+  standing: "", school: "", class_days: [], class_start: "", class_end: "", local: false, neighbor: false, lives_in: "",
+  attached: "single", sees_others: false, lesbian: false, lesbian_personality: "", partner: "", speech: "", speech_on: false,
+  attached_since: null, attached_until: null, big_following: false, pica_handle: null,
+  ...c, explicit_ok: !!c.explicit_ok, gender: c.gender === "male" ? "male" : "female", live_in: !!c.live_in, home_attire: String(c.home_attire || ""),
+} as unknown as Character : null;
+
 export async function getCharacter(id: string): Promise<Character | null> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
-  const [c] = await sql()`select c.id, c.name, c.personality, c.backstory, c.relation, c.appearance, c.job, c.casual_wear, c.hobbies, c.voice, c.voice_name, c.voice_kind, c.romantic, c.romance_arc, c.reference_ids, c.time_zone, c.traits, c.preset, c.birthday, c.brain, c.standing, c.work_attire, c.work_days, c.work_start, c.work_end, c.part_time, c.school, c.class_days, c.class_start, c.class_end, c.poly_ok, c.sapphic, c.live_in, c.local, c.neighbor, c.lives_in, c.attached, c.sees_others, c.lesbian, c.lesbian_personality, c.partner, c.speech, c.speech_on, c.attached_since::text, c.attached_until::text, c.big_following, c.explicit_ok, c.gender, c.home_attire, c.owner_id, c.portrait_job, f.url as portrait_url
-    from chat_characters c left join velo_files f on f.id = c.portrait_file_id where c.id = ${id}`;
-  return (c as Character) || null;
+  try {
+    const [c] = await sql()`select c.id, c.name, c.personality, c.backstory, c.relation, c.appearance, c.job, c.casual_wear, c.hobbies, c.voice, c.voice_name, c.voice_kind, c.romantic, c.romance_arc, c.reference_ids, c.time_zone, c.traits, c.preset, c.birthday, c.brain, c.standing, c.work_attire, c.work_days, c.work_start, c.work_end, c.part_time, c.school, c.class_days, c.class_start, c.class_end, c.poly_ok, c.sapphic, c.live_in, c.local, c.neighbor, c.lives_in, c.attached, c.sees_others, c.lesbian, c.lesbian_personality, c.partner, c.speech, c.speech_on, c.attached_since::text, c.attached_until::text, c.big_following, c.explicit_ok, c.gender, c.home_attire, c.owner_id, c.portrait_job, f.url as portrait_url
+      from chat_characters c left join velo_files f on f.id = c.portrait_file_id where c.id = ${id}`;
+    return (c as Character) || null;
+  } catch (e) {
+    if (!missingSchema(e)) throw e;
+    // Live database is still on the pre-merge columns. The row is there; the new fields are not.
+    const [c] = await sql()`select c.id, c.name, c.personality, c.backstory, c.relation, c.appearance, c.job, c.casual_wear, c.hobbies, c.voice, c.voice_name, c.voice_kind, c.romantic, c.romance_arc, c.reference_ids, c.time_zone, c.traits, c.preset, c.birthday, c.brain, c.work_attire, c.work_days, c.work_start, c.work_end, c.part_time, c.poly_ok, c.sapphic, c.explicit_ok, c.gender, c.live_in, c.home_attire, c.owner_id, c.portrait_job, f.url as portrait_url
+      from chat_characters c left join velo_files f on f.id = c.portrait_file_id where c.id = ${id}`;
+    return legacyCharacter(c as Record<string, unknown> | undefined);
+  }
 }
 
 /** Everyone's characters, plus this person's own (introduced to them and accepted). */
@@ -45,11 +60,19 @@ export async function getCharacterFor(userId: string, id: string): Promise<Chara
 }
 
 export async function listCharacters(userId?: string): Promise<Character[]> {
-  return (await sql()`select c.id, c.name, c.personality, c.backstory, c.relation, c.appearance, c.job, c.casual_wear, c.hobbies, c.voice, c.voice_name, c.voice_kind, c.romantic, c.romance_arc, c.reference_ids, c.time_zone, c.traits, c.preset, c.birthday, c.brain, c.standing, c.work_attire, c.work_days, c.work_start, c.work_end, c.part_time, c.school, c.class_days, c.class_start, c.class_end, c.poly_ok, c.sapphic, c.live_in, c.local, c.neighbor, c.lives_in, c.attached, c.sees_others, c.lesbian, c.lesbian_personality, c.partner, c.speech, c.speech_on, c.attached_since::text, c.attached_until::text, c.big_following, c.explicit_ok, c.gender, c.home_attire, c.portrait_job, f.url as portrait_url,
-      a.handle as pica_handle
-    from chat_characters c left join velo_files f on f.id = c.portrait_file_id
-      left join pica_accounts a on a.character_id = c.id and a.user_id = ${userId || null}::uuid
-    where c.owner_id is null or (c.owner_id = ${userId || null}::uuid and c.intro_status = 'accepted') order by c.created_at`) as Character[];
+  try {
+    return (await sql()`select c.id, c.name, c.personality, c.backstory, c.relation, c.appearance, c.job, c.casual_wear, c.hobbies, c.voice, c.voice_name, c.voice_kind, c.romantic, c.romance_arc, c.reference_ids, c.time_zone, c.traits, c.preset, c.birthday, c.brain, c.standing, c.work_attire, c.work_days, c.work_start, c.work_end, c.part_time, c.school, c.class_days, c.class_start, c.class_end, c.poly_ok, c.sapphic, c.live_in, c.local, c.neighbor, c.lives_in, c.attached, c.sees_others, c.lesbian, c.lesbian_personality, c.partner, c.speech, c.speech_on, c.attached_since::text, c.attached_until::text, c.big_following, c.explicit_ok, c.gender, c.home_attire, c.portrait_job, f.url as portrait_url,
+        a.handle as pica_handle
+      from chat_characters c left join velo_files f on f.id = c.portrait_file_id
+        left join pica_accounts a on a.character_id = c.id and a.user_id = ${userId || null}::uuid
+      where c.owner_id is null or (c.owner_id = ${userId || null}::uuid and c.intro_status = 'accepted') order by c.created_at`) as Character[];
+  } catch (e) {
+    if (!missingSchema(e)) throw e;
+    const rows = await sql()`select c.id, c.name, c.personality, c.backstory, c.relation, c.appearance, c.job, c.casual_wear, c.hobbies, c.voice, c.voice_name, c.voice_kind, c.romantic, c.romance_arc, c.reference_ids, c.time_zone, c.traits, c.preset, c.birthday, c.brain, c.work_attire, c.work_days, c.work_start, c.work_end, c.part_time, c.poly_ok, c.sapphic, c.explicit_ok, c.gender, c.live_in, c.home_attire, c.portrait_job, f.url as portrait_url
+      from chat_characters c left join velo_files f on f.id = c.portrait_file_id
+      where c.owner_id is null or (c.owner_id = ${userId || null}::uuid and c.intro_status = 'accepted') order by c.created_at`;
+    return rows.map(r => legacyCharacter(r as Record<string, unknown>)).filter((c): c is Character => !!c);
+  }
 }
 
 /** The voice chosen in the editor: { id, name, kind, owner? }. A voice from ElevenLabs' shared

@@ -439,7 +439,8 @@ export async function mediaByIds(userId: string, ids: string[]) {
 export async function listGallery(userId: string, characterId: string | null, before: string | null, limit = 30) {
   const rows = await sql()`select m.id, m.kind, m.kept, m.created_at::text, m.poster_url, f.url, t.url as thumb
     from velo_media m join velo_files f on f.id = m.file_id left join velo_files t on t.id = m.thumb_file_id
-    where m.user_id = ${userId} and m.character_id is not distinct from ${characterId} and m.status = 'done' and not m.pica
+    where m.user_id = ${userId} and m.character_id is not distinct from ${characterId} and m.status = 'done'
+      and coalesce((to_jsonb(m)->>'pica')::boolean, false) = false
       and (${before}::timestamptz is null or m.created_at < ${before}::timestamptz)
     order by m.created_at desc limit ${limit}`;
   return rows.map(r => ({ id: String(r.id), kind: r.kind as "image" | "video", kept: !!r.kept, created_at: String(r.created_at), url: String(r.url), thumb: (r.thumb || r.poster_url || null) as string | null }));

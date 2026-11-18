@@ -1138,7 +1138,7 @@ export async function picaHandleNote(userId: string, ch: { id: string; name: str
 // 📸 Pictures of YOU: your "About you" photos (up to 4) are the references, and a peek-style
 // description you can read and fix before anything is made.
 export async function myPhotos(userId: string) {
-  const [u] = await sql()`select bio_photo_file_id, bio_photo_notes from users where id = ${userId}`;
+  const [u] = await sql()`select bio_photo_file_id, (to_jsonb(users)->'bio_photo_notes') as bio_photo_notes from users where id = ${userId}`;
   const notes = (u?.bio_photo_notes && typeof u.bio_photo_notes === "object" ? u.bio_photo_notes : {}) as Record<string, string>;
   const rows = await sql()`select id, url, thumb_url from velo_files where user_id = ${userId} and kind = 'bio' order by created_at desc limit 6`;
   return rows.map(r => ({ id: String(r.id), url: String(r.thumb_url || r.url), note: String(notes[String(r.id)] || ""), main: String(r.id) === String(u?.bio_photo_file_id || "") }));
