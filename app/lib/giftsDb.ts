@@ -66,7 +66,15 @@ export const shopNow = (now = Date.now()): Gift[] => shopFor(weekOf(now));
 export async function shopFull(userId: string, now = Date.now()): Promise<Gift[]> {
   return [...(await myGifts(userId)), ...shopNow(now)];
 }
-export const wishlistOf = (whoId: string, now = Date.now()): Gift[] => wishlistFor(whoId, weekOf(now));
+export const wishlistOf = (whoId: string, now = Date.now(), mine: Gift[] = [], closeness = 100): Gift[] =>
+  wishlistFor(whoId, weekOf(now), mine, closeness);
+
+/** 💞 How close each of your characters is to you — the higher of love and trust, as stored. */
+export async function closenessMap(userId: string): Promise<Map<string, number>> {
+  const rows = await sql()`select character_id, greatest(coalesce(love, 0), coalesce(trust, 0)) as close
+    from chat_relationships where user_id = ${userId}`;
+  return new Map(rows.map(r => [String(r.character_id), Number(r.close || 0)]));
+}
 
 /** 💝 Everyone you can send to: your characters, and the Picagram people you follow. */
 export async function peopleToGift(userId: string) {
@@ -77,11 +85,15 @@ export async function peopleToGift(userId: string) {
     left join velo_media m on m.id = a.avatar_media_id left join velo_files f on f.id = m.file_id
     where a.user_id = ${userId} and a.followed and a.character_id is null and not a.mine order by a.name limit 40`;
   const now = Date.now();
+  // What you listed yourself counts — but only for someone close enough to want one of yours.
+  const mine = await myGifts(userId);
+  const close = await closenessMap(userId);
   return [
     ...chars.map(r => ({ id: String(r.id), kind: "character" as const, name: String(r.name), handle: null as string | null,
-      face: r.face ? String(r.face) : null, wishlist: wishlistOf(String(r.id), now) })),
+      face: r.face ? String(r.face) : null, wishlist: wishlistOf(String(r.id), now, mine, close.get(String(r.id)) || 0) })),
+    // Someone you only follow on Picagram is never close enough for one of yours.
     ...accounts.map(r => ({ id: String(r.id), kind: "account" as const, name: String(r.name), handle: String(r.handle || ""),
-      face: r.face ? String(r.face) : null, wishlist: wishlistOf(String(r.id), now) })),
+      face: r.face ? String(r.face) : null, wishlist: wishlistOf(String(r.id), now, [], 0) })),
   ];
 }
 
@@ -98,8 +110,9 @@ export async function sendGift(userId: string, to: { kind: "character" | "accoun
   const amount = gift ? gift.price : money;
   const wallet = await walletFor(userId);
   if (amount > wallet) throw new GiftError(`That's $${(amount - wallet).toLocaleString()} more than you have. Add funds first.`);
-  // A wishlist is what she came up with, so something you listed yourself is never on it.
-  const wished = !!gift && !mine && onWishlist(to.id, weekOf(now), gift.id);
+  // Anything in the shop can be on their wishlist — yours only once they're close enough to want one.
+  const close = to.kind === "character" ? (await closenessMap(userId)).get(to.id) || 0 : 0;
+  const wished = !!gift && onWishlist(to.id, weekOf(now), gift.id, await myGifts(userId), close);
   const note = scrub(String(what.note || "")).replace(/\s+/g, " ").trim().slice(0, 300);
   await sql()`update users set wallet = wallet - ${amount} where id = ${userId}`;
   const [row] = await sql()`insert into pica_gift_sent (user_id, character_id, account_id, kind, gift_id, amount, wished, note)
@@ -111,9 +124,9 @@ export async function sendGift(userId: string, to: { kind: "character" | "accoun
 /** 💞 Is she still in the glow of something? Null once two days have gone by. */
 export async function boostFor(userId: string, who: { kind: "character" | "account"; id: string }, now = Date.now()): Promise<Boost | null> {
   const rows = who.kind === "character"
-    ? await sql()`select amount, wished, created_at from pica_gift_sent where user_id = ${userId} and character_id = ${who.id} and created_at > now() - interval '48 hours'`
-    : await sql()`select amount, wished, created_at from pica_gift_sent where user_id = ${userId} and account_id = ${who.id} and created_at > now() - interval '48 hours'`;
-  return boostFrom(rows.map(r => ({ amount: Number(r.amount), wished: !!r.wished, at: Date.parse(String(r.created_at)) })), now);
+    ? await sql()`select amount, wished, kind, created_at from pica_gift_sent where user_id = ${userId} and character_id = ${who.id} and created_at > now() - interval '48 hours'`
+    : await sql()`select amount, wished, kind, created_at from pica_gift_sent where user_id = ${userId} and account_id = ${who.id} and created_at > now() - interval '48 hours'`;
+  return boostFrom(rows.map(r => ({ amount: Number(r.amount), wished: !!r.wished, money: String(r.kind) === "money", at: Date.parse(String(r.created_at)) })), now);
 }
 
 /** What she was actually sent, in words, for the line she reads. */

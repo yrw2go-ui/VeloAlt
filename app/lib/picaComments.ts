@@ -68,7 +68,7 @@ export const FLIRTY_ANY = [
   "Is it weird to ask you out in the comments?", "Please tell me you're taken because otherwise I have to shoot my shot",
   "Coffee? My treat", "You free this weekend?", "I'd walk a long way for a smile like that",
   "Can I buy you a drink sometime?", "You're the reason I open this app", "Okay but are you dating anyone?",
-  "My DMs are open if yours are 😏", "Date? Yes? No? Maybe?", "Hi, hello, hey, how are you 😅", "Breakfast tomorrow? I'll cook", "I have got to ask — are you seeing someone?", "You + me + tacos, think about it",
+  "My DMs are open if yours are 😏", "Date? Yes? No? Maybe?", "Hi, hello, hey, how are you 😅", "Breakfast tomorrow? I'll cook", "I have got to ask — are you seeing someone?", "You + me + dinner somewhere, think about it",
   "Not me falling in love in a comment section", "Say the word and I'm there", "Drinks sometime? No pressure 😊",
   "Someone's lucky to have you. Or should I apply?", "Dinner's on me if you say yes",
   "You're unreal 😍 call me?", "Let me know if you ever want company",

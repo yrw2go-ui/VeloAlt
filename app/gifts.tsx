@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import { api } from "./lib/api";
 import { confirmAsk } from "./lib/dialog";
+import { isMyGift } from "./lib/gifts";
 
 type Gift = { id: string; name: string; brand: string; kind: string; price: number; emoji: string };
 type Person = { id: string; kind: "character" | "account"; name: string; handle: string | null; face: string | null; wishlist: Gift[] };
@@ -163,7 +164,7 @@ export default function Gifts() {
               <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 }}>
                 {mine.map(g => (
                   <div key={g.id} className="row" style={{ justifyContent: "space-between", gap: 8, fontSize: 13 }}>
-                    <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>🛍️ {g.brand ? `${g.brand} ` : ""}{g.name}</span>
+                    <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>⭐ 🛍️ {g.brand ? `${g.brand} ` : ""}{g.name}</span>
                     <span className="row" style={{ gap: 8, alignItems: "center", whiteSpace: "nowrap" }}>
                       <span className="muted">{money(g.price)}</span>
                       <button className="ghost" data-testid={`unlist-${g.id}`} onClick={() => unlist(g)} style={{ padding: "2px 8px", fontSize: 11 }}>Remove</button>
@@ -187,12 +188,13 @@ export default function Gifts() {
           </div>
 
           <div>
-            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>🛍️ In the shop</div>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>🛍️ In the shop <span className="muted" style={{ fontWeight: 500 }}>· ⭐ yours first</span></div>
             <div data-testid="shop" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 8 }}>
               {(shop || []).map(g => (
-                <div key={g.id} data-testid={`gift-${g.id}`} style={{ padding: 10, borderRadius: 12, display: "flex", flexDirection: "column", gap: 6,
-                  background: wished(g) ? "rgba(244,114,182,.12)" : "var(--surface2)", border: `1px solid ${wished(g) ? "rgba(244,114,182,.5)" : "var(--border)"}` }}>
-                  <div style={{ fontSize: 22 }}>{g.emoji}{wished(g) && <span style={{ fontSize: 12, marginLeft: 6 }}>💭 on the list</span>}</div>
+                <div key={g.id} data-testid={`gift-${g.id}`} data-mine={isMyGift(g.id) ? "yes" : undefined} style={{ padding: 10, borderRadius: 12, display: "flex", flexDirection: "column", gap: 6,
+                  background: isMyGift(g.id) ? "rgba(250,204,21,.12)" : wished(g) ? "rgba(244,114,182,.12)" : "var(--surface2)",
+                  border: `1px solid ${isMyGift(g.id) ? "rgba(250,204,21,.55)" : wished(g) ? "rgba(244,114,182,.5)" : "var(--border)"}` }}>
+                  <div style={{ fontSize: 22 }}>{isMyGift(g.id) && <span data-testid="mine-star" title="One you listed yourself" style={{ fontSize: 14, marginRight: 4 }}>⭐</span>}{g.emoji}{wished(g) && <span style={{ fontSize: 12, marginLeft: 6 }}>💭 on the list</span>}</div>
                   <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.25 }}>{g.brand}<br /><span style={{ fontWeight: 500 }}>{g.name}</span></div>
                   <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 6, marginTop: "auto" }}>
                     <span className="muted" style={{ fontSize: 13, fontWeight: 700 }}>{money(g.price)}</span>

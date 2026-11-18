@@ -5,7 +5,7 @@
 // readier to meet up or get on video, and far more willing to sneak one in when she's meant to be
 // at work or in class — even knowing she could get caught.
 
-export type Gift = { id: string; name: string; brand: string; kind: Kind; price: number; emoji: string };
+export type Gift = { id: string; name: string; brand: string; kind: Kind; price: number; emoji: string; always?: true; team?: true; theirs?: true };
 export type Kind = "bag" | "clothes" | "shoes" | "jewellery" | "beauty" | "tech" | "treat" | "home" | "mine";
 
 /** Everything there is. Prices are what the real thing costs, near enough. */
@@ -40,6 +40,13 @@ export const GIFTS: Gift[] = [
   { id: "flowers", brand: "Flowers", name: "a dozen roses, delivered", kind: "home", price: 75, emoji: "🌹" },
   { id: "bose-speaker", brand: "Bose", name: "SoundLink speaker", kind: "tech", price: 149, emoji: "🔊" },
   { id: "cartier-love", brand: "Cartier", name: "Love bracelet", kind: "jewellery", price: 7350, emoji: "💛" },
+  // ☕ The small ones. Always in the shop, never rotated out: the everyday things you'd actually
+  // send someone on an ordinary Tuesday.
+  { id: "iced-latte", brand: "", name: "large iced latte", kind: "treat", price: 10, emoji: "🧋", always: true, theirs: true },
+  { id: "ice-cream", brand: "", name: "ice cream or a shake", kind: "treat", price: 8, emoji: "🍦", always: true, theirs: true },
+  { id: "food-delivery", brand: "", name: "dinner delivered", kind: "treat", price: 30, emoji: "🥡", always: true, theirs: true },
+  { id: "gift-card", brand: "", name: "gift card", kind: "treat", price: 50, emoji: "🎟️", always: true },
+  { id: "team-gear", brand: "", name: "team gear", kind: "clothes", price: 60, emoji: "🏟️", always: true, team: true },
 ];
 
 export const giftById = (id: string) => GIFTS.find(g => g.id === id) || null;
@@ -65,31 +72,51 @@ const order = (seed: string, items: Gift[]) => items.map(g => ({ g, k: hash(seed
 
 /** 🛍️ What the shop has this week: the staples always, plus a rotating handful of the rest. */
 export function shopFor(week: number): Gift[] {
-  const always = GIFTS.filter(g => g.price <= 200);
+  const always = GIFTS.filter(g => g.always || g.price <= 200);
   const rest = GIFTS.filter(g => g.price > 200);
   const rotating = order(`shop:${week}`, rest).slice(0, 10);
   return GIFTS.filter(g => always.includes(g) || rotating.includes(g));
 }
 
 /** 💭 What one person is hoping for this week: three things, their own, and they move on weekly. */
-export function wishlistFor(whoId: string, week: number): Gift[] {
-  return order(`wish:${whoId}:${week}`, GIFTS).slice(0, 3);
+/** 💞 How close someone has to be before the things YOU listed start turning up on their wishlist.
+ *  The thirty-five are what anyone might want; yours are yours, and wanting one of those is a
+ *  closer thing to want. */
+export const WANTS_YOURS_AT = 62;
+
+export function wishlistFor(whoId: string, week: number, mine: Gift[] = [], closeness = 100): Gift[] {
+  // The everyday small ones aren't what anyone puts on a wishlist — a wishlist is for things people
+  // hope for, not for a coffee. What you listed yourself only joins the pool once they're close.
+  const yours = closeness >= WANTS_YOURS_AT ? mine : [];
+  return order(`wish:${whoId}:${week}`, [...GIFTS.filter(g => !g.always), ...yours]).slice(0, 3);
 }
 
-export const onWishlist = (whoId: string, week: number, giftId: string) => wishlistFor(whoId, week).some(g => g.id === giftId);
+export const onWishlist = (whoId: string, week: number, giftId: string, mine: Gift[] = [], closeness = 100) =>
+  wishlistFor(whoId, week, mine, closeness).some(g => g.id === giftId);
 
-export type Sent = { amount: number; wished: boolean; at: number };
+export type Sent = { amount: number; wished: boolean; money?: boolean; at: number };
 export type Boost = { flirty: number; eager: number; until: number };
 
 /** 💝 How much a present is still doing for you. It lasts 48 hours, it's worth more if it was
  *  something they actually wanted, and several presents don't stack up without limit. */
 export const BOOST_MS = 48 * 3_600_000;
 
+/** 💰 Money always lands: even a small amount is them choosing to hand you something. */
+export const MONEY_FLOOR = 1.8;
+/** 💭 Something off their own wishlist is worth far more than something that wasn't. */
+export const WISHED_X = 1.7;
+
 export function boostFrom(sent: Sent[], now: number): Boost | null {
   const live = sent.filter(s => now - s.at < BOOST_MS && now >= s.at);
   if (!live.length) return null;
-  // What it was worth: a small treat barely registers, a Cartier bracelet lands.
-  const worth = (s: Sent) => Math.min(3, Math.max(0.5, Math.log10(Math.max(10, s.amount)) - 1)) * (s.wished ? 1.4 : 1);
+  // What it was worth. A small treat barely registers and a Cartier bracelet lands; something they
+  // actually asked for lands much harder than something they didn't; and cash always lands, because
+  // it's never the wrong size, the wrong colour or the wrong thing.
+  const worth = (s: Sent) => {
+    const size = Math.min(3, Math.max(0.5, Math.log10(Math.max(10, s.amount)) - 1));
+    if (s.money) return Math.min(3, Math.max(MONEY_FLOOR, size * 1.4));
+    return Math.min(3, size * (s.wished ? WISHED_X : 1));
+  };
   const best = Math.max(...live.map(worth));
   const extra = Math.min(1, (live.length - 1) * 0.25); // more presents help a little, never a lot
   const flirty = Math.min(3, Math.round((best + extra) * 10) / 10);
@@ -107,10 +134,14 @@ export function boostNote(boost: Boost | null, what: string, who: string): strin
 export const PHOTO_ODDS = 0.7;
 
 /** What the picture is of, when there is one. */
-export function photoBrief(what: string, kind: "gift" | "money", g: { emoji: string; name: string; brand: string; kind: string } | null): string {
+export function photoBrief(what: string, kind: "gift" | "money", g: Pick<Gift, "emoji" | "name" | "brand" | "kind"> & { team?: true; theirs?: true } | null): string {
   if (kind === "money") return `holding up a fan of cash — ${what} in notes — grinning at the camera`;
   // One of yours, or something we don't know: she holds it up. ("a present" reads as "the present".)
   if (!g || g.kind === "mine") return `holding up the ${what.replace(/^(?:an?|the)\s+/i, "") || "present"} they've just been sent, pleased with it`;
+  // 🏟️ Team gear is whatever team is actually theirs — the one they follow, or the one they play for.
+  if (g.team) return `wearing the team gear they've just been sent — their OWN team, the one they follow or play for (from their description: their college side, their city's team, the sport they play), in that team's real colours — showing it off to the camera`;
+  // ☕🍦🥡 A coffee, a pudding, dinner: whatever THIS person actually orders, not a stock answer.
+  if (g.theirs) return `with the ${g.name} they've just been sent — their OWN usual, the drink or the food THIS person actually orders (from their description, where they live, what they're like), never a stock answer and never tacos unless tacos are genuinely theirs — holding it up to the camera, pleased`;
   const worn = ["clothes", "shoes", "jewellery", "bag"].includes(g.kind);
   return worn ? `wearing the ${g.brand} ${g.name} they've just been sent, showing it off to the camera`
     : `holding up the ${g.brand} ${g.name} they've just been sent, pleased with it`;

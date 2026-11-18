@@ -42,7 +42,7 @@ import { soreFor, setSore, mend as mendSore, soreNote, SORE_REMEMBER } from "./s
 import { partnerLook, partnerPicNote } from "./partner";
 import { TOGETHER_TIME } from "./together";
 import { afterSceneNote, nightsBetween, stayedUpAllNight } from "./afterScene";
-import { boostFor, lastGiftWords, wishlistOf } from "./giftsDb";
+import { boostFor, lastGiftWords, wishlistOf, myGifts } from "./giftsDb";
 import { wealthNote, hintsNow } from "./money";
 import { boostNote } from "./gifts";
 import { timeOfDay } from "./localTime";
@@ -231,8 +231,11 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
   // 💭 Someone close works out that they're comfortable — never a number, just the shape of it —
   // and now and then lets slip something she wants.
   const closeness = Math.max(love ?? 0, trust ?? 0, ch && (happy ?? 0) > 80 ? 56 : 0);
+  const hinting = !!ch && closeness >= 55 && hintsNow(closeness, Math.random());
+  // What she'd hint at is off her own wishlist — which includes anything you listed yourself.
+  const wishes = hinting && ch ? wishlistOf(ch.id, Date.now(), await myGifts(caller.userId).catch(() => []), closeness).map(g => `${g.brand ? `${g.brand} ` : ""}${g.name}`) : [];
   const wealth = ch && !errand && (mode === "chat" || mode === "talk") && !group
-    ? wealthNote(closeness, spoil ? 1 : 0, hintsNow(closeness, Math.random()), wishlistOf(ch.id).map(g => `${g.brand} ${g.name}`)) : "";
+    ? wealthNote(closeness, spoil ? 1 : 0, hinting, wishes) : "";
   const photoMoment = ch && mode === "chat" && canSend && !scene && !group && !together ? await tickPics(caller.userId, ch).catch(() => false) : false;
   // 👋 Every so often (once she's close to them), she wants them to meet someone of hers.
   const introKind = ch && mode === "chat" && !scene && !group ? await tickIntro(caller.userId, ch, !!u?.adult_confirmed_at).catch(e => { console.error("velo: intro", e instanceof Error ? e.message : e); return null; }) : null;
