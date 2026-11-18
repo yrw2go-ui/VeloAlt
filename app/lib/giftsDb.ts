@@ -107,10 +107,12 @@ export async function sendGift(userId: string, to: { kind: "character" | "accoun
   const gift = mine || (what.giftId ? giftById(what.giftId) : null);
   if (what.giftId && !gift) throw new GiftError("That isn't something you can send.");
   // One of the thirty has to be in stock this week; one of yours always is.
-  if (gift && !mine && !shopNow(now).some(g => g.id === gift.id)) throw new GiftError(`${gift.name} isn't in the shop this week.`);
+  // 🏷️ And it is the shop's copy that is paid for, so a week's reduction is really taken off.
+  const stocked = gift && !mine ? shopNow(now).find(g => g.id === gift.id) || null : null;
+  if (gift && !mine && !stocked) throw new GiftError(`${gift.name} isn't in the shop this week.`);
   const money = gift ? 0 : Math.round(Number(what.money) || 0);
   if (!gift && (money < 1 || money > 50_000)) throw new GiftError("Send between $1 and $50,000.");
-  const amount = gift ? gift.price : money;
+  const amount = gift ? (stocked || gift).price : money;
   const wallet = await walletFor(userId);
   if (amount > wallet) throw new GiftError(`That's $${(amount - wallet).toLocaleString()} more than you have. Add funds first.`);
   // Anything in the shop can be on their wishlist — yours only once they're close enough to want one.
@@ -127,7 +129,7 @@ export async function sendGift(userId: string, to: { kind: "character" | "accoun
   // 💗 Money that was more than a gesture (over $99) moves the love slider a point.
   const tier = gift ? "small" as const : moneyTier(amount);
   if (to.kind === "character" && lovePoints(tier) > 0) await nudgeLove(userId, to.id, lovePoints(tier)).catch(() => {});
-  return { id: String(row.id), at: String(row.created_at), amount, wished, gift, tier, dealt, wallet: wallet - amount };
+  return { id: String(row.id), at: String(row.created_at), amount, wished, gift: stocked || gift, tier, dealt, wallet: wallet - amount };
 }
 
 /** 💞 Is she still in the glow of something? Null once two days have gone by. */

@@ -47,7 +47,7 @@ Reply with the message only — no quotes, no name, no stage directions.`,
     media = await startMedia(userId, { kind: "image", description: `${brief}. ${face}${who ? ` About her: ${who}` : ""} ${ch.casual_wear && !wearing ? `Wearing ${ch.casual_wear}.` : ""} It is clearly the same woman as in the reference pictures — her face, her hair, her build. Taken on her own phone where she is, candid and real.` },
       { characterId: ch.id, who: ch.name, appearance: ch.appearance, refs: await referenceUrls(ch).catch(() => []),
         romantic: romantic && allowsSuggestive(ch.traits), mood: mediaMood(ch.traits), offer: false })
-      .catch(e => { if (!(e instanceof MediaError)) console.error("thanks: photo", e instanceof Error ? e.message : e); return null; });
+      .catch(e => { console[e instanceof MediaError ? "warn" : "error"]("thanks: photo", e instanceof Error ? e.message : e); return null; });
     // 📷 The picture rides in on a message of its own, with the same "sending a photo" line every
     // other picture in the chat has — so you see it being made, then it turns up.
     if (media && media.status !== "failed") await sql()`insert into velo_messages (user_id, role, content, character_id, media_id, created_at)

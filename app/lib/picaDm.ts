@@ -261,7 +261,7 @@ async function remember(userId: string, a: Record<string, unknown>, list: Dm[], 
  * character does in the chat — her own face from her reference pictures, her own expression.
  */
 export async function dmGiftPhoto(userId: string, accountId: string, what: string, kind: "gift" | "money", giftId: string, closeness = 50, big = false): Promise<void> {
-  if (Math.random() >= PHOTO_ODDS) return;
+  if (Math.random() >= PHOTO_ODDS) return void console.log("pica dm: no gift photo this time (not every present gets one)");
   const a = await account(userId, accountId);
   const u = await userInfo(userId);
   const g = giftId ? giftById(giftId) : null;
@@ -269,8 +269,9 @@ export async function dmGiftPhoto(userId: string, accountId: string, what: strin
   const who = g?.team || g?.theirs ? ` ${a.bio || ""} ${a.lives || ""}`.replace(/\s+/g, " ").trim().slice(0, 300) : "";
   const desc = `${photoBrief(what, kind, g, wearOdds(t, closeness)).brief}. ${giftFace(t, closeness, big)}${who ? ` About her: ${who}` : ""} It is clearly the same woman as in the reference pictures — her face, her hair, her build. Taken on her own phone where she is, candid and real.`;
   const m = await sendPhotoOf(userId, a, scrub(desc).replace(/\s+/g, " ").trim().slice(0, 1500), u.adult)
-    .catch(e => { if (!(e instanceof MediaError)) console.error("pica dm: gift photo", e instanceof Error ? e.message : e); return null; });
+    .catch(e => { console[e instanceof MediaError ? "warn" : "error"]("pica dm: gift photo", e instanceof Error ? e.message : e); return null; });
   if (m && m.status !== "failed") await addDm(userId, accountId, "assistant", "", m.id, 1000);
+  else if (m) console.warn("pica dm: gift photo came back failed");
 }
 
 /** 📸 A photo of YOU in her DMs: the same two steps as a peek — a description to check, then exactly that. */

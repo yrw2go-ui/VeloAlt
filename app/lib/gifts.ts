@@ -5,7 +5,11 @@
 // readier to meet up or get on video, and far more willing to sneak one in when she's meant to be
 // at work or in class — even knowing she could get caught.
 
-export type Gift = { id: string; name: string; brand: string; kind: Kind; price: number; emoji: string; always?: true; team?: true; theirs?: true };
+export type Gift = { id: string; name: string; brand: string; kind: Kind; price: number; emoji: string; always?: true; team?: true; theirs?: true; slot?: Slot; was?: number; off?: number };
+/** 👙 A kind of thing the shop is never without. Which one it is changes week to week; that there
+ *  is one does not. */
+export type Slot = "bikini" | "leotard" | "necklace" | "heels";
+export const SLOTS: Slot[] = ["bikini", "leotard", "necklace", "heels"];
 export type Kind = "bag" | "clothes" | "shoes" | "jewellery" | "beauty" | "tech" | "treat" | "home" | "mine";
 
 /** Everything there is. Prices are what the real thing costs, near enough. */
@@ -17,7 +21,7 @@ export const GIFTS: Gift[] = [
   { id: "nike-shoes", brand: "Nike", name: "Air Max 270s", kind: "shoes", price: 160, emoji: "👟" },
   { id: "lv-tote", brand: "Louis Vuitton", name: "Neverfull tote", kind: "bag", price: 2030, emoji: "👜" },
   { id: "chanel-perfume", brand: "Chanel", name: "No.5 eau de parfum", kind: "beauty", price: 165, emoji: "🧴" },
-  { id: "tiffany-necklace", brand: "Tiffany & Co.", name: "heart pendant necklace", kind: "jewellery", price: 425, emoji: "📿" },
+  { id: "tiffany-necklace", brand: "Tiffany & Co.", name: "heart pendant necklace", kind: "jewellery", price: 425, emoji: "📿", slot: "necklace" },
   { id: "pandora-bracelet", brand: "Pandora", name: "charm bracelet", kind: "jewellery", price: 120, emoji: "💫" },
   { id: "apple-watch", brand: "Apple", name: "Watch Series 10", kind: "tech", price: 429, emoji: "⌚" },
   { id: "airpods", brand: "Apple", name: "AirPods Pro", kind: "tech", price: 249, emoji: "🎧" },
@@ -40,6 +44,21 @@ export const GIFTS: Gift[] = [
   { id: "flowers", brand: "Flowers", name: "a dozen roses, delivered", kind: "home", price: 75, emoji: "🌹" },
   { id: "bose-speaker", brand: "Bose", name: "SoundLink speaker", kind: "tech", price: 149, emoji: "🔊" },
   { id: "cartier-love", brand: "Cartier", name: "Love bracelet", kind: "jewellery", price: 7350, emoji: "💛" },
+  // 👙 One of each of these is in the shop every week — a different one each time, never none.
+  { id: "triangl-bikini", brand: "Triangl", name: "neoprene bikini", kind: "clothes", price: 99, emoji: "👙", slot: "bikini" },
+  { id: "frankies-bikini", brand: "Frankies Bikinis", name: "Marley triangle bikini", kind: "clothes", price: 150, emoji: "👙", slot: "bikini" },
+  { id: "aerie-bikini", brand: "Aerie", name: "ribbed cheeky bikini", kind: "clothes", price: 60, emoji: "👙", slot: "bikini" },
+  { id: "laperla-bikini", brand: "La Perla", name: "string bikini", kind: "clothes", price: 390, emoji: "👙", slot: "bikini" },
+  { id: "skims-leotard", brand: "SKIMS", name: "high-cut bodysuit", kind: "clothes", price: 88, emoji: "🩱", slot: "leotard" },
+  { id: "alo-leotard", brand: "Alo Yoga", name: "high-cut Airlift leotard", kind: "clothes", price: 128, emoji: "🩱", slot: "leotard" },
+  { id: "wolford-leotard", brand: "Wolford", name: "high-cut leotard", kind: "clothes", price: 295, emoji: "🩱", slot: "leotard" },
+  { id: "mejuri-necklace", brand: "Mejuri", name: "gold pendant necklace", kind: "jewellery", price: 130, emoji: "📿", slot: "necklace" },
+  { id: "swarovski-necklace", brand: "Swarovski", name: "crystal necklace", kind: "jewellery", price: 150, emoji: "📿", slot: "necklace" },
+  { id: "vca-necklace", brand: "Van Cleef & Arpels", name: "Alhambra pendant", kind: "jewellery", price: 3100, emoji: "📿", slot: "necklace" },
+  { id: "madden-platforms", brand: "Steve Madden", name: "platform heels", kind: "shoes", price: 110, emoji: "👠", slot: "heels" },
+  { id: "campbell-platforms", brand: "Jeffrey Campbell", name: "platform heels", kind: "shoes", price: 185, emoji: "👠", slot: "heels" },
+  { id: "wolfe-platforms", brand: "Naked Wolfe", name: "platform heels", kind: "shoes", price: 230, emoji: "👠", slot: "heels" },
+  { id: "ysl-platforms", brand: "Saint Laurent", name: "Tribute platform heels", kind: "shoes", price: 1095, emoji: "👠", slot: "heels" },
   // ☕ The small ones. Always in the shop, never rotated out: the everyday things you'd actually
   // send someone on an ordinary Tuesday.
   { id: "iced-latte", brand: "", name: "large iced latte", kind: "treat", price: 10, emoji: "🧋", always: true, theirs: true },
@@ -47,6 +66,7 @@ export const GIFTS: Gift[] = [
   { id: "food-delivery", brand: "", name: "dinner delivered", kind: "treat", price: 30, emoji: "🥡", always: true, theirs: true },
   { id: "gift-card", brand: "", name: "gift card", kind: "treat", price: 50, emoji: "🎟️", always: true },
   { id: "team-gear", brand: "", name: "team gear", kind: "clothes", price: 60, emoji: "🏟️", always: true, team: true },
+  { id: "book", brand: "", name: "book they've been meaning to read", kind: "home", price: 25, emoji: "📖", always: true },
 ];
 
 export const giftById = (id: string) => GIFTS.find(g => g.id === id) || null;
@@ -71,11 +91,45 @@ const hash = (s: string) => { let h = 2166136261; for (let i = 0; i < s.length; 
 const order = (seed: string, items: Gift[]) => items.map(g => ({ g, k: hash(seed + g.id) })).sort((a, b) => a.k - b.k).map(x => x.g);
 
 /** 🛍️ What the shop has this week: the staples always, plus a rotating handful of the rest. */
+/** 🏷️ Two things are reduced every week, each by a different amount between a tenth and a
+ *  quarter off. Which two, and by how much, is settled by the week itself, so the shop everyone
+ *  opens on a Tuesday is the shop they opened on the Monday. */
+export const SALE_COUNT = 2;
+export const SALE_MIN = 10;
+export const SALE_MAX = 25;
+export const salePrice = (price: number, off: number) => Math.max(1, Math.round(price * (100 - off) / 100));
+
+/** What is reduced this week, and by how much: gift id → percent off. */
+export function salesFor(week: number, stock: Gift[]): Map<string, number> {
+  const out = new Map<string, number>();
+  const picks = order(`sale:${week}`, stock).slice(0, SALE_COUNT);
+  const taken = new Set<number>();
+  for (const g of picks) {
+    // A different amount off each one: walk on from where the week lands until it is one of its own.
+    const span = SALE_MAX - SALE_MIN + 1;
+    let off = SALE_MIN + (hash(`off:${week}:${g.id}`) % span);
+    while (taken.has(off)) off = SALE_MIN + ((off - SALE_MIN + 1) % span);
+    taken.add(off);
+    out.set(g.id, off);
+  }
+  return out;
+}
+
+/** The same gift with the sale on it: what it costs now, and what it cost before. */
+export const reduced = (g: Gift, off?: number): Gift =>
+  off ? { ...g, price: salePrice(g.price, off), was: g.price, off } : g;
+
 export function shopFor(week: number): Gift[] {
-  const always = GIFTS.filter(g => g.always || g.price <= 200);
-  const rest = GIFTS.filter(g => g.price > 200);
+  // 👙 One bikini, one high-cut leotard, one necklace, one pair of platform heels — always there,
+  // and a different one of each as the weeks go by.
+  const picks = SLOTS.map(sl => order(`slot:${sl}:${week}`, GIFTS.filter(g => g.slot === sl))[0]).filter(Boolean);
+  const always = GIFTS.filter(g => !g.slot && (g.always || g.price <= 200));
+  const rest = GIFTS.filter(g => !g.slot && g.price > 200);
   const rotating = order(`shop:${week}`, rest).slice(0, 10);
-  return GIFTS.filter(g => always.includes(g) || rotating.includes(g));
+  const keep = new Set<Gift>([...always, ...rotating, ...picks]);
+  const stock = GIFTS.filter(g => keep.has(g));
+  const sales = salesFor(week, stock);
+  return stock.map(g => reduced(g, sales.get(g.id)));
 }
 
 /** 💭 What one person is hoping for this week: three things, their own, and they move on weekly. */

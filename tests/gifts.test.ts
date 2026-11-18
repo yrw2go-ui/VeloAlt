@@ -1,13 +1,13 @@
 // Run: node --experimental-strip-types tests/gifts.test.ts
-import { GIFTS, giftById, shopFor, weekOf, wishlistFor, onWishlist, boostFrom, boostNote, BOOST_MS, myGift, myGiftId, isMyGift, MAX_MY_GIFTS, MY_GIFT_EMOJI, photoBrief, MONEY_FLOOR, WISHED_X, WANTS_YOURS_AT } from "../app/lib/gifts.ts";
+import { GIFTS, SLOTS, giftById, shopFor, weekOf, wishlistFor, onWishlist, boostFrom, boostNote, BOOST_MS, myGift, myGiftId, isMyGift, MAX_MY_GIFTS, MY_GIFT_EMOJI, photoBrief, MONEY_FLOOR, WISHED_X, WANTS_YOURS_AT } from "../app/lib/gifts.ts";
 
 let bad = 0;
 const ok = (c: boolean, m: string) => { console.log((c ? "PASS " : "FAIL ") + m); if (!c) bad++; };
 const NOW = Date.parse("2026-11-18T12:00:00Z");
 const hoursAgo = (h: number) => NOW - h * 3_600_000;
 
-// 🎁 Thirty things, each priced like the real thing.
-ok(GIFTS.length === 35, `thirty-five gifts to choose from (${GIFTS.length})`);
+// 🎁 Fifty things, each priced like the real thing.
+ok(GIFTS.length === 50, `fifty gifts to choose from (${GIFTS.length})`);
 ok(new Set(GIFTS.map(g => g.id)).size === GIFTS.length, "…no two the same");
 ok(GIFTS.every(g => g.price >= 8 && g.price <= 8000), "…all priced like the real thing");
 ok(!!giftById("gucci-purse") && giftById("gucci-purse")!.price > 2000, "a Gucci purse costs what a Gucci purse costs");
@@ -19,14 +19,27 @@ const w = weekOf(NOW);
 ok(weekOf(NOW + 7 * 86_400_000) === w + 1, "a week later is the next week");
 ok(weekOf(NOW + 6 * 3_600_000) === w, "…and six hours later is the same one");
 const [a, b] = [shopFor(w), shopFor(w + 1)];
-ok(a.length >= 20 && a.length <= 31, `the shop holds a good spread (${a.length})`);
+ok(a.length >= 20 && a.length <= 36, `the shop holds a good spread (${a.length})`);
 ok(JSON.stringify(a) === JSON.stringify(shopFor(w)), "the same week always has the same shop");
 ok(JSON.stringify(a) !== JSON.stringify(b), "the next week's is different");
-ok(a.filter(g => g.price <= 200).length === GIFTS.filter(g => g.price <= 200).length, "the everyday things are always in");
+ok(a.filter(g => g.price <= 200 && !g.slot).length === GIFTS.filter(g => g.price <= 200 && !g.slot).length, "the everyday things are always in");
+
+// 👙 One bikini, one high-cut leotard, one necklace, one pair of platform heels - every week.
+for (const week of [w, w + 1, w + 2, w + 3, w + 7, w + 30]) {
+  for (const slot of SLOTS) {
+    const got = shopFor(week).filter(g => g.slot === slot);
+    ok(got.length === 1, `week ${week - w}: exactly one ${slot} in the shop (${got.map(g => g.name).join(", ") || "none"})`);
+  }
+}
+const overWeeks = (sl: string) => new Set(Array.from({ length: 26 }, (_, i) => shopFor(w + i).find(g => g.slot === sl)!.id));
+ok(SLOTS.every(sl => overWeeks(sl).size > 1), "and it isn't the same one week after week");
 
 // ☕ The five small ones, always there, never rotated, never on a wishlist.
 const staples = GIFTS.filter(g => g.always);
-ok(staples.length === 5, `five small ones that never rotate (${staples.map(g => g.name).join(", ")})`);
+ok(staples.length === 6, `six small ones that never rotate (${staples.map(g => g.name).join(", ")})`);
+const book = GIFTS.find(g => g.id === "book")!;
+ok(!!book.always && book.price === 25, `a book is one of them, at $${book.price}`);
+ok(GIFTS[GIFTS.length - 1].id === "book", "and it sits at the bottom of the list");
 ok(staples.every(g => shopFor(w).some(x => x.id === g.id) && shopFor(w + 7).some(x => x.id === g.id) && shopFor(w + 31).some(x => x.id === g.id)), "…in the shop every week, whatever the week");
 ok(giftById("iced-latte")!.price === 10 && giftById("ice-cream")!.price === 8 && giftById("food-delivery")!.price === 30
   && giftById("gift-card")!.price === 50 && giftById("team-gear")!.price === 60, "…priced as the small things they are");
