@@ -15,7 +15,7 @@ export const SHOTS = [
 export const TONES = {
   everyday: "ordinary and unposed — what she actually wore today, nothing done for the camera",
   flattering: "she knows she looks good: a proper outfit, a confident pose, the light working for her",
-  sensual: "flattering and a little sensual (PG-13): a close, confident shot — a low-cut top, a sports bra, swimwear at the beach or pool, a look over the shoulder — tasteful, never nudity, lingerie or anything sexual",
+  sensual: "flattering and a little sensual: a close, confident shot — a low-cut top, a sports bra, swimwear at the beach or pool, a look over the shoulder — no nudity or lingerie",
 } as const;
 export const hash = (s: string) => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h; };
 /** A different shot each time: the one she used last time never comes round twice in a row. */

@@ -423,7 +423,7 @@ export async function POST(req: NextRequest) {
           if (p.media.status === "failed") return bad("The picture service wouldn't make that one — try changing the description.");
           return NextResponse.json(p);
         } catch (e) {
-          if (e instanceof MediaError && /can't be sent/.test(e.message)) return bad(/PG-13/.test(e.message) ? "That's past PG-13 — it can be flirty, but no nudity, lingerie or anything explicit. Try changing the description." : "Keep it family-friendly (fully clothed, nothing suggestive) — try changing the description.");
+          if (e instanceof MediaError && /can't be sent/.test(e.message)) return bad(/family-friendly/.test(e.message) ? "Keep it family-friendly (fully clothed, nothing suggestive) — try changing the description." : "Flirty and suggestive is fine, but no nudity or lingerie. Try changing the description.");
           return bad(e instanceof MediaError ? "Couldn't peek right now — try again in a moment." : "Couldn't peek right now.");
         }
       }

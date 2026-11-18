@@ -27,7 +27,7 @@ export async function makeCharacter(h: Hints) {
   // ⚢ Rare, and only for a woman romance is on for: about one in seventeen.
   const lesbian = !h.male && !!h.romantic && (h.lesbian === true || (h.lesbian === undefined && rollLesbian()));
   const w = { ...wordDefaults(), ...(h.words || {}) }; // 🛠️ Admin → Messaging & wording
-  const sys = `${w.make_brief} A ${kind} adult${h.romantic ? " — romance with the user is possible (PG-13), so give them a believable romance arc that starts from who they are, not instant love" : " — friendly and platonic"}. Never a real or famous person. Nothing sexual or explicit.${h.lives ? `\n${h.lives}` : ""}${h.male || str(h.vibe, 300) ? "" : `\n${vibeNote([], w)}`}${lesbian ? `\n${LESBIAN_ASK}` : ""}${h.liveIn ? `
+  const sys = `${w.make_brief} A ${kind} adult${h.romantic ? " — romance with the user is possible once they've confirmed they're 18+, and it can be explicit, so give them a believable romance arc that starts from who they are, not instant love" : " — friendly and platonic. Nothing sexual."}. Never a real or famous person, and every one of them is an adult.${h.lives ? `\n${h.lives}` : ""}${h.male || str(h.vibe, 300) ? "" : `\n${vibeNote([], w)}`}${lesbian ? `\n${LESBIAN_ASK}` : ""}${h.liveIn ? `
 ${w.make_livein}` : ""}
 ${hobbyRule(Math.random())}
 Reply with ONLY a JSON object with these keys:

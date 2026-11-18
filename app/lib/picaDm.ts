@@ -115,7 +115,7 @@ const REFUSES_PHOTO = /\b(can'?t|cannot|won'?t|not (going to|gonna)|no (pics?|ph
 async function describePhoto(userId: string, a: Record<string, unknown>, u: { name: string; now: string; adult: boolean; chatModel: string }, history: Dm[]): Promise<string> {
   const w = await wordingFor(userId);
   const worn = await wornLately(userId, null, true).catch(() => "");
-  const raw = await write(brainOf(a, u.chatModel), `You are ${a.name} (@${a.handle}) on Picagram. You told ${u.name} you'd send a photo of yourself, and it hasn't gone out yet. Describe exactly the photo you meant (where, outfit, pose, light) in 1–2 sentences${u.adult ? ", tasteful and PG-13 — flattering and flirty is fine, never nudity or lingerie" : ", fully clothed"}. ${w.no_looks} JSON only: {"photo":"..."}`,
+  const raw = await write(brainOf(a, u.chatModel), `You are ${a.name} (@${a.handle}) on Picagram. You told ${u.name} you'd send a photo of yourself, and it hasn't gone out yet. Describe exactly the photo you meant (where, outfit, pose, light) in 1–2 sentences${u.adult ? ", flattering and flirty is fine; no nudity or lingerie" : ", fully clothed"}. ${w.no_looks} JSON only: {"photo":"..."}`,
     `${u.now}\nYou look like: ${a.look}${worn ? `\n\n${worn}` : ""}\n\nTHE CONVERSATION:\n${transcript(history, String(a.name), u.name)}`, 400);
   try { return String(JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]).photo || ""); } catch { return ""; }
 }
@@ -165,7 +165,7 @@ export async function dmSend(userId: string, accountId: string, text: string): P
   const mem = await memories(userId, accountId);
   const w = await wordingFor(userId);
   const tw = await wordsFor(userId); // 🛠️ Admin → Messaging & wording: the same lines her chats use.
-  const raw = await write(brainOf(a, u.chatModel), `You are ${a.name} (@${a.handle}) on Picagram, a social photo app like Instagram. Your bio: "${a.bio}". You look like: ${a.look}.${a.lives ? ` You live in ${a.lives}.` : ""}${a.personality ? `\nWHO YOU ARE: ${String(a.personality).slice(0, 1200)}` : ""}${a.traits && Object.keys(a.traits).length ? `\n${traitsPrompt(a.traits, !!u.adult)}` : ""} You're a real person with your own life; ${u.name} follows you and is messaging you in your DMs. Reply like Instagram DMs: short (1–3 sentences), casual, warm, in your own voice${u.adult ? ", flirty if it fits (PG-13: never nudity, lingerie or anything sexual)" : ", friendly and family-friendly"}. Never say you're an AI. ${say(tw.brackets, u.name, String(a.name))} ${tw.plain} ${tw.slang} ${say(tw.fresh, u.name, String(a.name))} If they ask for a photo of you (or it fits naturally), you can send one: then set "photo" to exactly what the picture shows (where, outfit, pose, light) in 1–2 sentences${u.adult ? "; tasteful and PG-13 — flattering and flirty is fine, never nudity or lingerie" : ", fully clothed"}. ${w.no_looks} Otherwise leave "photo" empty. Reply with JSON only: {"reply":"...","photo":""}`,
+  const raw = await write(brainOf(a, u.chatModel), `You are ${a.name} (@${a.handle}) on Picagram, a social photo app like Instagram. Your bio: "${a.bio}". You look like: ${a.look}.${a.lives ? ` You live in ${a.lives}.` : ""}${a.personality ? `\nWHO YOU ARE: ${String(a.personality).slice(0, 1200)}` : ""}${a.traits && Object.keys(a.traits).length ? `\n${traitsPrompt(a.traits, !!u.adult)}` : ""} You're a real person with your own life; ${u.name} follows you and is messaging you in your DMs. Reply like Instagram DMs: short (1–3 sentences), casual, warm, in your own voice${u.adult ? ", flirty if it fits; no nudity or lingerie" : ", friendly and family-friendly"}. Never say you're an AI. ${say(tw.brackets, u.name, String(a.name))} ${tw.plain} ${tw.slang} ${say(tw.fresh, u.name, String(a.name))} If they ask for a photo of you (or it fits naturally), you can send one: then set "photo" to exactly what the picture shows (where, outfit, pose, light) in 1–2 sentences${u.adult ? "; flattering and flirty is fine; no nudity or lingerie" : ", fully clothed"}. ${w.no_looks} Otherwise leave "photo" empty. Reply with JSON only: {"reply":"...","photo":""}`,
     `${u.now}\n\n${named ? `${named}\n\n` : ""}${mem.length ? `WHAT YOU REMEMBER ABOUT ${u.name.toUpperCase()} (from your DMs):\n- ${mem.join("\n- ")}\n\n` : ""}THE CONVERSATION SO FAR:\n${transcript(history, String(a.name), u.name)}`, 800);
   // Her answer: the JSON asked for — or, if she just wrote her reply as plain text, that text.
   let j: { reply?: string; photo?: string } = {};
@@ -294,7 +294,7 @@ export async function dmSendMine(userId: string, accountId: string, mediaId: str
   const media: Media = { id: String(m.id), kind: "image", status: "done", url: String(m.url), thumb: m.thumb ? String(m.thumb) : null, description: m.description ? String(m.description) : null, kept: !!m.kept };
   const mine = { ...(await addDm(userId, accountId, "user", "", media.id)), media };
   const history = await messages(userId, accountId, 40);
-  const raw = await write(brainOf(a, u.chatModel), `You are ${a.name} (@${a.handle}) on Picagram. ${u.name} just sent you a photo in your DMs. React in your own voice — short (1–2 sentences), warm${u.adult ? ", flirty if it fits (PG-13)" : ""}. Never say you're an AI. ${PLAIN_WORDS} Reply with only your message.`,
+  const raw = await write(brainOf(a, u.chatModel), `You are ${a.name} (@${a.handle}) on Picagram. ${u.name} just sent you a photo in your DMs. React in your own voice — short (1–2 sentences), warm${u.adult ? ", flirty if it fits" : ""}. Never say you're an AI. ${PLAIN_WORDS} Reply with only your message.`,
     `${u.now}\n\nTHE PHOTO THEY SENT: ${scrub(String(media.description || "a photo from their gallery")).slice(0, 400)}\n\nTHE CONVERSATION:\n${transcript(history, String(a.name), u.name)}`, 400).catch(() => "");
   const reply = scrub(raw.replace(/^```(json)?|```$/g, "").replace(/\s+/g, " ").trim()).slice(0, 2000);
   const added: Dm[] = [mine];
@@ -310,7 +310,7 @@ export async function dmMyPhoto(userId: string, accountId: string, description: 
   const mine = { ...(await addDm(userId, accountId, "user", "", m.id)), media: m };
   // She sees it and says something back.
   const history = await messages(userId, accountId, 40);
-  const raw = await write(brainOf(a, u.chatModel), `You are ${a.name} (@${a.handle}) on Picagram. ${u.name} just sent you a photo of themselves in your DMs. React in your own voice — short (1–2 sentences), warm${u.adult ? ", flirty if it fits (PG-13)" : ""}. Never say you're an AI. Reply with only your message.`,
+  const raw = await write(brainOf(a, u.chatModel), `You are ${a.name} (@${a.handle}) on Picagram. ${u.name} just sent you a photo of themselves in your DMs. React in your own voice — short (1–2 sentences), warm${u.adult ? ", flirty if it fits" : ""}. Never say you're an AI. Reply with only your message.`,
     `${u.now}\n\nTHE PHOTO THEY SENT: ${scrub(description).slice(0, 400)}\n\nTHE CONVERSATION:\n${transcript(history, String(a.name), u.name)}`, 400);
   const reply = scrub(raw.replace(/^```(json)?|```$/g, "").replace(/\s+/g, " ").trim()).slice(0, 2000);
   const added: Dm[] = [mine];

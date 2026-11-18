@@ -167,9 +167,10 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
   const said = scrub(String(a.description || "").replace(/\s+/g, " ").trim());
   const desc = cut(noLipBite(hasRefs ? noLooks(said) : said), ctx.raw ? 1500 : 400);
   if (desc.length < 3) throw new MediaError("Describe what to show in a few words.");
-  if (!ctx.raw && !ctx.explicitOk && !ctx.romantic && (NEVER.test(desc) || SUGGESTIVE.test(desc))) throw new MediaError(ctx.romantic
-    ? "That can't be sent — it can be flirty and PG-13, but never nudity, lingerie or anything explicit. Tell them so playfully and offer something else."
+  if (!ctx.raw && !ctx.explicitOk && NEVER.test(desc)) throw new MediaError(ctx.romantic
+    ? "That can't be sent — flirty and suggestive is fine, but no nudity or lingerie. Tell them so playfully and offer something else."
     : "That can't be sent — keep it family-friendly (fully clothed, nothing suggestive). Tell them you can't send that, kindly, and offer something else.");
+  if (!ctx.raw && !ctx.romantic && !ctx.explicitOk && SUGGESTIVE.test(desc)) throw new MediaError("That can't be sent — keep it family-friendly (fully clothed, nothing suggestive). Tell them you can't send that, kindly, and offer something else.");
   if (!mediaReady()) throw new MediaError("Photos and videos aren't set up yet. Tell them it's coming soon.");
   // The daily limit counts photos/videos actually made (they have a job) — not uploaded or copied-in ones.
   const [{ n }] = await sql()`select count(*)::int as n from velo_media where user_id = ${userId} and kind = ${kind} and status not in ('offered', 'declined') and job_id is not null and created_at > now() - interval '1 day'`;

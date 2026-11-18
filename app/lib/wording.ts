@@ -76,7 +76,7 @@ export const BITS: Bit[] = [
     key: "style_romantic",
     label: "How far it can go (18+ on)",
     about: "The limit on every picture while the grown-up setting is on.",
-    text: "Tasteful and PG-13: flattering and flirty, no nudity, nothing explicit",
+    text: "Flattering and flirty; suggestive is fine; no nudity or lingerie",
   },
   {
     key: "style_family",

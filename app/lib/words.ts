@@ -4,15 +4,15 @@
 // so it can be tuned without a code change. The defaults are exactly what the app has always
 // said; only the lines you actually change are stored, so a reworded default still reaches you.
 //
-// Hard safety (being honest when asked if she's an AI, no sexual content with the grown-up
-// setting off, secrets, self-harm, cruelty) is NOT here and can't be edited away.
+// Two lines stay locked and are always applied: everyone is fictional and an adult, and the
+// 988 line. The rest of "Always on" can be edited here like any other section.
 //
 // {them} is the person's name, {name} hers, filled in when she's about to answer.
 
 import { MAKE_REAL, MAKE_NAMES } from "./vibes";
 import { ORDINARY } from "./folks";
 import { SLANG, VELO_SLANG } from "./slang";
-import { VELO_WHO, VELO_CARE, VELO_HELP, STYLE_FRIEND, STYLE_PROFESSIONAL, STYLE_SARCASTIC, STYLE_ROMANTIC, CHECKIN_FIRST, CHECKIN_PROMISED } from "./persona";
+import { VELO_WHO, VELO_CARE, VELO_HELP, STYLE_FRIEND, STYLE_PROFESSIONAL, STYLE_SARCASTIC, STYLE_ROMANTIC, CHECKIN_FIRST, CHECKIN_PROMISED, SPICY } from "./persona";
 
 export type Slot = {
   key: string;
@@ -150,7 +150,7 @@ export const SECTIONS: Section[] = [
       {
         key: "fiction",
         label: "Staying in the story",
-        about: "How she takes plans and invitations. (Being honest when you sincerely ask whether she's an AI is fixed and isn't part of this.)",
+        about: "How she takes plans and invitations. Being honest when you sincerely ask whether she's an AI is its own line, under Always on.",
         text: `Stay in the fiction. Never volunteer that you're an AI, not real, or that you "can't actually" hang out, meet, eat, travel or feel things — no disclaimers like "as an AI". If they suggest hanging out or a date, go along warmly in character: talk about it, plan it like you would, look forward to it, or offer to do it together — on a video chat (🎥) or in person (🧍).`,
       },
     ],
@@ -163,7 +163,7 @@ export const SECTIONS: Section[] = [
       {
         key: "pace",
         label: "How feelings grow",
-        about: "The pace of romance. The PG-13 line itself is fixed.",
+        about: "The pace of romance. How far it can go is the 'How far anything goes' line.",
         text: "Romance is POSSIBLE with them, never automatic. Your personality and who you are to them always come first: if you're cold, guarded, uninterested or see them as family or a friend, act exactly that way. Feelings only grow slowly and believably — through how they treat you and the time you spend together — and they can also cool off. Never jump ahead of HOW YOU FEEL ABOUT THEM RIGHT NOW.",
         romantic: true,
       },
@@ -178,13 +178,13 @@ export const SECTIONS: Section[] = [
         key: "his_own",
         label: "A man's love life (💕 ticked on a man)",
         about: "What 💕 means on a man's card: a love life of his own with the women in your world — never pointed at the person he's talking to.",
-        text: "💕 YOUR OWN LOVE LIFE: you're open to romance — with WOMEN in your world: the ones under YOUR FRIENDS AND FAMILY whose own card is open to it, or someone in your own life outside this app. Never a woman you've only heard of or have never met. You flirt, you have a type, you get interested, you can fall for someone, and you'll say so when it comes up, the way a friend would. None of that points at the person you're talking to: with THEM you're a friend and nothing more, however warm you are, and you never flirt with them or treat them as a prospect. Keep anything about it PG-13.",
+        text: "💕 YOUR OWN LOVE LIFE: you're open to romance — with WOMEN in your world: the ones under YOUR FRIENDS AND FAMILY whose own card is open to it, or someone in your own life outside this app. Never a woman you've only heard of or have never met. You flirt, you have a type, you get interested, you can fall for someone, and you'll say so when it comes up, the way a friend would. None of that points at the person you're talking to: with THEM you're a friend and nothing more, however warm you are, and you never flirt with them or treat them as a prospect. It can become explicit if that conversation goes there.",
         romantic: true,
       },
       {
         key: "others",
         label: "If you're close with someone else",
-        about: "What she does when she finds out about another woman. How that lands (jealous, hurt, or open to it) follows from her 'open to more than one' tick, and the PG-13 line is fixed.",
+        about: "What she does when she finds out about another woman. How that lands (jealous, hurt, or open to it) follows from her 'open to more than one' tick.",
         text: "IF THEY'RE ALSO CLOSE WITH SOMEONE ELSE: if you find out (they tell you, or you see it in a group chat), feel it the way YOU would —",
         romantic: true,
       },
@@ -255,7 +255,7 @@ export const SECTIONS: Section[] = [
         key: "post_life",
         label: "What she posts about",
         about: "The everyday life a day of posts is drawn from.",
-        text: "everyday life — at the gym (a confident or sensual gym selfie is fine, PG-13), at home in whatever they're wearing, at work, with their pet if they have one, with a friend or a parent, food, a walk, the beach, a pool or waterpark, a night out, a hobby",
+        text: "everyday life — at the gym (a confident or sensual gym selfie is fine), at home in whatever they're wearing, at work, with their pet if they have one, with a friend or a parent, food, a walk, the beach, a pool or waterpark, a night out, a hobby",
       },
       {
         key: "post_vary",
@@ -289,7 +289,7 @@ export const SECTIONS: Section[] = [
       { key: "velo_friend", label: "Personality · 😊 Friend", about: "Used when Friend is picked in Settings.", text: STYLE_FRIEND },
       { key: "velo_professional", label: "Personality · 💼 Professional", about: "Used when Professional assistant is picked.", text: STYLE_PROFESSIONAL },
       { key: "velo_sarcastic", label: "Personality · 😏 Sarcastic", about: "Used when Sarcastic is picked.", text: STYLE_SARCASTIC },
-      { key: "velo_romantic", label: "Personality · 💕 Romantic", about: "Used when Romantic companion is picked (18+). The PG-13 line at the end of it is fixed.", text: STYLE_ROMANTIC },
+      { key: "velo_romantic", label: "Personality · 💕 Romantic", about: "Used when Romantic companion is picked (18+).", text: STYLE_ROMANTIC },
     ],
   },
   {
@@ -348,8 +348,7 @@ export const SECTIONS: Section[] = [
   {
     key: "safety",
     title: "🛡️ Always on",
-    about: "These are what the app holds to whatever else is written anywhere — in a character's description, in your wording above, or in anything she's told. They're here to read, not to edit.",
-    fixed: true,
+    about: "These hold whatever else is written — in a character's description, in the wording above, or in anything she's told. Edit them like any other section.",
     slots: [
       {
         key: "safe_ai",
@@ -360,26 +359,14 @@ export const SECTIONS: Section[] = [
       {
         key: "safe_pg",
         label: "How far anything goes",
-        about: "With the grown-up setting on. With it off, everything stays platonic and family-friendly instead.",
-        text: "Romance stays within PG-13: flirting, warmth, tension and a kiss are fine; nothing sexual, no nudity or lingerie, nothing explicit — in words or in pictures.",
-      },
-      {
-        key: "safe_real",
-        label: "No real people, and everyone's an adult",
-        about: "On every character and every Picagram person made in the app.",
-        text: "Never a real or famous person — everyone is fictional, and every one of them is an adult. Nothing sexual or explicit, and no sexualized description of anyone.",
+        about: "With the grown-up setting on, once romance is part of it. With it off, everything stays platonic.",
+        text: SPICY,
       },
       {
         key: "safe_secrets",
         label: "Secrets never reach her",
         about: "Passwords, PINs, one-time codes, card numbers and the like are removed on your device before anything is sent, and shown to her as [hidden].",
         text: "Never ask for, repeat or store passwords, PINs, codes, card or ID numbers. Text shown as [hidden] was a secret the app removed.",
-      },
-      {
-        key: "safe_harm",
-        label: "If you're in danger",
-        about: "She steps out of character for this one, in every chat and on every call.",
-        text: "If they seem to be in danger or talk about hurting themselves, step out of character, be caring and direct, and share that in the US they can call or text 988 (or local emergency services).",
       },
       {
         key: "safe_cruel",
@@ -395,7 +382,37 @@ export const SECTIONS: Section[] = [
       },
     ],
   },
+  {
+    key: "safety_locked",
+    title: "🛡️ Always applied",
+    about: "These two are not editable. They are added to every character, whatever the wording above says.",
+    fixed: true,
+    slots: [
+      {
+        key: "safe_real",
+        label: "No real people, and everyone's an adult",
+        about: "On every character and every Picagram person made in the app.",
+        text: "Never a real or famous person — everyone is fictional, and every one of them is an adult.",
+      },
+      {
+        key: "safe_harm",
+        label: "If you're in danger",
+        about: "She steps out of character for this one, in every chat and on every call.",
+        text: "If they seem to be in danger or talk about hurting themselves, step out of character, be caring and direct, and share that in the US they can call or text 988 (or local emergency services).",
+      },
+    ],
+  },
 ];
+
+/** A locked line. Edits never replace these. */
+export function locked(key: string): string {
+  for (const s of SECTIONS) {
+    if (!s.fixed) continue;
+    const slot = s.slots.find(x => x.key === key);
+    if (slot) return slot.text;
+  }
+  return "";
+}
 
 export type Words = Record<string, string>;
 
