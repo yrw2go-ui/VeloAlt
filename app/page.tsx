@@ -75,7 +75,7 @@ function SignIn({ onIn }: { onIn: (u: User) => void }) {
     <Center>
       <form onSubmit={go} style={{ width: "100%", maxWidth: 380, display: "flex", flexDirection: "column", gap: 12, alignItems: "stretch" }}>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, marginBottom: 8 }}>
-          <VeloLogo size={112} />
+          <VeloLogo size={128} />
           <h1 style={{ margin: 0, fontSize: 32 }}>Velo 2</h1>
           <div className="muted" style={{ textAlign: "center" }}>Your personal assistant and companion.</div>
         </div>
@@ -355,7 +355,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
     <div style={{ height: "100dvh", display: "flex", flexDirection: "column", maxWidth: 720, margin: "0 auto" }}>
       {calling && callMini && <div aria-hidden style={{ height: "calc(max(8px, env(safe-area-inset-top)) + 50px)", flexShrink: 0 }} />}
       <header className="row" style={{ gap: 8, padding: "max(6px, env(safe-area-inset-top)) 12px 6px", borderBottom: "1px solid var(--border)" }}>
-        <VeloLogo size={26} />
+        <VeloLogo size={32} />
         <div className="row" style={{ flex: 1, minWidth: 0, gap: 6, alignItems: "baseline" }}>
           <div style={{ fontWeight: 800, fontSize: 15 }}>Velo 2</div>
           <div className="muted" style={{ fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name ? `Here for you, ${name.split(" ")[0]}` : "Your assistant & companion"}</div>
