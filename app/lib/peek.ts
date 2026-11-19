@@ -8,6 +8,7 @@ import { startMedia, type Media } from "./media";
 import { allowsSuggestive, mediaMood } from "./traits";
 import { scrub } from "./secrets";
 import { writeText } from "./llm";
+import { brainFor } from "./whichBrain";
 import { sceneTime } from "./sceneClock";
 import { isValidTimeZone, formatClock, zonedParts } from "./localTime";
 import { partOfDay } from "./calendar";
@@ -88,7 +89,7 @@ export async function draftIcu(userId: string, ch: Character, adult: boolean, wr
   const atWork = !!(ch.work_attire && ch.work_start && ch.work_end && (ch.work_days || []).includes(dow) && hm >= ch.work_start && hm < ch.work_end);
   const romantic = romanticFor(ch, adult);
   const transcript = rows.map(r => `${r.role === "assistant" ? ch.name : "Them"}: ${r.content}`).join("\n");
-  const raw = await writeText(writer ?? ch.brain, `You write the description for ONE photo for an image generator. The person is with ${ch.name} in person right now (not a planned outing — just together, wherever the chat says they are) and is looking at her: the photo is exactly what they see from where they are; they are behind the camera and NOT in the picture. Describe ${ch.name} in this exact moment: where they are (the place, time of day, lighting), what she is wearing, what she is doing, her pose and expression — candid and unaware, or glancing at them.
+  const raw = await writeText(writer ?? await brainFor(userId), `You write the description for ONE photo for an image generator. The person is with ${ch.name} in person right now (not a planned outing — just together, wherever the chat says they are) and is looking at her: the photo is exactly what they see from where they are; they are behind the camera and NOT in the picture. Describe ${ch.name} in this exact moment: where they are (the place, time of day, lighting), what she is wearing, what she is doing, her pose and expression — candid and unaware, or glancing at them.
 WHERE: what the recent chat says (her place, his place, the car, a store…); if it doesn't say, somewhere that fits the time of day and her life.
 OUTFIT: ${lastLook ? "exactly what she wore in THE LAST LOOK (same colors and items), plus only changes the chat mentions since" : `what she said she's wearing, else ${atWork ? `her work clothes (${ch.work_attire})` : `what fits the time and place in her usual style${ch.casual_wear ? ` (${ch.casual_wear})` : ""}`}`}.
 ${ch.explicit_ok && romantic ? "Nudity is fine when it fits." : romantic ? "Flattering and flirty is fine; swimwear at the beach or pool is okay; no nudity or lingerie." : "Family-friendly, fully clothed."} One or two sentences, under 300 characters, no names of real people, output only the description.`,

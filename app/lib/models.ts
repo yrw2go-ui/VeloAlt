@@ -59,6 +59,13 @@ export function atlasChain(b: unknown): OpenAiProvider[] {
 export const availableBrains = (): string[] => [...BRAINS.filter(b => !!atlasBrain(b)), ...(atlasBrain("qwen") && atlasBrain("qwen2") ? [CHAIN] : [])];
 /** For the pickers: which brains are ready, and the Atlas model each one runs. */
 export const brainList = () => availableBrains().map(id => ({ id, model: id === CHAIN ? `${brainModel("qwen")} → ${brainModel("qwen2")} → Claude` : brainModel(id as Brain) }));
+/** The provider behind one brain id. "claude" (and "") mean Anthropic, which isn't an
+ *  OpenAI-compatible provider: the caller handles those, so this returns null for them. */
+export const brainProvider = (id: unknown): OpenAiProvider | null => {
+  const b = String(id || "");
+  return !b || b === "claude" ? null : provider(b as ChatModel) || atlasBrain(b);
+};
+
 /** A character's own Atlas brain or chain (not '' = same as Velo, and not 'claude'). */
 export const ownsAtlasBrain = (b: unknown) => BRAINS.includes(b as Brain) || b === CHAIN;
 /** Her own single Atlas brain: if it's down in a chat, she says she'll be right back (no Claude). The chain ends with Claude instead. */

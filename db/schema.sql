@@ -956,3 +956,6 @@ alter table users add column if not exists paused boolean not null default false
 -- out of the shop altogether without touching the catalogue, so it can always be put back.
 alter table gift_edits add column if not exists kind text;
 alter table gift_edits add column if not exists hidden boolean not null default false;
+-- 🛟 A backup brain, off unless it's switched on. '' (the default) means off: the brain
+-- picked in Settings is the only one used, and nothing falls back to Claude behind the scenes.
+alter table users add column if not exists backup_brain text not null default '';

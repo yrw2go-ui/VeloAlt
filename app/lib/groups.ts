@@ -12,6 +12,7 @@ import type { Caller } from "./caller";
 import { startMedia, type Media } from "./media";
 import { allowsSuggestive } from "./traits";
 import { writeText } from "./llm";
+import { brainFor } from "./whichBrain";
 import { sceneFallback } from "./peek";
 import { roomForMore } from "./together";
 import { forgetLines } from "./forget";
@@ -278,7 +279,7 @@ export async function draftGroupPeek(userId: string, g0: Group, ids: string[], a
   const transcript = rows.filter((r, i) => (!r.peek || i === lastIdx) && !r.private_to).map(r => (r.peek ? "— (your last peek was here) —" : `${r.speaker_id ? names.get(r.speaker_id) || "Someone" : personName || "Them"}: ${r.content}`)).join("\n");
   const who = chars.map(c => c.name).join(" and ");
   const romantic = chars.every(c => romanticFor(c, adult));
-  const raw = await writeText(writer ?? chars[0].brain, `You write the description for ONE photo for an image generator. The person is on a group VIDEO CHAT (below) and this is what they see of ${who} on their screen right now — wherever each of them is: the person is not in the picture. Show ONLY ${who}${chars.length < all.length ? ` (not ${all.filter(c => !chars.some(x => x.id === c.id)).map(c => c.name).join(" or ")})` : ""}. Describe the place (time of day, lighting), what each of them is wearing, what each is doing, their poses and expressions — candid and unaware, or glancing at the camera.
+  const raw = await writeText(writer ?? await brainFor(userId), `You write the description for ONE photo for an image generator. The person is on a group VIDEO CHAT (below) and this is what they see of ${who} on their screen right now — wherever each of them is: the person is not in the picture. Show ONLY ${who}${chars.length < all.length ? ` (not ${all.filter(c => !chars.some(x => x.id === c.id)).map(c => c.name).join(" or ")})` : ""}. Describe the place (time of day, lighting), what each of them is wearing, what each is doing, their poses and expressions — candid and unaware, or glancing at the camera.
 OUTFIT CONTINUITY: each of them wears ONE outfit for the whole scene. ${lastPeek ? "Start from what they wore in THE LAST PEEK" : "Start from the outfits in the scene's details or what they said they're wearing (else what fits the outing and their usual style)"}, then apply only the changes that actually happened, in order (a jacket taken off stays off until it's put back on, and so on). Keep every other detail identical. The same goes for the place.
 ${chars.every(c => c.explicit_ok) && romantic ? "Nudity is fine when it fits." : romantic ? "Flattering and flirty is fine; swimwear at the beach or pool is okay; no nudity or lingerie." : "Family-friendly, fully clothed."} Two or three sentences, under 380 characters, no names of real people, output only the description.`, `SCENE: ${g.scene_title}${g.scene_details ? ` — ${g.scene_details}` : ""}\nTIME IN THE SCENE: ${sceneTime(groupClock(g), await userTz(userId)).label} (match the light and sky to it)\n${chars.map(c => `${c.name.toUpperCase()}'S LOOK: ${c.appearance || "(see reference pictures)"}${c.casual_wear ? `; usual style: ${c.casual_wear}` : ""}`).join("\n")}${lastPeek ? `\nTHE LAST PEEK: ${lastPeek}` : ""}\n\nTHE SCENE SO FAR:\n${(transcript.length > 12000 ? "…" + transcript.slice(-12000) : transcript) || "(it just started)"}`, 350);
   const text = raw.replace(/\s+/g, " ").trim();
@@ -348,7 +349,7 @@ export async function deleteGroupMessages(caller: Caller, g: Group, ids: string[
     const mine = gone.filter(r => !r.peek && (!r.private_to || String(r.private_to) === c.id));
     if (!mine.length) continue;
     const lines = mine.map(r => `${r.speaker_id ? names.get(String(r.speaker_id)) || "Someone" : personName || "Them"}: ${String(r.content).slice(0, 600)}`).join("\n");
-    await forgetLines(caller.userId, c.id, lines, mine.map(r => String(r.created_at)).sort()[0], c.brain).catch(e => console.error("groups: forget", e instanceof Error ? e.message : e));
+    await forgetLines(caller.userId, c.id, lines, mine.map(r => String(r.created_at)).sort()[0], await brainFor(caller.userId)).catch(e => console.error("groups: forget", e instanceof Error ? e.message : e));
   }
   // Their message is now the last thing said: it gets answered again.
   const rows = seen(await groupMessages(caller.userId, g.id, 5));

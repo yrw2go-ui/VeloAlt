@@ -7,6 +7,7 @@ import { getCharacter, type Character } from "./characters";
 import { free, closeEnough } from "./neighbor";
 import { closeness } from "./momentPics";
 import { writeText } from "./llm";
+import { brainFor } from "./whichBrain";
 import { scrub } from "./secrets";
 import { sendPush } from "./push";
 import { wordsFor } from "./wordsDb";
@@ -30,7 +31,7 @@ async function inviteLine(userId: string, c: Character, kind: InviteKind, name: 
   const w = { ...wordDefaults(), ...(await wordsFor(userId).catch(() => ({}))) };
   const key = kind === "mine" ? "ask_mine" : kind === "yours" ? "ask_yours" : "ask_out";
   const brief = String(w[key] || "").replace(/\{them\}/g, name || "them").replace(/\{name\}/g, c.name);
-  const raw = await writeText(c.brain, `You are ${c.name}. ${c.personality || ""}
+  const raw = await writeText(await brainFor(userId), `You are ${c.name}. ${c.personality || ""}
 You live close to ${name || "them"} — near enough to see each other on an ordinary evening. ${brief}${c.hobbies ? `\nThings you're into: ${c.hobbies}` : ""}${c.lives_in ? `\nYou're in ${c.lives_in}.` : ""}
 Write ONE short text in your own voice, the way you'd really send it — under 140 characters, no quotes, no sign-off. Just the text.`,
     "You're texting them first.", 80, { ms: 8_000 }).catch(() => "");

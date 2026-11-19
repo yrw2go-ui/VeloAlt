@@ -777,11 +777,18 @@ function Following({ onClose, onUnfollow, onOpen, onNewFaces }: { onClose: () =>
   // ✨ Bring new women in right now, instead of waiting for the one who turns up each day.
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState("");
-  const newFaces = async () => {
-    setBusy(true); setSaid("✨ Bringing three new people in — a moment…");
+  // 🧠 If the brain you picked couldn't manage it, these are the others you could retry with,
+  // and roughly what each would cost. Nothing is spent again unless you choose one.
+  const [retry, setRetry] = useState<{ tried: string; list: { id: string; label: string; cost: string }[] } | null>(null);
+  const newFaces = async (brain?: string) => {
+    setBusy(true); setRetry(null); setSaid(brain ? "✨ Trying again — a moment…" : "✨ Bringing someone new in — a moment…");
     try {
-      const r = await api<{ made: number; names: string[]; error?: string }>("/api/pica", { action: "newfaces", count: 3 });
-      if (!r.made) { setSaid(r.error || "Couldn't bring anyone new in just now — try again in a moment."); setBusy(false); return; }
+      const r = await api<{ made: number; names: string[]; error?: string; tried?: string; retry?: { id: string; label: string; cost: string }[] }>("/api/pica", { action: "newfaces", count: 1, ...(brain ? { brain } : {}) });
+      if (!r.made) {
+        if (r.retry?.length) { setSaid(""); setRetry({ tried: r.tried || "", list: r.retry }); }
+        else setSaid(r.error || "Couldn't bring anyone new in just now — try again in a moment.");
+        setBusy(false); return;
+      }
       onNewFaces?.(r.names, r.error);
     } catch (e) { setSaid(e instanceof Error && e.message ? e.message : "Couldn't bring anyone new in."); setBusy(false); }
   };
@@ -808,10 +815,25 @@ function Following({ onClose, onUnfollow, onOpen, onNewFaces }: { onClose: () =>
       <div className="row" style={{ padding: "10px 14px", gap: 8, position: "sticky", top: 0, background: "var(--bg)", borderBottom: "1px solid var(--border)" }}>
         <button className="ghost" onClick={onClose} aria-label="Back" style={{ padding: "4px 10px" }}>←</button>
         <b style={{ flex: 1 }}>👥 Following {list ? `(${list.length}/70)` : ""}</b>
-        <button className="ghost" onClick={newFaces} disabled={busy} data-testid="pica-new-faces" style={{ padding: "4px 10px", fontSize: 13 }}>{busy ? "…" : "✨ 3 new faces"}</button>
+        <button className="ghost" onClick={() => newFaces()} disabled={busy} data-testid="pica-new-faces" style={{ padding: "4px 10px", fontSize: 13 }}>{busy ? "…" : "✨ New face"}</button>
       </div>
       <div style={{ maxWidth: 560, margin: "0 auto" }}>
         {said && <div data-testid="pica-new-faces-said" role="status" style={{ margin: "10px 14px", padding: "10px 12px", borderRadius: 12, fontSize: 14, background: said.startsWith("✨") && !said.includes("Couldn't") ? "rgba(236,72,153,.14)" : "rgba(245,158,11,.15)", border: "1px solid rgba(245,158,11,.45)" }}>{said.startsWith("✨") ? said : `⚠️ ${said}`}</div>}
+        {retry && (
+          <div data-testid="pica-new-faces-retry" style={{ margin: "10px 14px", padding: 12, border: "1px solid var(--border)", borderRadius: 12, background: "var(--surface2)" }}>
+            <b style={{ fontSize: 14 }}>Couldn&apos;t bring anyone new in</b>
+            <div className="muted" style={{ fontSize: 12, margin: "2px 0 10px" }}>{retry.tried ? `${retry.tried} didn't manage it.` : ""} Try again with another AI? Costs are rough estimates for the writing — her photo costs the same either way.</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {retry.list.map(o => (
+                <button key={o.id} className="ghost" disabled={busy} onClick={() => newFaces(o.id)} data-testid={`pica-retry-${o.id}`}
+                  style={{ textAlign: "left", padding: "10px 12px", borderRadius: 10, border: "1px solid var(--border)" }}>
+                  <b>{o.label}</b> <span className="muted" style={{ fontSize: 12 }}>· {o.cost}</span>
+                </button>
+              ))}
+              <button className="ghost" onClick={() => setRetry(null)} style={{ padding: "6px 10px", fontSize: 13 }}>Not now</button>
+            </div>
+          </div>
+        )}
         {list && !list.length && <div className="muted" style={{ textAlign: "center", padding: 24 }}>You&apos;re not following anyone yet</div>}
         {(list || []).map(a => (
           <div key={a.id} className="row" data-testid="pica-following-row" style={{ gap: 10, padding: "10px 14px", borderBottom: "1px solid var(--border)" }}>

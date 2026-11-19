@@ -11,6 +11,7 @@ import { soreFor } from "./sore";
 import { busyWithTheirs, type Her } from "./attached";
 import type { Character } from "./characters";
 import { writeText } from "./llm";
+import { brainFor, brainForCharacter } from "./whichBrain";
 import { workNow } from "./work";
 import { localDate } from "./localTime";
 import { awayFor } from "./picagram";
@@ -58,7 +59,7 @@ const PLAIN: Record<keyof typeof REASONS, string> = {
 /** Her turn-down, in her own voice (a short text). Falls back to a plain line if no AI answers. */
 async function sayNo(ch: Character, name: string, ask: Ask, reason: keyof typeof REASONS, when: string): Promise<string> {
   const them = name || "them";
-  const raw = await writeText(ch.brain,
+  const raw = await writeText(await brainForCharacter(ch.id),
     `You are ${ch.name}. ${ch.personality ? `You: ${ch.personality.slice(0, 300)}` : ""} ${them} just asked you for ${ASKS[ask]} and you can't right now: ${REASONS[reason]}. Write ONE short text turning it down the way YOU would — warm, in your own voice, and suggest when instead (${when}). You still want to see them; this is about right now, not about them. NEVER be mean, cold, sarcastic at their expense, dismissive or cruel about it, whatever your personality: no guilt-tripping, no punishing them, no making them feel stupid for asking. Even at your pricklist you let them know you'd like to, just not now. 1–2 sentences, under 180 characters, no quotes, no stage directions.`,
     `It's ${when}.`, 200, SAY_BUDGET).catch(() => "");
   const text = scrub(raw.replace(/\s+/g, " ").replace(/^["']|["']$/g, "").trim()).slice(0, 220);
@@ -97,7 +98,7 @@ async function persuaded(userId: string, ch: Character, ask: Ask, name: string, 
     : love >= 50 ? "You love them, and you're fairly easy to talk round when they're sweet about it."
     : love >= 25 ? "You like them a lot, but you're not a pushover." : "Your heart isn't really in it yet, so sweet words don't move you much.";
   const mood = happy >= 70 ? "You're happy with them right now." : happy >= 40 ? "You're content enough with them." : "You're not that happy with them at the moment, so charm has to work harder.";
-  const raw = await writeText(ch.brain,
+  const raw = await writeText(await brainFor(userId),
     `You are ${ch.name}. ${ch.personality ? `You: ${ch.personality.slice(0, 300)}` : ""} You just told ${name || "them"} you couldn't do ${ASKS[ask]}. They're asking again. ${heart} ${mood}
 Decide honestly, as YOU: if they're being sweet, warm, funny or persuasive — and you want to say yes — let yourself be talked into it. If they're pushy, sulky, demanding or rude about it, hold your ground (kindly). If they simply asked again with nothing new, it's a coin toss, leaning on how you feel about them.
 Answer with JSON only: {"yes": true or false, "say": "one short text in your own voice, under 180 characters"}. Whatever you decide, never be mean, cold, sarcastic at their expense or cruel — if it's no, it's a warm no with another time.`,

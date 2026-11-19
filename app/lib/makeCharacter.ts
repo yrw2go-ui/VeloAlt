@@ -3,7 +3,7 @@
 // where the usual safety check runs.
 import { sql } from "./db";
 import { writeText } from "./llm";
-import { availableBrains } from "./models";
+import { brainFor } from "./whichBrain";
 import { cleanTraits, TRAITS } from "./traits";
 import { CHARACTER_VOICES } from "./voices";
 import { scrub } from "./secrets";
@@ -11,7 +11,7 @@ import { vibeNote, rollLesbian, LESBIAN_ASK, AGE_FROM, AGE_TO, clearName } from 
 import { defaults as wordDefaults, type Words } from "./words";
 import { hobbyRule } from "./hobbies";
 
-export type Hints = { name?: string; vibe?: string; job?: string; romantic?: boolean; male?: boolean; avoidNames?: string[]; lives?: string; liveIn?: boolean; local?: boolean; lesbian?: boolean; words?: Words };
+export type Hints = { userId?: string; name?: string; vibe?: string; job?: string; romantic?: boolean; male?: boolean; avoidNames?: string[]; lives?: string; liveIn?: boolean; local?: boolean; lesbian?: boolean; words?: Words };
 const str = (v: unknown, n: number) => scrub(String(v ?? "").replace(/\s+/g, " ").trim()).slice(0, n);
 
 /** 🙅 Every name already in their world — characters and the people on their Picagram — so a new
@@ -33,12 +33,9 @@ ${hobbyRule(Math.random())}
 Reply with ONLY a JSON object with these keys:
 "name" (first name${h.avoidNames?.length ? `, not ${h.avoidNames.slice(0, 40).join(", ")}` : ""}), "age" (a number, ${h.male ? "21–45" : `${AGE_FROM}–${AGE_TO}`}), "personality" (2–4 sentences: how they talk and act), "backstory" (3–5 sentences: where they're from, what shaped them, what they care about), "relation" (who they are to the user, e.g. "a new neighbor you keep running into"), "appearance" (one detailed sentence for a portrait: age, hair, eyes, build, style — no clothing brands), "lives_in" (the town or city where they live NOW, as "Town, ST" — where they are today, not where they grew up, and it must match where the backstory puts them now), "job" (specific, with a place), "casual_wear", "hobbies", "work_attire", "work_days" (array of day numbers 0=Sun…6=Sat), "work_start" ("HH:MM" 24h), "part_time" (true/false), "birthday" ("MM-DD"), ${h.romantic ? '"romance_arc" (2–3 sentences), ' : ""}${lesbian ? '"lesbian_personality" (as described above), ' : ""}"traits" (object of 0–10 numbers for: ${TRAITS.map(t => t.key).join(", ")}; suggestive at most ${h.romantic ? 4 : 1}, language at most 3).`;
   const user = `HINTS (optional — keep any that are given):\nName: ${str(h.name, 40) || "(you pick)"}\nVibe / personality: ${str(h.vibe, 300) || "(surprise me)"}\nJob: ${str(h.job, 120) || "(you pick)"}`;
-  // Claude writes it; if Claude can't right now, an Atlas brain (Qwen / DeepSeek) does.
-  const ask = (tokens: number) => writeText(null, sys, user, tokens).catch(async e => {
-    const alt = availableBrains()[0];
-    if (!alt) throw e;
-    return writeText(alt, sys, user, tokens);
-  });
+  // 🧠 Written by the brain picked in Settings (and their backup after it, if one is on).
+  const brain = h.userId ? await brainFor(h.userId) : ["claude"];
+  const ask = (tokens: number) => writeText(brain, sys, user, tokens);
   // 🪫 She's a lot to write: if the JSON comes back cut off, one more go with twice the room
   // rather than "couldn't come up with one".
   let j: Record<string, unknown> = {};

@@ -5,6 +5,7 @@
 // photo looks is hers: her own face, what she'd actually have on, and her sliders.
 import { sql } from "./db";
 import { writeText } from "./llm";
+import { brainFor } from "./whichBrain";
 import { scrub } from "./secrets";
 import { startMedia, mediaNote, MediaError } from "./media";
 import { mediaMood, allowsSuggestive, cleanTraits } from "./traits";
@@ -25,7 +26,7 @@ export async function thankThem(userId: string, ch: Character, what: string, kin
   const discreet = isDiscreetGift(g);
   const take = discreet ? takeOn({ romantic, closeness, flirty: t.flirty || 0, happy: 60 }) : null;
   const privately = take ? discreetNote(take, them, romantic) : "";
-  const text = await writeText(ch.brain,
+  const text = await writeText(await brainFor(userId),
     `You are ${ch.name}. ${ch.personality || ""}
 ${them} has just sent you ${what}${g?.team ? " — gear for the team you actually follow or play for, whichever that is from who you are" : ""}${g?.theirs ? " — and it's YOUR usual: the exact drink or the exact food you actually order, name it, not a stock answer and not tacos unless tacos are genuinely your thing" : ""}${note ? ` with a note: "${note}"` : ""}. Write the message you'd send them the second it arrived — on your phone, straight away, nothing else going on.
 One or two short lines, your own voice, the way you actually text. Be pleased in the way YOU would be (delighted, winding them up, playing it cool, a bit overwhelmed, teasing them for spoiling you). Say something about the thing itself, not "thank you for the gift". Never mention a price, never call it a transaction, never grovel.${romantic && t.flirty >= 4 ? " Flirty is fine." : ""}${privately ? `\n${privately}` : ""}

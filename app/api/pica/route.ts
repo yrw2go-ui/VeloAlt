@@ -2,6 +2,8 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import { sql } from "../../lib/db";
+import { availableBrains } from "../../lib/models";
+import { retryChoices } from "../../lib/pickBrain";
 import { MediaError, mediaReady } from "../../lib/media";
 import { dmThreads, dmUnread, dmOpen, dmSend, dmSendPhoto, dmPhotoMake, dmBrain, dmMyPhotoDraft, dmMyPhoto, dmSendMine, DmError, dmDelete, dmEdit } from "../../lib/picaDm";
 import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSetAvatar, picaRefs, picaSavedList, picaFollowing, picaBefriend, picaCounts, picaDeletePost, picaCreateAccount, picaPictureAbout, picaRedoDraft, picaRedo, picaWithMe, picaMe, picaMeBio, picaBio, picaPersona, picaLives, picaName, picaHandle, picaCaption, picaCharacters, picaHide, accountFor, picaNew, picaFromPhoto, myPhotoDraft, newFaces, picaDeleteAccount, PicaLimit, picaCommentEdit } from "../../lib/picagram";
@@ -99,11 +101,18 @@ export async function POST(req: NextRequest) {
       }
       case "new": return NextResponse.json({ n: await picaNew(me), dms: await dmUnread(me) });
       // ✨ New women, posting right now (on top of the ones who show up on their own each day).
+      // ✨ One new face at a time, written by the brain picked in Settings and nothing else.
+      // If that brain can't manage it, the answer carries the other AIs you could retry with
+      // and roughly what each would cost — your call, never a second spend behind your back.
       case "newfaces": {
-        if (!allow(`pica-new:${me}`, [{ ms: 60_000, max: 2 }, { ms: 86_400_000, max: 10 }])) return bad("That's a lot of new faces — try again in a bit.", 429);
-        const want = Math.max(1, Math.min(5, Number(b.count) || 3));
-        const r = await newFaces(me, want);
-        return NextResponse.json(r);
+        if (!allow(`pica-new:${me}`, [{ ms: 60_000, max: 3 }, { ms: 86_400_000, max: 20 }])) return bad("That's a lot of new faces — try again in a bit.", 429);
+        const want = Math.max(1, Math.min(5, Number(b.count) || 1));
+        // A retry names the AI to use; anything we can't reach is refused rather than guessed at.
+        const pickBrain = typeof b.brain === "string" && (b.brain === "claude" || availableBrains().includes(b.brain)) ? b.brain : "";
+        const r = await newFaces(me, want, pickBrain || undefined);
+        if (r.made) return NextResponse.json(r);
+        const [u] = await sql()`select chat_model from users where id = ${me}`;
+        return NextResponse.json({ made: 0, names: [], tried: pickBrain || String(u?.chat_model || "claude"), retry: retryChoices(pickBrain || u?.chat_model, availableBrains()) });
       }
       // 👩 Make one yourself: your specs, your bio, your pictures.
       case "account.create": {

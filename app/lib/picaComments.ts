@@ -112,6 +112,27 @@ export function randomUser(): string {
   return `${pick(FIRST)}${pick(TAIL)}${n}`.slice(0, 24);
 }
 
+// 💬 Free and instant: short comments and emoji that cost nothing at all — no AI, no tokens.
+// Most comments on a post come from here; a brain is only asked when a comment should really
+// be in someone's own voice about this particular post.
+export const QUICK = [
+  "Nice!", "Love it ❤️", "😏", "👍", "nice outfit!", "Ooolala!", "Stunning", "Amazing look", "HMU 😏", "Lookin good",
+  "Well hey there", "❤️", "😍", "👋☺️", "Perfection 😍", "Coffee sometime?", "Can we chat?", "Omg I love it", "Nice ❤️",
+  "Yes!!", "So good", "Love this", "🔥", "🔥🔥", "Gorgeous", "Beautiful", "Wow", "Wow 😍", "This is great",
+  "Looking great!", "Love the vibe", "Cute!", "So cute", "Too cute", "Adorable", "Obsessed", "Obsessed 😍",
+  "Okay wow", "Stop it 😍", "That smile ☺️", "Great shot", "Love this one", "Yes to all of this", "Incredible",
+  "Beautiful as always", "You look amazing", "This made me smile", "Made my day ❤️", "Happy for you!", "Enjoy!",
+  "Have fun!!", "Looks fun", "Jealous!", "Wish I was there", "Take me next time", "Save me a spot", "Need this",
+  "Same ☺️", "Agreed", "So true", "Facts", "100%", "💯", "🙌", "👏", "👏👏", "✨", "💕", "🥰", "🤩", "😘", "🫶",
+  "😊", "☺️", "😎", "🤍", "💖", "👀", "👀🔥", "😮", "🤤", "💪", "🎉", "🌸", "🌞", "💐",
+  "Hey you ☺️", "Hi 👋", "Hello there", "Long time!", "Miss you!", "Miss that face", "Come back soon!",
+  "Call me sometime", "Text me!", "We need to catch up", "Let's do something soon", "Drinks soon?",
+  "Lunch this week?", "You free this weekend?", "Proud of you", "Love to see it", "Keep it up", "Go you!",
+  "Doing it right", "Great news!", "Congrats!!", "Aww", "Awww ❤️", "Sweet", "Lovely", "Class", "Perfect",
+];
+/** One free comment, picked at random. */
+export const quickComment = () => pick(QUICK);
+
 /** A few random strangers' comments for a post (some emoji-only).
  *  They're told what the picture shows — what she's doing and what she's wearing — so the
  *  comments land on it ("love the crop top", "wish I was on the beach too!"), not just "Love this!". */

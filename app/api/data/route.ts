@@ -23,6 +23,8 @@ import { PHONE_MSG } from "../../lib/contact";
 import { scrub } from "../../lib/secrets";
 import { BIO_SECTIONS, BIO_MAX } from "../../lib/bioSections";
 import { availableModels, availableBrains, CHAT_MODELS, MODEL_INFO, type ChatModel } from "../../lib/models";
+import { brainFor } from "../../lib/whichBrain";
+import { BACKUP_OPTIONS } from "../../lib/pickBrain";
 import { PERSONALITIES } from "../../lib/persona";
 import { deleteFile, ownFile } from "../../lib/files";
 import { roomForMore } from "../../lib/together";
@@ -100,7 +102,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ bits: withDefaults(merge(u?.prompt_words)) });
       }
       case "profile.get": {
-        const [u] = await db`select paused, name, look, time_zone, plan, phone, phone_verified_at, chat_model, personality, adult_confirmed_at, video_model, reply_length, checkins, bio, birthday::text, age, (to_jsonb(users)->>'home_town') as home_town, home_state, (select url from velo_files where id = users.bio_photo_file_id) as bio_photo, (select thumb_url from velo_files where id = users.bio_photo_file_id) as bio_thumb, bio_photo_note, bio_more from users where id = ${me}`;
+        const [u] = await db`select paused, name, look, time_zone, plan, phone, phone_verified_at, chat_model, backup_brain, personality, adult_confirmed_at, video_model, reply_length, checkins, bio, birthday::text, age, (to_jsonb(users)->>'home_town') as home_town, home_state, (select url from velo_files where id = users.bio_photo_file_id) as bio_photo, (select thumb_url from velo_files where id = users.bio_photo_file_id) as bio_thumb, bio_photo_note, bio_more from users where id = ${me}`;
         const [{ n }] = await db`select count(*)::int as n from velo_memories where user_id = ${me} and kind = 'call' and character_id is null`;
         const [face] = await db`select url from velo_files where user_id = ${me} and kind = 'face' order by created_at desc limit 1`;
         return NextResponse.json({
@@ -110,6 +112,9 @@ export async function POST(req: NextRequest) {
           phone: u?.phone ? showPhone(String(u.phone)) : "", phoneVerified: !!u?.phone_verified_at, veloNumber: veloNumber(),
           chatModel: availableModels().includes(u?.chat_model) ? u?.chat_model : "claude",
           models: availableModels().map(id => ({ id, ...MODEL_INFO[id] })),
+          // 🛟 The backup brain: "" is off (the default), and only brains this server can actually reach are offered.
+          backupBrain: BACKUP_OPTIONS.some(o => o.id === u?.backup_brain) ? String(u.backup_brain) : "",
+          backups: BACKUP_OPTIONS.filter(o => o.id === "claude" || availableBrains().includes(o.id)).map(o => ({ id: o.id as string, label: o.label as string, about: o.about as string })),
           bio: { text: u?.bio || "", birthday: u?.birthday || "", age: u?.age || null, town: u?.home_town || "", state: u?.home_state || "", photo: u?.bio_thumb || u?.bio_photo || "", photoNote: u?.bio_photo_note || "", photos: await myPhotos(me), more: u?.bio_more && typeof u.bio_more === "object" ? u.bio_more : {} },
           checkins: u?.checkins || "sometimes",
           paused: !!u?.paused,
@@ -135,6 +140,9 @@ export async function POST(req: NextRequest) {
           await db`update users set personality = ${b.personality}, updated_at = now() where id = ${me}`;
         }
         if (CHAT_MODELS.includes(b.chatModel) && availableModels().includes(b.chatModel as ChatModel)) await db`update users set chat_model = ${b.chatModel}, updated_at = now() where id = ${me}`;
+        // 🛟 Backup brain: "" switches it off. Anything we can't reach is refused rather than stored.
+        if (typeof b.backupBrain === "string" && (b.backupBrain === "" || (BACKUP_OPTIONS.some(o => o.id === b.backupBrain) && (b.backupBrain === "claude" || availableBrains().includes(b.backupBrain)))))
+          await db`update users set backup_brain = ${b.backupBrain}, updated_at = now() where id = ${me}`;
         // 👤 About you (all optional; empty clears it).
         if (b.bio && typeof b.bio === "object") {
           const x = b.bio as Record<string, unknown>;
@@ -268,7 +276,7 @@ export async function POST(req: NextRequest) {
         const ids = Array.isArray(b.ids) ? b.ids.map(String) : [];
         if (!ids.length || ids.length > 10) return bad("Pick 1 to 10 messages.");
         const [u] = await db`select name from users where id = ${me}`;
-        return NextResponse.json(await deleteMessages(me, ch?.id || null, ids, ch?.brain || "", String(u?.name || "").split(/\s+/)[0], ch?.name || "Velo"));
+        return NextResponse.json(await deleteMessages(me, ch?.id || null, ids, await brainFor(me), String(u?.name || "").split(/\s+/)[0], ch?.name || "Velo"));
       }
       case "messages.clear":
         // Velo's chat only; each character's chat goes when the character is deleted.
