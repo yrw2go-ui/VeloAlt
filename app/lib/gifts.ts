@@ -119,7 +119,19 @@ export function salesFor(week: number, stock: Gift[]): Map<string, number> {
 export const reduced = (g: Gift, off?: number): Gift =>
   off ? { ...g, price: salePrice(g.price, off), was: g.price, off } : g;
 
-export function shopFor(week: number): Gift[] {
+/** 🛠️ Admin → Gifts: a price, brand or name changed by hand. Only the changed bits are kept. */
+export type GiftEdit = { name?: string | null; brand?: string | null; price?: number | null };
+
+/** The gift as the shop should show it: the catalogue, with any hand-edit laid over the top. */
+export function edited(g: Gift, e?: GiftEdit): Gift {
+  if (!e) return g;
+  const name = typeof e.name === "string" && e.name.trim() ? e.name.trim().slice(0, 80) : g.name;
+  const brand = typeof e.brand === "string" ? e.brand.trim().slice(0, 60) : g.brand;
+  const price = typeof e.price === "number" && Number.isFinite(e.price) && e.price >= 1 ? Math.round(e.price) : g.price;
+  return { ...g, name, brand, price };
+}
+
+export function shopFor(week: number, edits?: Map<string, GiftEdit>): Gift[] {
   // 👙 One bikini, one high-cut leotard, one necklace, one pair of platform heels — always there,
   // and a different one of each as the weeks go by.
   const picks = SLOTS.map(sl => order(`slot:${sl}:${week}`, GIFTS.filter(g => g.slot === sl))[0]).filter(Boolean);
@@ -127,7 +139,7 @@ export function shopFor(week: number): Gift[] {
   const rest = GIFTS.filter(g => !g.slot && g.price > 200);
   const rotating = order(`shop:${week}`, rest).slice(0, 10);
   const keep = new Set<Gift>([...always, ...rotating, ...picks]);
-  const stock = GIFTS.filter(g => keep.has(g));
+  const stock = GIFTS.filter(g => keep.has(g)).map(g => edited(g, edits?.get(g.id)));
   const sales = salesFor(week, stock);
   return stock.map(g => reduced(g, sales.get(g.id)));
 }

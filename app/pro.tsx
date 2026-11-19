@@ -516,3 +516,93 @@ export function AdminCard() {
     </div>
   );
 }
+
+type AdminGift = { id: string; emoji: string; brand: string; name: string; price: number; kind: string; changed: boolean };
+
+/**
+ * 🛠️ Settings → Admin → Gifts: every gift in the shop, with its price, brand and name.
+ *
+ * Change one and it is what the shop charges and shows from then on. Anything left alone follows
+ * the catalogue, so a gift you have never touched keeps up with any later change to the code.
+ */
+export function GiftsAdminCard() {
+  const [open, setOpen] = useState(false);
+  const [gifts, setGifts] = useState<AdminGift[] | null>(null);
+  const [draft, setDraft] = useState<Record<string, { brand: string; name: string; price: string }>>({});
+  const [busy, setBusy] = useState("");
+  const [saved, setSaved] = useState("");
+  const [err, setErr] = useState("");
+  const [find, setFind] = useState("");
+  const load = (list: AdminGift[]) => {
+    setGifts(list);
+    setDraft(Object.fromEntries(list.map(g => [g.id, { brand: g.brand, name: g.name, price: String(g.price) }])));
+  };
+  useEffect(() => {
+    if (!open || gifts) return;
+    api<{ gifts: AdminGift[] }>("/api/gifts", { action: "admin.gifts" })
+      .then(r => load(r.gifts || []))
+      .catch(e => { setErr(e instanceof Error ? e.message : "Couldn't open it."); setGifts([]); });
+  }, [open, gifts]);
+  const row = (g: AdminGift) => draft[g.id] || { brand: g.brand, name: g.name, price: String(g.price) };
+  // 🔒 House rule: a Save stays greyed out until that line actually changed.
+  const dirty = (g: AdminGift) => { const d = row(g); return d.brand !== g.brand || d.name !== g.name || d.price !== String(g.price); };
+  const set = (id: string, k: "brand" | "name" | "price", v: string) =>
+    setDraft(d => ({ ...d, [id]: { ...(d[id] || { brand: "", name: "", price: "" }), [k]: v } }));
+  const save = async (g: AdminGift) => {
+    if (!dirty(g)) return;
+    const d = row(g);
+    setBusy(g.id); setErr("");
+    try {
+      const r = await api<{ gifts: AdminGift[] }>("/api/gifts", { action: "admin.gift.save", id: g.id, brand: d.brand, name: d.name, price: Number(d.price) });
+      load(r.gifts || []);
+      setSaved(g.id); setTimeout(() => setSaved(s => (s === g.id ? "" : s)), 1600);
+    } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't save that one."); }
+    setBusy("");
+  };
+  const list = (gifts || []).filter(g => {
+    const q = find.trim().toLowerCase();
+    return !q || `${g.brand} ${g.name} ${g.kind}`.toLowerCase().includes(q);
+  });
+  const changed = (gifts || []).filter(g => g.changed).length;
+  return (
+    <div className="card" data-testid="gifts-admin-card">
+      <button onClick={() => setOpen(o => !o)} style={{ all: "unset", cursor: "pointer", display: "flex", width: "100%", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <span style={{ minWidth: 0 }}>
+          <b>🎁 Admin · Gifts</b>
+          <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>
+            Every gift in the shop and what it costs. Change a price, a brand or a name.{changed ? ` ${changed} changed.` : ""}
+          </div>
+        </span>
+        <span className="muted" style={{ flexShrink: 0 }}>{open ? "▾" : "▸"}</span>
+      </button>
+      {open && (
+        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+          {err && <div data-testid="gifts-admin-error" style={{ fontSize: 13, color: "var(--bad)" }}>{err}</div>}
+          {!gifts && <div className="muted" style={{ fontSize: 13 }}>Fetching the catalogue…</div>}
+          {gifts && (
+            <input value={find} onChange={e => setFind(e.target.value)} placeholder="Find a gift…" aria-label="Find a gift" data-testid="gifts-admin-find" />
+          )}
+          {gifts && !list.length && <div className="muted" style={{ fontSize: 13 }}>Nothing matches that.</div>}
+          {list.map(g => (
+            <div key={g.id} data-testid={`gift-row-${g.id}`} style={{ display: "flex", flexDirection: "column", gap: 6, padding: "10px 0", borderTop: "1px solid var(--border)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                <span style={{ fontSize: 20, flexShrink: 0 }}>{g.emoji}</span>
+                <span className="muted" style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.kind}{g.changed ? " · changed" : ""}</span>
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <input value={row(g).brand} onChange={e => set(g.id, "brand", e.target.value)} maxLength={60} placeholder="Brand (optional)"
+                  aria-label={`Brand for ${g.name}`} data-testid={`gift-brand-${g.id}`} style={{ flex: "1 1 120px", minWidth: 0 }} />
+                <input value={row(g).name} onChange={e => set(g.id, "name", e.target.value)} maxLength={80} placeholder="What it is"
+                  aria-label={`Name for ${g.name}`} data-testid={`gift-name-${g.id}`} style={{ flex: "2 1 160px", minWidth: 0 }} />
+                <input value={row(g).price} onChange={e => set(g.id, "price", e.target.value.replace(/[^\d]/g, ""))} inputMode="numeric" maxLength={7}
+                  aria-label={`Price for ${g.name}`} data-testid={`gift-price-${g.id}`} style={{ flex: "0 1 90px", minWidth: 70 }} />
+                <button className="btn" disabled={!dirty(g) || busy === g.id} onClick={() => void save(g)} data-testid={`gift-save-${g.id}`}
+                  style={{ flexShrink: 0, padding: "10px 14px" }}>{busy === g.id ? "…" : saved === g.id ? "✓ Saved" : "Save"}</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

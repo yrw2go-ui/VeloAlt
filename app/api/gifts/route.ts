@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import { sql } from "../../lib/db";
-import { getCharacterFor } from "../../lib/characters";
+import { getCharacterFor, isAdmin } from "../../lib/characters";
 import { thankThem } from "../../lib/thanks";
 import { dmSend, dmGiftPhoto } from "../../lib/picaDm";
-import { shopFull, peopleToGift, sendGift, giftHistory, accountsFor, moveAcross, listMyGift, unlistMyGift, myGifts, closenessMap, GiftError, BANK, WEEKLY_RATE, PAY_LOW, PAY_HIGH } from "../../lib/giftsDb";
+import { shopFull, peopleToGift, sendGift, giftHistory, accountsFor, moveAcross, listMyGift, unlistMyGift, myGifts, closenessMap, GiftError, BANK, WEEKLY_RATE, PAY_LOW, PAY_HIGH, allGifts, saveGift } from "../../lib/giftsDb";
 import { MAX_MY_GIFTS } from "../../lib/gifts";
 
 const UUID = /^[0-9a-f-]{36}$/i;
@@ -29,6 +29,17 @@ export async function POST(req: NextRequest) {
           bankName: BANK, rate: WEEKLY_RATE, payLow: PAY_LOW, payHigh: PAY_HIGH });
       }
       // 💸 Bring money across from the bank into what you can spend.
+      // 🛠️ Admin → Gifts: the whole catalogue, and changing what one of them costs or is called.
+      case "admin.gifts": {
+        if (!(await isAdmin(me))) return bad("Only an admin can do that.", 403);
+        return NextResponse.json({ gifts: await allGifts() });
+      }
+      case "admin.gift.save": {
+        if (!(await isAdmin(me))) return bad("Only an admin can do that.", 403);
+        if (!allow(`gift-edit:${me}`, [{ ms: 60_000, max: 40 }])) return bad("That's a lot of changes — try again in a moment.", 429);
+        const ok = await saveGift(String(b.id || ""), { brand: String(b.brand ?? ""), name: String(b.name ?? ""), price: Number(b.price) });
+        return ok ? NextResponse.json({ gifts: await allGifts() }) : bad("Give it a name and a price of at least $1.");
+      }
       case "funds": {
         if (!allow(`funds:${me}`, [{ ms: 60_000, max: 20 }])) return bad("Slow down a moment.", 429);
         const r = await moveAcross(me, Number(b.amount) || 1000);
