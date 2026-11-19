@@ -136,7 +136,13 @@ export const reduced = (g: Gift, off?: number): Gift =>
   off ? { ...g, price: salePrice(g.price, off), was: g.price, off } : g;
 
 /** 🛠️ Admin → Gifts: a price, brand or name changed by hand. Only the changed bits are kept. */
-export type GiftEdit = { name?: string | null; brand?: string | null; price?: number | null };
+export type GiftEdit = { name?: string | null; brand?: string | null; price?: number | null; kind?: string | null; hidden?: boolean };
+
+/** 🛠️ The kinds a gift can be relabelled as by hand. */
+export const KIND_IDS = ["bag", "clothes", "shoes", "jewellery", "beauty", "tech", "treat", "home", "discreet"];
+
+/** 🙈 Taken out of the shop by hand — still in the catalogue, so it can be put back. */
+export const isHiddenGift = (id: string, edits?: Map<string, GiftEdit>) => !!edits?.get(id)?.hidden;
 
 /** The gift as the shop should show it: the catalogue, with any hand-edit laid over the top. */
 export function edited(g: Gift, e?: GiftEdit): Gift {
@@ -144,7 +150,8 @@ export function edited(g: Gift, e?: GiftEdit): Gift {
   const name = typeof e.name === "string" && e.name.trim() ? e.name.trim().slice(0, 80) : g.name;
   const brand = typeof e.brand === "string" ? e.brand.trim().slice(0, 60) : g.brand;
   const price = typeof e.price === "number" && Number.isFinite(e.price) && e.price >= 1 ? Math.round(e.price) : g.price;
-  return { ...g, name, brand, price };
+  const kind = typeof e.kind === "string" && KIND_IDS.includes(e.kind) ? (e.kind as Gift["kind"]) : g.kind;
+  return { ...g, name, brand, price, kind };
 }
 
 /** 🛠️ Up to twenty things you add to the catalogue yourself in Admin → Gifts. */
@@ -167,9 +174,11 @@ export const isExtra = (id: string) => id.startsWith("extra:");
 export const ROTATING = 10;
 
 export function shopFor(week: number, rotating = ROTATING, edits?: Map<string, GiftEdit>, extra: Gift[] = []): Gift[] {
+  // 🙈 Anything taken out by hand is simply not there to be stocked.
+  const out = (g: Gift) => isHiddenGift(g.id, edits);
   // 🛠️ Anything you added yourself is in the catalogue alongside the rest, and takes its turn the
   // same way — unless you said it stays, in which case it is always there.
-  const ALL = extra.length ? [...GIFTS, ...extra] : GIFTS;
+  const ALL = (extra.length ? [...GIFTS, ...extra] : GIFTS).filter(g => !out(g));
   // 👙 One bikini, one high-cut leotard, one necklace, one pair of platform heels — always there,
   // and a different one of each as the weeks go by.
   const picks = SLOTS.map(sl => order(`slot:${sl}:${week}`, ALL.filter(g => g.slot === sl))[0]).filter(Boolean);

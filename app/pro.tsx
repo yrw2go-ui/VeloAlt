@@ -533,7 +533,7 @@ const KINDS = [
   { id: "discreet", label: "🤫 Discreet (just between you two)" },
 ];
 
-type AdminGift = { id: string; name: string; brand: string; kind: string; price: number; emoji: string; always?: true; slot?: string; edited?: boolean; inShop?: boolean; mine?: true };
+type AdminGift = { id: string; name: string; brand: string; kind: string; price: number; emoji: string; always?: true; slot?: string; edited?: boolean; inShop?: boolean; hidden?: boolean; mine?: true };
 
 export function GiftsAdminCard() {
   const [open, setOpen] = useState(false);
@@ -582,6 +582,33 @@ export function GiftsAdminCard() {
         .then(r => setGifts(list => (list || []).map(x => (x.id === g.id && r?.gift ? r.gift : x))))
         .catch(e => setErr(e instanceof Error ? e.message : "Couldn't save that one."));
     }
+    setBusy("");
+  };
+  // 🏷️ Relabel it: something she wears can become one of the private ones.
+  const relabel = async (g: AdminGift, kind: string) => {
+    if (kind === g.kind) return;
+    setBusy(g.id); setErr("");
+    await api<{ gift: AdminGift }>("/api/gifts", { action: g.mine ? "extra.edit" : "edit", giftId: g.id, kind })
+      .then(r => { if (r?.gift) setGifts(l => (l || []).map(x => (x.id === g.id ? r.gift : x))); else setGifts(null); })
+      .catch(e => setErr(e instanceof Error ? e.message : "Couldn't change that."));
+    setBusy("");
+  };
+  // 🗑 Out of the shop. One of your own goes for good; one from the catalogue is only put away,
+  // so it can come back.
+  const drop = async (g: AdminGift) => {
+    if (g.mine) return removeMine(g);
+    if (!(await confirmAsk(`Take ${g.brand ? `${g.brand} ` : ""}${g.name} out of the shop? Nobody will be offered it or hope for it. You can put it back here any time.`, { yes: "Take it out", danger: true }))) return;
+    setBusy(g.id); setErr("");
+    await api<{ gift: AdminGift }>("/api/gifts", { action: "edit", giftId: g.id, hidden: true })
+      .then(() => setGifts(null))
+      .catch(e => setErr(e instanceof Error ? e.message : "Couldn't take it out."));
+    setBusy("");
+  };
+  const putBack = async (g: AdminGift) => {
+    setBusy(g.id); setErr("");
+    await api<{ gift: AdminGift }>("/api/gifts", { action: "edit", giftId: g.id, hidden: false })
+      .then(() => setGifts(null))
+      .catch(e => setErr(e instanceof Error ? e.message : "Couldn't put it back."));
     setBusy("");
   };
   // 🔁 Whether one of yours stays in the shop every week or takes its turn.
@@ -705,6 +732,10 @@ export function GiftsAdminCard() {
                 <input value={draft[g.id]?.price ?? ""} aria-label={`${g.name} price`} type="number" min={1} max={1000000}
                   onChange={e => setDraft(d => ({ ...d, [g.id]: { ...d[g.id], price: e.target.value } }))}
                   style={{ width: 78, background: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 7px", fontSize: 12.5 }} />
+                <select data-testid={`gift-kind-${g.id}`} aria-label={`What sort of thing ${g.name} is`} value={g.kind} disabled={busy === g.id}
+                  onChange={e => void relabel(g, e.target.value)} style={{ ...BOX, maxWidth: 104 }}>
+                  {KINDS.map(k => <option key={k.id} value={k.id}>{k.label.replace(/ \(.*\)$/, "")}</option>)}
+                </select>
                 {g.mine ? (
                   <button className="ghost" data-testid={`stay-${g.id}`} onClick={() => flipStay(g)} disabled={busy === g.id}
                     title={g.always ? "Stays in the shop every week — tap to put it on rotation" : "Takes its turn on rotation — tap to make it stay"}
@@ -714,8 +745,11 @@ export function GiftsAdminCard() {
                 )}
                 <button className="btn" data-testid={`gift-save-${g.id}`} disabled={!dirty(g) || busy === g.id} onClick={() => save(g)}
                   style={{ padding: "4px 10px", fontSize: 12 }}>{busy === g.id ? "…" : "Save"}</button>
-                {g.mine && <button className="ghost" data-testid={`gift-remove-${g.id}`} disabled={busy === g.id} onClick={() => removeMine(g)}
-                  title="Take it out of the catalogue" style={{ padding: "4px 8px", fontSize: 12 }}>🗑</button>}
+                {g.hidden
+                  ? <button className="ghost" data-testid={`gift-back-${g.id}`} disabled={busy === g.id} onClick={() => void putBack(g)}
+                      title="Put it back in the shop" style={{ padding: "4px 8px", fontSize: 12 }}>↩︎ put back</button>
+                  : <button className="ghost" data-testid={`gift-remove-${g.id}`} disabled={busy === g.id} onClick={() => void drop(g)}
+                      title={g.mine ? "Take it out of the catalogue for good" : "Take it out of the shop — you can put it back"} style={{ padding: "4px 8px", fontSize: 12 }}>🗑</button>}
               </div>
             ))}
             {!shown.length && <div className="muted" style={{ fontSize: 13, paddingTop: 8 }}>Nothing matches that.</div>}
