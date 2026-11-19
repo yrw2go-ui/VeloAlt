@@ -419,7 +419,19 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
           // Only her own unprompted idea becomes an offer they accept or decline.
           const asked = (input as { they_asked?: unknown })?.they_asked === true || askedForMedia(String(lastSaid)) || (YES.test(plain(String(lastSaid))) && mentionsMedia(String(lastHers)));
           const who = (input as { of_person?: unknown })?.of_person;
-          let other = typeof who === "string" && who.trim() ? await pictureOf(caller.userId, cid, who) : null;
+          // 👥 Someone NEITHER of them knows — a woman he saw out, or came across online. There are
+          // no photos to work from and no acquaintance to check, so her description is all there is,
+          // and the picture is of her alone. They can make her a Picagram account afterwards.
+          const strangerSaid = (input as { of_stranger?: unknown })?.of_stranger;
+          const stranger = typeof strangerSaid === "string" ? strangerSaid.replace(/\s+/g, " ").trim().slice(0, 300) : "";
+          if (stranger && !(typeof who === "string" && who.trim())) {
+            const said = String((input as { description?: unknown })?.description || "").replace(/\s+/g, " ").trim();
+            input = { ...(input as Record<string, unknown>), with_me: false, with_them: false,
+              // ⚠️ Her description must not carry a name from their own life, or the app takes the
+              // picture for one of someone they already know and won't offer to put her on Picagram.
+              description: `${said}${said && !/[.!?]$/.test(said) ? ". " : said ? " " : ""}${stranger}. The picture is of this woman on her own — whoever sent it is not in it.` };
+          }
+          let other = !stranger && typeof who === "string" && who.trim() ? await pictureOf(caller.userId, cid, who) : null;
           if (typeof other === "string") throw new MediaError(other);
           // 🙋 The two of them in it: his own "About you" photos are the reference for his face.
           if (!other && (input as { with_them?: unknown })?.with_them === true) {
