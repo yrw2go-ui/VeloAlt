@@ -172,15 +172,18 @@ export function shopFor(week: number, rotating = ROTATING, edits?: Map<string, G
  *  closer thing to want. */
 export const WANTS_YOURS_AT = 62;
 
-export function wishlistFor(whoId: string, week: number, mine: Gift[] = [], closeness = 100): Gift[] {
+export function wishlistFor(whoId: string, week: number, mine: Gift[] = [], closeness = 100, got: Set<string> = new Set()): Gift[] {
   // The everyday small ones aren't what anyone puts on a wishlist — a wishlist is for things people
   // hope for, not for a coffee. What you listed yourself only joins the pool once they're close.
   const yours = closeness >= WANTS_YOURS_AT ? mine : [];
-  return order(`wish:${whoId}:${week}`, [...GIFTS.filter(g => !g.always), ...yours]).slice(0, 3);
+  // 🎁 Once you've actually given them one, it stops being something they want and the next
+  // thing down takes its place — so there are always three, and never one they already have.
+  const left = [...GIFTS.filter(g => !g.always), ...yours].filter(g => !got.has(g.id));
+  return order(`wish:${whoId}:${week}`, left).slice(0, 3);
 }
 
-export const onWishlist = (whoId: string, week: number, giftId: string, mine: Gift[] = [], closeness = 100) =>
-  wishlistFor(whoId, week, mine, closeness).some(g => g.id === giftId);
+export const onWishlist = (whoId: string, week: number, giftId: string, mine: Gift[] = [], closeness = 100, got: Set<string> = new Set()) =>
+  wishlistFor(whoId, week, mine, closeness, got).some(g => g.id === giftId);
 
 export type Sent = { amount: number; wished: boolean; money?: boolean; at: number };
 export type Boost = { flirty: number; eager: number; until: number };
