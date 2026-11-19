@@ -2,7 +2,7 @@
 // whether someone is still in the glow of one.
 import { sql } from "./db";
 import { scrub } from "./secrets";
-import { GIFTS, GIFT_ICONS, MAX_EXTRAS, ROTATING, asGift, edited, isExtra, giftById, shopFor, weekOf, wishlistFor, onWishlist, boostFrom, myGift, isMyGift, MAX_MY_GIFTS, type Boost, type Gift, type GiftEdit } from "./gifts";
+import { GIFTS, KIND_IDS, GIFT_ICONS, MAX_EXTRAS, ROTATING, asGift, edited, isExtra, giftById, shopFor, weekOf, wishlistFor, onWishlist, boostFrom, myGift, isMyGift, MAX_MY_GIFTS, type Boost, type Gift, type GiftEdit } from "./gifts";
 import { settle, transfer, BANK, WEEKLY_RATE, PAY_LOW, PAY_HIGH } from "./money";
 import { hintsThisWeek, hintPick, hintLive, hintDealtWith, moneyTier, lovePoints, MONEY_LAVISH } from "./hints";
 
@@ -69,12 +69,14 @@ export async function unlistMyGift(userId: string, giftId: string): Promise<bool
  * A database without the table yet just has nothing changed, so the shop keeps working either way.
  */
 export async function giftEdits(): Promise<Map<string, GiftEdit>> {
-  const rows = await sql()`select gift_id, name, brand, price from gift_edits`
+  const rows = await sql()`select gift_id, name, brand, price, kind, hidden from gift_edits`
     .catch(() => [] as Record<string, unknown>[]);
   return new Map(rows.map(r => [String(r.gift_id), {
     name: r.name === null || r.name === undefined ? null : String(r.name),
     brand: r.brand === null || r.brand === undefined ? null : String(r.brand),
     price: r.price === null || r.price === undefined ? null : Number(r.price),
+    kind: r.kind === null || r.kind === undefined ? null : String(r.kind),
+    hidden: !!r.hidden,
   }]));
 }
 
@@ -156,29 +158,32 @@ export async function removeExtra(id: string): Promise<boolean> {
 }
 
 /** 🛍️ Every gift there is, with the hand edits on, for the admin list. */
-export async function catalogue(): Promise<(Gift & { edited: boolean; mine?: true })[]> {
+export async function catalogue(): Promise<(Gift & { edited: boolean; hidden?: boolean; mine?: true })[]> {
   const tweaks = await giftEdits();
   const ours = await giftExtras();
-  return [...GIFTS.map(g => ({ ...edited(g, tweaks.get(g.id)), edited: tweaks.has(g.id) })),
-    ...ours.map(g => ({ ...g, edited: false, mine: true as const }))];
+  return [...GIFTS.map(g => ({ ...edited(g, tweaks.get(g.id)), edited: tweaks.has(g.id), hidden: !!tweaks.get(g.id)?.hidden })),
+    ...ours.map(g => ({ ...g, edited: false, hidden: false, mine: true as const }))];
 }
 
 /** ✏️ Change one by hand. Giving back the catalogue's own value clears the edit rather than storing it. */
-export async function editGift(giftId: string, patch: { name?: string; brand?: string; price?: number }): Promise<Gift> {
+export async function editGift(giftId: string, patch: { name?: string; brand?: string; price?: number; kind?: string; hidden?: boolean }): Promise<Gift> {
   const base = GIFTS.find(g => g.id === giftId);
   if (!base) throw new GiftError("That isn't one of the gifts.");
   const name = clean(patch.name ?? base.name, 80), brand = clean(patch.brand ?? base.brand, 60);
   const price = Math.round(Number(patch.price ?? base.price));
   checked(name, price);
   try {
-    // Back to exactly what the catalogue says? Then there's nothing to remember.
-    if (name === base.name && brand === base.brand && price === base.price) {
+    const now = (await giftEdits()).get(giftId);
+  const kind = patch.kind === undefined ? (now?.kind ?? null) : (KIND_IDS.includes(String(patch.kind)) ? String(patch.kind) : null);
+  const hidden = patch.hidden === undefined ? !!now?.hidden : !!patch.hidden;
+  // Back to exactly what the catalogue says? Then there's nothing to remember.
+    if (name === base.name && brand === base.brand && price === base.price && (!kind || kind === base.kind) && !hidden) {
       await sql()`delete from gift_edits where gift_id = ${giftId}`;
       return base;
     }
-    await sql()`insert into gift_edits (gift_id, name, brand, price) values (${giftId}, ${name}, ${brand}, ${price})
-      on conflict (gift_id) do update set name = excluded.name, brand = excluded.brand, price = excluded.price, updated_at = now()`;
-    return { ...base, name, brand, price };
+    await sql()`insert into gift_edits (gift_id, name, brand, price, kind, hidden) values (${giftId}, ${name}, ${brand}, ${price}, ${kind}, ${hidden})
+      on conflict (gift_id) do update set name = excluded.name, brand = excluded.brand, price = excluded.price, kind = excluded.kind, hidden = excluded.hidden, updated_at = now()`;
+    return { ...base, name, brand, price, ...(kind ? { kind: kind as Gift["kind"] } : {}) };
   } catch (e) { if (missingTable(e, "gift_edits")) throw new GiftError(NO_GIFT_TABLES); throw e; }
 }
 export async function shopFull(userId: string, now = Date.now()): Promise<Gift[]> {

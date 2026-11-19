@@ -48,7 +48,8 @@ export async function POST(req: NextRequest) {
         if (!(await isAdmin(me))) return bad("That's for admins.", 403);
         if (!allow(`giftedit:${me}`, [{ ms: 60_000, max: 60 }])) return bad("Slow down a moment.", 429);
         await editGift(String(b.giftId || ""), { name: b.name === undefined ? undefined : String(b.name),
-          brand: b.brand === undefined ? undefined : String(b.brand), price: b.price === undefined ? undefined : Number(b.price) });
+          brand: b.brand === undefined ? undefined : String(b.brand), price: b.price === undefined ? undefined : Number(b.price),
+          kind: b.kind === undefined ? undefined : String(b.kind), hidden: b.hidden === undefined ? undefined : b.hidden === true });
         // The screen swaps this one row for what comes back, so it is the row that goes back —
         // not the whole list.
         const stocked = new Set((await shopNow()).map(x => x.id));
