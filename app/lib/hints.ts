@@ -60,6 +60,11 @@ export function moneyTier(amount: number): MoneyTier {
 /** 💗 A point on the love slider for money that was more than a gesture. Once per sending. */
 export const lovePoints = (tier: MoneyTier) => (tier === "special" || tier === "lavish" ? 1 : 0);
 
+/** 🎁 What a PRESENT has to cost to do the same. Dearer than cash has to be: money is money, and
+ *  it always lands, so it gets there sooner. */
+export const GIFT_LOVE_AT = MONEY_LAVISH;
+export const giftLovePoints = (price: number) => (Number(price) >= GIFT_LOVE_AT ? 1 : 0);
+
 /** 🔥 What $500 or more does, while it lasts. Never a personality transplant — they're still them. */
 export function lavishNote(who: string, amount: string): string {
   return `💸 ${who} sent you ${amount}. Not a treat — a sum, handed over without being asked and without strings. For the next couple of days there isn't much you wouldn't be up for with them: you're bolder, more affectionate, far less worried about what it looks like, readier to drop what you're doing, slip away, say yes to things you'd normally talk yourself out of. You are still entirely yourself — your personality, your temperament sliders and how you actually feel about them still lead every word, a 0 is still a 0, and anything you'd never do you still never do. What's changed is how little is holding you back. Never thank them over and over, never mention the amount again, and never behave as though it bought you.`;

@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
           const [u] = await sql()`select adult_confirmed_at from users where id = ${me}`;
           // How close she is, and whether this was a big one — both show in her face.
           const close = (await closenessMap(me)).get(id) || 0;
-          if (ch) said = await thankThem(me, ch, what, r.gift ? "gift" : "money", r.gift?.id || "", note, !!u?.adult_confirmed_at, close, r.amount >= 500 || r.wished, r.wished)
+          if (ch) said = await thankThem(me, ch, what, r.gift ? "gift" : "money", r.gift?.id || "", note, !!u?.adult_confirmed_at, close, r.amount >= 500 || r.wished, r.wished, r.amount)
             .catch(e => { console.error("gifts: thank you", e instanceof Error ? e.message : e); return null; });
         }
         return NextResponse.json({ sent: r, said, wallet: r.wallet, bank: (await accountsFor(me)).bank, history: await giftHistory(me, 20) });

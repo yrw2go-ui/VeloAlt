@@ -5,7 +5,7 @@ import { scrub } from "./secrets";
 import { GIFTS, giftById, shopFor, weekOf, wishlistFor, onWishlist, boostFrom, myGift, isMyGift, edited, asGift, isExtra, ROTATING, GIFTS_A_DAY, MAX_MY_GIFTS, MAX_EXTRAS, GIFT_ICONS, type Boost, type Gift, type GiftEdit } from "./gifts";
 import { boostScale } from "./hurt";
 import { settle, transfer, BANK, WEEKLY_RATE, PAY_LOW, PAY_HIGH } from "./money";
-import { hintsThisWeek, hintPick, hintLive, hintDealtWith, moneyTier, lovePoints, MONEY_LAVISH } from "./hints";
+import { hintsThisWeek, hintPick, hintLive, hintDealtWith, moneyTier, lovePoints, giftLovePoints, MONEY_LAVISH } from "./hints";
 
 export class GiftError extends Error {}
 
@@ -268,7 +268,10 @@ export async function sendGift(userId: string, to: { kind: "character" | "accoun
     ? await dealWithHint(userId, to.id, { giftId: gift?.id, money: gift ? 0 : amount }).catch(() => false) : false;
   // 💗 Money that was more than a gesture (over $99) moves the love slider a point.
   const tier = gift ? "small" as const : moneyTier(amount);
-  if (to.kind === "character" && lovePoints(tier) > 0) await nudgeLove(userId, to.id, lovePoints(tier)).catch(() => {});
+  // 💗 Money that was more than a gesture moves the love slider — and so does a present you really
+  // spent on, at a higher bar, because cash always lands and a thing might not.
+  const points = gift ? giftLovePoints(amount) : lovePoints(tier);
+  if (to.kind === "character" && points > 0) await nudgeLove(userId, to.id, points).catch(() => {});
   return { id: String(row.id), at: String(row.created_at), amount, wished, gift: stocked || gift, tier, dealt,
     wallet: wallet - amount, leftToday: Math.max(0, GIFTS_A_DAY - (sent + 1)) };
 }

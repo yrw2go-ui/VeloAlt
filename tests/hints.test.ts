@@ -1,5 +1,5 @@
 // Run: node --experimental-strip-types tests/hints.test.ts
-import { hintsThisWeek, hintPick, hintLive, hintDealtWith, moneyTier, lovePoints, lavishNote,
+import { hintsThisWeek, hintPick, hintLive, hintDealtWith, moneyTier, lovePoints, giftLovePoints, GIFT_LOVE_AT, lavishNote,
   HINT_ODDS, HINT_MS, MONEY_TRICK, MONEY_SPECIAL, MONEY_LAVISH } from "../app/lib/hints.ts";
 
 let bad = 0;
@@ -53,6 +53,13 @@ ok(moneyTier(5) === "small" && moneyTier(19) === "small", "under $20 is a gestur
 ok(moneyTier(20) === "trick" && moneyTier(99) === "trick", "$20 to $99 does the trick");
 ok(moneyTier(100) === "special" && moneyTier(499) === "special", `$${MONEY_SPECIAL} and up feels like something`);
 ok(moneyTier(500) === "lavish" && moneyTier(5000) === "lavish", `$${MONEY_LAVISH} and up is another thing entirely`);
+
+// 💗 A present you really spent on moves the love slider too — at a higher bar than cash, because
+// money always lands and a thing might not.
+ok(giftLovePoints(GIFT_LOVE_AT) === 1 && giftLovePoints(7350) === 1, `a present of $${GIFT_LOVE_AT} or more counts`);
+ok(giftLovePoints(GIFT_LOVE_AT - 1) === 0 && giftLovePoints(10) === 0, "…and anything under it doesn't");
+ok(GIFT_LOVE_AT > MONEY_SPECIAL, `cash gets there sooner ($${MONEY_SPECIAL}) than a present does ($${GIFT_LOVE_AT})`);
+ok(lovePoints(moneyTier(100)) === 1 && giftLovePoints(100) === 0, "…so $100 in cash counts where a $100 present doesn't");
 ok(lovePoints("special") === 1 && lovePoints("lavish") === 1, "over $99 is worth a point of love");
 ok(lovePoints("trick") === 0 && lovePoints("small") === 0, "…under it, none");
 
