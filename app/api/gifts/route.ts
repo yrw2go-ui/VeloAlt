@@ -49,7 +49,12 @@ export async function POST(req: NextRequest) {
         if (!allow(`giftedit:${me}`, [{ ms: 60_000, max: 60 }])) return bad("Slow down a moment.", 429);
         await editGift(String(b.giftId || ""), { name: b.name === undefined ? undefined : String(b.name),
           brand: b.brand === undefined ? undefined : String(b.brand), price: b.price === undefined ? undefined : Number(b.price) });
-        return NextResponse.json(await adminList());
+        // The screen swaps this one row for what comes back, so it is the row that goes back —
+        // not the whole list.
+        const stocked = new Set((await shopNow()).map(x => x.id));
+        const g = (await catalogue()).find(x => x.id === String(b.giftId || ""));
+        if (!g) return bad("That isn't one of the gifts.");
+        return NextResponse.json({ gift: { ...g, inShop: stocked.has(g.id) } });
       }
       case "rotating": {
         if (!(await isAdmin(me))) return bad("That's for admins.", 403);
