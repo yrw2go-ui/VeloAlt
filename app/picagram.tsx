@@ -38,7 +38,7 @@ function Avatar({ name, url, size = 34 }: { name: string; url: string | null; si
   return <span style={{ width: size, height: size, borderRadius: "50%", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: GRADS[0], color: "#fff", fontWeight: 800, fontSize: size * 0.42 }}>{name.slice(0, 1).toUpperCase()}</span>;
 }
 
-export default function Picagram({ name, userId, onChat, openProfile, onProfileOpened }: { name: string; userId?: string; onChat?: (characterId: string) => void; openProfile?: string | null; onProfileOpened?: () => void }) {
+export default function Picagram({ name, userId, onChat, openProfile, onProfileOpened, openDm, onDmOpened }: { name: string; userId?: string; onChat?: (characterId: string) => void; openProfile?: string | null; onProfileOpened?: () => void; openDm?: string | null; onDmOpened?: () => void }) {
   const [posts, setPosts] = useState<Post[] | null>(null);
   const [more, setMore] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -54,7 +54,9 @@ export default function Picagram({ name, userId, onChat, openProfile, onProfileO
   const [followingOpen, setFollowingOpen] = useState(!!place.following);
   // ✉️ DMs with accounts (characters chat in the normal chat).
   const [inbox, setInbox] = useState(!!place.inbox);
-  const [thread, setThread] = useState<string | null>(place.thread || null);
+  const [thread, setThread] = useState<string | null>(openDm || place.thread || null);
+  // ✉️ Sent here by a notification about a DM: her thread, not wherever you last were.
+  useEffect(() => { if (openDm) { setThread(openDm); setInbox(false); setProfile(null); onDmOpened?.(); } }, [openDm]); // eslint-disable-line react-hooks/exhaustive-deps
   const [dmUnread, setDmUnread] = useState(0);
   useEffect(() => {
     if (userId) savePlace(userId, { pica: { inbox, thread, profile, following: followingOpen, saved: savedOpen, mine } });

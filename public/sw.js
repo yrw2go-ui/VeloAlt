@@ -21,7 +21,16 @@ self.addEventListener("notificationclick", e => {
   const url = new URL((e.notification.data && e.notification.data.url) || "/", self.location.origin).href;
   e.waitUntil((async () => {
     const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-    for (const w of wins) { if (new URL(w.url).origin === self.location.origin) { await w.navigate(url).catch(() => {}); return w.focus(); } }
+    for (const w of wins) {
+      if (new URL(w.url).origin !== self.location.origin) continue;
+      // navigate() only works on a window this worker controls, and it rejects on the rest —
+      // which is most of them. When it won't go, ask the page to take itself there, so tapping
+      // a notification always lands on that conversation instead of wherever you last were.
+      try { const to = await w.navigate(url); if (to) { await to.focus(); return; } } catch (err) { /* not ours to drive */ }
+      try { w.postMessage({ type: "velo:open", url: url }); } catch (err) { /* nothing listening */ }
+      await w.focus();
+      return;
+    }
     return self.clients.openWindow(url);
   })());
 });
