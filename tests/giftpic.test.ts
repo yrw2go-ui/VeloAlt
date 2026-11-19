@@ -28,7 +28,11 @@ for (const [file, what] of [["thanks.ts", "a thank-you for a present"], ["peek.t
 // And the thank-you really does hand over her references.
 const thanks = src("thanks.ts");
 ok(/refs:\s*await referenceUrls\(ch\)/.test(thanks), "the thank-you hands over her reference pictures");
-ok(/reference pictures/.test(thanks), "…and tells the picture service it is the same woman");
+ok(/gift_same_woman/.test(thanks), "…and puts the \"it really is her\" line on it");
+// That line is editable wording now, so check the default itself still says it.
+const gifts = src("gifts.ts");
+ok(/key: "gift_same_woman"[\s\S]{0,400}reference pictures/.test(gifts), "…whose default tells the picture service it is the same woman");
+ok(/key: "gift_hands_held"[\s\S]{0,400}ONE hand/.test(gifts), "…and the hand budget is editable wording too");
 
 // 🚫 The guard that goes with it: strip her colouring ONLY when references are really in play,
 // because otherwise nothing is left to say what she looks like.

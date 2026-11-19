@@ -8,10 +8,13 @@
 // {curly} bits are filled in when the picture is made: {her} her name, {other} the other person's,
 // {who} whoever took it, {s} the plural "s" when there's more than one reference photo.
 import { sql } from "./db";
+import { GIFT_BITS } from "./gifts";
 
 export type Bit = { key: string; label: string; about: string; text: string };
 
 export const BITS: Bit[] = [
+  // 🎁 Every line on a photo she sends after a present arrives.
+  ...GIFT_BITS,
   {
     key: "ref",
     label: "Keeping her face the same",

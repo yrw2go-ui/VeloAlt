@@ -5,11 +5,18 @@ import { sql } from "../../lib/db";
 import { getCharacterFor } from "../../lib/characters";
 import { thankThem } from "../../lib/thanks";
 import { dmSend, dmGiftPhoto } from "../../lib/picaDm";
-import { shopFull, peopleToGift, sendGift, giftHistory, accountsFor, moveAcross, listMyGift, unlistMyGift, myGifts, closenessMap, catalogue, editGift, rotatingCount, setRotating, shopNow, GiftError, BANK, WEEKLY_RATE, PAY_LOW, PAY_HIGH } from "../../lib/giftsDb";
-import { MAX_MY_GIFTS } from "../../lib/gifts";
+import { shopFull, peopleToGift, sendGift, giftHistory, accountsFor, moveAcross, listMyGift, unlistMyGift, myGifts, closenessMap, catalogue, editGift, rotatingCount, setRotating, shopNow, addExtra, editExtra, removeExtra, GiftError, BANK, WEEKLY_RATE, PAY_LOW, PAY_HIGH } from "../../lib/giftsDb";
+import { MAX_MY_GIFTS, MAX_EXTRAS, GIFT_ICONS } from "../../lib/gifts";
 
 const UUID = /^[0-9a-f-]{36}$/i;
 const bad = (error: string, status = 400) => NextResponse.json({ error }, { status });
+/** Everything the Admin → Gifts screen shows, after any change. */
+async function adminList(_me: string) {
+  const stocked = new Set((await shopNow()).map(g => g.id));
+  const all = await catalogue();
+  return { gifts: all.map(g => ({ ...g, inShop: stocked.has(g.id) })), rotating: await rotatingCount(),
+    pool: all.filter(g => !g.always && !g.slot).length, icons: GIFT_ICONS, maxMine: MAX_EXTRAS, mineCount: all.filter(g => g.mine).length };
+}
 const isAdmin = async (me: string) => !!(await sql()`select is_admin from users where id = ${me}`)[0]?.is_admin;
 
 // 🎁 Picagifts: the shop, who you can send to and what they're hoping for, and sending it.
@@ -58,7 +65,7 @@ export async function POST(req: NextRequest) {
           const [u] = await sql()`select adult_confirmed_at from users where id = ${me}`;
           // How close she is, and whether this was a big one — both show in her face.
           const close = (await closenessMap(me)).get(id) || 0;
-          if (ch) said = await thankThem(me, ch, what, r.gift ? "gift" : "money", r.gift?.id || "", note, !!u?.adult_confirmed_at, close, r.amount >= 500 || r.wished)
+          if (ch) said = await thankThem(me, ch, what, r.gift ? "gift" : "money", r.gift?.id || "", note, !!u?.adult_confirmed_at, close, r.amount >= 500 || r.wished, r.wished)
             .catch(e => { console.error("gifts: thank you", e instanceof Error ? e.message : e); return null; });
         }
         return NextResponse.json({ sent: r, said, wallet: r.wallet, bank: (await accountsFor(me)).bank, history: await giftHistory(me, 20) });
@@ -77,8 +84,10 @@ export async function POST(req: NextRequest) {
       case "all": {
         if (!(await isAdmin(me))) return bad("That's for admins.");
         const stocked = new Set((await shopNow()).map(g => g.id));
-        return NextResponse.json({ gifts: (await catalogue()).map(g => ({ ...g, inShop: stocked.has(g.id) })),
-          rotating: await rotatingCount(), pool: (await catalogue()).filter(g => !g.always && !g.slot).length });
+        const all = await catalogue();
+        return NextResponse.json({ gifts: all.map(g => ({ ...g, inShop: stocked.has(g.id) })),
+          rotating: await rotatingCount(), pool: all.filter(g => !g.always && !g.slot).length,
+          icons: GIFT_ICONS, maxMine: MAX_EXTRAS, mineCount: all.filter(g => g.mine).length });
       }
       case "edit": {
         if (!(await isAdmin(me))) return bad("That's for admins.");
@@ -94,6 +103,27 @@ export async function POST(req: NextRequest) {
         const n = await setRotating(Number(b.rotating));
         const stocked = new Set((await shopNow()).map(g => g.id));
         return NextResponse.json({ rotating: n, gifts: (await catalogue()).map(g => ({ ...g, inShop: stocked.has(g.id) })) });
+      }
+      // 🛠️ Things you add to the catalogue yourself: your icon, your price, and whether it stays.
+      case "extra.add": {
+        if (!(await isAdmin(me))) return bad("That's for admins.");
+        if (!allow(`giftextra:${me}`, [{ ms: 60_000, max: 30 }])) return bad("Slow down a moment.", 429);
+        await addExtra({ name: String(b.name || ""), brand: String(b.brand || ""), price: Number(b.price),
+          emoji: String(b.emoji || ""), kind: String(b.kind || "treat"), always: b.always === true });
+        return NextResponse.json(await adminList(me));
+      }
+      case "extra.edit": {
+        if (!(await isAdmin(me))) return bad("That's for admins.");
+        await editExtra(String(b.giftId || ""), { name: b.name === undefined ? undefined : String(b.name),
+          brand: b.brand === undefined ? undefined : String(b.brand), price: b.price === undefined ? undefined : Number(b.price),
+          emoji: b.emoji === undefined ? undefined : String(b.emoji), kind: b.kind === undefined ? undefined : String(b.kind),
+          always: b.always === undefined ? undefined : b.always === true });
+        return NextResponse.json(await adminList(me));
+      }
+      case "extra.remove": {
+        if (!(await isAdmin(me))) return bad("That's for admins.");
+        if (!(await removeExtra(String(b.giftId || "")))) return bad("That isn't one of yours.");
+        return NextResponse.json(await adminList(me));
       }
       default: return bad("Unknown action.");
     }

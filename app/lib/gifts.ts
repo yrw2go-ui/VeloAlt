@@ -176,6 +176,22 @@ export function edited(list: Gift[], edits: Map<string, GiftEdit>): Gift[] {
 /** 🎁 How much you can give one person in a day — presents and cash together. */
 export const GIFTS_A_DAY = 5;
 
+/** 🛠️ How many things you can add to the catalogue yourself in Admin → Gifts. */
+export const MAX_EXTRAS = 20;
+
+/** The icons to pick from when you add one. */
+export const GIFT_ICONS = ["🎁", "👜", "👛", "🧥", "👗", "👙", "🩱", "👠", "👟", "🥾", "👢", "🩴", "📿", "💍", "💫", "⌚", "🕶️", "💄", "🧴", "💅", "🛁", "💆", "🎧", "📱", "📷", "💻", "🎮", "🔊", "💡", "🧋", "☕", "🍦", "🥡", "🍫", "🍷", "🎟️", "🎫", "🌹", "💐", "🕯️", "🏨", "🏟️", "⚽", "🏀", "📖", "🎨", "🎸", "🧸", "🪴", "🧣"];
+
+/**
+ * 🛍️ Something you added to the catalogue yourself: your icon, your price, and your say on whether
+ * it stays in the shop every week or takes its turn on the rotation with everything else.
+ */
+export type Extra = { id: string; name: string; brand: string; price: number; emoji: string; kind: Kind; always?: true };
+
+/** One of yours, as a gift the shop understands. */
+export const asGift = (e: Extra): Gift => ({ id: `extra:${e.id}`, name: e.name, brand: e.brand, price: e.price, emoji: e.emoji, kind: e.kind, ...(e.always ? { always: true as const } : {}) });
+export const isExtra = (id: string) => id.startsWith("extra:");
+
 /** 🔁 How many of the rotating things are in the shop in a week, unless Admin says otherwise. */
 export const ROTATING = 30;
 
@@ -208,16 +224,17 @@ export function salesFor(week: number, stock: Gift[]): Map<string, number> {
 export const reduced = (g: Gift, off?: number): Gift =>
   off ? { ...g, price: salePrice(g.price, off), was: g.price, off } : g;
 
-export function shopFor(week: number, rotating = ROTATING, edits?: Map<string, GiftEdit>): Gift[] {
+export function shopFor(week: number, rotating = ROTATING, edits?: Map<string, GiftEdit>, extra: Gift[] = []): Gift[] {
+  const ALL = extra.length ? [...GIFTS, ...extra] : GIFTS;
   // 👙 One bikini, one high-cut leotard, one necklace, one pair of platform heels — always there,
   // and a different one of each as the weeks go by.
-  const picks = SLOTS.map(sl => order(`slot:${sl}:${week}`, GIFTS.filter(g => g.slot === sl))[0]).filter(Boolean);
-  const always = GIFTS.filter(g => !g.slot && g.always);
-  const rest = GIFTS.filter(g => !g.slot && !g.always);
+  const picks = SLOTS.map(sl => order(`slot:${sl}:${week}`, ALL.filter(g => g.slot === sl))[0]).filter(Boolean);
+  const always = ALL.filter(g => !g.slot && g.always);
+  const rest = ALL.filter(g => !g.slot && !g.always);
   const picked = order(`shop:${week}`, rest).slice(0, Math.max(0, rotating));
   const keep = new Set<Gift>([...always, ...picked, ...picks]);
   // 🛠️ Hand edits go on BEFORE the sale, so a reduction comes off the price you set.
-  const stock = edits ? edited(GIFTS.filter(g => keep.has(g)), edits) : GIFTS.filter(g => keep.has(g));
+  const stock = edits ? edited(ALL.filter(g => keep.has(g)), edits) : ALL.filter(g => keep.has(g));
   const sales = salesFor(week, stock);
   return stock.map(g => reduced(g, sales.get(g.id)));
 }
@@ -228,11 +245,12 @@ export function shopFor(week: number, rotating = ROTATING, edits?: Map<string, G
  *  closer thing to want. */
 export const WANTS_YOURS_AT = 62;
 
-export function wishlistFor(whoId: string, week: number, mine: Gift[] = [], closeness = 100, edits?: Map<string, GiftEdit>): Gift[] {
+export function wishlistFor(whoId: string, week: number, mine: Gift[] = [], closeness = 100, edits?: Map<string, GiftEdit>, extra: Gift[] = []): Gift[] {
   // The everyday small ones aren't what anyone puts on a wishlist — a wishlist is for things people
   // hope for, not for a coffee. What you listed yourself only joins the pool once they're close.
   const yours = closeness >= WANTS_YOURS_AT ? mine : [];
-  const pool = edits ? edited(GIFTS.filter(g => !g.always), edits) : GIFTS.filter(g => !g.always);
+  const everything = extra.length ? [...GIFTS, ...extra] : GIFTS;
+  const pool = edits ? edited(everything.filter(g => !g.always), edits) : everything.filter(g => !g.always);
   return order(`wish:${whoId}:${week}`, [...pool, ...yours]).slice(0, 3);
 }
 
@@ -275,23 +293,184 @@ export function boostNote(boost: Boost | null, what: string, who: string): strin
   return `🎁 ${who} sent you ${what} in the last couple of days, and it landed: you're warmer with them than usual, quicker to want to see them, and you'd bend your day around them — slip out of work, skip a class, take the call you shouldn't — more readily than you normally would. Bring it up the way anyone would (pleased, teasing, a bit spoiled), never as a transaction, and never as something that bought you.`;
 }
 
+// 📝 The wording on a photo she sends after a present arrives — every line of it, exactly as it
+// goes out, so Settings → 📝 Photo wording can show it and you can change any of it. The defaults
+// live here and nowhere else: the editor reads them from this file and so does the code below, so
+// the two can never drift apart.
+//
+// {curly} bits are filled in when the picture is made:
+//   {thing}  what turned up, brand and all ("Gucci GG Marmont purse")
+//   {what}   the same, or the amount when it's money ("$500")
+//   {team}   the line about whose team it is
+
+export type GiftBit = { key: string; label: string; about: string; text: string };
+
+export const GIFT_BITS: GiftBit[] = [
+  // 📦 What the picture is OF.
+  {
+    key: "gift_holding_show",
+    label: "Holding up something she could have worn",
+    about: "A present she can wear, held up to the camera this time rather than worn.",
+    text: "holding up the {thing} they've just been sent, showing it off to the camera",
+  },
+  {
+    key: "gift_holding_plain",
+    label: "Holding up something she can't wear",
+    about: "A speaker, flowers, tickets — anything there's no wearing.",
+    text: "holding up the {thing} they've just been sent, pleased with it",
+  },
+  {
+    key: "gift_wearing",
+    label: "Wearing it",
+    about: "A present she has on. Nothing else is described for her to wear when this is used.",
+    text: "wearing the {thing} they've just been sent, showing it off to the camera",
+  },
+  {
+    key: "gift_cash",
+    label: "Money",
+    about: "When you sent cash rather than a thing.",
+    text: "holding up a fan of cash — {what} in notes — grinning at the camera",
+  },
+  {
+    key: "gift_theirs",
+    label: "Her own usual",
+    about: "The coffee, the pudding, the dinner — whatever THIS person actually orders.",
+    text: "with the {thing} they've just been sent — their OWN usual, the drink or the food THIS person actually orders (from their description, where they live, what they're like), never a stock answer and never tacos unless tacos are genuinely theirs — holding it up to the camera, pleased",
+  },
+  {
+    key: "gift_team_which",
+    label: "Whose team the gear is for",
+    about: "Goes inside both team-gear lines below.",
+    text: "their OWN team, the one they follow or play for (from their description: their college side, their city's team, the sport they play), in that team's real colours",
+  },
+  {
+    key: "gift_team_worn",
+    label: "Team gear, worn",
+    text: "wearing the team gear they've just been sent — {team} — showing it off to the camera",
+    about: "When she puts the team gear on.",
+  },
+  {
+    key: "gift_team_held",
+    label: "Team gear, held up",
+    about: "When she holds the team gear up instead.",
+    text: "holding up the team gear they've just been sent — {team} — to the camera, pleased with it",
+  },
+
+  // 🖐️ Hands. This is what stops a second pair of arms appearing.
+  {
+    key: "gift_hands_held",
+    label: "Hands when she's holding it",
+    about: "One hand on the present, one on the phone. Without this the picture grows extra arms to do both.",
+    text: "She is holding it in ONE hand only; her other arm is the one holding the phone that is taking the picture, reaching toward the camera and out of shot. She has exactly two arms and two hands in total — no third or fourth arm, and no spare hand supporting the thing she is holding.",
+  },
+  {
+    key: "gift_hands_worn",
+    label: "Hands when she's wearing it",
+    about: "Both hands free, so an ordinary two-handed selfie is fine.",
+    text: "She is wearing it, so both of her hands are free: she can hold the phone however she likes. She has exactly two arms and two hands in total.",
+  },
+
+  // 🙂 Her face. Which one is used follows her sliders — the top one that fits.
+  {
+    key: "gift_face_cold",
+    label: "Her face · cold",
+    about: "Used when her coldness is 7 or more.",
+    text: "barely smiling — pleased, and not about to make a fuss of it",
+  },
+  {
+    key: "gift_face_funny",
+    label: "Her face · funny",
+    about: "Used when her humour is 7 or more.",
+    text: "mid-laugh, caught enjoying herself",
+  },
+  {
+    key: "gift_face_flirty",
+    label: "Her face · flirty",
+    about: "Used when her flirty slider is 7 or more.",
+    text: "a slow pleased smile, looking straight down the lens",
+  },
+  {
+    key: "gift_face_lively",
+    label: "Her face · lively",
+    about: "Used when her energy is 7 or more.",
+    text: "beaming, caught mid-bounce",
+  },
+  {
+    key: "gift_face_moody",
+    label: "Her face · moody",
+    about: "Used when her moodiness is 7 or more.",
+    text: "a small, almost shy smile that doesn't quite reach the camera",
+  },
+  {
+    key: "gift_face_warm",
+    label: "Her face · anyone else",
+    about: "When none of the others fit.",
+    text: "a warm, genuine smile",
+  },
+
+  // 👀 Where she's looking, by how close the two of you are.
+  {
+    key: "gift_look_close",
+    label: "Looking · close to you",
+    about: "70 or more.",
+    text: "Looking right at the camera as though it's them.",
+  },
+  {
+    key: "gift_look_middle",
+    label: "Looking · knows you",
+    about: "45 to 69.",
+    text: "Half looking at the camera.",
+  },
+  {
+    key: "gift_look_new",
+    label: "Looking · barely knows you",
+    about: "Under 45.",
+    text: "Not quite looking at the camera — a little shy about it.",
+  },
+  {
+    key: "gift_big",
+    label: "When it was a big one",
+    about: "Added for cash over $500, or something off her own wishlist.",
+    text: "Caught off guard by it — it's more than she expected.",
+  },
+
+  // 📸 The closing line on every gift photo.
+  {
+    key: "gift_same_woman",
+    label: "That it's really her",
+    about: "The last words on a gift photo, after her face and what she's wearing.",
+    text: "It is clearly the same woman as in the reference pictures — her face, her hair, her build. Taken on her own phone where she is, candid and real.",
+  },
+];
+
+export type GiftWords = Record<string, string>;
+
+/** Every default, by key. */
+export const giftDefaults = (): GiftWords => Object.fromEntries(GIFT_BITS.map(b => [b.key, b.text]));
+
+const DEFAULTS = giftDefaults();
+
+/** One line: theirs if they changed it, otherwise the default — with the {curly} bits filled in. */
+export function say(words: GiftWords | undefined, key: string, vars: Record<string, string> = {}): string {
+  const text = (words && typeof words[key] === "string" && words[key].trim()) || DEFAULTS[key] || "";
+  return text.replace(/\{(\w+)\}/g, (_, k) => (vars[k] === undefined ? "" : vars[k])).replace(/\s+/g, " ").trim();
+}
+
 // 😊 Her face in the picture. The same present lands differently on different people: someone
 // cold gives you the smallest smile she's got, someone daft is already laughing, someone flirty is
 // looking at the camera over her shoulder. And how close you are changes it again — a woman who's
 // mad about you looks at the lens like it's you; one who barely knows you is politer about it.
-export function giftFace(t: { humor?: number; coldness?: number; flirty?: number; energetic?: number; moody?: number }, closeness: number, big = false): string {
+export function giftFace(t: { humor?: number; coldness?: number; flirty?: number; energetic?: number; moody?: number }, closeness: number, big = false, w?: GiftWords): string {
   const n = (v: unknown) => Math.max(0, Math.min(10, Number(v) || 0));
   const humor = n(t.humor), cold = n(t.coldness), flirty = n(t.flirty), lively = n(t.energetic), moody = n(t.moody);
-  const face = cold >= 7 ? "barely smiling — pleased, and not about to make a fuss of it"
-    : humor >= 7 ? "mid-laugh, caught enjoying herself"
-    : flirty >= 7 ? "a slow pleased smile, looking straight down the lens"
-    : lively >= 7 ? "beaming, caught mid-bounce"
-    : moody >= 7 ? "a small, almost shy smile that doesn't quite reach the camera"
-    : "a warm, genuine smile";
-  const toward = closeness >= 70 ? "Looking right at the camera as though it's them."
-    : closeness >= 45 ? "Half looking at the camera."
-    : "Not quite looking at the camera — a little shy about it.";
-  const more = big ? " Caught off guard by it — it's more than she expected." : "";
+  const face = say(w, cold >= 7 ? "gift_face_cold"
+    : humor >= 7 ? "gift_face_funny"
+    : flirty >= 7 ? "gift_face_flirty"
+    : lively >= 7 ? "gift_face_lively"
+    : moody >= 7 ? "gift_face_moody"
+    : "gift_face_warm");
+  const toward = say(w, closeness >= 70 ? "gift_look_close" : closeness >= 45 ? "gift_look_middle" : "gift_look_new");
+  const more = big ? ` ${say(w, "gift_big")}` : "";
   return `Her expression: ${face}. ${toward}${more}`;
 }
 
@@ -318,16 +497,6 @@ export function wearOdds(t: { humor?: number; coldness?: number; flirty?: number
 export const PHOTO_ODDS = 0.7;
 
 /**
- * 🖐️ How many hands the picture has to work with.
- *
- * A present she's HOLDING, photographed on her own phone, needs one hand for the thing and one for
- * the phone — and if nothing says so the picture grows a second pair of arms to manage both. A
- * present she's WEARING leaves both hands free, so an ordinary two-handed selfie is fine.
- */
-export const HANDS_HELD = "She is holding it in ONE hand only; her other arm is the one holding the phone that is taking the picture, reaching toward the camera and out of shot. She has exactly two arms and two hands in total — no third or fourth arm, and no spare hand supporting the thing she is holding.";
-export const HANDS_WORN = "She is wearing it, so both of her hands are free: she can hold the phone however she likes. She has exactly two arms and two hands in total.";
-
-/**
  * What the picture is of, when there is one.
  *
  * `wearing` says she has the present ON. When she has, nothing else is described for her to wear:
@@ -335,23 +504,23 @@ export const HANDS_WORN = "She is wearing it, so both of her hands are free: she
  * someone holding boots. Whether she has it on at all is `wears` (see wearOdds): someone who hardly
  * knows you holds the boots up to the camera rather than putting them on for you.
  */
-export function photoBrief(what: string, kind: "gift" | "money", g: Pick<Gift, "emoji" | "name" | "brand" | "kind"> & { team?: true; theirs?: true } | null, wears = 0.5, roll = Math.random()): { brief: string; wearing: boolean; hands: string } {
+export function photoBrief(what: string, kind: "gift" | "money", g: Pick<Gift, "emoji" | "name" | "brand" | "kind"> & { team?: true; theirs?: true } | null, wears = 0.5, roll = Math.random(), w?: GiftWords): { brief: string; wearing: boolean; hands: string } {
   const hasOn = roll < wears;
-  const held = (brief: string) => ({ brief, wearing: false, hands: HANDS_HELD });
-  const worn = (brief: string) => ({ brief, wearing: true, hands: HANDS_WORN });
-  if (kind === "money") return held(`holding up a fan of cash — ${what} in notes — grinning at the camera`);
+  const held = (brief: string) => ({ brief, wearing: false, hands: say(w, "gift_hands_held") });
+  const worn = (brief: string) => ({ brief, wearing: true, hands: say(w, "gift_hands_worn") });
+  if (kind === "money") return held(say(w, "gift_cash", { what, thing: what }));
   // One of yours, or something we don't know: she holds it up. ("a present" reads as "the present".)
-  if (!g || g.kind === "mine") return held(`holding up the ${what.replace(/^(?:an?|the)\s+/i, "") || "present"} they've just been sent, pleased with it`);
+  const plain = what.replace(/^(?:an?|the)\s+/i, "") || "present";
+  if (!g || g.kind === "mine") return held(say(w, "gift_holding_plain", { thing: plain, what }));
   // 🏟️ Team gear is whatever team is actually theirs — the one they follow, or the one they play for.
-  const team = `their OWN team, the one they follow or play for (from their description: their college side, their city's team, the sport they play), in that team's real colours`;
-  if (g.team) return hasOn
-    ? worn(`wearing the team gear they've just been sent — ${team} — showing it off to the camera`)
-    : held(`holding up the team gear they've just been sent — ${team} — to the camera, pleased with it`);
+  const team = say(w, "gift_team_which");
+  if (g.team) return hasOn ? worn(say(w, "gift_team_worn", { team })) : held(say(w, "gift_team_held", { team }));
   // ☕🍦🥡 A coffee, a pudding, dinner: whatever THIS person actually orders, not a stock answer.
-  if (g.theirs) return held(`with the ${g.name} they've just been sent — their OWN usual, the drink or the food THIS person actually orders (from their description, where they live, what they're like), never a stock answer and never tacos unless tacos are genuinely theirs — holding it up to the camera, pleased`);
+  if (g.theirs) return held(say(w, "gift_theirs", { thing: g.name, what }));
   // 👗 Something she can wear: on, or held up to the camera — how often depends on who she is and
   // how well she knows you (wearOdds).
+  const named = `${g.brand} ${g.name}`.trim();
   const canWear = ["clothes", "shoes", "jewellery", "bag"].includes(g.kind);
-  if (canWear && hasOn) return worn(`wearing the ${g.brand} ${g.name} they've just been sent, showing it off to the camera`);
-  return held(`holding up the ${g.brand} ${g.name} they've just been sent${canWear ? ", showing it off to the camera" : ", pleased with it"}`);
+  if (canWear && hasOn) return worn(say(w, "gift_wearing", { thing: named, what }));
+  return held(say(w, canWear ? "gift_holding_show" : "gift_holding_plain", { thing: named, what }));
 }

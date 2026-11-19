@@ -152,7 +152,11 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
   // (Their own peek edits go through exactly as written, as always.)
   const hasRefs = !ctx.raw && (ctx.refs.length > 0 || !!ctx.other?.refs?.length || (ctx.people || []).some(p => p.refs.length > 0));
   const said = scrub(String(a.description || "").replace(/\s+/g, " ").trim());
-  const desc = cut(noLipBite(hasRefs ? noLooks(said) : said), ctx.raw ? 1500 : 400);
+  // ✂️ Room enough for the whole description. It used to stop at 400, which was fine for the
+  // sentence or two a character writes — but a gift photo's description is built up in pieces (what
+  // it is, her face, that it's really her, which hand holds what) and the last piece, the one about
+  // hands, was being cut off before it ever reached the picture service.
+  const desc = cut(noLipBite(hasRefs ? noLooks(said) : said), ctx.raw ? 1500 : 900);
   if (desc.length < 3) throw new MediaError("Describe what to show in a few words.");
   if (!ctx.raw && (NEVER.test(desc) || (!ctx.romantic && SUGGESTIVE.test(desc)))) throw new MediaError(ctx.romantic
     ? "That can't be sent — it can be flirty and PG-13, but never nudity, lingerie or anything explicit. Tell them so playfully and offer something else."

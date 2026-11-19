@@ -9,11 +9,21 @@ import { scrub } from "./secrets";
 import { startMedia, mediaNote, MediaError } from "./media";
 import { mediaMood, allowsSuggestive, cleanTraits } from "./traits";
 import { referenceUrls, type Character } from "./characters";
-import { giftById, photoBrief, giftFace, wearOdds, PHOTO_ODDS } from "./gifts";
+import { giftById, photoBrief, giftFace, wearOdds, say, PHOTO_ODDS } from "./gifts";
+import { wordingFor } from "./wording";
+import { hurtNote, photoOdds, warmth, moodOf } from "./hurt";
+import { happyFor, saveHappy } from "./characters";
 
 
 /** 💬 She writes back about it, straight away, and usually sends a picture with it. */
-export async function thankThem(userId: string, ch: Character, what: string, kind: "gift" | "money", giftId: string, note: string, adult: boolean, closeness = 50, big = false) {
+export async function thankThem(userId: string, ch: Character, what: string, kind: "gift" | "money", giftId: string, note: string, adult: boolean, closeness = 50, big = false, wished = false) {
+  // 💔 How she is with you right now, and how many presents have landed in the last couple of days.
+  // A present from someone who has hurt you doesn't land the way it would on a good day.
+  const happy = await happyFor(userId, ch).catch(() => 60);
+  const [{ n: recent }] = await sql()`select count(*)::int as n from pica_gift_sent
+    where user_id = ${userId} and character_id = ${ch.id} and created_at > now() - interval '48 hours'`;
+  const gifts = Number(recent) || 1;
+  const sore = hurtNote(happy, gifts, String((await sql()`select name from users where id = ${userId}`)[0]?.name || "they"));
   const g = giftId ? giftById(giftId) : null;
   const [u] = await sql()`select name from users where id = ${userId}`;
   const them = String(u?.name || "they");
@@ -23,7 +33,7 @@ export async function thankThem(userId: string, ch: Character, what: string, kin
     `You are ${ch.name}. ${ch.personality || ""}
 ${them} has just sent you ${what}${g?.team ? " — gear for the team you actually follow or play for, whichever that is from who you are" : ""}${g?.theirs ? " — and it's YOUR usual: the exact drink or the exact food you actually order, name it, not a stock answer and not tacos unless tacos are genuinely your thing" : ""}${note ? ` with a note: "${note}"` : ""}. Write the message you'd send them the second it arrived — on your phone, straight away, nothing else going on.
 One or two short lines, your own voice, the way you actually text. Be pleased in the way YOU would be (delighted, winding them up, playing it cool, a bit overwhelmed, teasing them for spoiling you). Say something about the thing itself, not "thank you for the gift". Never mention a price, never call it a transaction, never grovel.${romantic && t.flirty >= 4 ? " Flirty is fine." : ""}
-Reply with the message only — no quotes, no name, no stage directions.`,
+${sore ? `\n${sore}` : ""}\nReply with the message only — no quotes, no name, no stage directions.`,
     `WHAT ARRIVED: ${what}`, 200).catch(() => "");
   const words = scrub(String(text || "").replace(/^["']|["']$/g, "").replace(/\s+/g, " ").trim()).slice(0, 400)
     || (kind === "money" ? `okay WHAT 😳 ${what}?? you didn't have to do that` : `it came!! ${what} 😍 you're ridiculous`);
@@ -35,19 +45,22 @@ Reply with the message only — no quotes, no name, no stage directions.`,
 
   // 📸 And usually a picture of her with it.
   let media = null;
-  if (Math.random() < PHOTO_ODDS) {
+  if (Math.random() < photoOdds(PHOTO_ODDS, happy, gifts)) {
     // 👗 On her, or held up to the camera: how close you are and who she is decide which.
-    const { brief, wearing, hands } = photoBrief(what, kind, g, wearOdds(t, closeness));
+    // 📝 Settings → Photo wording: every line of this is theirs to change.
+    const gw = await wordingFor(userId).catch(() => ({}));
+    const { brief, wearing, hands } = photoBrief(what, kind, g, wearOdds(t, closeness), Math.random(), gw);
     // 🏟️ Team gear: her own team, so whatever her description says she follows or plays for goes in.
     // 🏟️☕ Team gear and the edible ones are whatever is genuinely hers, so she's described to the
     // picture: her hobbies, her life, where she is.
     const who = g?.team || g?.theirs ? ` ${ch.hobbies || ""} ${ch.lives_in || ""} ${ch.backstory || ""}`.replace(/\s+/g, " ").trim().slice(0, 300) : "";
     // 😊 Her face is hers: her sliders, and how close the two of you are.
-    const face = giftFace(t, closeness, big);
+    const face = giftFace(t, closeness, big, gw);
+    const sameWoman = say(gw, "gift_same_woman");
     // 📸 with_me is what makes her OWN reference photos go to the picture service (the same flag a
     // peek and a Picagram DM use). Without it her references are fetched and then thrown away, the
     // picture is drawn from words alone, and it doesn't look like her.
-    media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: `${brief}. ${face}${who ? ` About her: ${who}` : ""} ${ch.casual_wear && !wearing ? `Wearing ${ch.casual_wear}.` : ""} It is clearly the same woman as in the reference pictures — her face, her hair, her build. Taken on her own phone where she is, candid and real. ${hands}` },
+    media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: `${brief}. ${face}${who ? ` About her: ${who}` : ""} ${ch.casual_wear && !wearing ? `Wearing ${ch.casual_wear}.` : ""} ${sameWoman} ${hands}` },
       { characterId: ch.id, who: ch.name, appearance: ch.appearance, refs: await referenceUrls(ch).catch(() => []),
         romantic: romantic && allowsSuggestive(ch.traits), mood: mediaMood(ch.traits), offer: false })
       .catch(e => { console[e instanceof MediaError ? "warn" : "error"]("thanks: photo", e instanceof Error ? e.message : e); return null; });
@@ -56,6 +69,9 @@ Reply with the message only — no quotes, no name, no stage directions.`,
     if (media && media.status !== "failed") await sql()`insert into velo_messages (user_id, role, content, character_id, media_id, created_at)
       values (${userId}, 'assistant', ${mediaNote(media.kind, media.status, media.description, null, null)}, ${ch.id}, ${media.id}, now() + interval '1 second')`;
   }
+  // 💗 It helps. Not a clean slate, but a step back toward where you were.
+  if (moodOf(happy) !== "fine") await saveHappy(userId, ch.id, happy + warmth(happy, gifts, wished, big), happy).catch(() => {});
+
   return { marker: { id: String(mark.id), at: String(mark.at), role: "user" as const, content: line },
     id: String(msg.id), at: String(msg.at), content: words, media };
 }
