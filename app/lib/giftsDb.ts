@@ -107,7 +107,7 @@ export async function giftExtras(): Promise<Gift[]> {
     emoji: String(r.emoji || "🎁"), kind: String(r.kind) as Gift["kind"], ...(r.always ? { always: true as const } : {}) }));
 }
 
-const KINDS = ["bag", "clothes", "shoes", "jewellery", "beauty", "tech", "treat", "home"];
+const KINDS = ["bag", "clothes", "shoes", "jewellery", "beauty", "tech", "treat", "home", "discreet"];
 const clean = (v: unknown, max: number) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, max);
 const checked = (name: string, price: number) => {
   if (!name) throw new GiftError("It needs a name.");

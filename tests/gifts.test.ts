@@ -7,7 +7,7 @@ const NOW = Date.parse("2026-11-18T12:00:00Z");
 const hoursAgo = (h: number) => NOW - h * 3_600_000;
 
 // 🎁 Fifty things, each priced like the real thing.
-ok(GIFTS.length === 50, `fifty gifts to choose from (${GIFTS.length})`);
+ok(GIFTS.length === 58, `fifty-eight gifts to choose from (${GIFTS.length})`);
 ok(new Set(GIFTS.map(g => g.id)).size === GIFTS.length, "…no two the same");
 ok(GIFTS.every(g => g.price >= 8 && g.price <= 8000), "…all priced like the real thing");
 ok(!!giftById("gucci-purse") && giftById("gucci-purse")!.price > 2000, "a Gucci purse costs what a Gucci purse costs");
@@ -22,7 +22,10 @@ const [a, b] = [shopFor(w), shopFor(w + 1)];
 ok(a.length >= 20 && a.length <= 36, `the shop holds a good spread (${a.length})`);
 ok(JSON.stringify(a) === JSON.stringify(shopFor(w)), "the same week always has the same shop");
 ok(JSON.stringify(a) !== JSON.stringify(b), "the next week's is different");
-ok(a.filter(g => g.price <= 200 && !g.slot).length === GIFTS.filter(g => g.price <= 200 && !g.slot).length, "the everyday things are always in");
+// 🤫 The private ones are not everyday things: cheap as some are, they take their turn.
+const everyday = (g: { price: number; slot?: string; kind: string }) => g.price <= 200 && !g.slot && g.kind !== "discreet";
+ok(a.filter(everyday).length === GIFTS.filter(everyday).length, "the everyday things are always in");
+ok(GIFTS.some(g => g.kind === "discreet" && g.price <= 200), "…and a cheap private one is not one of them");
 
 // 👙 One bikini, one high-cut leotard, one necklace, one pair of platform heels - every week.
 for (const week of [w, w + 1, w + 2, w + 3, w + 7, w + 30]) {

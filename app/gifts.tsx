@@ -196,7 +196,8 @@ export default function Gifts() {
                   background: isMyGift(g.id) ? "rgba(250,204,21,.12)" : wished(g) ? "rgba(244,114,182,.12)" : "var(--surface2)",
                   border: `1px solid ${isMyGift(g.id) ? "rgba(250,204,21,.55)" : wished(g) ? "rgba(244,114,182,.5)" : "var(--border)"}` }}>
                   <div style={{ fontSize: 22 }}>{isMyGift(g.id) && <span data-testid="mine-star" title="One you listed yourself" style={{ fontSize: 14, marginRight: 4 }}>⭐</span>}{g.emoji}{wished(g) && <span style={{ fontSize: 12, marginLeft: 6 }}>💭 on the list</span>}
-                    {!!g.off && <span data-testid={`sale-${g.id}`} style={{ fontSize: 11, fontWeight: 800, marginLeft: 6, padding: "2px 6px", borderRadius: 999, background: "rgba(34,197,94,.18)", border: "1px solid rgba(34,197,94,.5)", verticalAlign: "middle" }}>{g.off}% off</span>}</div>
+                    {!!g.off && <span data-testid={`sale-${g.id}`} style={{ fontSize: 11, fontWeight: 800, marginLeft: 6, padding: "2px 6px", borderRadius: 999, background: "rgba(34,197,94,.18)", border: "1px solid rgba(34,197,94,.5)", verticalAlign: "middle" }}>{g.off}% off</span>}
+                    {g.kind === "discreet" && <span data-testid={`discreet-${g.id}`} title="Private — just between the two of you" style={{ fontSize: 11, fontWeight: 800, marginLeft: 6, padding: "2px 6px", borderRadius: 999, background: "rgba(167,139,250,.18)", border: "1px solid rgba(167,139,250,.5)", verticalAlign: "middle" }}>🤫 Discreet</span>}</div>
                   <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.25 }}>{g.brand}<br /><span style={{ fontWeight: 500 }}>{g.name}</span></div>
                   <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 6, marginTop: "auto" }}>
                     <span className="muted" style={{ fontSize: 13, fontWeight: 700 }}>

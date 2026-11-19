@@ -527,6 +527,7 @@ const KINDS = [
   { id: "tech", label: "🎧 Tech" },
   { id: "treat", label: "🍷 A treat" },
   { id: "home", label: "🕯️ For the home" },
+  { id: "discreet", label: "🤫 Discreet (just between you two)" },
 ];
 
 type AdminGift = { id: string; name: string; brand: string; kind: string; price: number; emoji: string; always?: true; slot?: string; edited?: boolean; inShop?: boolean; mine?: true };
