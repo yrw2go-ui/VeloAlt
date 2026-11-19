@@ -443,7 +443,6 @@ export async function picaNote(userId: string, ch: Character, personName: string
 
 // 💃 Other accounts: good-looking women who aren't characters — follow them, like their posts, save their pictures.
 type U = { name: string; tz: string; adult: boolean; look: string };
-export const MAX_FOLLOWING = 70, MAX_ACCOUNTS = 120;
 /** One new account a day (up to 120 in all), to discover. */
 // 🙅 No look-alikes: a new woman can't reuse a handle, a first name or a surname that someone they
 // already follow (or one of their characters) has — "@chloehart / Chloe Hart" and
@@ -520,7 +519,6 @@ async function followNew(row: Record<string, unknown> | null, follow: boolean): 
 async function newAccount(userId: string, follow = false): Promise<Record<string, unknown> | null> {
   const t = await wordsFor(userId); // 🛠️ Admin → Messaging & wording
   const [{ all }] = await sql()`select count(*)::int as all from pica_accounts where user_id = ${userId} and character_id is null`;
-  if (all >= MAX_ACCOUNTS) return null;
   // 🏡 Now and then the new face is an ordinary person rather than another influencer: a sister,
   // a cousin, the neighbour. Each of the six turns up once.
   const used = new Set((await sql()`select folk from pica_accounts where user_id = ${userId} and folk is not null`).map(r => String(r.folk)));
@@ -615,7 +613,6 @@ async function accountPosts(userId: string, day: string, isToday: boolean, u: U,
 /** 👩 Make an account yourself: your specs, your bio, your two pictures. She goes up with a first post. */
 export async function picaCreateAccount(userId: string, spec: { name: string; handle: string; bio: string; look: string; lives: string; followers: number; follow: boolean; headshotMediaId: string; shotMediaId: string }): Promise<{ id: string; posted: boolean }> {
   const [{ all }] = await sql()`select count(*)::int as all from pica_accounts where user_id = ${userId} and character_id is null`;
-  if (all >= MAX_ACCOUNTS) throw new PicaLimit(`You have ${MAX_ACCOUNTS} Picagram people — delete some first.`);
   const handle = String(spec.handle || "").toLowerCase().replace(/[^a-z0-9._]/g, "").slice(0, 28);
   const name = scrub(String(spec.name || "")).replace(/\s+/g, " ").trim().slice(0, 60);
   if (handle.length < 2) throw new PicaLimit("Give her a handle (letters, numbers, dots or underscores).");
@@ -672,9 +669,7 @@ export async function newFaces(userId: string, n: number): Promise<{ made: numbe
   const [{ all, following }] = await sql()`select count(*) filter (where character_id is null)::int as all,
     count(*) filter (where followed and character_id is null)::int as following
     from pica_accounts where user_id = ${userId}`;
-  if (all >= MAX_ACCOUNTS) throw new PicaLimit(`You have ${MAX_ACCOUNTS} Picagram people — delete some first.`);
-  if (following >= MAX_FOLLOWING) throw new PicaLimit(`You follow ${MAX_FOLLOWING} accounts — unfollow some in 👥 Following to add new ones.`);
-  const room = Math.min(want, MAX_ACCOUNTS - all, MAX_FOLLOWING - following);
+  const room = want;
   const u = await userInfo(userId);
   const people: Record<string, unknown>[] = [];
   let error = "";
@@ -747,7 +742,6 @@ export class PicaLimit extends Error {}
 export async function picaFollow(userId: string, accountId: string, on: boolean): Promise<boolean> {
   if (on) {
     const [{ n }] = await sql()`select count(*)::int as n from pica_accounts where user_id = ${userId} and followed and character_id is null and id <> ${accountId}`;
-    if (n >= MAX_FOLLOWING) throw new PicaLimit(`You follow ${MAX_FOLLOWING} accounts — unfollow some in 👥 Following to add new ones.`);
   }
   const r = await sql()`update pica_accounts set followed = ${on}, followers = followers + ${on ? 1 : -1} where id = ${accountId} and user_id = ${userId} returning id, character_id, name`;
   if (!r.length) return false;
@@ -1136,7 +1130,7 @@ export async function picaFromPhoto(userId: string, mediaId: string): Promise<st
   while (taken.has(handle.toLowerCase()) || handle.length < 2) handle = `${handle.replace(/\d+$/, "")}${rand(1, 99)}`.slice(0, 28);
   const [{ n }] = await sql()`select count(*)::int as n from pica_accounts where user_id = ${userId} and followed and character_id is null`;
   const [acc] = await sql()`insert into pica_accounts (user_id, handle, name, bio, look, followers, followed, avatar_media_id)
-    values (${userId}, ${handle}, ${scrub(name).slice(0, 60)}, ${scrub(String(a.bio || "")).slice(0, 300)}, ${scrub(String(a.look || m.description || "")).slice(0, 600)}, ${Math.max(300, Math.min(900000, Number(a.followers) || rand(800, 30000)))}, ${n < MAX_FOLLOWING}, ${m.id}) returning id`;
+    values (${userId}, ${handle}, ${scrub(name).slice(0, 60)}, ${scrub(String(a.bio || "")).slice(0, 300)}, ${scrub(String(a.look || m.description || "")).slice(0, 600)}, ${Math.max(300, Math.min(900000, Number(a.followers) || rand(800, 30000)))}, true, ${m.id}) returning id`;
   // Her first post: the photo you liked.
   const [post] = await sql()`insert into pica_posts (user_id, account_id, kind, caption, photo, media_id, likes_target, created_at)
     values (${userId}, ${acc.id}, 'image', '✨', ${String(m.description || "").slice(0, 600)}, ${m.id}, ${rand(80, 900)}, now() - interval '3 hours') returning id`;
