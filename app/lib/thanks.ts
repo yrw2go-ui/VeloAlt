@@ -9,7 +9,8 @@ import { scrub } from "./secrets";
 import { startMedia, mediaNote, MediaError } from "./media";
 import { mediaMood, allowsSuggestive, cleanTraits } from "./traits";
 import { referenceUrls, type Character } from "./characters";
-import { giftById, photoBrief, giftFace, wearOdds, PHOTO_ODDS } from "./gifts";
+import { takeOn, photoOk, discreetNote } from "./discreet";
+import { giftById, photoBrief, giftFace, wearOdds, isDiscreetGift, PHOTO_ODDS } from "./gifts";
 
 
 /** 💬 She writes back about it, straight away, and usually sends a picture with it. */
@@ -19,10 +20,15 @@ export async function thankThem(userId: string, ch: Character, what: string, kin
   const them = String(u?.name || "they");
   const t = cleanTraits(ch.traits);
   const romantic = adult && !!ch.romantic;
+  // 🤫 A private, personal present only reads as romantic if the two of you are. To a friend — or
+  // to someone who barely knows you yet — it's a surprise, and she says so.
+  const discreet = isDiscreetGift(g);
+  const take = discreet ? takeOn({ romantic, closeness, flirty: t.flirty || 0, happy: 60 }) : null;
+  const privately = take ? discreetNote(take, them, romantic) : "";
   const text = await writeText(ch.brain,
     `You are ${ch.name}. ${ch.personality || ""}
 ${them} has just sent you ${what}${g?.team ? " — gear for the team you actually follow or play for, whichever that is from who you are" : ""}${g?.theirs ? " — and it's YOUR usual: the exact drink or the exact food you actually order, name it, not a stock answer and not tacos unless tacos are genuinely your thing" : ""}${note ? ` with a note: "${note}"` : ""}. Write the message you'd send them the second it arrived — on your phone, straight away, nothing else going on.
-One or two short lines, your own voice, the way you actually text. Be pleased in the way YOU would be (delighted, winding them up, playing it cool, a bit overwhelmed, teasing them for spoiling you). Say something about the thing itself, not "thank you for the gift". Never mention a price, never call it a transaction, never grovel.${romantic && t.flirty >= 4 ? " Flirty is fine." : ""}
+One or two short lines, your own voice, the way you actually text. Be pleased in the way YOU would be (delighted, winding them up, playing it cool, a bit overwhelmed, teasing them for spoiling you). Say something about the thing itself, not "thank you for the gift". Never mention a price, never call it a transaction, never grovel.${romantic && t.flirty >= 4 ? " Flirty is fine." : ""}${privately ? `\n${privately}` : ""}
 Reply with the message only — no quotes, no name, no stage directions.`,
     `WHAT ARRIVED: ${what}`, 200).catch(() => "");
   const words = scrub(String(text || "").replace(/^["']|["']$/g, "").replace(/\s+/g, " ").trim()).slice(0, 400)
@@ -35,7 +41,7 @@ Reply with the message only — no quotes, no name, no stage directions.`,
 
   // 📸 And usually a picture of her with it.
   let media = null;
-  if (Math.random() < PHOTO_ODDS) {
+  if ((!take || photoOk(take)) && Math.random() < PHOTO_ODDS) {
     // 👗 On her, or held up to the camera: how close you are and who she is decide which.
     const { brief, wearing } = photoBrief(what, kind, g, wearOdds(t, closeness));
     // 🏟️ Team gear: her own team, so whatever her description says she follows or plays for goes in.

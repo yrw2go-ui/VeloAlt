@@ -10,7 +10,14 @@ export type Gift = { id: string; name: string; brand: string; kind: Kind; price:
  *  is one does not. */
 export type Slot = "bikini" | "leotard" | "necklace" | "heels";
 export const SLOTS: Slot[] = ["bikini", "leotard", "necklace", "heels"];
-export type Kind = "bag" | "clothes" | "shoes" | "jewellery" | "beauty" | "tech" | "treat" | "home" | "mine";
+/**
+ * 🤫 "discreet" is the private, personal sort — something for her, and for the two of you, rather
+ * than something anyone would show off. How it lands depends entirely on what you are to her.
+ */
+export type Kind = "bag" | "clothes" | "shoes" | "jewellery" | "beauty" | "tech" | "treat" | "home" | "discreet" | "mine";
+
+/** 🤫 Is this one of the private ones? */
+export const isDiscreetGift = (g?: { kind?: string } | null) => g?.kind === "discreet";
 
 /** Everything there is. Prices are what the real thing costs, near enough. */
 export const GIFTS: Gift[] = [
@@ -61,6 +68,15 @@ export const GIFTS: Gift[] = [
   { id: "ysl-platforms", brand: "Saint Laurent", name: "Tribute platform heels", kind: "shoes", price: 1095, emoji: "👠", slot: "heels" },
   // ☕ The small ones. Always in the shop, never rotated out: the everyday things you'd actually
   // send someone on an ordinary Tuesday.
+  // 🤫 The private ones: between the two of you, never for showing off.
+  { id: "lace-set", brand: "", name: "lace lingerie set", kind: "discreet", price: 120, emoji: "👙" },
+  { id: "silk-slip", brand: "", name: "silk slip", kind: "discreet", price: 180, emoji: "👗" },
+  { id: "satin-robe", brand: "", name: "satin robe", kind: "discreet", price: 95, emoji: "🧥" },
+  { id: "silk-stockings", brand: "", name: "silk stockings", kind: "discreet", price: 45, emoji: "🧦" },
+  { id: "massage-oil", brand: "", name: "warming massage oil", kind: "discreet", price: 35, emoji: "🧴" },
+  { id: "silk-eye-mask", brand: "", name: "silk eye mask", kind: "discreet", price: 28, emoji: "🌙" },
+  { id: "bath-soak-two", brand: "", name: "bath soak for two", kind: "discreet", price: 40, emoji: "🛁" },
+  { id: "perfume-just-you", brand: "", name: "perfume only you get to smell", kind: "discreet", price: 150, emoji: "💫" },
   { id: "iced-latte", brand: "", name: "large iced latte", kind: "treat", price: 10, emoji: "🧋", always: true, theirs: true },
   { id: "ice-cream", brand: "", name: "ice cream or a shake", kind: "treat", price: 8, emoji: "🍦", always: true, theirs: true },
   { id: "food-delivery", brand: "", name: "dinner delivered", kind: "treat", price: 30, emoji: "🥡", always: true, theirs: true },
@@ -157,8 +173,10 @@ export function shopFor(week: number, rotating = ROTATING, edits?: Map<string, G
   // 👙 One bikini, one high-cut leotard, one necklace, one pair of platform heels — always there,
   // and a different one of each as the weeks go by.
   const picks = SLOTS.map(sl => order(`slot:${sl}:${week}`, ALL.filter(g => g.slot === sl))[0]).filter(Boolean);
-  const always = ALL.filter(g => !g.slot && (g.always || g.price <= 200));
-  const rest = ALL.filter(g => !g.slot && !g.always && g.price > 200);
+  // 🤫 The private ones take their turn like everything else, however little they cost — they are
+  // not an everyday small thing that is simply always in.
+  const always = ALL.filter(g => !g.slot && (g.always || (g.price <= 200 && !isDiscreetGift(g))));
+  const rest = ALL.filter(g => !g.slot && !g.always && (g.price > 200 || isDiscreetGift(g)));
   const picked = order(`shop:${week}`, rest).slice(0, Math.max(0, rotating));
   const keep = new Set<Gift>([...always, ...picked, ...picks]);
   const stock = ALL.filter(g => keep.has(g)).map(g => edited(g, edits?.get(g.id)));
@@ -172,13 +190,19 @@ export function shopFor(week: number, rotating = ROTATING, edits?: Map<string, G
  *  closer thing to want. */
 export const WANTS_YOURS_AT = 62;
 
+/** 🤫 How close she has to be before a private present is something she'd openly hope for. */
+export const DISCREET_WANTED_AT = 70;
+
 export function wishlistFor(whoId: string, week: number, mine: Gift[] = [], closeness = 100, got: Set<string> = new Set()): Gift[] {
   // The everyday small ones aren't what anyone puts on a wishlist — a wishlist is for things people
   // hope for, not for a coffee. What you listed yourself only joins the pool once they're close.
   const yours = closeness >= WANTS_YOURS_AT ? mine : [];
   // 🎁 Once you've actually given them one, it stops being something they want and the next
   // thing down takes its place — so there are always three, and never one they already have.
-  const left = [...GIFTS.filter(g => !g.always), ...yours].filter(g => !got.has(g.id));
+  // 🤫 And the private ones are only ever hoped for by someone already close to you — a friend
+  // doesn't put lingerie on a list she knows you can see.
+  const pool = GIFTS.filter(g => !g.always && (!isDiscreetGift(g) || closeness >= DISCREET_WANTED_AT));
+  const left = [...pool, ...yours].filter(g => !got.has(g.id));
   return order(`wish:${whoId}:${week}`, left).slice(0, 3);
 }
 
@@ -286,7 +310,7 @@ export function photoBrief(what: string, kind: "gift" | "money", g: Pick<Gift, "
   if (g.theirs) return held(`with the ${g.name} they've just been sent — their OWN usual, the drink or the food THIS person actually orders (from their description, where they live, what they're like), never a stock answer and never tacos unless tacos are genuinely theirs — holding it up to the camera, pleased`);
   // 👗 Something she can wear: on, or held up to the camera — how often depends on who she is and
   // how well she knows you (wearOdds).
-  const canWear = ["clothes", "shoes", "jewellery", "bag"].includes(g.kind);
+  const canWear = ["clothes", "shoes", "jewellery", "bag", "discreet"].includes(g.kind);
   if (canWear && hasOn) return { brief: `wearing the ${g.brand} ${g.name} they've just been sent, showing it off to the camera`, wearing: true };
   return held(`holding up the ${g.brand} ${g.name} they've just been sent${canWear ? ", showing it off to the camera" : ", pleased with it"}`);
 }
