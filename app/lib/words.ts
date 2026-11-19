@@ -390,9 +390,9 @@ export const SECTIONS: Section[] = [
     slots: [
       {
         key: "safe_real",
-        label: "No real people.",
+        label: "No real people, and everyone's an adult",
         about: "On every character and every Picagram person made in the app.",
-        text: "Never a real or famous person — everyone is fictional.",
+        text: "Never a real or famous person — everyone is fictional, and every one of them is an adult.",
       },
       {
         key: "safe_harm",
@@ -426,6 +426,9 @@ export function merge(saved: unknown): Words {
   const out = defaults();
   const s = saved && typeof saved === "object" ? (saved as Record<string, unknown>) : {};
   for (const [k, v] of Object.entries(s)) {
+    // Locked lines (safe_real, safe_harm) always come from this file. A saved override,
+    // including an older shorter safe_real, is ignored.
+    if (locked(k)) continue;
     const t = String(v ?? "").replace(/[ \t]+/g, " ").trim().slice(0, 2000);
     if (byKey.has(k) && t) out[k] = t;
   }
@@ -437,6 +440,7 @@ export function keepEdits(input: unknown): Words {
   const d = defaults(), out: Words = {};
   const s = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
   for (const [k, v] of Object.entries(s)) {
+    if (locked(k)) continue;
     const t = String(v ?? "").replace(/[ \t]+/g, " ").trim().slice(0, 2000);
     if (byKey.has(k) && t && t !== d[k]) out[k] = t;
   }

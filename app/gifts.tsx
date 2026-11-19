@@ -84,7 +84,7 @@ export default function Gifts() {
   };
 
   return (
-    <div style={{ flex: 1, overflowY: "auto", padding: 14, display: "flex", flexDirection: "column", gap: 14 }}>
+    <div style={{ flex: 1, width: "100%", minWidth: 0, maxWidth: "100%", overflowY: "auto", padding: 14, display: "flex", flexDirection: "column", gap: 14 }}>
       <div style={{ fontWeight: 800, fontSize: 18 }}>🎁 Picagifts</div>
       {/* 💳 What you can spend now, and the bank it comes from. */}
       <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, borderRadius: 14, background: "var(--surface2)", border: "1px solid var(--border)" }}>

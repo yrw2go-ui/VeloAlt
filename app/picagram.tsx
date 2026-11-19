@@ -149,7 +149,7 @@ export default function Picagram({ name, userId, onChat, openProfile, onProfileO
       {inbox && <Inbox onClose={() => setInbox(false)} onOpen={id => setThread(id)} />}
       {thread && <Thread id={thread} onClose={() => setThread(null)} onProfile={id => { setThread(null); setInbox(false); setProfile(id); }} />}
       {followingOpen && <Following onClose={() => setFollowingOpen(false)} onUnfollow={acc => setFollowed(acc, false)} onOpen={id => { setFollowingOpen(false); setProfile(id); }}
-        onNewFaces={names => { setFollowingOpen(false); setNote(`✨ ${names.join(", ")} just posted — have a look.`); load(true); }} />}
+        onNewFaces={(names, error) => { setFollowingOpen(false); setNote(error ? `✨ ${names.join(", ")} just posted. ${error}` : `✨ ${names.join(", ")} just posted — have a look.`); load(true); }} />}
       {savedOpen && <Saved onClose={() => setSavedOpen(false)} />}
       {composing && <Composer onClose={() => setComposing(false)} onPosted={() => { setComposing(false); load(true); }} />}
       {mine && <MyProfile name={name} onClose={() => setMine(false)} />}
@@ -702,7 +702,7 @@ function Saved({ onClose }: { onClose: () => void }) {
 }
 
 /** 👥 Who you follow (up to 70) — unfollow some to make room for new ones. */
-function Following({ onClose, onUnfollow, onOpen, onNewFaces }: { onClose: () => void; onUnfollow: (id: string) => void; onOpen: (id: string) => void; onNewFaces?: (names: string[]) => void }) {
+function Following({ onClose, onUnfollow, onOpen, onNewFaces }: { onClose: () => void; onUnfollow: (id: string) => void; onOpen: (id: string) => void; onNewFaces?: (names: string[], error?: string) => void }) {
   useBack(true, onClose); // the phone's back button closes this, one step at a time
   const [list, setList] = useState<{ id: string; handle: string; name: string; avatar: string | null; friend: boolean; character_id: string | null; married?: boolean }[] | null>(null);
   // 🙈 Your characters: hide their posts without them ever knowing (unlike unfollowing).
@@ -717,12 +717,10 @@ function Following({ onClose, onUnfollow, onOpen, onNewFaces }: { onClose: () =>
   const newFaces = async () => {
     setBusy(true); setSaid("✨ Bringing three new people in — a moment…");
     try {
-      const r = await api<{ made: number; names: string[] }>("/api/pica", { action: "newfaces", count: 3 });
-      // 👀 Straight to the feed with their posts on top — a line of text here is easy to miss.
-      if (r.made && onNewFaces) { onNewFaces(r.names); return; }
-      setSaid(r.made ? `✨ ${r.names.join(", ")} just posted — pull down the feed to see them.` : "Couldn't bring anyone new in just now — try again in a moment.");
-    } catch (e) { setSaid(e instanceof Error ? e.message : "Couldn't bring anyone new in."); }
-    setBusy(false);
+      const r = await api<{ made: number; names: string[]; error?: string }>("/api/pica", { action: "newfaces", count: 3 });
+      if (!r.made) { setSaid(r.error || "Couldn't bring anyone new in just now — try again in a moment."); setBusy(false); return; }
+      onNewFaces?.(r.names, r.error);
+    } catch (e) { setSaid(e instanceof Error && e.message ? e.message : "Couldn't bring anyone new in."); setBusy(false); }
   };
   useEffect(() => { api<{ accounts: NonNullable<typeof list> }>("/api/pica", { action: "following" }).then(r => setList(r.accounts)).catch(() => setList([])); }, []);
   useEffect(() => { api<{ characters: NonNullable<typeof chars> }>("/api/pica", { action: "characters" }).then(r => setChars(r.characters)).catch(() => setChars([])); }, []);
@@ -750,7 +748,7 @@ function Following({ onClose, onUnfollow, onOpen, onNewFaces }: { onClose: () =>
         <button className="ghost" onClick={newFaces} disabled={busy} data-testid="pica-new-faces" style={{ padding: "4px 10px", fontSize: 13 }}>{busy ? "…" : "✨ 3 new faces"}</button>
       </div>
       <div style={{ maxWidth: 560, margin: "0 auto" }}>
-        {said && <div data-testid="pica-new-faces-said" className="muted" style={{ padding: "10px 14px", fontSize: 13 }}>{said}</div>}
+        {said && <div data-testid="pica-new-faces-said" role="status" style={{ margin: "10px 14px", padding: "10px 12px", borderRadius: 12, fontSize: 14, background: said.startsWith("✨") && !said.includes("Couldn't") ? "rgba(236,72,153,.14)" : "rgba(245,158,11,.15)", border: "1px solid rgba(245,158,11,.45)" }}>{said.startsWith("✨") ? said : `⚠️ ${said}`}</div>}
         {list && !list.length && <div className="muted" style={{ textAlign: "center", padding: 24 }}>You&apos;re not following anyone yet</div>}
         {(list || []).map(a => (
           <div key={a.id} className="row" data-testid="pica-following-row" style={{ gap: 10, padding: "10px 14px", borderBottom: "1px solid var(--border)" }}>
