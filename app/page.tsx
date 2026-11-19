@@ -96,7 +96,7 @@ const urlParam = (k: string) => (typeof location === "undefined" ? null : new UR
 function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   // Back from Stripe checkout / billing: open Settings. A tapped notification opens that chat. Otherwise: right where they were.
   const [place] = useState<Place>(() => (typeof window === "undefined" ? {} : readPlace(userId)));
-  const [tab, setTab] = useState<Tab>(() => (urlParam("tab") === "settings" ? "settings" : urlParam("chat") ? "chat" : place.tab && TABS.some(t => t.id === place.tab) ? place.tab : "chat"));
+  const [tab, setTab] = useState<Tab>(() => (urlParam("tab") === "settings" ? "settings" : urlParam("chat") ? "chat" : urlParam("dm") ? "pica" : place.tab && TABS.some(t => t.id === place.tab) ? place.tab : "chat"));
   const [name, setName] = useState("");
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profileTick, setProfileTick] = useState(0);
@@ -115,6 +115,8 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   // ⬅️ Back from any other tab goes to Chat first, and only then out of the app.
   useBack(tab !== "chat", () => setTab("chat"));
   // A tapped notification opens that chat (?chat=<character id>, or "velo").
+  // 🔔 A notification about a DM: open her thread.
+  const [picaDm, setPicaDm] = useState<string | null>(() => urlParam("dm"));
   const [withId, setWithId] = useState<string | null>(() => { const c = urlParam("chat"); return c ? (c !== "velo" ? c : null) : place.withId || null; });
   const [editing, setEditing] = useState<Character | "new" | null>(null);
   // ✨ ＋ New first asks: make one for me (a filled-in draft), or start from scratch.
@@ -201,6 +203,14 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
     })().catch(() => {});
   }, [userId, profileTick]);
   // Clean the Stripe return params off the address bar.
+  // 🔔 Tapped a notification while the app was already open: the worker can't always steer the
+  // window itself, so it passes the address here and we go there.
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.serviceWorker) return;
+    const go = (e: MessageEvent) => { const d = e.data as { type?: string; url?: string } | null; if (d && d.type === "velo:open" && typeof d.url === "string") location.href = d.url; };
+    navigator.serviceWorker.addEventListener("message", go);
+    return () => navigator.serviceWorker.removeEventListener("message", go);
+  }, []);
   useEffect(() => { if (location.search) history.replaceState(null, "", "/"); }, []);
 
   // ⏰ Due reminders pop up (checked every 30s and when the app comes back).
@@ -437,7 +447,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
         {tab === "chat" && !inGroup && !(groupId && !groupsLoaded) && <Chat key={`${withChar?.id || "velo"}-${chatTick}`} startPlan={startingPlan} onPlanStarted={() => setStartPlan(null)} brains={brains} userId={userId} name={name} onChanged={bump} added={chatAdd} onAdded={() => setChatAdd(null)} character={withChar} adult={!!profile?.adultConfirmed} onAdult={() => setProfileTick(t => t + 1)} onHistory={h => { chatHistory.current = h; setHistoryCount(h.length); }}
           onNewCharacter={() => api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => setChars(r.characters)).catch(() => {})}
           others={chars.map(c => ({ id: c.id, name: c.name, pica_handle: c.pica_handle || null }))} onSocial={id => { setPicaOpen(id); setTab("pica"); }} onGroup={g => { setGroups(gs => [g, ...gs.filter(x => x.id !== g.id)]); setGroupId(g.id); }} />}
-        {tab === "pica" && <Picagram name={name} userId={userId} openProfile={picaOpen} onProfileOpened={() => setPicaOpen(null)} onChat={id => api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => { setChars(r.characters); setTab("chat"); pickChat(id); }).catch(() => {})} />}
+        {tab === "pica" && <Picagram name={name} userId={userId} openProfile={picaOpen} onProfileOpened={() => setPicaOpen(null)} openDm={picaDm} onDmOpened={() => setPicaDm(null)} onChat={id => api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => { setChars(r.characters); setTab("chat"); pickChat(id); }).catch(() => {})} />}
         {tab === "gifts" && <Gifts />}
         {tab === "today" && <Today refresh={refresh} />}
         {tab === "memory" && <Memory refresh={refresh} />}
