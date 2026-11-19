@@ -575,7 +575,7 @@ export function GiftsAdminCard() {
         .then(load).catch(e => setErr(e instanceof Error ? e.message : "Couldn't save that one."));
     } else {
       await api<{ gift: AdminGift }>("/api/gifts", { action: "edit", giftId: g.id, brand: d.brand, name: d.name, price: Number(d.price) })
-        .then(r => setGifts(list => (list || []).map(x => (x.id === g.id ? r.gift : x))))
+        .then(r => setGifts(list => (list || []).map(x => (x.id === g.id && r?.gift ? r.gift : x))))
         .catch(e => setErr(e instanceof Error ? e.message : "Couldn't save that one."));
     }
     setBusy("");
