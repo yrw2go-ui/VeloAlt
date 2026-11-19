@@ -27,7 +27,15 @@ export function CharacterFace({ c, size }: { c: Pick<Character, "name" | "portra
   return <span aria-label={c.name} style={{ display: "flex", flexShrink: 0, width: size, height: size, borderRadius: "50%", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, var(--accent), var(--accent2))", color: "#fff", fontWeight: 800, fontSize: size * 0.42 }}>{c.name.slice(0, 1).toUpperCase()}</span>;
 }
 
-const chip = (on: boolean, busy?: "work" | "class" | null, home?: boolean, together?: boolean) => ({ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, padding: "4px 10px 4px 4px", borderRadius: 999, cursor: "pointer", fontSize: 13, fontWeight: 700,
+/** 🏷️ On a chip: her first name, and her surname down to its initial, so more of them fit. */
+const shortName = (full: string) => {
+  const bits = String(full || "").trim().split(/\s+/);
+  if (bits.length < 2) return bits[0] || "";
+  const last = bits[bits.length - 1];
+  return `${bits.slice(0, -1).join(" ")} ${last.slice(0, 1).toUpperCase()}.`;
+};
+
+const chip = (on: boolean, busy?: "work" | "class" | null, home?: boolean, together?: boolean) => ({ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, padding: "4px 10px 4px 4px", borderRadius: 999, cursor: "pointer", fontSize: 12, fontWeight: 700,
   // 🎓 in class: yellow. 💼 at work: orange. The ring stays when she's ditched it — she gets a 😏 instead.
   // 🧍🎥 together right now (in person or on a video chat): a faint blue hue, over everything else.
   // 🏠 home (someone who lives with you): faint green.
@@ -76,12 +84,12 @@ export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdi
 }) {
   if (activeGroup) active = "__group";
   return (
-    <div data-testid="character-strip" style={{ display: "flex", flexWrap: "wrap", alignContent: "flex-start", gap: 8, width: "100%", minWidth: 0, maxWidth: "100%", flexShrink: 0, maxHeight: 136, overflowY: "auto", padding: "12px 12px 8px", borderBottom: "1px solid var(--border)" }}>
+    <div data-testid="character-strip" style={{ display: "flex", flexWrap: "wrap", alignContent: "flex-start", justifyContent: "space-between", gap: 8, width: "100%", minWidth: 0, maxWidth: "100%", flexShrink: 0, maxHeight: 136, overflowY: "auto", padding: "12px 12px 8px", borderBottom: "1px solid var(--border)" }}>
       <button style={{ ...chip(active === null), position: "relative" }} onClick={() => onPick(null)} aria-pressed={active === null}><VeloAvatar size={26} /> Velo<Badge n={active === null ? 0 : unread.velo} /></button>
       {characters.map(c => (
         <button key={c.id} style={{ ...chip(active === c.id, c.busy, c.home, c.together), position: "relative" }} aria-pressed={active === c.id} data-busy={c.busy || undefined} data-ditched={c.ditched ? "yes" : undefined} data-home={c.home ? "yes" : undefined} data-together={c.together ? "yes" : undefined}
           title={c.together ? `You're with ${c.name} right now` : c.ditched ? `${c.name} should be ${c.busy === "class" ? "in class" : "at work"} — ${c.voice_kind === "male" ? "he's" : "she's"} not` : c.busy === "work" ? `${c.name} is at work` : c.busy === "class" ? `${c.name} is in class` : undefined} onClick={() => (active !== c.id ? onPick(c.id) : admin ? onEdit(c) : undefined)}>
-          <CharacterFace c={c} size={26} /> <AtYours c={c} /><Hinting c={c} />{c.name}<Ditched c={c} /><Attached c={c} /><Standing c={c} />{admin && active === c.id ? " ✎" : ""}<Badge n={active === c.id ? 0 : unread[c.id]} />
+          <CharacterFace c={c} size={26} /> <AtYours c={c} /><Hinting c={c} />{shortName(c.name)}<Ditched c={c} /><Attached c={c} /><Standing c={c} />{admin && active === c.id ? " ✎" : ""}<Badge n={active === c.id ? 0 : unread[c.id]} />
         </button>
       ))}
       {groups.map(g => (
