@@ -2,7 +2,7 @@
 // the rest text), strangers and friends like and comment, and the person can post too. Posts keep
 // coming even on days they don't look. Characters know about it: their own posts (and whether the
 // person saw, liked or commented), the person's posts, and when they're out of town on vacation.
-import { sql } from "./db";
+import { missingSchema, sql } from "./db";
 import { writeText } from "./llm";
 import { scrub } from "./secrets";
 import { listCharacters, referenceUrls, type Character } from "./characters";
@@ -23,6 +23,7 @@ import { hobbyRule } from "./hobbies";
 
 
 import { TONES, hash, shotFor, toneFor } from "./shots";
+import { plainFacePhoto } from "./facePhoto";
 import { FOLKS, type Folk, folkNote, folkMemory, FOLK_SUGGESTIVE } from "./folks";
 import { noJargon } from "./text";
 import { homeOf, homeText, livesNote, FAR_CHANCE } from "./where";
@@ -504,11 +505,19 @@ JSON only: {"name":"First Last (a plain modern American name)","handle":"lowerca
   if (tied) {
     await sql()`insert into velo_memories (user_id, character_id, kind, text) values (${userId}, ${tied.id}, 'fact', ${folkMemory(f, name, handle, String(tied.name)).slice(0, 600)})`;
   }
-  if (row) await ensurePersona(userId, String(row.id)).catch(() => {});
+  if (row) void ensurePersona(userId, String(row.id)).catch(() => {});
   return row || null;
 }
 
-async function newAccount(userId: string): Promise<Record<string, unknown> | null> {
+/** The button asked for her, so she shows up in Following (the daily new face stays a suggestion). */
+async function followNew(row: Record<string, unknown> | null, follow: boolean): Promise<Record<string, unknown> | null> {
+  if (!row || !follow) return row;
+  await sql()`update pica_accounts set followed = true where id = ${String(row.id)}`;
+  row.followed = true;
+  return row;
+}
+
+async function newAccount(userId: string, follow = false): Promise<Record<string, unknown> | null> {
   const t = await wordsFor(userId); // 🛠️ Admin → Messaging & wording
   const [{ all }] = await sql()`select count(*)::int as all from pica_accounts where user_id = ${userId} and character_id is null`;
   if (all >= MAX_ACCOUNTS) return null;
@@ -518,7 +527,7 @@ async function newAccount(userId: string): Promise<Record<string, unknown> | nul
   const left = FOLKS.filter(f => !used.has(f.key));
   if (left.length && Math.random() < 0.4) {
     const made = await newFolk(userId, left[Math.floor(Math.random() * left.length)]).catch(e => { console.error("pica: ordinary person", e instanceof Error ? e.message : e); return null; });
-    if (made) return made;
+    if (made) return followNew(made, follow);
   }
   // Everyone already in their life: the women they follow and their own characters.
   const accounts = (await sql()`select handle, name from pica_accounts where user_id = ${userId}`).map(r => ({ handle: String(r.handle), name: String(r.name) }));
@@ -550,8 +559,8 @@ JSON only: {"name":"First Last (a plain modern American name, as described above
     if (clash) { console.warn(`pica: ${name} (@${handle}) is too close to ${clash} — trying again`); continue; }
     const lives = scrub(String(a.lives || (home && !far ? homeText(home) : ""))).replace(/\s+/g, " ").trim().slice(0, 120);
     const [row] = await sql()`insert into pica_accounts (user_id, handle, name, bio, look, lives, followers, lesbian) values (${userId}, ${handle}, ${name}, ${scrub(String(a.bio || "")).slice(0, 300)}, ${scrub(String(a.look || "")).slice(0, 600)}, ${lives || null}, ${Math.max(2000, Math.min(900000, Number(a.followers) || rand(5000, 200000)))}, ${intoWomen}) returning *`;
-    if (row) await ensurePersona(userId, String(row.id)).catch(() => {});
-    return row || null;
+    if (row) void ensurePersona(userId, String(row.id)).catch(() => {});
+    return followNew(row || null, follow);
   }
   return null;
 }
@@ -657,21 +666,47 @@ export async function putUpUploads(userId: string, a: Record<string, unknown>, m
   return order.length;
 }
 
-/** ✨ New women, posting right now: invent each one and put a first photo of her up straight away. */
-export async function newFaces(userId: string, n: number): Promise<{ made: number; names: string[] }> {
+/** ✨ New women, posting right now: invent each one, follow her, and put a first photo up straight away. */
+export async function newFaces(userId: string, n: number): Promise<{ made: number; names: string[]; error?: string }> {
+  const want = Math.max(1, Math.min(5, n));
+  const [{ all, following }] = await sql()`select count(*) filter (where character_id is null)::int as all,
+    count(*) filter (where followed and character_id is null)::int as following
+    from pica_accounts where user_id = ${userId}`;
+  if (all >= MAX_ACCOUNTS) throw new PicaLimit(`You have ${MAX_ACCOUNTS} Picagram people — delete some first.`);
+  if (following >= MAX_FOLLOWING) throw new PicaLimit(`You follow ${MAX_FOLLOWING} accounts — unfollow some in 👥 Following to add new ones.`);
+  const room = Math.min(want, MAX_ACCOUNTS - all, MAX_FOLLOWING - following);
   const u = await userInfo(userId);
-  const names: string[] = [];
-  for (let i = 0; i < Math.max(1, Math.min(5, n)); i++) {
-    const a = await newAccount(userId).catch(e => { console.error("pica: new face", e instanceof Error ? e.message : e); return null; });
-    if (!a) break;
-    const posted = await postFor(userId, a, u, Date.now() - (n - i) * rand(2, 12) * 60_000).catch(e => { console.error("pica: new face post", e instanceof Error ? e.message : e); return false; });
-    if (posted) names.push(String(a.name));
+  const people: Record<string, unknown>[] = [];
+  let error = "";
+  for (let i = 0; i < room; i++) {
+    try {
+      const a = await newAccount(userId, true);
+      if (!a) { error = error || "Couldn't invent a new person just now — try again in a moment."; break; }
+      people.push(a);
+    } catch (e) {
+      console.error("pica: new face", e instanceof Error ? e.message : e);
+      error = missingSchema(e) ? "Picagram isn't fully set up on this database yet, so a new face couldn't be saved." : (e instanceof Error ? e.message : "Couldn't bring anyone new in.");
+      break;
+    }
   }
-  return { made: names.length, names };
+  const posted = await Promise.all(people.map(async (a, i) => {
+    try {
+      const ok = await postFor(userId, a, u, Date.now() - (room - i) * rand(2, 12) * 60_000, undefined, true);
+      return ok ? String(a.name) : "";
+    } catch (e) {
+      console.error("pica: new face post", e instanceof Error ? e.message : e);
+      error = error || (e instanceof Error ? e.message.replace(/ Tell them.*$/, "") : "Her photo didn't start.");
+      return "";
+    }
+  }));
+  const names = posted.filter(Boolean);
+  if (!names.length) throw new PicaLimit(error || "Couldn't bring anyone new in right now — try again in a moment.");
+  const short = names.length < want ? (error || `Brought in ${names.length} of ${want}.`) : undefined;
+  return { made: names.length, names, error: short };
 }
 
 /** One post from one account, with its photo, at the given moment. */
-async function postFor(userId: string, a: Record<string, unknown>, u: U, at: number, plan?: { caption?: string; photo?: string }): Promise<boolean> {
+async function postFor(userId: string, a: Record<string, unknown>, u: U, at: number, plan?: { caption?: string; photo?: string }, strict = false): Promise<boolean> {
   const t = await wordsFor(userId); // 🛠️ Admin → Messaging & wording
   const when = new Date(at).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: u.tz });
   let caption = scrub(String(plan?.caption || "")).slice(0, 600), photo = scrub(String(plan?.photo || "")).slice(0, 600);
@@ -681,14 +716,28 @@ async function postFor(userId: string, a: Record<string, unknown>, u: U, at: num
       `She looks like: ${a.look}`, 1000).catch(() => "");
     try { const j = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); caption = scrub(String(j.caption || "✨")).slice(0, 600); photo = scrub(String(j.photo || "")).slice(0, 600); } catch { /* fall back below */ }
   }
-  if (!photo) photo = `${a.name} candid lifestyle photo, natural light`;
-  const media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: photo },
-    { characterId: null, who: String(a.name), appearance: String(a.look), refs: await refsOf(a), romantic: u.adult, offer: false, other: null, pica: true }).catch(() => null);
-  if (!media) return false;
-  if (!a.avatar_media_id) await sql()`update pica_accounts set avatar_media_id = ${media.id} where id = ${String(a.id)}`;
+  if (!photo) photo = plainFacePhoto(String(a.name));
+  const refs = await refsOf(a);
+  const shoot = (description: string) => startMedia(userId, { kind: "image", with_me: true, they_asked: true, description },
+    { characterId: null, who: String(a.name), appearance: String(a.look), refs, romantic: u.adult, offer: false, other: null, pica: true });
+  let media = await shoot(photo).catch((e: unknown) => e);
+  // A description that mentions lingerie (even to forbid it) is refused. One plain retry still makes her face.
+  if (media instanceof Error) {
+    const fallback = plainFacePhoto(String(a.name));
+    photo = fallback;
+    media = await shoot(fallback).catch((e: unknown) => e);
+  }
+  if (media instanceof Error || !media || typeof media !== "object" || !("id" in media)) {
+    const why = media instanceof Error ? media.message.replace(/ Tell them.*$/, "") : "Her photo didn't start.";
+    if (strict) throw new PicaLimit(why);
+    console.error("pica: photo", why);
+    return false;
+  }
+  const made = media as Media;
+  if (!a.avatar_media_id) await sql()`update pica_accounts set avatar_media_id = ${made.id} where id = ${String(a.id)}`;
   const likes = Math.max(150, Math.min(25000, Math.round(Number(a.followers) * (0.005 + Math.random() * 0.03))));
   const [post] = await sql()`insert into pica_posts (user_id, account_id, kind, caption, photo, media_id, likes_target, created_at)
-    values (${userId}, ${String(a.id)}, 'image', ${caption || "✨"}, ${photo}, ${media.id}, ${likes}, ${new Date(at).toISOString()}) returning id`;
+    values (${userId}, ${String(a.id)}, 'image', ${caption || "✨"}, ${photo}, ${made.id}, ${likes}, ${new Date(at).toISOString()}) returning id`;
   for (const c of randomComments(`${caption} ${photo}`, "image", rand(3, 5)))
     await sql()`insert into pica_comments (post_id, user_id, name, text, created_at) values (${post.id}, ${userId}, ${c.name}, ${c.text}, ${new Date(at + rand(2, 300) * 60_000).toISOString()})`;
   return true;

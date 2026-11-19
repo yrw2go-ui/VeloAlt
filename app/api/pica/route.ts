@@ -14,6 +14,9 @@ import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment
 //   post { caption, photo?, useMyPhotos?, withId? } → { id }   (photo: a description; Atlas makes it; withId: a character in it with you)
 //   mine → { characters } (who you could put in a photo with you)
 const bad = (error: string, status = 400) => NextResponse.json({ error }, { status });
+
+// Three new faces each take a model call and a photo start. The default limit kills that mid-way and the button looks like it did nothing.
+export const maxDuration = 60;
 const UUID = /^[0-9a-f-]{36}$/i;
 
 export async function POST(req: NextRequest) {
@@ -99,7 +102,7 @@ export async function POST(req: NextRequest) {
         if (!allow(`pica-new:${me}`, [{ ms: 60_000, max: 2 }, { ms: 86_400_000, max: 10 }])) return bad("That's a lot of new faces — try again in a bit.", 429);
         const want = Math.max(1, Math.min(5, Number(b.count) || 3));
         const r = await newFaces(me, want);
-        return r.made ? NextResponse.json(r) : bad("Couldn't bring anyone new in right now — try again in a moment.");
+        return NextResponse.json(r);
       }
       // 👩 Make one yourself: your specs, your bio, your pictures.
       case "account.create": {
