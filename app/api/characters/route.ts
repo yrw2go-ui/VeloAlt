@@ -7,6 +7,7 @@ import { listGallery, mediaByIds } from "../../lib/media";
 import { cleanTraits, PRESETS } from "../../lib/traits";
 import { isValidTimeZone, localDate } from "../../lib/localTime";
 import { availableBrains, brainList } from "../../lib/models";
+import { brainFor } from "../../lib/whichBrain";
 import { makeCharacter, usedNames } from "../../lib/makeCharacter";
 import { listLinks, setLink, removeLink, writeStory, linkSuggestions, screenStory } from "../../lib/friends";
 import { checkCard } from "../../lib/cardCheck";
@@ -209,7 +210,7 @@ export async function POST(req: NextRequest) {
         if (!allow(`chargen:${me}`, [{ ms: 60_000, max: 6 }, { ms: 86_400_000, max: 100 }])) return bad("That's a lot of new characters — give it a minute.", 429);
         // 🙅 Not another one of the same name: everyone they already have is off the table.
         const taken = await usedNames(me).catch(() => []);
-        try { return NextResponse.json({ draft: { local: b.local === true, ...await makeCharacter({ name: String(b.name || ""), vibe: String(b.vibe || ""), job: String(b.job || ""), romantic: b.romantic === true, male: b.male === true, liveIn: b.liveIn === true, local: b.local === true, avoidNames: taken, words: await wordsFor(me), lives: b.local === true ? localNote(await homeSaid(me)) : livesNote(await homeOf(me)) }) } }); }
+        try { return NextResponse.json({ draft: { local: b.local === true, ...await makeCharacter({ userId: me, name: String(b.name || ""), vibe: String(b.vibe || ""), job: String(b.job || ""), romantic: b.romantic === true, male: b.male === true, liveIn: b.liveIn === true, local: b.local === true, avoidNames: taken, words: await wordsFor(me), lives: b.local === true ? localNote(await homeSaid(me)) : livesNote(await homeOf(me)) }) } }); }
         catch (e) { return bad(e instanceof Error ? e.message : "Couldn't come up with one — try again.", 502); }
       }
       // Make one of her gallery pictures the main headshot.
@@ -289,7 +290,7 @@ export async function POST(req: NextRequest) {
           and role = 'assistant' and edited and media_id is null and not peek order by created_at desc limit 40`;
         const said = rows.map(r => String(r.content || "").trim()).filter(x => x.length > 1).reverse();
         if (said.length < 2) return bad(`Rewrite a few of ${ch.name}'s messages first — double-tap one of ${ch.voice_kind === "male" ? "his" : "her"} bubbles to put it in your own words, and this reads those back.`);
-        const text = await writeText(ch.brain,
+        const text = await writeText(await brainFor(me),
           `You are given messages from a chat that the reader REWROTE BY HAND, to make the character sound the way they want her to sound. They are the examples to follow. Write down the HABITS OF HER VOICE and nothing else: the shape and sound of how she writes.
 Only what you can actually see in these messages. Say it in 2-5 short lines, each a plain habit, like notes someone jotted down:
 - how long her messages are, and whether she sends one or several

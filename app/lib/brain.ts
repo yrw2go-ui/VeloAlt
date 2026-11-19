@@ -56,7 +56,8 @@ import { askNote, askThisTime } from "./asking";
 import { aboutThem } from "./bio";
 import { mediaMood, allowsSuggestive } from "./traits";
 import { CHARACTER_ZONES } from "./states";
-import { provider, atlasChain, atlasBrain, type ChatModel } from "./models";
+import { atlasBrain, brainProvider, type ChatModel } from "./models";
+import { brainOrder } from "./pickBrain";
 import { oaChat, toOaTools, ProviderError, type OaMessage } from "./openai";
 import { PLAN_TOOL, runPlanTool, plansNote } from "./plans";
 import { PROMISE_TOOL, runPromiseTool, promisesNote } from "./promises";
@@ -142,7 +143,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
   const cid = ch?.id || null;
   const today = localNow(opts.timeZone);
   const name = String(opts.name || "").trim().split(/\s+/)[0].slice(0, 40);
-  const [u] = await sql()`select plan, chat_model, personality, adult_confirmed_at, look, reply_length, (to_jsonb(users)->'talk_words') as talk_words from users where id = ${caller.userId}`;
+  const [u] = await sql()`select plan, chat_model, backup_brain, personality, adult_confirmed_at, look, reply_length, (to_jsonb(users)->'talk_words') as talk_words from users where id = ${caller.userId}`;
   // 💬 Their chosen personality (romantic only after the adult confirmation). Calls Velo makes
   // to other people and memory notes always use her plain voice.
   let personality: Personality = PERSONALITIES.includes(u?.personality) ? u.personality : "friend";
@@ -468,12 +469,17 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
   // A character with her OWN brain (Qwen / DeepSeek through Atlas Cloud) uses it for everything:
   // chats, texts, calls, check-ins and her memory notes (attachments become a short note).
   const chosen = (u?.chat_model || "claude") as ChatModel;
-  // Her own brain(s), in order: one Atlas model, or the chain (Qwen fast → Qwen big; then Claude).
-  const herChain = ch?.brain ? atlasChain(ch.brain) : [];
+  // 🧠 The brains to try, in order: the one picked in Settings, then their backup — and only
+  // if they switched one on. Nothing else: Claude is used when Claude is what they picked.
+  // The ONE exception is a message with an attachment: only Claude can open a file here, so
+  // that message goes to Claude whatever is picked.
+  const order = brainOrder(u?.chat_model, u?.backup_brain);
+  const herChain = attached ? [] : order.map(brainProvider).filter((p): p is NonNullable<typeof p> => !!p);
   const herBrain = herChain[0] || null;
+  // 🅰️ May Claude write this one? Only if they picked it, it's their backup, or there's a file.
+  const claudeOk = attached || order.includes("claude");
   // Messages with an attachment go to Claude (Qwen and DeepSeek are set up for text only here).
   // A character pinned to Claude always uses Claude, whatever Velo uses.
-  const alt = herBrain || (ch?.brain !== "claude" && chosen !== "claude" && !attached && (mode === "chat" || mode === "sms" || mode === "talk") ? provider(chosen) : null);
   const asText = (c: Anthropic.MessageParam["content"]) => typeof c === "string" ? c
     : c.map(b => (b.type === "text" ? b.text : b.type === "image" || b.type === "document" ? `(They attached ${attachedName || "a file"} — you can't open it here, so ask them about it.)` : "")).filter(Boolean).join("\n");
   const oaBase = (): OaMessage[] => [
@@ -523,7 +529,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
     return { reply: "", changed: false, drafts, media, ...(ask ? { ask } : {}), ...(note ? { note } : {}) };
   }
   let answered = false;
-  const tryOrder = herChain.length ? herChain : alt ? [alt] : [];
+  const tryOrder = herChain;
   for (const brainNow of tryOrder) {
     if (answered || !(tools || herBrain)) break;
     try {
@@ -559,8 +565,8 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
   // Which AI wrote this reply (👍 / ⏰ on a call).
   const answeredByAlt = answered;
   // ⏰ Her own brain is down and this is a chat reply: no Claude stand-in — the app tells them she'll be right back and retries.
-  if (herBrain && !answered && opts.noFallback) throw new BrainDown();
-  for (let round = 0; !answered && round < (tools ? 6 : 1); round++) {
+  if (!claudeOk && !answered && opts.noFallback) throw new BrainDown();
+  for (let round = 0; claudeOk && !answered && round < (tools ? 6 : 1); round++) {
     const res = await client.messages.create({
       model: process.env.VELO_MODEL!,
       max_tokens: maxTokens,

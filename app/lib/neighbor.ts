@@ -5,6 +5,7 @@
 // she never knows you were standing there, and nothing about how she feels changes.
 import { sql } from "./db";
 import { writeText } from "./llm";
+import { brainFor, brainForCharacter } from "./whichBrain";
 import { scrub } from "./secrets";
 import { type Character, getCharacterFor, happyFor, loveFor, trustFor } from "./characters";
 import { workNow } from "./work";
@@ -105,7 +106,7 @@ const LINES: Record<Kind, string[]> = {
 /** Her own words for turning up — hers if her brain answers, otherwise something plain and true. */
 async function knockLine(c: Character, kind: Kind, name: string): Promise<string> {
   const plain = LINES[kind][Math.floor(Math.random() * LINES[kind].length)];
-  const raw = await writeText(c.brain, `You are ${c.name}. ${c.personality || ""}
+  const raw = await writeText(await brainForCharacter(c.id), `You are ${c.name}. ${c.personality || ""}
 You live a few doors down from ${name || "them"}. ${kind === "back" ? "What the two of you have is a secret, so you've come round to their BACK door where nobody sees you, and you're letting them know you're there — quietly." : kind === "door" ? "You've just walked down and knocked on their door — they haven't opened it yet." : "You've seen their car outside, so you're messaging to ask them over to yours."} Write ONE short line in your own voice, the way you'd really say it — under 120 characters, no quotes, no name sign-off. Just the line.`,
     kind === "over" ? "You're asking them over." : "You're standing at their door.", 60, { ms: 8_000 }).catch(() => "");
   const line = scrub(raw.replace(/\s+/g, " ").replace(/^["']|["']$/g, "").trim()).slice(0, 200);
@@ -212,7 +213,7 @@ export async function stoppedBy(userId: string, characterId: string): Promise<vo
   const plain = ["knocked just now — car's there so I know you're about! No rush, catch you later 🙂",
     "stopped by, no answer. Saw your car so I'll assume you're busy — no worries x",
     "came by earlier! Your car's out front so I know you're around somewhere. Shout when you're free."];
-  const raw = await writeText(c.brain, `You are ${c.name}. ${c.personality || ""}
+  const raw = await writeText(await brainFor(userId), `You are ${c.name}. ${c.personality || ""}
 You live a few doors down from ${String(u?.name || "them")}. You knocked just now and nobody came to the door — but their car is parked outside, so you know they're around here somewhere and simply couldn't come to the door. You're texting to say you called by: warm and completely understanding, no sulking, no pressure, no interrogating them about where they were. You do NOT know where they are and you never guess out loud. Write ONE short text in your own voice, under 140 characters, no quotes, no sign-off. Just the text.`,
     "You called round, their car is there, and they didn't come to the door.", 70, { ms: 8_000 }).catch(() => "");
   const line = scrub(raw.replace(/\s+/g, " ").replace(/^["']|["']$/g, "").trim()).slice(0, 200) || plain[Math.floor(Math.random() * plain.length)];

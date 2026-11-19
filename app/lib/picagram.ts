@@ -4,6 +4,9 @@
 // person saw, liked or commented), the person's posts, and when they're out of town on vacation.
 import { missingSchema, sql } from "./db";
 import { writeText } from "./llm";
+import { brainFor, pickedBrain } from "./whichBrain";
+import { commentBrains } from "./pickBrain";
+import { availableBrains } from "./models";
 
 /**
  * 🧠 Who does the writing for Picagram's own people: the brain you picked in Settings.
@@ -26,7 +29,7 @@ import { startMedia, deleteMedia, whenMediaReady, wornLately, MediaError, type M
 import { swapIn } from "./redo";
 import { allowsSuggestive, mediaMood, cleanTraits, DEFAULT_TRAITS, TRAITS } from "./traits";
 import { isValidTimeZone, localDate, zonedParts, zonedToUtc } from "./localTime";
-import { randomComments } from "./picaComments";
+import { randomComments, quickComment } from "./picaComments";
 import { vibeNote, rollLesbian, FIRST_NAMES, LAST_NAMES } from "./vibes";
 import { usedNames } from "./makeCharacter";
 import { localNote } from "./local";
@@ -417,15 +420,23 @@ export async function picaPost(userId: string, caption: string, photo: string, u
         : rest.length ? `something about ${rest.join(" and ")}` : "";
     };
     const isIn = (id: string) => inIt.some(c => String(c.id) === String(id));
-    const raw = await writeText(await picaBrain(userId), `People who know ${u.name} react to ${u.name}'s new Picagram post. For each person, write a short comment in their own voice (or "" if they'd just like it). ${t.post_comments}
+    // 💬 Most of them just leave a short line from the free pool — it costs nothing, and it's
+    // what most comments really look like. Anyone in the photo, or the post is about, is worth
+    // words of her own, and so is roughly one other; the rest are free.
+    const inFrame = (f: { id: string }) => inIt.some(c => String(c.id) === String(f.id)) || mentioned.some(c => String(c.id) === String(f.id));
+    const voiced = fans.filter(f => inFrame(f) || Math.random() < 0.3);
+    const freebies = new Map(fans.filter(f => !voiced.includes(f)).map(f => [String(f.id), quickComment()]));
+    const raw = !voiced.length ? "" : await writeText(commentBrains(availableBrains()), `People who know ${u.name} react to ${u.name}'s new Picagram post. For each person, write a short comment in their own voice (or "" if they'd just like it). ${t.post_comments}
 A person marked IN THIS PHOTO is the woman in it: she was there when it was taken, it's her own face and body in the picture, and ${u.name} has just put it up for everyone to see. She comments as herself from inside it — how she feels about being up there, what the two of them were doing, teasing him about the pose, being pleased or shy or smug about it. She NEVER talks about the woman in the photo as if she were someone else ("you two look great together", "who's she?") — that would make no sense, because it's her.
 Anyone else sees another woman in it and reacts the way she would — pleased, curious, teasing, or a little stung — never cruel. ${PLAIN_WORDS} JSON only: {"comments":[{"from":"Name","text":"..."}]}`,
-      `POST: ${cap}${desc ? ` (photo: ${desc})` : ""}${inIt.length ? `\nTHE WOMAN IN THE PHOTO WITH HIM IS ${inIt.map(c => c.name).join(" and ")} — wherever the photo says "her" or "a woman", that is ${inIt.map(c => c.name).join(" / ")}.` : ""}\nPEOPLE:\n${fans.map(f => `- ${f.name}${isIn(String(f.id)) ? " (IN THIS PHOTO — this is her, with him; she was there)" : ""}${mentioned.some(c => String(c.id) === String(f.id)) ? " (the post is about her)" : ""}: ${String(f.personality || "").slice(0, 200)}`).join("\n")}`, 1000).catch(() => "");
+      `POST: ${cap}${desc ? ` (photo: ${desc})` : ""}${inIt.length ? `\nTHE WOMAN IN THE PHOTO WITH HIM IS ${inIt.map(c => c.name).join(" and ")} — wherever the photo says "her" or "a woman", that is ${inIt.map(c => c.name).join(" / ")}.` : ""}\nPEOPLE:\n${voiced.map(f => `- ${f.name}${isIn(String(f.id)) ? " (IN THIS PHOTO — this is her, with him; she was there)" : ""}${mentioned.some(c => String(c.id) === String(f.id)) ? " (the post is about her)" : ""}: ${String(f.personality || "").slice(0, 200)}`).join("\n")}`, 1000).catch(() => "");
     let cs: { from: string; text: string }[] = [];
     try { cs = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]).comments || []; } catch { /* likes only */ }
     await sql()`update pica_posts set liked_by = ${fans.map(f => String(f.name))}, liker_secs = ${fans.map(() => rand(10, 900))} where id = ${post.id}`;
     for (const f of fans) {
-      const text = noJargon(scrub(String(cs.find(x => String(x.from).toLowerCase() === String(f.name).toLowerCase())?.text || ""))).slice(0, 300);
+      // Her own words if a brain wrote her one; otherwise a free line, so nobody comes up silent.
+      const text = (noJargon(scrub(String(cs.find(x => String(x.from).toLowerCase() === String(f.name).toLowerCase())?.text || ""))).slice(0, 300)
+        || freebies.get(String(f.id)) || (inFrame(f) ? quickComment() : "")).slice(0, 300);
       if (text) await sql()`insert into pica_comments (post_id, user_id, author_id, text, created_at) values (${post.id}, ${userId}, ${f.id}, ${text}, ${new Date(now + rand(2, 90) * 60_000).toISOString()})`;
       const what = who(f);
       await sql()`insert into velo_memories (user_id, character_id, kind, text) values (${userId}, ${f.id}, 'fact',
@@ -491,7 +502,7 @@ export function freshName(taken: { handle: string; name: string }[], tries = 40)
 }
 
 /** 🏡 One of the six ordinary people, tied to someone real where her brief says so. */
-async function newFolk(userId: string, f: Folk): Promise<Record<string, unknown> | null> {
+async function newFolk(userId: string, f: Folk, brain?: unknown): Promise<Record<string, unknown> | null> {
   const t = await wordsFor(userId); // 🛠️ Admin → Messaging & wording
   // Who she's connected to: one of your characters, or you.
   const [tied] = f.tie === "character"
@@ -502,7 +513,7 @@ async function newFolk(userId: string, f: Folk): Promise<Record<string, unknown>
     .concat((await sql()`select name from chat_characters where owner_id is null or owner_id = ${userId}`).map(r => ({ handle: "", name: String(r.name) })));
   const home = await homeOf(userId);
   const near = home ? ` ${localNote(homeText(home))} Put that town in "lives" as "Town, ST".` : "";
-  const raw = await writeText(await picaBrain(userId), `Invent ONE woman who posts on Picagram (a social photo app like Instagram).
+  const raw = await writeText(brain ?? await picaBrain(userId), `Invent ONE woman who posts on Picagram (a social photo app like Instagram).
 ${folkNote(f, tied ? String(tied.name) : "", t.pica_folk)}
 ${t.pica_unique}${near} ${hobbyRule(Math.random())}
 JSON only: {"name":"First Last (a plain modern American name)","handle":"lowercase_handle from her name","bio":"short bio, the way a small ordinary account reads","look":"${t.pica_look} — no glamour","lives":"City, State"}`,
@@ -532,7 +543,7 @@ async function followNew(row: Record<string, unknown> | null, follow: boolean): 
   return row;
 }
 
-async function newAccount(userId: string, follow = false): Promise<Record<string, unknown> | null> {
+async function newAccount(userId: string, follow = false, brain?: unknown): Promise<Record<string, unknown> | null> {
   const t = await wordsFor(userId); // 🛠️ Admin → Messaging & wording
   const [{ all }] = await sql()`select count(*)::int as all from pica_accounts where user_id = ${userId} and character_id is null`;
   // 🏡 Now and then the new face is an ordinary person rather than another influencer: a sister,
@@ -540,7 +551,7 @@ async function newAccount(userId: string, follow = false): Promise<Record<string
   const used = new Set((await sql()`select folk from pica_accounts where user_id = ${userId} and folk is not null`).map(r => String(r.folk)));
   const left = FOLKS.filter(f => !used.has(f.key));
   if (left.length && Math.random() < 0.4) {
-    const made = await newFolk(userId, left[Math.floor(Math.random() * left.length)]).catch(e => { console.error("pica: ordinary person", e instanceof Error ? e.message : e); return null; });
+    const made = await newFolk(userId, left[Math.floor(Math.random() * left.length)], brain).catch(e => { console.error("pica: ordinary person", e instanceof Error ? e.message : e); return null; });
     if (made) return followNew(made, follow);
   }
   // Everyone already in their life: the women they follow and their own characters.
@@ -559,7 +570,7 @@ async function newAccount(userId: string, follow = false): Promise<Record<string
   // Three goes at someone genuinely new, telling her what's already taken each time.
   let clash = "";
   for (let go = 0; go < 3; go++) {
-    const raw = await writeText(await picaBrain(userId), `Invent ONE woman who posts on Picagram (a social photo app like Instagram).
+    const raw = await writeText(brain ?? await picaBrain(userId), `Invent ONE woman who posts on Picagram (a social photo app like Instagram).
 ${vibeNote()}
 ${intoWomen ? "⚢ SHE IS A LESBIAN — into women, not men. Let her bio say so the way a real profile would (a flag, \"she/her 🏳️‍🌈\", \"girls only\", a line about her girlfriend or ex-girlfriend) without making it the whole bio, and keep the rest of her exactly as the lane says.\n" : ""}${t.pica_unique}${where} ${hobbyRule(Math.random())}
 JSON only: {"name":"First Last (a plain modern American name, as described above)","handle":"lowercase_handle (from her name, like ava.miller or mia_russo — no made-up words)","bio":"short bio with emojis","look":"${t.pica_look}","lives":"City, State","followers":12000}`,
@@ -680,7 +691,10 @@ export async function putUpUploads(userId: string, a: Record<string, unknown>, m
 }
 
 /** ✨ New women, posting right now: invent each one, follow her, and put a first photo up straight away. */
-export async function newFaces(userId: string, n: number): Promise<{ made: number; names: string[]; error?: string }> {
+export async function newFaces(userId: string, n: number, pickBrain?: unknown): Promise<{ made: number; names: string[]; error?: string }> {
+  // 🧠 One brain only: the one picked in Settings (or the one chosen for a retry). No backup
+  // behind it — if it can't manage, the app offers the retry rather than quietly spending twice.
+  const brain = pickBrain ? [String(pickBrain)] : await pickedBrain(userId);
   const want = Math.max(1, Math.min(5, n));
   const [{ all, following }] = await sql()`select count(*) filter (where character_id is null)::int as all,
     count(*) filter (where followed and character_id is null)::int as following
@@ -695,7 +709,7 @@ export async function newFaces(userId: string, n: number): Promise<{ made: numbe
   for (let i = 0; i < room; i++) {
     if (Date.now() > until) { console.warn(`pica: out of time after ${people.length} of ${want}`); break; }
     try {
-      const a = await newAccount(userId, true);
+      const a = await newAccount(userId, true, brain);
       if (!a) { error = error || "Couldn't invent a new person just now — try again in a moment."; break; }
       people.push(a);
     } catch (e) {
@@ -708,7 +722,7 @@ export async function newFaces(userId: string, n: number): Promise<{ made: numbe
     try {
       // ⏱️ She exists now; give her a post only if there is still time for one.
       if (Date.now() > until) { console.warn("pica: out of time before a post"); return ""; }
-      const ok = await postFor(userId, a, u, Date.now() - (room - i) * rand(2, 12) * 60_000, undefined, true);
+      const ok = await postFor(userId, a, u, Date.now() - (room - i) * rand(2, 12) * 60_000, undefined, true, brain);
       return ok ? String(a.name) : "";
     } catch (e) {
       console.error("pica: new face post", e instanceof Error ? e.message : e);
@@ -717,19 +731,18 @@ export async function newFaces(userId: string, n: number): Promise<{ made: numbe
     }
   }));
   const names = posted.filter(Boolean);
-  if (!names.length) throw new PicaLimit(error || "Couldn't bring anyone new in right now — try again in a moment.");
   const short = names.length < want ? (error || `Brought in ${names.length} of ${want}.`) : undefined;
   return { made: names.length, names, error: short };
 }
 
 /** One post from one account, with its photo, at the given moment. */
-async function postFor(userId: string, a: Record<string, unknown>, u: U, at: number, plan?: { caption?: string; photo?: string }, strict = false): Promise<boolean> {
+async function postFor(userId: string, a: Record<string, unknown>, u: U, at: number, plan?: { caption?: string; photo?: string }, strict = false, brain?: unknown): Promise<boolean> {
   const t = await wordsFor(userId); // 🛠️ Admin → Messaging & wording
   const when = new Date(at).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: u.tz });
   let caption = scrub(String(plan?.caption || "")).slice(0, 600), photo = scrub(String(plan?.photo || "")).slice(0, 600);
   if (!photo) {
     const w = await wordingFor(userId);
-    const raw = await writeText(await picaBrain(userId), `Today is ${when}. Write ONE Picagram post for @${a.handle} (${a.name}): ${a.bio}${a.personality ? ` — who she is: ${String(a.personality).slice(0, 400)}` : ""} — a photo of her in her everyday life or her niche, with a caption — ${t.post_caption}. ${u.adult ? "Flattering, flirty and confident is fine; no nudity or lingerie." : "Family-friendly, fully clothed."} "photo" describes exactly what the picture shows (where, outfit, pose, light) in 1–2 sentences. ${w.no_looks} It follows this SHOT and TONE exactly so it doesn't look like her last one — SHOT: ${shotFor(`${a.id}:${when}`, rand(0, 9))}; TONE: ${TONES[toneFor(String(a.id), rand(0, 5), a.folk ? FOLK_SUGGESTIVE : hash(`${a.id}:how`) % 9, u.adult)]}. ${PLAIN_WORDS} JSON only: {"caption":"...","photo":"..."}`,
+    const raw = await writeText(brain ?? await picaBrain(userId), `Today is ${when}. Write ONE Picagram post for @${a.handle} (${a.name}): ${a.bio}${a.personality ? ` — who she is: ${String(a.personality).slice(0, 400)}` : ""} — a photo of her in her everyday life or her niche, with a caption — ${t.post_caption}. ${u.adult ? "Flattering, flirty and confident is fine; no nudity or lingerie." : "Family-friendly, fully clothed."} "photo" describes exactly what the picture shows (where, outfit, pose, light) in 1–2 sentences. ${w.no_looks} It follows this SHOT and TONE exactly so it doesn't look like her last one — SHOT: ${shotFor(`${a.id}:${when}`, rand(0, 9))}; TONE: ${TONES[toneFor(String(a.id), rand(0, 5), a.folk ? FOLK_SUGGESTIVE : hash(`${a.id}:how`) % 9, u.adult)]}. ${PLAIN_WORDS} JSON only: {"caption":"...","photo":"..."}`,
       `She looks like: ${a.look}`, 1000, THINK).catch(() => "");
     try { const j = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); caption = scrub(String(j.caption || "✨")).slice(0, 600); photo = scrub(String(j.photo || "")).slice(0, 600); } catch { /* fall back below */ }
   }

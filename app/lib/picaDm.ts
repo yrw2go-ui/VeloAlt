@@ -12,8 +12,8 @@ import { forgetPicaLines } from "./forget";
 import { scrub } from "./secrets";
 import { wornLately, startMedia, MediaError, type Media } from "./media";
 import { availableBrains } from "./models";
+import { brainOrder } from "./pickBrain";
 import { refsOf, myPhotoDraft, myPhotoMake } from "./picagram";
-import { BRAIN_OPTIONS } from "./brainOptions";
 import { isValidTimeZone, zonedParts, formatClock } from "./localTime";
 import { partOfDay } from "./calendar";
 import { cleanTraits } from "./traits";
@@ -30,8 +30,8 @@ async function account(userId: string, accountId: string) {
   return a;
 }
 const userInfo = async (userId: string) => {
-  const [u] = await sql()`select name, adult_confirmed_at, chat_model, time_zone from users where id = ${userId}`;
-  return { name: String(u?.name || "").split(/\s+/)[0] || "them", adult: !!u?.adult_confirmed_at, chatModel: String(u?.chat_model || "claude"), now: nowLabel(u?.time_zone), today: todayLabel(u?.time_zone) };
+  const [u] = await sql()`select name, adult_confirmed_at, chat_model, backup_brain, time_zone from users where id = ${userId}`;
+  return { name: String(u?.name || "").split(/\s+/)[0] || "them", adult: !!u?.adult_confirmed_at, chatModel: String(u?.chat_model || "claude"), backup: String(u?.backup_brain || ""), now: nowLabel(u?.time_zone), today: todayLabel(u?.time_zone) };
 };
 /** The date where they are, short ("Nov 12, 2026"), to stamp her notes. */
 function todayLabel(rawTz: unknown): string {
@@ -47,10 +47,11 @@ function nowLabel(rawTz: unknown): string {
   const day = new Date(Date.UTC(p.year, p.month - 1, p.day, 12)).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
   return `RIGHT NOW: ${day}, ${formatClock(now, tz)} (${partOfDay(p.hour)}). Act like you know it — say good morning/night when it fits, notice if it's late, weekends, holidays — but don't announce the time unless it matters.`;
 }
-// 🧠 Her brain: her own pick, or the same as Velo's ('' / 'claude' = Claude).
-const brainOf = (a: Record<string, unknown>, chatModel: string) => { const b = String(a.brain || "") || chatModel; return b === "claude" ? "" : b; };
+// 🧠 Whose brain writes her: the one picked in Settings, plus their backup if one is switched
+// on. Only that — an account's own old pick no longer overrides what Settings says.
+const brainOf = (_a: Record<string, unknown>, u: { chatModel: string; backup: string }) => brainOrder(u.chatModel, u.backup);
 // Writing her line: logged (not hidden) when it fails.
-const write = (brain: string, system: string, user: string, max: number) =>
+const write = (brain: unknown, system: string, user: string, max: number) =>
   writeText(brain, system, user, max).catch(e => { console.error("pica dm: brain failed", e instanceof Error ? e.message : e); return ""; });
 /** 🧠 What she remembers about them from your DMs. */
 async function memories(userId: string, accountId: string): Promise<string[]> {
@@ -92,7 +93,8 @@ export async function dmOpen(userId: string, accountId: string) {
   const a = await account(userId, accountId);
   await sql()`update pica_dms set read_at = now() where user_id = ${userId} and account_id = ${accountId} and read_at is null`;
   return { account: { id: String(a.id), handle: String(a.handle), name: String(a.name), avatar: a.avatar ? String(a.avatar) : null, brain: String(a.brain || "") },
-    brains: [{ id: "", label: "Same as Velo" }, ...BRAIN_OPTIONS.filter(o => !o.atlas || availableBrains().includes(o.id)).map(o => ({ id: o.id as string, label: o.label as string }))],
+    // 🧠 No brain of her own any more: everyone uses the one picked in Settings.
+    brains: [] as { id: string; label: string }[],
     messages: await messages(userId, accountId) };
 }
 
@@ -112,10 +114,10 @@ const CLAIMS_PHOTO = /\b(send(ing)?|sent|here'?s|here you go|snapp(ing|ed)|takin
 const REFUSES_PHOTO = /\b(can'?t|cannot|won'?t|not (going to|gonna)|no (pics?|photos?|selfies?)|maybe later|not right now)\b/i;
 
 /** What photo she meant to send, from the conversation (used when she says one's coming but picks none). */
-async function describePhoto(userId: string, a: Record<string, unknown>, u: { name: string; now: string; adult: boolean; chatModel: string }, history: Dm[]): Promise<string> {
+async function describePhoto(userId: string, a: Record<string, unknown>, u: { name: string; now: string; adult: boolean; chatModel: string; backup: string }, history: Dm[]): Promise<string> {
   const w = await wordingFor(userId);
   const worn = await wornLately(userId, null, true).catch(() => "");
-  const raw = await write(brainOf(a, u.chatModel), `You are ${a.name} (@${a.handle}) on Picagram. You told ${u.name} you'd send a photo of yourself, and it hasn't gone out yet. Describe exactly the photo you meant (where, outfit, pose, light) in 1–2 sentences${u.adult ? ", flattering and flirty is fine; no nudity or lingerie" : ", fully clothed"}. ${w.no_looks} JSON only: {"photo":"..."}`,
+  const raw = await write(brainOf(a, u), `You are ${a.name} (@${a.handle}) on Picagram. You told ${u.name} you'd send a photo of yourself, and it hasn't gone out yet. Describe exactly the photo you meant (where, outfit, pose, light) in 1–2 sentences${u.adult ? ", flattering and flirty is fine; no nudity or lingerie" : ", fully clothed"}. ${w.no_looks} JSON only: {"photo":"..."}`,
     `${u.now}\nYou look like: ${a.look}${worn ? `\n\n${worn}` : ""}\n\nTHE CONVERSATION:\n${transcript(history, String(a.name), u.name)}`, 400);
   try { return String(JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]).photo || ""); } catch { return ""; }
 }
@@ -148,7 +150,7 @@ export async function dmDelete(userId: string, accountId: string, ids: string[])
     const u = await userInfo(userId);
     const since = gone.map(r => String(r.created_at)).sort()[0];
     const lines = gone.map(r => `${r.role === "assistant" ? String(a.name) : u.name || "Them"}: ${String(r.content).slice(0, 600)}`).join("\n");
-    await forgetPicaLines(userId, accountId, lines, since, brainOf(a, u.chatModel));
+    await forgetPicaLines(userId, accountId, lines, since, brainOf(a, u));
   } catch (e) { console.error("pica dm: forget", e instanceof Error ? e.message : e); }
   return gone.length;
 }
@@ -165,7 +167,7 @@ export async function dmSend(userId: string, accountId: string, text: string): P
   const mem = await memories(userId, accountId);
   const w = await wordingFor(userId);
   const tw = await wordsFor(userId); // 🛠️ Admin → Messaging & wording: the same lines her chats use.
-  const raw = await write(brainOf(a, u.chatModel), `You are ${a.name} (@${a.handle}) on Picagram, a social photo app like Instagram. Your bio: "${a.bio}". You look like: ${a.look}.${a.lives ? ` You live in ${a.lives}.` : ""}${a.personality ? `\nWHO YOU ARE: ${String(a.personality).slice(0, 1200)}` : ""}${a.traits && Object.keys(a.traits).length ? `\n${traitsPrompt(a.traits, !!u.adult)}` : ""} You're a real person with your own life; ${u.name} follows you and is messaging you in your DMs. Reply like Instagram DMs: short (1–3 sentences), casual, warm, in your own voice${u.adult ? ", flirty if it fits; no nudity or lingerie" : ", friendly and family-friendly"}. Never say you're an AI. ${say(tw.brackets, u.name, String(a.name))} ${tw.plain} ${tw.slang} ${say(tw.fresh, u.name, String(a.name))} If they ask for a photo of you (or it fits naturally), you can send one: then set "photo" to exactly what the picture shows (where, outfit, pose, light) in 1–2 sentences${u.adult ? "; flattering and flirty is fine; no nudity or lingerie" : ", fully clothed"}. ${w.no_looks} Otherwise leave "photo" empty. Reply with JSON only: {"reply":"...","photo":""}`,
+  const raw = await write(brainOf(a, u), `You are ${a.name} (@${a.handle}) on Picagram, a social photo app like Instagram. Your bio: "${a.bio}". You look like: ${a.look}.${a.lives ? ` You live in ${a.lives}.` : ""}${a.personality ? `\nWHO YOU ARE: ${String(a.personality).slice(0, 1200)}` : ""}${a.traits && Object.keys(a.traits).length ? `\n${traitsPrompt(a.traits, !!u.adult)}` : ""} You're a real person with your own life; ${u.name} follows you and is messaging you in your DMs. Reply like Instagram DMs: short (1–3 sentences), casual, warm, in your own voice${u.adult ? ", flirty if it fits; no nudity or lingerie" : ", friendly and family-friendly"}. Never say you're an AI. ${say(tw.brackets, u.name, String(a.name))} ${tw.plain} ${tw.slang} ${say(tw.fresh, u.name, String(a.name))} If they ask for a photo of you (or it fits naturally), you can send one: then set "photo" to exactly what the picture shows (where, outfit, pose, light) in 1–2 sentences${u.adult ? "; flattering and flirty is fine; no nudity or lingerie" : ", fully clothed"}. ${w.no_looks} Otherwise leave "photo" empty. Reply with JSON only: {"reply":"...","photo":""}`,
     `${u.now}\n\n${named ? `${named}\n\n` : ""}${mem.length ? `WHAT YOU REMEMBER ABOUT ${u.name.toUpperCase()} (from your DMs):\n- ${mem.join("\n- ")}\n\n` : ""}THE CONVERSATION SO FAR:\n${transcript(history, String(a.name), u.name)}`, 800);
   // Her answer: the JSON asked for — or, if she just wrote her reply as plain text, that text.
   let j: { reply?: string; photo?: string } = {};
@@ -196,7 +198,7 @@ export async function dmSend(userId: string, accountId: string, text: string): P
   await sql()`update pica_dms set read_at = now() where user_id = ${userId} and account_id = ${accountId} and read_at is null`;
   // 🧠 Every few messages she files away what matters (it goes with her if you befriend her).
   const [{ n }] = await sql()`select count(*)::int as n from pica_dms where user_id = ${userId} and account_id = ${accountId} and role = 'user'`;
-  if (n % 4 === 0) await remember(userId, a, [...history, ...added.slice(1)], u.name, mem, brainOf(a, u.chatModel), u.now, u.today).catch(e => console.error("pica dm: remember", e instanceof Error ? e.message : e));
+  if (n % 4 === 0) await remember(userId, a, [...history, ...added.slice(1)], u.name, mem, brainOf(a, u), u.now, u.today).catch(e => console.error("pica dm: remember", e instanceof Error ? e.message : e));
   return { added, ...(note ? { note } : {}), ...(ask ? { ask } : {}) };
 }
 
@@ -244,7 +246,7 @@ export async function dmPhotoMake(userId: string, accountId: string, description
   }
 }
 
-async function remember(userId: string, a: Record<string, unknown>, list: Dm[], name: string, known: string[], brain: string, now: string, today: string) {
+async function remember(userId: string, a: Record<string, unknown>, list: Dm[], name: string, known: string[], brain: unknown, now: string, today: string) {
   const raw = await write(brain, `You are ${a.name}. From your recent Picagram DMs with ${name}, list up to 3 NEW things worth remembering (about ${name}: their life, likes, plans, what they told you — or what happened between you two). Short, first person ("${name} told me…", "We…"). Skip anything already known. When something has a time to it (plans, "tomorrow", "this weekend"), write the actual date. JSON only: {"facts":["..."]}`,
     `${now}\n\nALREADY KNOWN:\n${known.length ? known.map(k => `- ${k}`).join("\n") : "(nothing yet)"}\n\nRECENT DMs:\n${transcript(list.slice(-16), String(a.name), name)}`, 500);
   let facts: unknown[] = [];
@@ -294,7 +296,7 @@ export async function dmSendMine(userId: string, accountId: string, mediaId: str
   const media: Media = { id: String(m.id), kind: "image", status: "done", url: String(m.url), thumb: m.thumb ? String(m.thumb) : null, description: m.description ? String(m.description) : null, kept: !!m.kept };
   const mine = { ...(await addDm(userId, accountId, "user", "", media.id)), media };
   const history = await messages(userId, accountId, 40);
-  const raw = await write(brainOf(a, u.chatModel), `You are ${a.name} (@${a.handle}) on Picagram. ${u.name} just sent you a photo in your DMs. React in your own voice — short (1–2 sentences), warm${u.adult ? ", flirty if it fits" : ""}. Never say you're an AI. ${PLAIN_WORDS} Reply with only your message.`,
+  const raw = await write(brainOf(a, u), `You are ${a.name} (@${a.handle}) on Picagram. ${u.name} just sent you a photo in your DMs. React in your own voice — short (1–2 sentences), warm${u.adult ? ", flirty if it fits" : ""}. Never say you're an AI. ${PLAIN_WORDS} Reply with only your message.`,
     `${u.now}\n\nTHE PHOTO THEY SENT: ${scrub(String(media.description || "a photo from their gallery")).slice(0, 400)}\n\nTHE CONVERSATION:\n${transcript(history, String(a.name), u.name)}`, 400).catch(() => "");
   const reply = scrub(raw.replace(/^```(json)?|```$/g, "").replace(/\s+/g, " ").trim()).slice(0, 2000);
   const added: Dm[] = [mine];
@@ -310,7 +312,7 @@ export async function dmMyPhoto(userId: string, accountId: string, description: 
   const mine = { ...(await addDm(userId, accountId, "user", "", m.id)), media: m };
   // She sees it and says something back.
   const history = await messages(userId, accountId, 40);
-  const raw = await write(brainOf(a, u.chatModel), `You are ${a.name} (@${a.handle}) on Picagram. ${u.name} just sent you a photo of themselves in your DMs. React in your own voice — short (1–2 sentences), warm${u.adult ? ", flirty if it fits" : ""}. Never say you're an AI. Reply with only your message.`,
+  const raw = await write(brainOf(a, u), `You are ${a.name} (@${a.handle}) on Picagram. ${u.name} just sent you a photo of themselves in your DMs. React in your own voice — short (1–2 sentences), warm${u.adult ? ", flirty if it fits" : ""}. Never say you're an AI. Reply with only your message.`,
     `${u.now}\n\nTHE PHOTO THEY SENT: ${scrub(description).slice(0, 400)}\n\nTHE CONVERSATION:\n${transcript(history, String(a.name), u.name)}`, 400);
   const reply = scrub(raw.replace(/^```(json)?|```$/g, "").replace(/\s+/g, " ").trim()).slice(0, 2000);
   const added: Dm[] = [mine];

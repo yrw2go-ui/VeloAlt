@@ -4,13 +4,13 @@
 // Facebook Page Velo can post to.
 import { useEffect, useState } from "react";
 import { api, data } from "./lib/api";
-import { BRAIN_OPTIONS } from "./lib/brainOptions";
 import { confirmAsk } from "./lib/dialog";
 import { formatPhone, contactProblem } from "./lib/contact";
 
 export type Profile = {
   name: string; look: string; plan: "free" | "pro"; proForSale: boolean; phone: string; phoneVerified: boolean; veloNumber: string;
   chatModel: string; models: { id: string; label: string; by: string; where: string }[];
+  backupBrain?: string; backups?: { id: string; label: string; about: string }[];
   personality: string; adultConfirmed: boolean; customFace?: string;
   videoModel?: string; videoModels?: { id: string; label: string }[]; checkins?: string; replyLength?: string;
   paused?: boolean;
@@ -197,70 +197,68 @@ function FacebookCard() {
 /** Settings → Velo's brain: which AI she chats with (only shown when there's a choice). */
 /** 🧠 Brains: which AI Velo chats with, and a tab for each character (their own brain through Atlas Cloud). */
 type BrainChar = { id: string; name: string; brain?: string; portrait_url: string | null };
-export function BrainCard({ profile, onChange, chars = [], admin = false, brains = [], brainModels = [], onCharChange }: {
+export function BrainCard({ profile, onChange }: {
   profile: Profile; onChange: () => void; chars?: BrainChar[]; admin?: boolean; brains?: string[]; brainModels?: { id: string; model: string }[]; onCharChange?: (c: BrainChar) => void;
 }) {
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState<string>("velo");
-  const [err, setErr] = useState("");
-  const showChars = chars.length > 0 && (brains.length > 0 || chars.some(c => c.brain));
-  if (profile.models.length < 2 && !showChars) return null;
+  const backups = profile.backups || [];
+  const backup = profile.backupBrain || "";
+  if (profile.models.length < 2) return null;
   const pick = async (id: string) => {
     if (id === profile.chatModel) return;
     setBusy(true);
     await data("profile.update", { chatModel: id }).catch(() => {});
     setBusy(false); onChange();
   };
-  const setBrain = async (c: BrainChar, brain: string) => {
-    if ((c.brain || "") === brain) return;
-    setBusy(true); setErr("");
-    try { const r = await api<{ character: BrainChar }>("/api/characters", { action: "brain.set", id: c.id, brain }); onCharChange?.(r.character); }
-    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't change it."); }
-    setBusy(false);
+  // 🛟 The backup: off by default. Switching it on picks the first one that isn't already the main brain.
+  const setBackup = async (id: string) => {
+    if (id === backup) return;
+    setBusy(true);
+    await data("profile.update", { backupBrain: id }).catch(() => {});
+    setBusy(false); onChange();
   };
-  const veloLabel = profile.models.find(m => m.id === profile.chatModel)?.label || "Claude";
-  const ch = chars.find(c => c.id === tab) || null;
+  const first = backups.find(o => o.id !== profile.chatModel)?.id || "";
   const opt = (on: boolean) => ({ textAlign: "left" as const, background: on ? "rgba(124,140,255,0.12)" : "var(--surface2)", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, borderRadius: 12, padding: "10px 12px", color: "var(--text)", cursor: on ? "default" : "pointer" });
-  const tabStyle = (on: boolean) => ({ flexShrink: 0, padding: "6px 12px", borderRadius: 999, fontSize: 13, fontWeight: 700, cursor: "pointer", color: "var(--text)", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, background: on ? "rgba(124,140,255,0.15)" : "var(--surface2)" });
   return (
-    <div className="card" data-testid="brain" style={{ minWidth: 0, maxWidth: "100%" }}>
-      <div style={{ fontWeight: 700 }}>🧠 Brains</div>
-      <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>The AI behind Velo and each character. Their memory and everything else stay the same. Passwords and codes are hidden from every one of them.</div>
-      {showChars && (
-        <div role="tablist" aria-label="Whose brain" style={{ display: "flex", gap: 6, maxWidth: "100%", overflowX: "auto", overflowY: "hidden", paddingBottom: 8 }}>
-          <button role="tab" aria-selected={tab === "velo"} onClick={() => setTab("velo")} style={tabStyle(tab === "velo")} data-testid="brain-tab-velo">Velo</button>
-          {chars.map(c => <button key={c.id} role="tab" aria-selected={tab === c.id} onClick={() => setTab(c.id)} style={tabStyle(tab === c.id)} data-testid={`brain-tab-${c.name}`}>{c.name}{c.brain ? " 🧠" : ""}</button>)}
+    <div className="card" data-testid="brain">
+      <div style={{ fontWeight: 700 }}>🧠 Brain</div>
+      <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>The AI behind Velo, every character and everything on Picagram — this one choice, and nothing else. Their memory stays the same whichever you pick. Passwords and codes are hidden from every one of them.</div>
+      <div role="radiogroup" aria-label="Velo's brain" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {profile.models.map(m => {
+          const on = m.id === profile.chatModel;
+          return (
+            <button key={m.id} role="radio" aria-checked={on} disabled={busy} onClick={() => pick(m.id)} style={opt(on)}>
+              <div style={{ fontWeight: 700 }}>{on ? "✓ " : ""}{m.label} <span className="muted" style={{ fontWeight: 400, fontSize: 13 }}>by {m.by}{m.id === "claude" ? " · default" : ""}</span></div>
+              <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{m.where}</div>
+            </button>
+          );
+        })}
+      </div>
+      {backups.length > 0 && (
+        <div style={{ marginTop: 14, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+          <label className="row" style={{ gap: 10, cursor: "pointer" }}>
+            <input type="checkbox" checked={!!backup} disabled={busy || !first} data-testid="backup-on"
+              onChange={e => setBackup(e.target.checked ? first : "")} />
+            <span style={{ flex: 1 }}>
+              <b style={{ fontSize: 14 }}>Use a backup</b>
+              <div className="muted" style={{ fontSize: 12 }}>Off: only the brain above is ever used. On: a second one steps in when the first can&apos;t answer.</div>
+            </span>
+          </label>
+          {!!backup && (
+            <div role="radiogroup" aria-label="Backup brain" style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
+              {backups.filter(o => o.id !== profile.chatModel).map(o => {
+                const on = o.id === backup;
+                return (
+                  <button key={o.id} role="radio" aria-checked={on} disabled={busy} onClick={() => setBackup(o.id)} style={opt(on)} data-testid={`backup-${o.id}`}>
+                    <div style={{ fontWeight: 700 }}>{on ? "✓ " : ""}{o.label}</div>
+                    <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{o.about}</div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
-      {!ch && (
-        <div role="radiogroup" aria-label="Velo's brain" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {profile.models.map(m => {
-            const on = m.id === profile.chatModel;
-            return (
-              <button key={m.id} role="radio" aria-checked={on} disabled={busy} onClick={() => pick(m.id)} style={opt(on)}>
-                <div style={{ fontWeight: 700 }}>{on ? "✓ " : ""}{m.label} <span className="muted" style={{ fontWeight: 400, fontSize: 13 }}>by {m.by}{m.id === "claude" ? " · default" : ""}</span></div>
-                <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{m.where}</div>
-              </button>
-            );
-          })}
-        </div>
-      )}
-      {ch && (
-        <div role="radiogroup" aria-label={`${ch.name}'s brain`} style={{ display: "flex", flexDirection: "column", gap: 8 }} data-testid="brain-char">
-          {[{ id: "", label: `Same as Velo (${veloLabel})`, where: "Follows whatever Velo uses.", atlas: false },
-            ...BRAIN_OPTIONS.map(o => ({ id: o.id as string, label: o.label as string, atlas: o.atlas as boolean, where: `${o.about}${brainModels.find(m => m.id === o.id) ? ` (${brainModels.find(m => m.id === o.id)!.model})` : ""}` }))].map(o => {
-            const on = (ch.brain || "") === o.id, ready = !o.atlas || brains.includes(o.id);
-            return (
-              <button key={o.id || "same"} role="radio" aria-checked={on} disabled={busy || !admin || (!ready && !on)} onClick={() => setBrain(ch, o.id)} style={{ ...opt(on), opacity: ready || on ? 1 : 0.5 }} data-testid={`brain-opt-${o.id || "same"}`}>
-                <div style={{ fontWeight: 700 }}>{on ? "✓ " : ""}{o.label}{!ready ? <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}> · not set up yet</span> : null}</div>
-                <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{o.where}</div>
-              </button>
-            );
-          })}
-          {!admin && <span className="muted" style={{ fontSize: 12 }}>Only an admin can change a character&apos;s brain.</span>}
-        </div>
-      )}
-      {err && <div style={{ color: "var(--bad)", fontSize: 13, marginTop: 6 }}>⚠️ {err}</div>}
     </div>
   );
 }

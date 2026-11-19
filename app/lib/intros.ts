@@ -50,6 +50,7 @@ export async function makeIntro(userId: string, introId: string, ch: Character, 
     const names = (await sql()`select name from chat_characters where owner_id is null or owner_id = ${userId}`).map(r => String(r.name));
     const fam = FAMILY.includes(kind);
     const d = await makeCharacter({
+      userId,
       vibe: `${ch.name}'s ${kind}. ${fam ? `A family resemblance to ${ch.name} (${ch.appearance || "similar coloring"}) and the same hometown, but her own personality.` : `Knows ${ch.name} well, but has her own personality.`}`,
       romantic: !!ch.romantic, male: false, avoidNames: names, lives: livesNote(await homeOf(userId)),
     });

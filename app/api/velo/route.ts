@@ -5,7 +5,7 @@ import { askVelo, CharacterGone, BrainDown, aiReady, aiError, type Mode, type Tu
 import { getCharacterFor, activeScene } from "../../lib/characters";
 import { scrub } from "../../lib/secrets";
 import { sql } from "../../lib/db";
-import { holdsOnWhenDown } from "../../lib/models";
+import { brainFor } from "../../lib/whichBrain";
 import { mediaNote } from "../../lib/media";
 
 // 💬 Velo in the app: chat, in-app calls, recaps and memory (see lib/brain.ts).
@@ -27,8 +27,9 @@ export async function POST(req: NextRequest) {
     // 🎭 A character's chat or call, with that character's own memory of them.
     const character = body.characterId ? await getCharacterFor(caller.userId, String(body.characterId)) : null;
     if (body.characterId && !character) throw new CharacterGone();
-    // ⏰ A chat with a character on her own brain: if it's down, no stand-in (see BrainDown below).
-    const noFallback = mode === "chat" && holdsOnWhenDown(character?.brain);
+    // ⏰ A chat on a brain that isn't Claude and with no backup switched on: if it's down there
+    // is no stand-in — the app says she'll be right back and tries again (see BrainDown below).
+    const noFallback = mode === "chat" && !(await brainFor(caller.userId)).includes("claude");
     let r;
     try { r = await askVelo(caller, { mode, messages, timeZone: body.timeZone, name: body.name, character, origin: req.nextUrl.origin, noFallback, sendPhoto: body.sendPhoto === true && mode === "chat", asks: body.asks === true }); }
     catch (e) {

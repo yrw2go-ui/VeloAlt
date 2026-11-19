@@ -5,6 +5,7 @@
 // They only know the person and their friend are friends — unless the person tells them more
 // themselves (then it's in that character's own chat and memory). Family ties are known.
 import { writeText } from "./llm";
+import { brainForCharacter } from "./whichBrain";
 import { sql } from "./db";
 import type { Character } from "./characters";
 import { friendStandingNote, secretsKnownBy, standingOf } from "./standing";
@@ -128,7 +129,7 @@ WHAT YOU DON'T KNOW: beyond friendship (and any family tie or 💞 / 🤫 note a
 /** A short "how they know each other", written when a link is made without one (no mention of the person). */
 export async function writeStory(a: Character, b: Character, kind: string): Promise<string> {
   try {
-    const raw = await writeText(a.brain, "Write one or two short sentences (under 280 characters) about how these two characters know each other and what they like doing together, as their shared history. Use 'they'. Don't mention any user, romance with anyone, or real people. Output only the sentences.", `RELATIONSHIP: ${kind}\nA: ${a.name} — ${first(a.personality)} Job: ${a.job || "?"}. Hobbies: ${a.hobbies || "?"}\nB: ${b.name} — ${first(b.personality)} Job: ${b.job || "?"}. Hobbies: ${b.hobbies || "?"}`, 160);
+    const raw = await writeText(await brainForCharacter(a.id), "Write one or two short sentences (under 280 characters) about how these two characters know each other and what they like doing together, as their shared history. Use 'they'. Don't mention any user, romance with anyone, or real people. Output only the sentences.", `RELATIONSHIP: ${kind}\nA: ${a.name} — ${first(a.personality)} Job: ${a.job || "?"}. Hobbies: ${a.hobbies || "?"}\nB: ${b.name} — ${first(b.personality)} Job: ${b.job || "?"}. Hobbies: ${b.hobbies || "?"}`, 160);
     return raw.replace(/\s+/g, " ").trim().slice(0, 600);
   } catch (e) {
     console.error("friends: story", e instanceof Error ? e.message : e);
