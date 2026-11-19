@@ -402,7 +402,8 @@ async function phoneActingUp(r: Row) {
 /** 📵 Photos whose resend time has come (for one person, or everyone from the cron): start them again, once. */
 export async function resendDue(userId: string | null = null, max = 5): Promise<number> {
   const rows = await sql()`update velo_media set resend_at = null, resent = true, status = 'working', retries = 0, retried = false, attempts = 0, job_id = null, claimed_at = null, created_at = now(), error = null, caption = ${pick(BACK)}
-    where id in (select id from velo_media where resend_at <= now() and status = 'failed' and not resent and (${userId}::uuid is null or user_id = ${userId}::uuid) order by resend_at limit ${max} for update skip locked)
+    where id in (select id from velo_media where resend_at <= now() and status = 'failed' and not resent and (${userId}::uuid is null or user_id = ${userId}::uuid)
+      and not exists (select 1 from users u where u.id = velo_media.user_id and u.paused) order by resend_at limit ${max} for update skip locked)
     returning id, user_id, character_id, kind, model, prompt, refs, description, subject`;
   for (const r of rows) {
     // She sends it fresh: the photo moves to the bottom of the chat, with a "phone's working again" note when it lands.
