@@ -7,12 +7,13 @@
 // name so the choice is an informed one. Leave it out and nothing is shown — better a blank than
 // a number that's wrong. ATLASCLOUD_IMAGE_MODELS can set or correct it without a deploy.
 export type ImageModel = { id: string; label: string; t2i: string; edit: string; refs?: "images" | "reference_images"; about?: string; price?: string };
-// 💵 Roughly what one picture costs on each, as Atlas Cloud prices them. An empty string shows
-// nothing at all, which is the honest thing to do until the real figure is in.
+// 💵 Roughly what one picture costs on each, as Atlas Cloud prices them (the exact figure is in
+// the comment). An empty string shows nothing at all, which is the honest thing to do when a
+// price isn't known. Prices move: ATLASCLOUD_IMAGE_MODELS can correct any of these.
 const PRICE: Record<string, string> = {
-  "seedream-5.0-pro": "",
-  "seedream-5.5": "",
-  "seedream-5.0-lite": "",
+  "seedream-5.0-pro": "~3.2¢",  // $0.0315
+  "seedream-5.5": "~3.5¢",      // $0.035
+  "seedream-5.0-lite": "~1.2¢", // $0.012
 };
 export const IMAGE_MODELS: ImageModel[] = [
   { id: "seedream-5.0-pro", label: "Seedream 5.0 Pro", t2i: "bytedance/seedream-v5.0-pro/text-to-image", edit: "bytedance/seedream-v5.0-pro/edit", refs: "images", about: "The default — the best likeness.", price: PRICE["seedream-5.0-pro"] },

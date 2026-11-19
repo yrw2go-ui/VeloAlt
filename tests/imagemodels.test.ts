@@ -42,5 +42,11 @@ ok(imageModels().every(m => m.label && /^[a-z0-9._-]+\/[a-z0-9._-]+(\/[a-z0-9._-
 for (const m of imageModels()) ok(m.price === undefined || typeof m.price === "string", `${m.label}: a price is a string or absent`);
 ok(imageModels().every(m => !m.price || /[¢$]|cent|penny/i.test(m.price)), "any price that is set reads as money");
 
+// The three figures Atlas Cloud charges, as they read on the card.
+is(imageModels().find(m => m.id === "seedream-5.0-pro")?.price, "~3.2¢", "5.0 Pro costs $0.0315");
+is(imageModels().find(m => m.id === "seedream-5.5")?.price, "~3.5¢", "5.5 costs $0.035");
+is(imageModels().find(m => m.id === "seedream-5.0-lite")?.price, "~1.2¢", "Lite costs $0.012");
+ok(imageModels().every(m => !!m.price), "every built-in now says what it costs");
+
 console.log(bad ? `${bad} failed` : "all good");
 process.exitCode = bad ? 1 : 0;
