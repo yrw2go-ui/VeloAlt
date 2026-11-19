@@ -763,7 +763,7 @@ export async function picaProfile(userId: string, accountId: string) {
   return { refs: refIds.map(id => refRows.find(r => String(r.id) === id)).filter(Boolean).map(r => ({ media_id: String(r!.id), url: String(r!.url) })),
     account: { id: String(a.id), handle: String(a.handle), name: String(a.name), bio: String(a.bio),
       personality: String(a.personality || ""), traits: cleanTraits(a.traits && Object.keys(a.traits).length ? a.traits : DEFAULT_TRAITS), followers: Number(a.followers), followed: !!a.followed, avatar: a.avatar ? String(a.avatar) : a.portrait ? String(a.portrait) : null, avatar_media_id: a.avatar_media_id ? String(a.avatar_media_id) : null, character_id: a.character_id ? String(a.character_id) : null, lives: a.lives ? String(a.lives) : "", hidden: !!a.hidden, married: a.attached === "married" },
-    photos: posts.map(r => ({ media_id: String(r.media_id), url: String(r.url), thumb: r.thumb ? String(r.thumb) : null, caption: String(r.caption || ""), saved: !!r.saved })) };
+    photos: posts.map(r => ({ post_id: String(r.id), media_id: String(r.media_id), url: String(r.url), thumb: r.thumb ? String(r.thumb) : null, caption: String(r.caption || ""), saved: !!r.saved })) };
 }
 
 /**
@@ -908,7 +908,7 @@ export async function picaMe(userId: string) {
   const [{ f }] = await sql()`select count(*)::int as f from pica_accounts where user_id = ${userId} and followed`;
   return { name: String(u?.name || "You"), bio: String(u?.pica_bio || ""),
     avatar: u?.avatar ? String(u.avatar) : u?.bio_photo ? String(u.bio_photo) : null, posts: Number(n), following: Number(f),
-    photos: posts.map(r => ({ media_id: String(r.media_id), url: String(r.url), thumb: r.thumb ? String(r.thumb) : null, caption: String(r.caption || ""), at: String(r.at), saved: !!r.saved })) };
+    photos: posts.map(r => ({ post_id: String(r.id), media_id: String(r.media_id), url: String(r.url), thumb: r.thumb ? String(r.thumb) : null, caption: String(r.caption || ""), at: String(r.at), saved: !!r.saved })) };
 }
 
 /** ✍️ Your Picagram bio, in your own words. */
@@ -994,10 +994,16 @@ export async function picaCounts(userId: string, ids: string[]) {
 }
 
 /** 🗑 Delete one of their own posts: its comments and photo go too, and the people who saw it forget it. */
-export async function picaDeletePost(userId: string, postId: string): Promise<boolean> {
-  const [p] = await sql()`delete from pica_posts where id = ${postId} and user_id = ${userId} and author_id is null and account_id is null returning caption, photo, media_id`;
+/**
+ * 🗑 Take a post down — yours, one of your characters', or one from someone on Picagram.
+ *
+ * `alsoPicture` says whether the picture goes with it. Left alone, the post disappears and the
+ * picture stays in your gallery, which is what you want when you liked the photo and not the post.
+ */
+export async function picaDeletePost(userId: string, postId: string, alsoPicture = true): Promise<boolean> {
+  const [p] = await sql()`delete from pica_posts where id = ${postId} and user_id = ${userId} returning caption, photo, media_id`;
   if (!p) return false;
-  if (p.media_id) await deleteMedia(userId, String(p.media_id)).catch(() => false);
+  if (alsoPicture && p.media_id) await deleteMedia(userId, String(p.media_id)).catch(() => false);
   const cap = String(p.caption || ""), desc = String(p.photo || "");
   const needle = cap ? `posted on Picagram: "${cap.slice(0, 160)}"` : desc ? `(a photo: ${desc.slice(0, 160)})` : "";
   if (needle) await sql()`delete from velo_memories where user_id = ${userId} and position(${needle} in text) > 0`;

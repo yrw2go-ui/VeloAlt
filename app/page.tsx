@@ -114,6 +114,23 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   const [admin, setAdmin] = useState(false);
   // ⬅️ Back from any other tab goes to Chat first, and only then out of the app.
   useBack(tab !== "chat", () => setTab("chat"));
+  // 👆 One tap on a tab is the tab. 👆👆 Two on Picagram, quickly, is "take me back to the top" —
+  // the way it works everywhere else — so you can get out of a profile or a thread without
+  // backing out of each one. Anything you'd opened is closed and the feed is reloaded.
+  const lastTap = useRef<{ id: Tab; at: number } | null>(null);
+  const [picaHome, setPicaHome] = useState(0);
+  const tapTab = (id: Tab) => {
+    const now = Date.now(), prev = lastTap.current;
+    const twice = !!prev && prev.id === id && now - prev.at < 500;
+    lastTap.current = { id, at: now };
+    setTab(id);
+    if (twice && id === "pica") {
+      setPicaOpen(null); setPicaHome(n => n + 1);
+      // Back to the top, and forget how far down you'd got, so it stays there.
+      if (mainRef.current) mainRef.current.scrollTop = 0;
+      if (userId) savePlace(userId, { scroll: { ...readPlace(userId).scroll, pica: 0 } });
+    }
+  };
   // A tapped notification opens that chat (?chat=<character id>, or "velo").
   const [withId, setWithId] = useState<string | null>(() => { const c = urlParam("chat"); return c ? (c !== "velo" ? c : null) : place.withId || null; });
   const [editing, setEditing] = useState<Character | "new" | null>(null);
@@ -437,7 +454,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
         {tab === "chat" && !inGroup && !(groupId && !groupsLoaded) && <Chat key={`${withChar?.id || "velo"}-${chatTick}`} startPlan={startingPlan} onPlanStarted={() => setStartPlan(null)} brains={brains} userId={userId} name={name} onChanged={bump} added={chatAdd} onAdded={() => setChatAdd(null)} character={withChar} adult={!!profile?.adultConfirmed} onAdult={() => setProfileTick(t => t + 1)} onHistory={h => { chatHistory.current = h; setHistoryCount(h.length); }}
           onNewCharacter={() => api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => setChars(r.characters)).catch(() => {})}
           others={chars.map(c => ({ id: c.id, name: c.name, pica_handle: c.pica_handle || null }))} onSocial={id => { setPicaOpen(id); setTab("pica"); }} onGroup={g => { setGroups(gs => [g, ...gs.filter(x => x.id !== g.id)]); setGroupId(g.id); }} />}
-        {tab === "pica" && <Picagram name={name} userId={userId} openProfile={picaOpen} onProfileOpened={() => setPicaOpen(null)} onChat={id => api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => { setChars(r.characters); setTab("chat"); pickChat(id); }).catch(() => {})} />}
+        {tab === "pica" && <Picagram name={name} userId={userId} home={picaHome} openProfile={picaOpen} onProfileOpened={() => setPicaOpen(null)} onChat={id => api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => { setChars(r.characters); setTab("chat"); pickChat(id); }).catch(() => {})} />}
         {tab === "gifts" && <Gifts />}
         {tab === "today" && <Today refresh={refresh} onChat={id => { setTab("chat"); pickChat(id); setChatTick(t => t + 1); }} />}
         {tab === "memory" && <Memory refresh={refresh} />}
@@ -447,7 +464,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
 
       <nav style={{ display: "flex", borderTop: "1px solid var(--border)", paddingBottom: "env(safe-area-inset-bottom)", background: "var(--surface)" }}>
         {TABS.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)} aria-current={tab === t.id ? "page" : undefined}
+          <button key={t.id} onClick={() => tapTab(t.id)} aria-current={tab === t.id ? "page" : undefined}
             style={{ flex: 1, background: "none", border: "none", padding: "10px 0 12px", color: tab === t.id ? "var(--accent)" : "var(--muted)", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, fontSize: 12, fontWeight: 700 }}>
             <span style={{ fontSize: 20, position: "relative" }}>{t.icon}
               {t.id === "pica" && picaNew > 0 && tab !== "pica" && <span data-testid="pica-badge" aria-label={`${picaNew} new posts`} style={{ position: "absolute", top: -6, right: -14, minWidth: 18, height: 18, padding: "0 5px", borderRadius: 999, background: "#ef4444", color: "#fff", fontSize: 11, fontWeight: 800, lineHeight: "18px", textAlign: "center" }}>{picaNew > 99 ? "99+" : picaNew}</span>}

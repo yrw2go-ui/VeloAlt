@@ -38,7 +38,7 @@ function Avatar({ name, url, size = 34 }: { name: string; url: string | null; si
   return <span style={{ width: size, height: size, borderRadius: "50%", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: GRADS[0], color: "#fff", fontWeight: 800, fontSize: size * 0.42 }}>{name.slice(0, 1).toUpperCase()}</span>;
 }
 
-export default function Picagram({ name, userId, onChat, openProfile, onProfileOpened }: { name: string; userId?: string; onChat?: (characterId: string) => void; openProfile?: string | null; onProfileOpened?: () => void }) {
+export default function Picagram({ name, userId, onChat, openProfile, onProfileOpened, home = 0 }: { name: string; userId?: string; onChat?: (characterId: string) => void; openProfile?: string | null; onProfileOpened?: () => void; home?: number }) {
   const [posts, setPosts] = useState<Post[] | null>(null);
   const [more, setMore] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -56,6 +56,17 @@ export default function Picagram({ name, userId, onChat, openProfile, onProfileO
   const [inbox, setInbox] = useState(!openProfile && !!place.inbox);
   const [thread, setThread] = useState<string | null>(openProfile ? null : place.thread || null);
   const [dmUnread, setDmUnread] = useState(0);
+  // 👆👆 Tapping Picagram twice: close whatever is open and go back to the top of the feed.
+  //
+  // Watching the number change rather than counting runs on purpose: React runs an effect twice on
+  // the way in during development, which is enough to make a "skip the first one" flag wipe the
+  // screen you were being put back on.
+  const lastHome = useRef(home);
+  useEffect(() => {
+    if (home === lastHome.current) return;
+    lastHome.current = home;
+    setProfile(null); setThread(null); setInbox(false); setSavedOpen(false); setMine(false); setFollowingOpen(false);
+  }, [home]);
   // 📍 Sent here to see someone: that is who you see. Any DM thread or inbox left open last time is
   // put away first — a thread renders over the top of a profile, so without this you land on
   // whoever you were last messaging instead of the person you just asked for.
@@ -203,9 +214,19 @@ function PostCard({ p, me, obs, onChange, onProfile, onFollow, onNote, onRemoved
   };
   const list = open && p.all ? p.all : p.preview;
   // 🗑 Your own post: delete it (asks first).
-  const remove = async () => {
-    if (!(await confirmAsk("Delete this post? Are you sure? Its likes and comments go too.", { yes: "Delete", danger: true }))) return;
-    try { await api("/api/pica", { action: "delete", id: p.id }); onRemoved(p.id); } catch { /* still there */ }
+  const remove = async (picture: boolean) => {
+    setAsk(false);
+    try { await api("/api/pica", { action: "delete", id: p.id, picture }); onRemoved(p.id); } catch { /* still there */ }
+  };
+  // 👆 Press and hold a post to take it down. On a picture the phone wants to do its own thing, so
+  // the menu opens on a long press and the phone's own one is waved off.
+  const [ask, setAsk] = useState(false);
+  const held = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const letGo = () => { if (held.current) clearTimeout(held.current); held.current = null; };
+  const hold = {
+    onPointerDown: () => { letGo(); held.current = setTimeout(() => setAsk(true), 550); },
+    onPointerUp: letGo, onPointerLeave: letGo, onPointerCancel: letGo,
+    onContextMenu: (e: React.MouseEvent) => { e.preventDefault(); setAsk(true); },
   };
   const acc = p.author.account;
   const follow = async () => { if (!acc) return; const on = !acc.followed; onFollow(acc.id, on); await api("/api/pica", { action: "follow", id: acc.id, on }).catch(e => { onFollow(acc.id, !on); onNote(e instanceof Error ? e.message : "Couldn't follow."); }); };
@@ -213,6 +234,26 @@ function PostCard({ p, me, obs, onChange, onProfile, onFollow, onNote, onRemoved
   const likedBy = p.liked_by.filter(Boolean);
   return (
     <article ref={ref} data-post={p.id} data-testid="pica-post" style={{ borderBottom: "1px solid var(--border)", paddingBottom: 12 }}>
+      {ask && (
+        <div role="dialog" aria-modal="true" data-testid="post-menu" onClick={() => setAsk(false)}
+          style={{ position: "fixed", inset: 0, zIndex: 3200, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+          <div className="card" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 440, display: "flex", flexDirection: "column", gap: 8, borderBottomLeftRadius: 0, borderBottomRightRadius: 0 }}>
+            <div style={{ fontWeight: 800, fontSize: 15 }}>{p.author.id ? `${p.author.name}'s post` : acc ? `${acc.handle}'s post` : "Your post"}</div>
+            <div className="muted" style={{ fontSize: 12.5 }}>Its likes and comments go with it.</div>
+            <button className="ghost" data-testid="post-only" onClick={() => remove(false)}
+              style={{ padding: "10px 12px", fontSize: 14, textAlign: "left", color: "var(--bad)" }}>
+              🗑 Delete the post{p.media ? <span className="muted" style={{ fontWeight: 400 }}> · the picture stays in your gallery</span> : null}
+            </button>
+            {p.media && (
+              <button className="ghost" data-testid="post-and-picture" onClick={() => remove(true)}
+                style={{ padding: "10px 12px", fontSize: 14, textAlign: "left", color: "var(--bad)" }}>
+                🗑 Delete the post and the picture<span className="muted" style={{ fontWeight: 400 }}> · gone for good</span>
+              </button>
+            )}
+            <button className="btn" data-testid="post-cancel" onClick={() => setAsk(false)} style={{ padding: "10px 12px", fontSize: 14 }}>Cancel</button>
+          </div>
+        </div>
+      )}
       <div className="row" style={{ gap: 10, padding: "10px 14px" }}>
         <span onClick={() => acc && onProfile(acc.id)} style={{ cursor: acc ? "pointer" : undefined, display: "flex" }}><Avatar name={p.author.name} url={p.author.portrait} /></span>
         <div style={{ flex: 1, minWidth: 0 }} onClick={() => acc && onProfile(acc.id)} data-testid={acc ? "pica-account" : undefined}>
@@ -222,12 +263,12 @@ function PostCard({ p, me, obs, onChange, onProfile, onFollow, onNote, onRemoved
         </div>
         {acc && !p.author.id && <button className={acc.followed ? "ghost" : "btn"} onClick={follow} data-testid="pica-follow" style={{ padding: "4px 12px", fontSize: 13 }}>{acc.followed ? "Following" : "Follow"}</button>}
         <span className="muted" style={{ fontSize: 12 }} title={stamp(p.created_at)}>{ago(p.created_at)}</span>
-        {!p.author.id && !acc && <button onClick={remove} aria-label="Delete post" data-testid="pica-delete" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16, padding: "0 2px", color: "var(--muted)" }}>🗑</button>}
+        {!p.author.id && !acc && <button onClick={() => setAsk(true)} aria-label="Delete post" data-testid="pica-delete" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16, padding: "0 2px", color: "var(--muted)" }}>🗑</button>}
       </div>
       {p.media ? (
-        <div onDoubleClick={() => { if (!p.liked) like(); }} style={{ display: "flex", justifyContent: "center", background: "#000" }}><MediaView media={p.media} big who={p.author.name} /></div>
+        <div {...hold} onDoubleClick={() => { if (!p.liked) like(); }} style={{ display: "flex", justifyContent: "center", background: "#000" }}><MediaView media={p.media} big who={p.author.name} /></div>
       ) : (
-        <div onDoubleClick={() => { if (!p.liked) like(); }} data-testid="pica-text" style={{ margin: "0 14px", padding: "20px 16px", borderRadius: 16, background: GRADS[p.id.charCodeAt(0) % GRADS.length], color: "#fff", fontSize: 18, fontWeight: 700, lineHeight: 1.4, whiteSpace: "pre-wrap", overflowWrap: "anywhere", textAlign: "center" }}>
+        <div {...hold} onDoubleClick={() => { if (!p.liked) like(); }} data-testid="pica-text" style={{ margin: "0 14px", padding: "20px 16px", borderRadius: 16, background: GRADS[p.id.charCodeAt(0) % GRADS.length], color: "#fff", fontSize: 18, fontWeight: 700, lineHeight: 1.4, whiteSpace: "pre-wrap", overflowWrap: "anywhere", textAlign: "center" }}>
           <EditableBio value={noJargon(p.caption)} testid="pica-caption" placeholder="Say something" max={2000} size={18} weight={700}
             onSave={async t => { onChange(x => ({ ...x, caption: t })); await api("/api/pica", { action: "caption.set", id: p.id, caption: hideSecrets(t).text }).catch(() => {}); }} />
         </div>
@@ -321,7 +362,7 @@ function Composer({ onClose, onPosted }: { onClose: () => void; onPosted: () => 
   );
 }
 
-type Photo = { media_id: string; url: string; thumb: string | null; caption?: string; saved: boolean; at?: string };
+type Photo = { post_id?: string; media_id: string; url: string; thumb: string | null; caption?: string; saved: boolean; at?: string };
 
 /** 🖼️ A picture, full screen, with Save. */
 function Viewer({ photo, onClose, onSaved, onRedo, onAvatar, onRef, isRef, onPrev, onNext }: { photo: Photo; onClose: () => void; onSaved: (on: boolean) => void; onRedo?: (mediaId: string) => void; onAvatar?: (mediaId: string) => void; onRef?: (mediaId: string) => void; isRef?: boolean; onPrev?: () => void; onNext?: () => void }) {
@@ -358,13 +399,43 @@ function step(list: Photo[] | null | undefined, open: Photo, go: (p: Photo) => v
   };
 }
 
-function Grid({ photos, onOpen }: { photos: Photo[]; onOpen: (p: Photo) => void }) {
+function Grid({ photos, onOpen, onRemoved, whose }: { photos: Photo[]; onOpen: (p: Photo) => void; onRemoved?: (postId: string) => void; whose?: string }) {
+  // 👆 Press and hold a square to take the post down — with the picture or without it.
+  const [ask, setAsk] = useState<Photo | null>(null);
+  const held = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const letGo = () => { if (held.current) clearTimeout(held.current); held.current = null; };
+  const hold = (p: Photo) => (onRemoved && p.post_id ? {
+    onPointerDown: () => { letGo(); held.current = setTimeout(() => setAsk(p), 550); },
+    onPointerUp: letGo, onPointerLeave: letGo, onPointerCancel: letGo,
+    onContextMenu: (e: React.MouseEvent) => { e.preventDefault(); setAsk(p); },
+  } : {});
+  const remove = async (picture: boolean) => {
+    const p = ask; setAsk(null);
+    if (!p?.post_id) return;
+    try { await api("/api/pica", { action: "delete", id: p.post_id, picture }); onRemoved?.(p.post_id); } catch { /* still there */ }
+  };
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 3 }}>
       {photos.map(p => (
         // eslint-disable-next-line @next/next/no-img-element
-        <img key={p.media_id} src={p.thumb || p.url} alt={p.caption || "Photo"} loading="lazy" onClick={() => onOpen(p)} data-testid="pica-grid-item" style={{ width: "100%", aspectRatio: "1", objectFit: "cover", cursor: "pointer", background: "var(--surface2)" }} />
+        <img key={p.media_id} src={p.thumb || p.url} alt={p.caption || "Photo"} loading="lazy" {...hold(p)} onClick={() => onOpen(p)} data-testid="pica-grid-item" style={{ width: "100%", aspectRatio: "1", objectFit: "cover", cursor: "pointer", background: "var(--surface2)" }} />
       ))}
+      {ask && (
+        <div role="dialog" aria-modal="true" data-testid="grid-menu" onClick={() => setAsk(null)}
+          style={{ position: "fixed", inset: 0, zIndex: 3200, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+          <div className="card" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 440, display: "flex", flexDirection: "column", gap: 8, borderBottomLeftRadius: 0, borderBottomRightRadius: 0 }}>
+            <div style={{ fontWeight: 800, fontSize: 15 }}>{whose ? `${whose}'s post` : "This post"}</div>
+            <div className="muted" style={{ fontSize: 12.5 }}>Its likes and comments go with it.</div>
+            <button className="ghost" data-testid="grid-post-only" onClick={() => remove(false)} style={{ padding: "10px 12px", fontSize: 14, textAlign: "left", color: "var(--bad)" }}>
+              🗑 Delete the post<span className="muted" style={{ fontWeight: 400 }}> · the picture stays in your gallery</span>
+            </button>
+            <button className="ghost" data-testid="grid-post-and-picture" onClick={() => remove(true)} style={{ padding: "10px 12px", fontSize: 14, textAlign: "left", color: "var(--bad)" }}>
+              🗑 Delete the post and the picture<span className="muted" style={{ fontWeight: 400 }}> · gone for good</span>
+            </button>
+            <button className="btn" data-testid="grid-cancel" onClick={() => setAsk(null)} style={{ padding: "10px 12px", fontSize: 14 }}>Cancel</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -574,7 +645,8 @@ function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: 
           {data.account.character_id && <div className="muted" style={{ padding: "0 16px 10px", fontSize: 12 }}>🤝 You&apos;re friends — she&apos;s one of your characters (edit her in her character card). Her account can&apos;t be deleted, but you can hide her posts, and she&apos;ll never know. Unfollowing her she <i>would</i> notice.</div>}
           {err && <div style={{ color: "var(--bad)", padding: "0 16px 10px", fontSize: 13 }}>⚠️ {err}</div>}
           {redoing && <div data-testid="pica-redoing" className="muted" style={{ margin: "0 16px 10px", padding: "8px 12px", borderRadius: 12, background: "rgba(236,72,153,.14)", border: "1px solid rgba(236,72,153,.4)", fontSize: 12 }}>{redoing}</div>}
-          <Grid photos={data.photos} onOpen={setView} />
+          <Grid photos={data.photos} onOpen={setView} whose={data.account.name}
+            onRemoved={id => setData(d => (d ? { ...d, photos: d.photos.filter(x => x.post_id !== id) } : d))} />
           {!data.photos.length && <div className="muted" style={{ textAlign: "center", padding: 24 }}>No photos yet</div>}
         </div>
       )}
@@ -1313,7 +1385,8 @@ function MyProfile({ name, onClose }: { name: string; onClose: () => void }) {
             </div>
           </div>
           {err && <div style={{ color: "var(--bad)", padding: "0 16px 10px", fontSize: 13 }} data-testid="pica-me-err">⚠️ {err}</div>}
-          <Grid photos={me.photos} onOpen={setView} />
+          <Grid photos={me.photos} onOpen={setView}
+            onRemoved={id => setMe(m => (m ? { ...m, posts: Math.max(0, m.posts - 1), photos: m.photos.filter(x => x.post_id !== id) } : m))} />
           {!me.photos.length && <div className="muted" style={{ textAlign: "center", padding: 24 }}>Nothing posted yet — tap ＋ Post</div>}
         </div>
       )}
