@@ -520,6 +520,20 @@ export async function POST(req: NextRequest) {
         const [row] = await db`insert into velo_messages (user_id, role, content, media_id, character_id, scene_id) values (${me}, 'assistant', ${mediaNote(media.kind, media.status, media.description, null, media.subject)}, ${media.id}, ${ch?.id || null}, ${sc?.id || null}) returning id`;
         return NextResponse.json({ media, messageId: String(row.id) });
       }
+      // 🛑 Whatever is going on this minute, so Today can offer to finish it.
+      case "ongoing": {
+        const rows = await db`select i.character_id, 'person' as kind, i.place as title, c.name, f.url as face
+            from chat_in_person i join chat_characters c on c.id = i.character_id
+            left join velo_files f on f.id = c.portrait_file_id
+            where i.user_id = ${me} and i.ended_at is null
+          union all
+          select s.character_id, 'video' as kind, s.title, c.name, f.url as face
+            from chat_scenes s join chat_characters c on c.id = s.character_id
+            left join velo_files f on f.id = c.portrait_file_id
+            where s.user_id = ${me} and s.status = 'active'`;
+        return NextResponse.json({ ongoing: rows.map(r => ({ characterId: String(r.character_id), kind: String(r.kind),
+          who: String(r.name), title: String(r.title || ""), portrait: r.face ? String(r.face) : null })) });
+      }
       case "inperson.get":
       case "inperson.start":
       case "inperson.end": {
