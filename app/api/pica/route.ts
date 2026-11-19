@@ -40,7 +40,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ posts: await picaFeed(me, before, 6) });
       }
       case "counts": return NextResponse.json({ counts: await picaCounts(me, Array.isArray(b.ids) ? b.ids.map(String) : []) });
-      case "delete": return UUID.test(id) && (await picaDeletePost(me, id)) ? NextResponse.json({ ok: true }) : bad("You can only delete your own posts.");
+      // 🗑 The post, and the picture with it only if they said so.
+      case "delete": return UUID.test(id) && (await picaDeletePost(me, id, b.picture !== false)) ? NextResponse.json({ ok: true }) : bad("That post wasn't found.");
       case "fromPhoto": {
         if (!UUID.test(id)) return bad("Unknown photo.");
         if (!allow(`pica-f:${me}`, [{ ms: 60_000, max: 3 }, { ms: 86_400_000, max: 20 }])) return bad("Slow down a little — try again in a bit.", 429);
