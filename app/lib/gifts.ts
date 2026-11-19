@@ -119,15 +119,49 @@ export function salesFor(week: number, stock: Gift[]): Map<string, number> {
 export const reduced = (g: Gift, off?: number): Gift =>
   off ? { ...g, price: salePrice(g.price, off), was: g.price, off } : g;
 
-export function shopFor(week: number): Gift[] {
+/** 🛠️ Admin → Gifts: a price, brand or name changed by hand. Only the changed bits are kept. */
+export type GiftEdit = { name?: string | null; brand?: string | null; price?: number | null };
+
+/** The gift as the shop should show it: the catalogue, with any hand-edit laid over the top. */
+export function edited(g: Gift, e?: GiftEdit): Gift {
+  if (!e) return g;
+  const name = typeof e.name === "string" && e.name.trim() ? e.name.trim().slice(0, 80) : g.name;
+  const brand = typeof e.brand === "string" ? e.brand.trim().slice(0, 60) : g.brand;
+  const price = typeof e.price === "number" && Number.isFinite(e.price) && e.price >= 1 ? Math.round(e.price) : g.price;
+  return { ...g, name, brand, price };
+}
+
+/** 🛠️ Up to twenty things you add to the catalogue yourself in Admin → Gifts. */
+export const MAX_EXTRAS = 20;
+
+/** The icons to pick from when you add one. */
+export const GIFT_ICONS = ["🎁", "👜", "👛", "🧥", "👗", "👙", "🩱", "👠", "👟", "🥾", "👢", "🩴", "📿", "💍", "💫", "⌚", "🕶️", "💄", "🧴", "💅", "🛁", "💆", "🎧", "📱", "📷", "💻", "🎮", "🔊", "💡", "🧋", "☕", "🍦", "🥡", "🍫", "🍷", "🎟️", "🎫", "🌹", "💐", "🕯️", "🏨", "🏟️", "⚽", "🏀", "📖", "🎨", "🎸", "🧸", "🪴", "🧣"];
+
+/**
+ * 🛍️ Something you added to the catalogue yourself: your icon, your price, and your say on whether
+ * it stays in the shop every week or takes its turn on the rotation with everything else.
+ */
+export type Extra = { id: string; name: string; brand: string; price: number; emoji: string; kind: Kind; always?: true };
+
+/** One of yours, as a gift the shop understands. */
+export const asGift = (e: Extra): Gift => ({ id: `extra:${e.id}`, name: e.name, brand: e.brand, price: e.price, emoji: e.emoji, kind: e.kind, ...(e.always ? { always: true as const } : {}) });
+export const isExtra = (id: string) => id.startsWith("extra:");
+
+/** 🔁 How many of the rotating things are in the shop in a week, unless Admin says otherwise. */
+export const ROTATING = 10;
+
+export function shopFor(week: number, rotating = ROTATING, edits?: Map<string, GiftEdit>, extra: Gift[] = []): Gift[] {
+  // 🛠️ Anything you added yourself is in the catalogue alongside the rest, and takes its turn the
+  // same way — unless you said it stays, in which case it is always there.
+  const ALL = extra.length ? [...GIFTS, ...extra] : GIFTS;
   // 👙 One bikini, one high-cut leotard, one necklace, one pair of platform heels — always there,
   // and a different one of each as the weeks go by.
-  const picks = SLOTS.map(sl => order(`slot:${sl}:${week}`, GIFTS.filter(g => g.slot === sl))[0]).filter(Boolean);
-  const always = GIFTS.filter(g => !g.slot && (g.always || g.price <= 200));
-  const rest = GIFTS.filter(g => !g.slot && g.price > 200);
-  const rotating = order(`shop:${week}`, rest).slice(0, 10);
-  const keep = new Set<Gift>([...always, ...rotating, ...picks]);
-  const stock = GIFTS.filter(g => keep.has(g));
+  const picks = SLOTS.map(sl => order(`slot:${sl}:${week}`, ALL.filter(g => g.slot === sl))[0]).filter(Boolean);
+  const always = ALL.filter(g => !g.slot && (g.always || g.price <= 200));
+  const rest = ALL.filter(g => !g.slot && !g.always && g.price > 200);
+  const picked = order(`shop:${week}`, rest).slice(0, Math.max(0, rotating));
+  const keep = new Set<Gift>([...always, ...picked, ...picks]);
+  const stock = ALL.filter(g => keep.has(g)).map(g => edited(g, edits?.get(g.id)));
   const sales = salesFor(week, stock);
   return stock.map(g => reduced(g, sales.get(g.id)));
 }

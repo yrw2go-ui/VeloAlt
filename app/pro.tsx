@@ -516,3 +516,208 @@ export function AdminCard() {
     </div>
   );
 }
+
+const BOX = { background: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 7px", fontSize: 12.5 };
+const KINDS = [
+  { id: "clothes", label: "👗 Clothes (she can wear it)" },
+  { id: "shoes", label: "👠 Shoes (she can wear it)" },
+  { id: "jewellery", label: "📿 Jewellery (she can wear it)" },
+  { id: "bag", label: "👜 Bag (she can wear it)" },
+  { id: "beauty", label: "💄 Beauty" },
+  { id: "tech", label: "🎧 Tech" },
+  { id: "treat", label: "🍷 A treat" },
+  { id: "home", label: "🕯️ For the home" },
+];
+
+type AdminGift = { id: string; name: string; brand: string; kind: string; price: number; emoji: string; always?: true; slot?: string; edited?: boolean; inShop?: boolean; mine?: true };
+
+export function GiftsAdminCard() {
+  const [open, setOpen] = useState(false);
+  const [gifts, setGifts] = useState<AdminGift[] | null>(null);
+  const [rotating, setRotating] = useState(30);
+  const [pool, setPool] = useState(0);
+  const [rotDraft, setRotDraft] = useState("30");
+  const [draft, setDraft] = useState<Record<string, { brand: string; name: string; price: string }>>({});
+  const [busy, setBusy] = useState("");
+  const [err, setErr] = useState("");
+  const [q, setQ] = useState("");
+  // 🛠️ Things you add to the catalogue yourself.
+  const [icons, setIcons] = useState<string[]>([]);
+  const [maxMine, setMaxMine] = useState(20);
+  const [mineCount, setMineCount] = useState(0);
+  const [adding, setAdding] = useState({ name: "", brand: "", price: "", emoji: "🎁", kind: "treat", always: false });
+  const load = (b: { gifts?: AdminGift[]; rotating?: number; pool?: number; icons?: string[]; maxMine?: number; mineCount?: number }) => {
+    const list = b.gifts || [];
+    if (b.icons?.length) setIcons(b.icons);
+    if (typeof b.maxMine === "number") setMaxMine(b.maxMine);
+    if (typeof b.mineCount === "number") setMineCount(b.mineCount);
+    setGifts(list);
+    if (typeof b.rotating === "number") { setRotating(b.rotating); setRotDraft(String(b.rotating)); }
+    if (typeof b.pool === "number") setPool(b.pool);
+    setDraft(Object.fromEntries(list.map(g => [g.id, { brand: g.brand, name: g.name, price: String(g.price) }])));
+  };
+  useEffect(() => {
+    if (!open || gifts) return;
+    api<{ gifts: AdminGift[]; rotating: number; pool: number; icons: string[]; maxMine: number; mineCount: number }>("/api/gifts", { action: "all" })
+      .then(load).catch(e => { setErr(e instanceof Error ? e.message : "Couldn't open it."); setGifts([]); });
+  }, [open, gifts]);
+
+  const dirty = (g: AdminGift) => {
+    const d = draft[g.id];
+    return !!d && (d.brand.trim() !== g.brand || d.name.trim() !== g.name || d.price.trim() !== String(g.price));
+  };
+  const save = async (g: AdminGift) => {
+    const d = draft[g.id];
+    if (!d || !dirty(g)) return;
+    setBusy(g.id); setErr("");
+    if (g.mine) {
+      await api<{ gifts: AdminGift[] }>("/api/gifts", { action: "extra.edit", giftId: g.id, brand: d.brand, name: d.name, price: Number(d.price) })
+        .then(load).catch(e => setErr(e instanceof Error ? e.message : "Couldn't save that one."));
+    } else {
+      await api<{ gift: AdminGift }>("/api/gifts", { action: "edit", giftId: g.id, brand: d.brand, name: d.name, price: Number(d.price) })
+        .then(r => setGifts(list => (list || []).map(x => (x.id === g.id ? r.gift : x))))
+        .catch(e => setErr(e instanceof Error ? e.message : "Couldn't save that one."));
+    }
+    setBusy("");
+  };
+  // 🔁 Whether one of yours stays in the shop every week or takes its turn.
+  const flipStay = async (g: AdminGift) => {
+    setBusy(g.id); setErr("");
+    await api<{ gifts: AdminGift[] }>("/api/gifts", { action: "extra.edit", giftId: g.id, always: !g.always })
+      .then(load).catch(e => setErr(e instanceof Error ? e.message : "Couldn't change that."));
+    setBusy("");
+  };
+  const pickIcon = async (g: AdminGift, emoji: string) => {
+    setBusy(g.id); setErr("");
+    await api<{ gifts: AdminGift[] }>("/api/gifts", { action: "extra.edit", giftId: g.id, emoji })
+      .then(load).catch(e => setErr(e instanceof Error ? e.message : "Couldn't change that."));
+    setBusy("");
+  };
+  const addMine = async () => {
+    if (!adding.name.trim() || !adding.price) return;
+    setBusy("add"); setErr("");
+    await api<{ gifts: AdminGift[] }>("/api/gifts", { action: "extra.add", ...adding, price: Number(adding.price) })
+      .then(b => { load(b); setAdding({ name: "", brand: "", price: "", emoji: "🎁", kind: "treat", always: false }); })
+      .catch(e => setErr(e instanceof Error ? e.message : "Couldn't add it."));
+    setBusy("");
+  };
+  const removeMine = async (g: AdminGift) => {
+    if (!(await confirmAsk(`Take "${g.name}" out of the catalogue? Are you sure?`))) return;
+    setBusy(g.id); setErr("");
+    await api<{ gifts: AdminGift[] }>("/api/gifts", { action: "extra.remove", giftId: g.id })
+      .then(load).catch(e => setErr(e instanceof Error ? e.message : "Couldn't remove it."));
+    setBusy("");
+  };
+  const saveRotating = async () => {
+    if (Number(rotDraft) === rotating) return;
+    setBusy("rotating"); setErr("");
+    await api<{ gifts: AdminGift[]; rotating: number }>("/api/gifts", { action: "rotating", rotating: Number(rotDraft) })
+      .then(r => load({ gifts: r.gifts, rotating: r.rotating, pool })).catch(e => setErr(e instanceof Error ? e.message : "Couldn't set that."));
+    setBusy("");
+  };
+
+  const hunt = q.trim().toLowerCase();
+  const shown = (gifts || []).filter(g => !hunt || `${g.brand} ${g.name} ${g.kind}`.toLowerCase().includes(hunt));
+  const changed = (gifts || []).filter(g => g.edited).length;
+
+  return (
+    <div className="card" data-testid="gift-admin-card">
+      <button onClick={() => setOpen(o => !o)} style={{ all: "unset", cursor: "pointer", display: "flex", width: "100%", alignItems: "center", justifyContent: "space-between" }}>
+        <span>
+          <span style={{ fontWeight: 700 }}>🛠️ Admin · Gifts &amp; prices</span>
+          <span className="muted" style={{ fontSize: 13, display: "block", margin: "2px 0 0" }}>Every gift there is, with its price. Change a price or a brand and it changes everywhere — the shop, her wishlist, and the bill.{changed ? ` · ${changed} edited` : ""}</span>
+        </span>
+        <span aria-hidden style={{ marginLeft: 10 }}>{open ? "▾" : "▸"}</span>
+      </button>
+      {open && (gifts === null ? <div className="muted" style={{ marginTop: 12, fontSize: 13 }}>Loading…</div> : (
+        <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 12 }}>
+          {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
+
+          {/* 🔁 How many of the rotating ones are in the shop in a week. */}
+          <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <label style={{ fontSize: 13, fontWeight: 600 }} htmlFor="rot">In the shop each week</label>
+            <input id="rot" data-testid="rotating" type="number" min={1} max={200} value={rotDraft} onChange={e => setRotDraft(e.target.value)}
+              style={{ width: 80, background: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 8px", fontSize: 13 }} />
+            <span className="muted" style={{ fontSize: 12 }}>of {pool} on rotation (the staples and one of each slot are always in, on top)</span>
+            <button className="btn" data-testid="rotating-save" disabled={Number(rotDraft) === rotating || busy === "rotating"} onClick={saveRotating}
+              style={{ padding: "5px 12px", fontSize: 12 }}>{busy === "rotating" ? "…" : "Set"}</button>
+          </div>
+
+
+          {/* 🛠️ Add one of your own to the catalogue: your icon, your price, and whether it stays. */}
+          <div data-testid="add-mine" style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 10, display: "flex", flexDirection: "column", gap: 7 }}>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>➕ One of your own <span className="muted" style={{ fontWeight: 500 }}>· {mineCount} of {maxMine}</span></div>
+            {mineCount >= maxMine ? <div className="muted" style={{ fontSize: 12 }}>That&apos;s all {maxMine}. Remove one to add another.</div> : (
+              <>
+                <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+                  <select data-testid="mine-icon" aria-label="Icon" value={adding.emoji} onChange={e => setAdding(a => ({ ...a, emoji: e.target.value }))}
+                    style={{ ...BOX, width: 62, fontSize: 16 }}>
+                    {icons.map(i => <option key={i} value={i}>{i}</option>)}
+                  </select>
+                  <input data-testid="mine-brand" aria-label="Brand" placeholder="Brand" maxLength={60} value={adding.brand}
+                    onChange={e => setAdding(a => ({ ...a, brand: e.target.value }))} style={{ ...BOX, width: 100 }} />
+                  <input data-testid="mine-name" aria-label="What it is" placeholder="What it is" maxLength={80} value={adding.name}
+                    onChange={e => setAdding(a => ({ ...a, name: e.target.value }))} style={{ ...BOX, flex: 1, minWidth: 120 }} />
+                  <span className="muted" style={{ fontSize: 12.5 }}>$</span>
+                  <input data-testid="mine-price" aria-label="Price" type="number" min={1} max={1000000} placeholder="0" value={adding.price}
+                    onChange={e => setAdding(a => ({ ...a, price: e.target.value }))} style={{ ...BOX, width: 78 }} />
+                </div>
+                <div className="row" style={{ gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                  <select data-testid="mine-kind" aria-label="What sort of thing" value={adding.kind} onChange={e => setAdding(a => ({ ...a, kind: e.target.value }))} style={{ ...BOX }}>
+                    {KINDS.map(k => <option key={k.id} value={k.id}>{k.label}</option>)}
+                  </select>
+                  <select data-testid="mine-stay" aria-label="In the shop" value={adding.always ? "stay" : "rotate"}
+                    onChange={e => setAdding(a => ({ ...a, always: e.target.value === "stay" }))} style={{ ...BOX }}>
+                    <option value="rotate">🔁 Takes its turn on rotation</option>
+                    <option value="stay">⭐ Stays in the shop every week</option>
+                  </select>
+                  <button className="btn" data-testid="mine-add" disabled={!adding.name.trim() || !adding.price || busy === "add"}
+                    onClick={addMine} style={{ padding: "5px 12px", fontSize: 12 }}>{busy === "add" ? "…" : "Add"}</button>
+                </div>
+                <div className="muted" style={{ fontSize: 11.5 }}>What sort of thing it is decides whether she can wear it in the photo she sends back.</div>
+              </>
+            )}
+          </div>
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Find a gift…" aria-label="Find a gift" data-testid="gift-find"
+            style={{ background: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 10, padding: "8px 10px", fontSize: 13 }} />
+          <div className="muted" style={{ fontSize: 12 }}>{shown.length} of {(gifts || []).length}. ⭐ never rotates · 🔁 in the shop this week.</div>
+
+          <div data-testid="gift-admin-list" style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+            {shown.map(g => (
+              <div key={g.id} data-testid={`gift-row-${g.id}`} style={{ display: "flex", gap: 6, alignItems: "center", padding: "7px 0", borderTop: "1px solid var(--border)", flexWrap: "wrap" }}>
+                {g.mine ? (
+                  <select data-testid={`icon-${g.id}`} aria-label={`${g.name} icon`} value={g.emoji} disabled={busy === g.id}
+                    onChange={e => pickIcon(g, e.target.value)} style={{ ...BOX, width: 56, fontSize: 15, padding: "3px 4px" }}>
+                    {icons.map(i => <option key={i} value={i}>{i}</option>)}
+                  </select>
+                ) : <span style={{ fontSize: 17, width: 24, textAlign: "center" }} title={g.kind}>{g.emoji}</span>}
+                <input value={draft[g.id]?.brand ?? ""} aria-label={`${g.name} brand`} maxLength={60}
+                  onChange={e => setDraft(d => ({ ...d, [g.id]: { ...d[g.id], brand: e.target.value } }))}
+                  style={{ width: 110, background: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 7px", fontSize: 12.5 }} />
+                <input value={draft[g.id]?.name ?? ""} aria-label={`${g.name} name`} maxLength={80}
+                  onChange={e => setDraft(d => ({ ...d, [g.id]: { ...d[g.id], name: e.target.value } }))}
+                  style={{ flex: 1, minWidth: 130, background: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 7px", fontSize: 12.5 }} />
+                <span className="muted" style={{ fontSize: 12.5 }}>$</span>
+                <input value={draft[g.id]?.price ?? ""} aria-label={`${g.name} price`} type="number" min={1} max={1000000}
+                  onChange={e => setDraft(d => ({ ...d, [g.id]: { ...d[g.id], price: e.target.value } }))}
+                  style={{ width: 78, background: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 7px", fontSize: 12.5 }} />
+                {g.mine ? (
+                  <button className="ghost" data-testid={`stay-${g.id}`} onClick={() => flipStay(g)} disabled={busy === g.id}
+                    title={g.always ? "Stays in the shop every week — tap to put it on rotation" : "Takes its turn on rotation — tap to make it stay"}
+                    style={{ fontSize: 11, padding: "3px 7px" }}>{g.always ? "⭐ stays" : "🔁 rotates"}</button>
+                ) : (
+                  <span style={{ fontSize: 12, width: 20, textAlign: "center" }} title={g.always ? "never rotates" : g.inShop ? "in the shop this week" : "waiting its turn"}>{g.always ? "⭐" : g.inShop ? "🔁" : ""}</span>
+                )}
+                <button className="btn" data-testid={`gift-save-${g.id}`} disabled={!dirty(g) || busy === g.id} onClick={() => save(g)}
+                  style={{ padding: "4px 10px", fontSize: 12 }}>{busy === g.id ? "…" : "Save"}</button>
+                {g.mine && <button className="ghost" data-testid={`gift-remove-${g.id}`} disabled={busy === g.id} onClick={() => removeMine(g)}
+                  title="Take it out of the catalogue" style={{ padding: "4px 8px", fontSize: 12 }}>🗑</button>}
+              </div>
+            ))}
+            {!shown.length && <div className="muted" style={{ fontSize: 13, paddingTop: 8 }}>Nothing matches that.</div>}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}

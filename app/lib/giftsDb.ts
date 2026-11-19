@@ -2,7 +2,7 @@
 // whether someone is still in the glow of one.
 import { sql } from "./db";
 import { scrub } from "./secrets";
-import { GIFTS, giftById, shopFor, weekOf, wishlistFor, onWishlist, boostFrom, myGift, isMyGift, MAX_MY_GIFTS, type Boost, type Gift } from "./gifts";
+import { GIFTS, GIFT_ICONS, MAX_EXTRAS, ROTATING, asGift, edited, isExtra, giftById, shopFor, weekOf, wishlistFor, onWishlist, boostFrom, myGift, isMyGift, MAX_MY_GIFTS, type Boost, type Gift, type GiftEdit } from "./gifts";
 import { settle, transfer, BANK, WEEKLY_RATE, PAY_LOW, PAY_HIGH } from "./money";
 import { hintsThisWeek, hintPick, hintLive, hintDealtWith, moneyTier, lovePoints, MONEY_LAVISH } from "./hints";
 
@@ -63,9 +63,126 @@ export async function unlistMyGift(userId: string, giftId: string): Promise<bool
 }
 
 /** 🛍️ The shop as it stands: this week's rotation, plus everything you listed yourself. */
-export const shopNow = (now = Date.now()): Gift[] => shopFor(weekOf(now));
+/**
+ * 🛠️ What's been changed by hand in Admin → Gifts, as a lookup.
+ *
+ * A database without the table yet just has nothing changed, so the shop keeps working either way.
+ */
+export async function giftEdits(): Promise<Map<string, GiftEdit>> {
+  const rows = await sql()`select gift_id, name, brand, price from gift_edits`
+    .catch(() => [] as Record<string, unknown>[]);
+  return new Map(rows.map(r => [String(r.gift_id), {
+    name: r.name === null || r.name === undefined ? null : String(r.name),
+    brand: r.brand === null || r.brand === undefined ? null : String(r.brand),
+    price: r.price === null || r.price === undefined ? null : Number(r.price),
+  }]));
+}
+
+export const shopNow = async (now = Date.now()): Promise<Gift[]> =>
+  shopFor(weekOf(now), await rotatingCount(), await giftEdits(), await giftExtras());
+
+/** 🔁 How many rotating things are in the shop this week — Admin's number, or the usual ten. */
+export async function rotatingCount(): Promise<number> {
+  const [r] = await sql()`select rotating from gift_shop where only_row`.catch(() => [] as Record<string, unknown>[]);
+  const n = Number(r?.rotating);
+  return Number.isFinite(n) && n >= 1 ? Math.round(n) : ROTATING;
+}
+
+/** 🔁 Set how many rotating things are in the shop each week. */
+export async function setRotating(n: number): Promise<number> {
+  const want = Math.round(Number(n));
+  if (!Number.isFinite(want) || want < 1 || want > 200) throw new GiftError("Between 1 and 200.");
+  try {
+    await sql()`insert into gift_shop (only_row, rotating) values (true, ${want})
+      on conflict (only_row) do update set rotating = excluded.rotating, updated_at = now()`;
+  } catch (e) { if (missingTable(e, "gift_shop")) throw new GiftError(NO_GIFT_TABLES); throw e; }
+  return want;
+}
+
+/** 🛠️ The things you added to the catalogue yourself in Admin → Gifts. */
+export async function giftExtras(): Promise<Gift[]> {
+  const rows = await sql()`select id, name, brand, price, emoji, kind, always from gift_extras order by created_at`
+    .catch(() => [] as Record<string, unknown>[]);
+  return rows.map(r => asGift({ id: String(r.id), name: String(r.name), brand: String(r.brand || ""), price: Number(r.price),
+    emoji: String(r.emoji || "🎁"), kind: String(r.kind) as Gift["kind"], ...(r.always ? { always: true as const } : {}) }));
+}
+
+const KINDS = ["bag", "clothes", "shoes", "jewellery", "beauty", "tech", "treat", "home"];
+const clean = (v: unknown, max: number) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, max);
+const checked = (name: string, price: number) => {
+  if (!name) throw new GiftError("It needs a name.");
+  if (!Number.isFinite(price) || price < 1 || price > 1_000_000) throw new GiftError("Put a price on it, between $1 and $1,000,000.");
+};
+
+/** ➕ Add one of your own. Up to twenty; after that something has to go first. */
+export async function addExtra(g: { name: string; brand: string; price: number; emoji: string; kind: string; always: boolean }): Promise<Gift> {
+  const name = clean(g.name, 80), brand = clean(g.brand, 60), price = Math.round(Number(g.price));
+  checked(name, price);
+  const emoji = GIFT_ICONS.includes(String(g.emoji)) ? String(g.emoji) : "🎁";
+  const kind = KINDS.includes(String(g.kind)) ? String(g.kind) : "treat";
+  try {
+    const [{ n }] = await sql()`select count(*)::int as n from gift_extras`;
+    if (Number(n) >= MAX_EXTRAS) throw new GiftError(`That's all ${MAX_EXTRAS} of your own. Remove one to add another.`);
+    const [row] = await sql()`insert into gift_extras (name, brand, price, emoji, kind, always)
+      values (${name}, ${brand}, ${price}, ${emoji}, ${kind}, ${!!g.always}) returning id, name, brand, price, emoji, kind, always`;
+    return asGift({ id: String(row.id), name: String(row.name), brand: String(row.brand || ""), price: Number(row.price),
+      emoji: String(row.emoji), kind: String(row.kind) as Gift["kind"], ...(row.always ? { always: true as const } : {}) });
+  } catch (e) { if (missingTable(e, "gift_extras")) throw new GiftError(NO_GIFT_TABLES); throw e; }
+}
+
+/** ✏️ Change one of yours — its words, its price, its icon, or whether it stays in the shop. */
+export async function editExtra(id: string, g: { name?: string; brand?: string; price?: number; emoji?: string; kind?: string; always?: boolean }): Promise<Gift> {
+  const plain = id.replace(/^extra:/, "");
+  const [now] = await sql()`select id, name, brand, price, emoji, kind, always from gift_extras where id = ${plain}`
+    .catch(() => [] as Record<string, unknown>[]);
+  if (!now) throw new GiftError("That isn't one of yours.");
+  const name = clean(g.name ?? now.name, 80), brand = clean(g.brand ?? now.brand ?? "", 60);
+  const price = Math.round(Number(g.price ?? now.price));
+  checked(name, price);
+  const emoji = GIFT_ICONS.includes(String(g.emoji ?? now.emoji)) ? String(g.emoji ?? now.emoji) : "🎁";
+  const kind = KINDS.includes(String(g.kind ?? now.kind)) ? String(g.kind ?? now.kind) : "treat";
+  const always = g.always === undefined ? !!now.always : !!g.always;
+  const [row] = await sql()`update gift_extras set name = ${name}, brand = ${brand}, price = ${price}, emoji = ${emoji}, kind = ${kind}, always = ${always}
+    where id = ${plain} returning id, name, brand, price, emoji, kind, always`;
+  return asGift({ id: String(row.id), name: String(row.name), brand: String(row.brand || ""), price: Number(row.price),
+    emoji: String(row.emoji), kind: String(row.kind) as Gift["kind"], ...(row.always ? { always: true as const } : {}) });
+}
+
+/** 🗑 Take one of yours out of the catalogue. */
+export async function removeExtra(id: string): Promise<boolean> {
+  const rows = await sql()`delete from gift_extras where id = ${id.replace(/^extra:/, "")} returning id`
+    .catch(() => [] as Record<string, unknown>[]);
+  return rows.length > 0;
+}
+
+/** 🛍️ Every gift there is, with the hand edits on, for the admin list. */
+export async function catalogue(): Promise<(Gift & { edited: boolean; mine?: true })[]> {
+  const tweaks = await giftEdits();
+  const ours = await giftExtras();
+  return [...GIFTS.map(g => ({ ...edited(g, tweaks.get(g.id)), edited: tweaks.has(g.id) })),
+    ...ours.map(g => ({ ...g, edited: false, mine: true as const }))];
+}
+
+/** ✏️ Change one by hand. Giving back the catalogue's own value clears the edit rather than storing it. */
+export async function editGift(giftId: string, patch: { name?: string; brand?: string; price?: number }): Promise<Gift> {
+  const base = GIFTS.find(g => g.id === giftId);
+  if (!base) throw new GiftError("That isn't one of the gifts.");
+  const name = clean(patch.name ?? base.name, 80), brand = clean(patch.brand ?? base.brand, 60);
+  const price = Math.round(Number(patch.price ?? base.price));
+  checked(name, price);
+  try {
+    // Back to exactly what the catalogue says? Then there's nothing to remember.
+    if (name === base.name && brand === base.brand && price === base.price) {
+      await sql()`delete from gift_edits where gift_id = ${giftId}`;
+      return base;
+    }
+    await sql()`insert into gift_edits (gift_id, name, brand, price) values (${giftId}, ${name}, ${brand}, ${price})
+      on conflict (gift_id) do update set name = excluded.name, brand = excluded.brand, price = excluded.price, updated_at = now()`;
+    return { ...base, name, brand, price };
+  } catch (e) { if (missingTable(e, "gift_edits")) throw new GiftError(NO_GIFT_TABLES); throw e; }
+}
 export async function shopFull(userId: string, now = Date.now()): Promise<Gift[]> {
-  return [...(await myGifts(userId)), ...shopNow(now)];
+  return [...(await myGifts(userId)), ...(await shopNow(now))];
 }
 export const wishlistOf = (whoId: string, now = Date.now(), mine: Gift[] = [], closeness = 100): Gift[] =>
   wishlistFor(whoId, weekOf(now), mine, closeness);
@@ -104,11 +221,11 @@ export async function peopleToGift(userId: string) {
 export async function sendGift(userId: string, to: { kind: "character" | "account"; id: string }, what: { giftId?: string; money?: number; note?: string }) {
   const now = Date.now();
   const mine = what.giftId && isMyGift(what.giftId) ? (await myGifts(userId)).find(g => g.id === what.giftId) || null : null;
-  const gift = mine || (what.giftId ? giftById(what.giftId) : null);
+  const gift = mine || (what.giftId ? (isExtra(what.giftId) ? (await giftExtras()).find(g => g.id === what.giftId) || null : giftById(what.giftId)) : null);
   if (what.giftId && !gift) throw new GiftError("That isn't something you can send.");
   // One of the thirty has to be in stock this week; one of yours always is.
   // 🏷️ And it is the shop's copy that is paid for, so a week's reduction is really taken off.
-  const stocked = gift && !mine ? shopNow(now).find(g => g.id === gift.id) || null : null;
+  const stocked = gift && !mine ? (await shopNow(now)).find(g => g.id === gift.id) || null : null;
   if (gift && !mine && !stocked) throw new GiftError(`${gift.name} isn't in the shop this week.`);
   const money = gift ? 0 : Math.round(Number(what.money) || 0);
   if (!gift && (money < 1 || money > 50_000)) throw new GiftError("Send between $1 and $50,000.");
@@ -196,7 +313,7 @@ export async function liveHints(userId: string, now = Date.now()): Promise<Map<s
   }
   const rows = await sql()`select character_id, kind, gift_id, created_at, done_at from chat_hints
     where user_id = ${userId} and done_at is null and created_at > now() - interval '48 hours'`;
-  const shop = new Set([...shopNow(now).map(g => g.id), ...mine.map(g => g.id)]);
+  const shop = new Set([...(await shopNow(now)).map(g => g.id), ...mine.map(g => g.id)]);
   const out = new Map<string, { kind: string; giftId: string; at: number }>();
   for (const r of rows) {
     const h = { created_at: Date.parse(String(r.created_at)), done_at: r.done_at ? Date.parse(String(r.done_at)) : null, kind: String(r.kind), gift_id: String(r.gift_id || "") };
@@ -230,3 +347,7 @@ export async function nudgeLove(userId: string, characterId: string, by: number)
 }
 
 export { GIFTS, BANK, WEEKLY_RATE, PAY_LOW, PAY_HIGH };
+
+/** Thrown when the admin tables aren't there yet, so the screen can say so plainly. */
+export const NO_GIFT_TABLES = "Admin · Gifts isn't set up on this database yet — run db/migrations/099-gift-admin.sql.";
+const missingTable = (e: unknown, t: string) => new RegExp(`relation .*${t}.* does not exist|undefined_table`, "i").test(e instanceof Error ? e.message : String(e));

@@ -915,3 +915,32 @@ alter table chat_characters add column if not exists explicit_ok boolean not nul
 alter table chat_characters add column if not exists gender text not null default 'female';
 alter table chat_characters drop constraint if exists chat_characters_gender_check;
 alter table chat_characters add constraint chat_characters_gender_check check (gender in ('female', 'male'));
+-- 🛠️ Admin → Gifts: the price, brand and name of anything in the catalogue, changed by hand.
+-- Only what's actually been changed is stored; everything else comes from the catalogue itself, so
+-- a gift that's never been touched follows the code and a gift that has keeps its edit for good.
+create table if not exists gift_edits (
+  gift_id text primary key,
+  name text,
+  brand text,
+  price int check (price is null or (price >= 1 and price <= 1000000)),
+  updated_at timestamptz not null default now()
+);
+-- 🔁 How many of the rotating things are in the shop in any one week. One row, and only ever one.
+create table if not exists gift_shop (
+  only_row boolean primary key default true check (only_row),
+  rotating int not null default 10 check (rotating between 1 and 200),
+  updated_at timestamptz not null default now()
+);
+
+-- 🛠️ Admin → Gifts: things added to the catalogue by hand — your icon, your price, and whether
+-- the shop always has it or it takes its turn on the rotation with everything else.
+create table if not exists gift_extras (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  brand text not null default '',
+  price int not null check (price >= 1 and price <= 1000000),
+  emoji text not null default '🎁',
+  kind text not null default 'treat',
+  always boolean not null default false,
+  created_at timestamptz not null default now()
+);
