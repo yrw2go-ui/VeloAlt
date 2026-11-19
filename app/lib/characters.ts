@@ -1,4 +1,5 @@
 import { wonOver } from "./attached";
+import { knownNote } from "./known";
 import { partnerLook } from "./partner";
 // 🎭 Characters: made by admins and shared with everyone, with portraits generated
 // by Atlas Cloud (Seedream) from a written description and saved to Blob. Server only.
@@ -186,7 +187,13 @@ export async function saveFeelings(userId: string, characterId: string, feelings
 /** 🙊 Caption-speak nobody actually says out loud. */
 export const PLAIN_WORDS = `Talk like a person, not a caption writer: never say "golden hour" when you're talking, captioning or commenting — nobody says that. If you mean the light, say the light, the evening sun, the sun going down, or just describe how it looked. (The photo description for the image generator is a different thing and can say what it likes.)`;
 
-export function characterPrompt(c: Character, ownerName: string, adult: boolean, feelings = "", words?: Words, cameAround = false, spoiledFlirty = 0): string {
+/** 🕰️ How many days this character has been in their life — for how much history she assumes. */
+export async function daysKnownFor(characterId: string): Promise<number | null> {
+  const [r] = await sql()`select greatest(0, extract(epoch from (now() - created_at)) / 86400)::float8 as d from chat_characters where id = ${characterId}`;
+  return r ? Number(r.d) : null;
+}
+
+export function characterPrompt(c: Character, ownerName: string, adult: boolean, feelings = "", words?: Words, cameAround = false, spoiledFlirty = 0, daysKnown: number | null = null): string {
   const them = ownerName || "the person you're talking with";
   // 🛠️ Settings → Admin → Messaging & wording: theirs where they changed it, else the default.
   const w = { ...wordDefaults(), ...(words || {}) };
@@ -196,7 +203,7 @@ export function characterPrompt(c: Character, ownerName: string, adult: boolean,
   const withThem = c.romantic && adult && !hisOwn;
   const line = (k: string) => say(w[k] || "", them, c.name);
   return `You are ${c.name}, a ${c.voice_kind === "male" ? "man" : "woman"}, a character in the Velo app${ownerName ? `, talking with ${ownerName}` : ""}.
-YOUR PERSONALITY: ${(c.lesbian && c.lesbian_personality ? c.lesbian_personality : c.personality) || "(not written — be warm and curious)"}${c.backstory ? `\nYOUR BACKSTORY: ${c.backstory.replace(/@(?=\p{L})/gu, "")}` : ""}${c.relation ? `\nWHO YOU ARE TO ${them.toUpperCase()}: ${c.relation}` : ""}${c.appearance ? `\nWHAT YOU LOOK LIKE: ${c.appearance}` : ""}${c.lives_in ? `\nWHERE YOU LIVE: ${c.lives_in} — this is where you are now, whatever your backstory says about where you grew up` : ""}${c.job ? `\nYOUR JOB: ${c.job}` : ""}${c.casual_wear ? `\nWHAT YOU USUALLY WEAR (casual): ${c.casual_wear}` : ""}${c.hobbies ? `\nYOUR FAVORITE HOBBIES: ${c.hobbies}` : ""}${scheduleText(c) ? `\n${scheduleText(c)}` : ""}${c.job || c.hobbies || c.casual_wear ? `\n${line("live")}` : ""}
+YOUR PERSONALITY: ${(c.lesbian && c.lesbian_personality ? c.lesbian_personality : c.personality) || "(not written — be warm and curious)"}${c.backstory ? `\nYOUR BACKSTORY: ${c.backstory.replace(/@(?=\p{L})/gu, "")}` : ""}${c.relation ? `\nWHO YOU ARE TO ${them.toUpperCase()}: ${c.relation}` : ""}${daysKnown === null ? "" : `\n${knownNote({ relation: c.relation || "", backstory: c.backstory || "", days: daysKnown, them })}`}${c.appearance ? `\nWHAT YOU LOOK LIKE: ${c.appearance}` : ""}${c.lives_in ? `\nWHERE YOU LIVE: ${c.lives_in} — this is where you are now, whatever your backstory says about where you grew up` : ""}${c.job ? `\nYOUR JOB: ${c.job}` : ""}${c.casual_wear ? `\nWHAT YOU USUALLY WEAR (casual): ${c.casual_wear}` : ""}${c.hobbies ? `\nYOUR FAVORITE HOBBIES: ${c.hobbies}` : ""}${scheduleText(c) ? `\n${scheduleText(c)}` : ""}${c.job || c.hobbies || c.casual_wear ? `\n${line("live")}` : ""}
 ${speechNote(c)}${line("stay")} ${line("plain")} ${line("slang")} ${line("brackets")} ${line("length")}\n${line("fresh")}${c.traits && Object.keys(c.traits).length ? `\n${traitsPrompt(c.traits, c.romantic && adult, spoiledFlirty)}` : ""}
 ${line("care")} ${line("forward")}
 ${line("memory")}${withThem ? `${c.romance_arc ? `\nHOW YOUR FEELINGS FOR THEM START AND CAN GROW (written by your creator): ${c.romance_arc}` : ""}\nHOW YOU FEEL ABOUT THEM RIGHT NOW${feelings.startsWith(SET_BY_HAND) ? " (your creator just set this; it is true of you, however it's worded — in your own head it's first person)" : ""}: ${feelings.replace(SET_BY_HAND, "") || `Nothing has developed yet — start exactly where your personality${c.relation ? ", who you are to them" : ""}${c.romance_arc ? " and the arc above" : ""} put you.`}` : ""}
