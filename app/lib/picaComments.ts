@@ -38,7 +38,7 @@ const DANCE = ["The moves!! 🔥", "Okay go off 💃", "Teach me that", "This is
 const WEAR: [RegExp, string][] = [
   [/crop ?top/, "crop top"], [/bikini/, "bikini"], [/swimsuit|one ?piece|swimwear/, "swimsuit"], [/sundress/, "sundress"],
   [/\bdress\b/, "dress"], [/\bgown\b/, "gown"], [/\bskirt\b/, "skirt"], [/\bjeans\b/, "jeans"], [/\bdenim\b/, "denim"],
-  [/leggings|yoga pants/, "leggings"], [/sports bra/, "sports bra"], [/\bhoodie\b/, "hoodie"], [/sweater|jumper|knit/, "sweater"],
+  [/leggings|yoga pants/, "leggings"], [/\btrousers\b|\bchinos\b|\bslacks\b|(?<!yoga )\bpants\b/, "pants"], [/sports bra/, "sports bra"], [/\bhoodie\b/, "hoodie"], [/sweater|jumper|knit/, "sweater"],
   [/\bcardigan\b/, "cardigan"], [/leather jacket/, "leather jacket"], [/\bjacket\b/, "jacket"], [/\bcoat\b/, "coat"],
   [/\bblazer\b/, "blazer"], [/\bromper\b|\bjumpsuit\b/, "jumpsuit"], [/\bshorts\b/, "shorts"], [/\bboots\b/, "boots"],
   [/\bheels\b|stilettos/, "heels"], [/sneakers|trainers/, "sneakers"], [/\bhat\b|\bcap\b|beanie/, "hat"],
@@ -48,10 +48,23 @@ const WEAR: [RegExp, string][] = [
   [/\buniform\b/, "uniform"], [/\bkimono\b/, "kimono"], [/\bnails\b|manicure/, "nails"], [/\bhair\b/, "hair"],
   [/\bmakeup\b|\bliner\b|\blipstick\b/, "makeup"], [/\bglasses\b/, "glasses"], [/\bwatch\b/, "watch"],
 ];
-const ABOUT_WEAR = (item: string) => [
-  `Love the ${item}`, `That ${item} 😍`, `Okay the ${item} is everything`, `Need that ${item}`, `Where's the ${item} from??`,
-  `The ${item} 🔥`, `Obsessed with the ${item}`, `${item.charAt(0).toUpperCase() + item.slice(1)} looks so good on you`, `That ${item} though 👌`,
-];
+/**
+ * 👖 Things there's no single one of: a pair of jeans is "those jeans", not "that jeans".
+ *
+ * Nothing uncountable belongs here — hair, makeup and denim take "that" and "is" like any singular
+ * thing, so they're left out on purpose.
+ */
+const PLURAL = new Set(["jeans", "leggings", "pants", "trousers", "shorts", "boots", "heels", "sneakers", "sunglasses", "earrings", "overalls", "scrubs", "nails", "glasses"]);
+
+const ABOUT_WEAR = (item: string) => {
+  const many = PLURAL.has(item);
+  const That = many ? "Those" : "That", that = many ? "those" : "that";
+  const is = many ? "are" : "is", looks = many ? "look" : "looks", where = many ? "Where are" : "Where's";
+  return [
+    `Love the ${item}`, `${That} ${item} 😍`, `Okay the ${item} ${is} everything`, `Need ${that} ${item}`, `${where} the ${item} from??`,
+    `The ${item} 🔥`, `Obsessed with the ${item}`, `${item.charAt(0).toUpperCase() + item.slice(1)} ${looks} so good on you`, `${That} ${item} though 👌`,
+  ];
+};
 
 const TEXT = ["So true 😂", "Felt this", "Literally me", "Same!!", "Mood", "Relatable af", "Hahaha yes", "Big agree", "Couldn't have said it better",
   "Needed to hear this", "Facts", "Preach 🙌", "This is so real", "Lmao 😂", "Okay but why is this so accurate", "Story of my life", "100%",
