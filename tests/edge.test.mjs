@@ -75,6 +75,50 @@ for (const width of [360, 393, 412]) {
     await ctx.close();
   }
 }
+// Type stays the phone size at every width. Android/iOS won't inflate it, and nothing uses vw/clamp.
+const typePage = `<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, viewport-fit=cover">
+<style>${css}</style>
+<div id="shell" style="height:100dvh;display:flex;flex-direction:column;width:100%;min-width:0;max-width:min(720px,100%);margin:0 auto">
+<header class="row"><div data-testid="header-title" style="font-weight:800;font-size:15px">Velo 2</div></header>
+<main style="flex:1;min-width:0;width:100%;overflow-x:clip">
+  <div data-testid="chat-bubble" style="font-size:15px;line-height:1.45;max-width:80%">Hey, what are you up to?</div>
+  <div class="card"><b data-testid="card-title">What should Velo call you?</b></div>
+</main>
+<nav style="display:flex;width:100%"><button data-testid="tab-label" style="flex:1 1 0;min-width:0;font-size:12px;font-weight:700">Chat</button></nav>
+</div>`;
+const sizes = {};
+for (const width of [360, 412, 768, 1280]) {
+  const mobile = width <= 412;
+  const ctx = await browser.newContext({ viewport: { width, height: 800 }, isMobile: mobile, hasTouch: mobile, deviceScaleFactor: mobile ? 2 : 1 });
+  const pg = await ctx.newPage();
+  await pg.setContent(typePage);
+  sizes[width] = await pg.evaluate(() => {
+    const px = (sel) => getComputedStyle(document.querySelector(sel)).fontSize;
+    const root = getComputedStyle(document.documentElement);
+    return {
+      body: px("body"),
+      title: px("[data-testid=header-title]"),
+      tab: px("[data-testid=tab-label]"),
+      bubble: px("[data-testid=chat-bubble]"),
+      card: px("[data-testid=card-title]"),
+      adjust: root.getPropertyValue("text-size-adjust") || root.getPropertyValue("-webkit-text-size-adjust"),
+    };
+  });
+  await ctx.close();
+}
+const first = sizes[360];
+for (const width of [412, 768, 1280]) {
+  const same = ["body", "title", "tab", "bubble", "card"].every(k => sizes[width][k] === first[k]);
+  console.log((same ? "PASS " : "FAIL ") + `type @ ${width} body=${sizes[width].body} title=${sizes[width].title} tab=${sizes[width].tab} bubble=${sizes[width].bubble} card=${sizes[width].card}`);
+  if (!same) bad++;
+}
+const phone = first.body === "16px" && first.title === "15px" && first.tab === "12px" && first.bubble === "15px" && first.card === "16px";
+console.log((phone ? "PASS " : "FAIL ") + `phone type scale body=${first.body} title=${first.title} tab=${first.tab} bubble=${first.bubble} card=${first.card}`);
+if (!phone) bad++;
+const adjustOk = /100%/.test(String(first.adjust));
+console.log((adjustOk ? "PASS " : "FAIL ") + `text-size-adjust=${first.adjust || "(unset)"}`);
+if (!adjustOk) bad++;
+
 await browser.close();
 console.log(bad ? `${bad} failed` : "all good");
 process.exit(bad ? 1 : 0);
