@@ -1,7 +1,12 @@
-// Velo's service worker: shows push notifications (a check-in from Velo or a character)
-// and opens that chat when tapped. Nothing is cached here.
+// Velo's service worker: shows push notifications and opens that chat when tapped.
+// It does not keep a copy of the app. Any cache left by an older worker is dropped
+// on activate so an installed home-screen icon picks up the new page.
 self.addEventListener("install", () => self.skipWaiting());
-self.addEventListener("activate", e => e.waitUntil(self.clients.claim()));
+self.addEventListener("activate", e => e.waitUntil((async () => {
+  const keys = await caches.keys();
+  await Promise.all(keys.map(k => caches.delete(k)));
+  await self.clients.claim();
+})()));
 self.addEventListener("push", e => {
   let d = {};
   try { d = e.data ? e.data.json() : {}; } catch { d = { body: e.data && e.data.text() }; }

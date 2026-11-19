@@ -122,7 +122,7 @@ export default function Picagram({ name, userId, onChat, openProfile, onProfileO
   const update = (id: string, f: (p: Post) => Post) => setPosts(ps => (ps || []).map(p => (p.id === id ? f(p) : p)));
 
   return (
-    <div data-testid="picagram" style={{ maxWidth: 560, width: "100%", margin: "0 auto", display: "flex", flexDirection: "column" }}>
+    <div data-testid="picagram" style={{ maxWidth: "100%", width: "100%", minWidth: 0, margin: "0 auto", display: "flex", flexDirection: "column" }}>
       <div className="row" style={{ padding: "10px 14px", position: "sticky", top: 0, zIndex: 5, background: "var(--bg)", borderBottom: "1px solid var(--border)", gap: 8 }}>
         <div style={{ flex: 1, fontSize: 24, fontWeight: 900, fontStyle: "italic", letterSpacing: -0.5, background: "linear-gradient(90deg,#f59e0b,#ec4899,#8b5cf6)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>Picagram</div>
         <button className="ghost" onClick={() => setInbox(true)} aria-label="Messages" data-testid="pica-inbox-open" style={{ padding: "6px 10px", position: "relative" }}>✉️
