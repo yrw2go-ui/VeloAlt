@@ -14,8 +14,8 @@ export type Profile = {
   personality: string; adultConfirmed: boolean; customFace?: string;
   videoModel?: string; videoModels?: { id: string; label: string }[];
   imageModel?: string;
-  imageModels?: { id: string; label: string; about: string; mine: boolean }[];
-  myImageModels?: { id: string; label: string; t2i: string; edit: string; mine: boolean }[]; checkins?: string; replyLength?: string;
+  imageModels?: { id: string; label: string; about: string; price?: string; mine: boolean }[];
+  myImageModels?: { id: string; label: string; t2i: string; edit: string; price?: string; mine: boolean }[]; checkins?: string; replyLength?: string;
   paused?: boolean;
   bio?: { text: string; birthday: string; age: number | null; state: string; photo: string; photoNote: string };
 };
@@ -303,7 +303,7 @@ export function PictureCard({ profile, onChange }: { profile: Profile; onChange:
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [adding, setAdding] = useState(false);
-  const [f, setF] = useState({ label: "", t2i: "", edit: "" });
+  const [f, setF] = useState({ label: "", t2i: "", edit: "", price: "" });
   const list = [...(profile.imageModels || []), ...(profile.myImageModels || [])];
   if (!list.length) return null;
   const cur = profile.imageModel || "seedream-5.0-pro";
@@ -315,7 +315,7 @@ export function PictureCard({ profile, onChange }: { profile: Profile; onChange:
   };
   const add = async () => {
     setBusy(true); setErr("");
-    try { await data("imagemodel.add", f); setF({ label: "", t2i: "", edit: "" }); setAdding(false); onChange(); }
+    try { await data("imagemodel.add", f); setF({ label: "", t2i: "", edit: "", price: "" }); setAdding(false); onChange(); }
     catch (e) { setErr(e instanceof Error ? e.message : "Couldn't add it."); }
     setBusy(false);
   };
@@ -338,7 +338,7 @@ export function PictureCard({ profile, onChange }: { profile: Profile; onChange:
             <div key={m.id} className="row" style={{ gap: 6 }}>
               <button role="radio" aria-checked={on} disabled={busy} onClick={() => pick(m.id)} data-testid={`image-model-${m.id}`}
                 style={{ flex: 1, textAlign: "left", background: on ? "rgba(124,140,255,0.12)" : "var(--surface2)", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, borderRadius: 12, padding: "10px 12px", color: "var(--text)", cursor: on ? "default" : "pointer" }}>
-                <div style={{ fontWeight: 700 }}>{on ? "✓ " : ""}{m.label}{m.id === "seedream-5.0-pro" ? <span className="muted" style={{ fontWeight: 400, fontSize: 13 }}> · default</span> : null}</div>
+                <div style={{ fontWeight: 700 }}>{on ? "✓ " : ""}{m.label}{m.price ? <span className="muted" style={{ fontWeight: 400, fontSize: 13 }}> · {m.price} a picture</span> : null}{m.id === "seedream-5.0-pro" ? <span className="muted" style={{ fontWeight: 400, fontSize: 13 }}> · default</span> : null}</div>
                 <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{"about" in m && m.about ? m.about : "t2i" in m ? m.t2i : ""}</div>
               </button>
               {mine && <button className="ghost" disabled={busy} aria-label={`Remove ${m.label}`} onClick={() => remove(m.id, m.label)} style={{ padding: "6px 10px" }} data-testid={`image-model-del-${m.id}`}>🗑</button>}
@@ -353,6 +353,7 @@ export function PictureCard({ profile, onChange }: { profile: Profile; onChange:
           <input style={field} placeholder="Name you'll see, e.g. Seedream 6" value={f.label} onChange={e => setF({ ...f, label: e.target.value })} aria-label="Model name" data-testid="image-model-label" />
           <input style={field} placeholder="bytedance/seedream-v5.5/text-to-image" value={f.t2i} onChange={e => setF({ ...f, t2i: e.target.value.trim() })} aria-label="From words" autoCapitalize="none" data-testid="image-model-t2i" />
           <input style={field} placeholder="bytedance/seedream-v5.5/edit" value={f.edit} onChange={e => setF({ ...f, edit: e.target.value.trim() })} aria-label="From reference photos" autoCapitalize="none" data-testid="image-model-edit" />
+          <input style={field} placeholder="Roughly what one picture costs, e.g. ~4¢ (optional)" value={f.price} onChange={e => setF({ ...f, price: e.target.value })} aria-label="Cost per picture" data-testid="image-model-price" />
           <div className="row" style={{ gap: 8 }}>
             <button className="btn" disabled={busy || !f.t2i || !f.edit} onClick={add} data-testid="image-model-save">Add and use it</button>
             <button className="ghost" disabled={busy} onClick={() => { setAdding(false); setErr(""); }}>Cancel</button>

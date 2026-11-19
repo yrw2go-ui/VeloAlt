@@ -36,5 +36,11 @@ is(imageModelFor("mine-x", null, false).model, "bytedance/seedream-v5.0-pro/text
 ok(imageModels().every(m => m.label && /^[a-z0-9._-]+\/[a-z0-9._-]+(\/[a-z0-9._-]+)?$/i.test(m.t2i) && /^[a-z0-9._-]+\/[a-z0-9._-]+(\/[a-z0-9._-]+)?$/i.test(m.edit)),
   "every built-in has a name and two well-formed ids");
 
+
+// 💵 Roughly what a picture costs, shown beside the name. A model with no figure shows
+// nothing rather than a number that might be wrong.
+for (const m of imageModels()) ok(m.price === undefined || typeof m.price === "string", `${m.label}: a price is a string or absent`);
+ok(imageModels().every(m => !m.price || /[¢$]|cent|penny/i.test(m.price)), "any price that is set reads as money");
+
 console.log(bad ? `${bad} failed` : "all good");
 process.exitCode = bad ? 1 : 0;
