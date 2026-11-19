@@ -13,6 +13,7 @@ export type Profile = {
   chatModel: string; models: { id: string; label: string; by: string; where: string }[];
   personality: string; adultConfirmed: boolean; customFace?: string;
   videoModel?: string; videoModels?: { id: string; label: string }[]; checkins?: string; replyLength?: string;
+  paused?: boolean;
   bio?: { text: string; birthday: string; age: number | null; state: string; photo: string; photoNote: string };
 };
 type Contact = { id: string; name: string; phone: string };
@@ -721,6 +722,38 @@ export function GiftsAdminCard() {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+
+/**
+ * ⏸️ Settings → Paused: stop the world where it stands.
+ *
+ * Nothing new happens while it is on — no posts, no check-ins, no text she promised, no
+ * invitation, no photo coming back. Everything already there stays exactly as it is, and turning
+ * it off lets things start up again.
+ */
+export function PauseCard({ profile, onChange }: { profile: Profile; onChange: () => void }) {
+  const on = !!profile.paused;
+  const [busy, setBusy] = useState(false);
+  const flip = async () => {
+    setBusy(true);
+    await data("profile.update", { paused: !on }).catch(() => {});
+    setBusy(false);
+    onChange();
+  };
+  return (
+    <div className="card" data-testid="pause-card" style={on ? { borderColor: "var(--accent)" } : undefined}>
+      <div style={{ fontWeight: 700 }}>{on ? "⏸️ Paused" : "▶️ Everything is running"}</div>
+      <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>
+        {on
+          ? "Nothing new is happening: no posts, no check-ins, nothing anyone promised to send. Everything already here is just as you left it."
+          : "Pause and nothing new happens — no posts, no check-ins, no texts first, no photos coming back. What is already here stays as it is."}
+      </div>
+      <button className={on ? "btn" : "ghost"} disabled={busy} onClick={() => void flip()} data-testid="pause-toggle" style={{ padding: "10px 16px" }}>
+        {busy ? "…" : on ? "▶️ Start everything again" : "⏸️ Pause everything"}
+      </button>
     </div>
   );
 }

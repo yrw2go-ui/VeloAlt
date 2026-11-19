@@ -21,7 +21,7 @@ const PER_DAY = { sometimes: 1, often: 2 } as const;
 
 export async function runCheckins(opts: { userId?: string; force?: boolean } = {}): Promise<{ sent: number; looked: number }> {
   const users = await sql()`select u.id, u.email, u.name, u.time_zone, u.checkins from users u
-    where u.checkins <> 'off' and exists (select 1 from push_subscriptions p where p.user_id = u.id)
+    where u.checkins <> 'off' and not u.paused and exists (select 1 from push_subscriptions p where p.user_id = u.id)
       and (${opts.userId || null}::uuid is null or u.id = ${opts.userId || null}::uuid)
     order by random() limit 40`;
   let sent = 0;

@@ -8,7 +8,8 @@ import { sendPush } from "./push";
 /** ⏰ Sends every promised text whose time has come (run every minute). */
 export async function deliverPromises(): Promise<number> {
   const due = await sql()`update chat_promises set status = 'sending' where id in (
-      select id from chat_promises where status = 'pending' and due_at <= now() order by due_at limit 20)
+      select id from chat_promises where status = 'pending' and due_at <= now()
+        and not exists (select 1 from users u where u.id = chat_promises.user_id and u.paused) order by due_at limit 20)
     returning id, user_id, character_id, about`;
   let sent = 0;
   for (const p of due) {

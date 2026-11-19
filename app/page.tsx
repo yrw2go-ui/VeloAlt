@@ -22,7 +22,7 @@ import CheckinsCard from "./notify";
 import Today from "./today";
 import Memory from "./memory";
 import { timeZone } from "./lib/tz";
-import ProCard, { AdminCard, GiftsAdminCard, BrainCard, PersonalityCard, ReplyLengthCard, VideoCard, WordingCard, type Profile } from "./pro";
+import ProCard, { AdminCard, PauseCard, GiftsAdminCard, BrainCard, PersonalityCard, ReplyLengthCard, VideoCard, WordingCard, type Profile } from "./pro";
 
 type Tab = "chat" | "pica" | "gifts" | "today" | "memory" | "settings";
 const TABS: { id: Tab; icon: string; label: string }[] = [
@@ -521,6 +521,7 @@ function Settings({ name, setName, onOut, profile, onProfile, chars = [], admin 
         <VeloLookPicker />
       </div>
       {profile && <AboutCard profile={profile} onChange={onProfile} />}
+      {profile && <PauseCard profile={profile} onChange={onProfile} />}
       {profile && <CheckinsCard profile={profile} onChange={onProfile} />}
       {profile && <PersonalityCard profile={profile} onChange={onProfile} />}
       {profile && <BrainCard profile={profile} onChange={onProfile} chars={chars} admin={admin} brains={brains} brainModels={brainModels} onCharChange={onCharChange} />}
