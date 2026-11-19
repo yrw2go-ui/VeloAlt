@@ -382,7 +382,9 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
   // 🏘️ Are YOU in? One switch for the whole street — a neighbour only comes by when you're home.
   const [iAmHome, setIAmHome] = useState<boolean | null>(null);
   useEffect(() => {
-    if (!character?.neighbor || character.live_in) return;
+    // 🏠 Someone who lives with you counts too: whether YOU are in is a separate thing from whether
+    // SHE is, and it still decides who else stops by.
+    if (!character?.neighbor && !character?.live_in) return;
     data<{ home: boolean }>("athome.get").then(r => setIAmHome(r.home)).catch(() => {});
   }, [character?.id, character?.neighbor, character?.live_in]); // eslint-disable-line react-hooks/exhaustive-deps
   const setMyHome = async (v: boolean) => { setIAmHome(v); await data("athome.set", { home: v }).catch(() => setIAmHome(!v)); };
@@ -636,7 +638,9 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       {character?.live_in && !scene && (
         <div data-testid="live-in-bar" className="row" style={{ gap: 8, padding: "6px 14px", borderBottom: "1px solid var(--border)", background: atHome ? "rgba(74,222,128,.12)" : "var(--surface2)", fontSize: 13 }}>
           <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {atHome ? <>🏠 <b>{character.name}&apos;s home</b> <span className="muted">· you&apos;re in the house together</span></> : <>🚪 <b>{character.name}&apos;s out</b> <span className="muted">· you&apos;re texting</span></>}
+            {atHome
+              ? <>🏠 <b>{character.name}&apos;s home</b> <span className="muted">· {iAmHome === false ? "you're out" : "you're in the house together"}</span></>
+              : <>🚪 <b>{character.name}&apos;s out</b> <span className="muted">· you&apos;re texting</span></>}
           </span>
           <div className="row" style={{ gap: 0, borderRadius: 999, border: "1px solid var(--border)", overflow: "hidden" }}>
             {/* 🏷️ Her name on the buttons: this switch is about HER, and the street switch below
@@ -650,10 +654,12 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
           </div>
         </div>
       )}
-      {character?.neighbor && !character.live_in && !scene && (
+      {(character?.neighbor || character?.live_in) && !scene && (
         <div data-testid="neighbor-bar" className="row" style={{ gap: 8, padding: "6px 14px", borderBottom: "1px solid var(--border)", background: iAmHome ? "rgba(74,222,128,.12)" : "var(--surface2)", fontSize: 13 }}>
           <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {iAmHome ? <>🏠 <b>You&apos;re home</b> <span className="muted">· {character.name} lives a few doors down</span></> : <>🚪 <b>You&apos;re out</b> <span className="muted">· nobody comes by</span></>}
+            {iAmHome
+              ? <>🏠 <b>You&apos;re home</b> <span className="muted">· {character.live_in ? `you live with ${character.name}` : `${character.name} lives a few doors down`}</span></>
+              : <>🚪 <b>You&apos;re out</b> <span className="muted">· nobody comes by</span></>}
           </span>
           <div className="row" style={{ gap: 0, borderRadius: 999, border: "1px solid var(--border)", overflow: "hidden" }}>
             {([[true, "🏠 I'm home"], [false, "🚪 I'm out"]] as const).map(([v, label]) => (
