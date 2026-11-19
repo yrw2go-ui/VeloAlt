@@ -22,7 +22,7 @@ import CheckinsCard from "./notify";
 import Today from "./today";
 import Memory from "./memory";
 import { timeZone } from "./lib/tz";
-import ProCard, { AdminCard, PauseCard, GiftsAdminCard, BrainCard, PersonalityCard, ReplyLengthCard, VideoCard, WordingCard, type Profile } from "./pro";
+import ProCard, { AdminCard, PauseCard, GiftsAdminCard, BrainCard, PersonalityCard, ReplyLengthCard, PictureCard, VideoCard, WordingCard, type Profile } from "./pro";
 
 type Tab = "chat" | "pica" | "gifts" | "today" | "memory" | "settings";
 const TABS: { id: Tab; icon: string; label: string }[] = [
@@ -512,6 +512,7 @@ function Settings({ name, setName, onOut, profile, onProfile, chars = [], admin 
       {profile && <PersonalityCard profile={profile} onChange={onProfile} />}
       {profile && <BrainCard profile={profile} onChange={onProfile} chars={chars} admin={admin} brains={brains} brainModels={brainModels} onCharChange={onCharChange} />}
       {profile && <ReplyLengthCard profile={profile} onChange={onProfile} />}
+      {profile && <PictureCard profile={profile} onChange={onProfile} />}
       {profile && <VideoCard profile={profile} onChange={onProfile} />}
       <WordingCard />
       {admin && <GiftsAdminCard />}

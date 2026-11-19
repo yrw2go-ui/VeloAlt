@@ -36,6 +36,7 @@ import { mediaMood, allowsSuggestive } from "../../lib/traits";
 import { myRefs } from "../../lib/picagram";
 import { BITS, merge, keepEdits } from "../../lib/wording";
 import { SECTIONS as TALK_SECTIONS, merge as talkMerge, keepEdits as talkKeep } from "../../lib/words";
+import { imageModels, DEFAULT_IMAGE_MODEL, type ImageModel } from "../../lib/imageModels";
 import { acceptMedia, declineMedia, mediaNote, startMedia, checkMedia, sweepMedia, getMedia, listGallery, deleteMedia, VIDEO_MODELS, DEFAULT_VIDEO_MODEL, mediaReady, MediaError } from "../../lib/media";
 
 // 📦 Everything the app reads and changes, for the signed-in person only.
@@ -102,7 +103,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ bits: withDefaults(merge(u?.prompt_words)) });
       }
       case "profile.get": {
-        const [u] = await db`select paused, name, look, time_zone, plan, phone, phone_verified_at, chat_model, backup_brain, personality, adult_confirmed_at, video_model, reply_length, checkins, bio, birthday::text, age, (to_jsonb(users)->>'home_town') as home_town, home_state, (select url from velo_files where id = users.bio_photo_file_id) as bio_photo, (select thumb_url from velo_files where id = users.bio_photo_file_id) as bio_thumb, bio_photo_note, bio_more from users where id = ${me}`;
+        const [u] = await db`select paused, name, look, time_zone, plan, phone, phone_verified_at, chat_model, backup_brain, personality, adult_confirmed_at, video_model, image_model, image_models, reply_length, checkins, bio, birthday::text, age, (to_jsonb(users)->>'home_town') as home_town, home_state, (select url from velo_files where id = users.bio_photo_file_id) as bio_photo, (select thumb_url from velo_files where id = users.bio_photo_file_id) as bio_thumb, bio_photo_note, bio_more from users where id = ${me}`;
         const [{ n }] = await db`select count(*)::int as n from velo_memories where user_id = ${me} and kind = 'call' and character_id is null`;
         const [face] = await db`select url from velo_files where user_id = ${me} and kind = 'face' order by created_at desc limit 1`;
         return NextResponse.json({
@@ -120,11 +121,42 @@ export async function POST(req: NextRequest) {
           paused: !!u?.paused,
           videoModel: VIDEO_MODELS.some(m => m.id === u?.video_model) ? u?.video_model : DEFAULT_VIDEO_MODEL,
           videoModels: VIDEO_MODELS.map(m => ({ id: m.id, label: m.label })),
+          // 🖼️ Which Seedream writes the pictures: the built-in ones plus any you added yourself.
+          imageModel: String(u?.image_model || "") || DEFAULT_IMAGE_MODEL,
+          imageModels: imageModels().map(m => ({ id: m.id, label: m.label, about: m.about || "", mine: false })),
+          myImageModels: ((Array.isArray(u?.image_models) ? u.image_models : []) as Record<string, unknown>[]).map(m => ({ id: String(m.id || ""), label: String(m.label || m.id || ""), t2i: String(m.t2i || ""), edit: String(m.edit || ""), mine: true })),
           replyLength: ["short", "normal", "long"].includes(u?.reply_length) ? u?.reply_length : "normal",
           // Anything unknown (or romantic without the 18+ confirmation) shows as Friend.
           personality: !PERSONALITIES.includes(u?.personality) || (u?.personality === "romantic" && !u?.adult_confirmed_at) ? "friend" : u?.personality,
           adultConfirmed: !!u?.adult_confirmed_at,
         });
+      }
+      // 🖼️ Add a picture model by hand, so a Seedream Atlas Cloud has just added can be used
+      // today without a deploy. Two ids: one for a picture from words, one for a picture built
+      // on reference photos. Nothing is checked against Atlas here — the first picture tells you.
+      case "imagemodel.add": {
+        const label = clean(b.label, 40), t2i = clean(b.t2i, 160), edit = clean(b.edit, 160);
+        if (!t2i || !edit) return bad("Both model ids are needed — one for a picture from words, one for a picture from reference photos.");
+        if (!/^[a-z0-9._\-]+\/[a-z0-9._\-]+(\/[a-z0-9._\-]+)?$/i.test(t2i) || !/^[a-z0-9._\-]+\/[a-z0-9._\-]+(\/[a-z0-9._\-]+)?$/i.test(edit))
+          return bad("That doesn't look like an Atlas Cloud model id — they look like bytedance/seedream-v5.5/text-to-image.");
+        const [row] = await db`select image_models from users where id = ${me}`;
+        const mine = (Array.isArray(row?.image_models) ? row.image_models : []) as Record<string, unknown>[];
+        if (mine.length >= 10) return bad("That's ten of your own already — remove one first.");
+        const id = `mine-${t2i.replace(/[^a-z0-9]+/gi, "-").slice(0, 40).toLowerCase()}`;
+        if (imageModels().some(m => m.id === id) || mine.some(m => String(m.id) === id)) return bad("That one is already in the list.");
+        const next = [...mine, { id, label: label || t2i, t2i, edit }];
+        await db`update users set image_models = ${JSON.stringify(next)}::jsonb, image_model = ${id}, updated_at = now() where id = ${me}`;
+        return NextResponse.json({ ok: true, id });
+      }
+      // 🗑 Take one of your own back off the list. If it was the one in use, pictures go back to the default.
+      case "imagemodel.remove": {
+        const id = clean(b.id, 80);
+        const [row] = await db`select image_models, image_model from users where id = ${me}`;
+        const mine = (Array.isArray(row?.image_models) ? row.image_models : []) as Record<string, unknown>[];
+        const next = mine.filter(m => String(m.id) !== id);
+        await db`update users set image_models = ${JSON.stringify(next)}::jsonb,
+          image_model = ${String(row?.image_model || "") === id ? DEFAULT_IMAGE_MODEL : String(row?.image_model || "")}, updated_at = now() where id = ${me}`;
+        return NextResponse.json({ ok: true, removed: mine.length - next.length });
       }
       case "profile.update": {
         if (typeof b.name === "string") await db`update users set name = ${clean(b.name, 80) || null}, updated_at = now() where id = ${me}`;
@@ -161,6 +193,13 @@ export async function POST(req: NextRequest) {
         // ⏸️ Paused: the world stops where it is until it is turned back on.
         if (typeof b.paused === "boolean") await db`update users set paused = ${b.paused}, updated_at = now() where id = ${me}`;
         if (VIDEO_MODELS.some(m => m.id === b.videoModel)) await db`update users set video_model = ${b.videoModel}, updated_at = now() where id = ${me}`;
+        // 🖼️ The picture model: a built-in one, or one they added themselves. Anything else is ignored.
+        if (typeof b.imageModel === "string" && b.imageModel) {
+          const [row] = await db`select image_models from users where id = ${me}`;
+          const mine = (Array.isArray(row?.image_models) ? row.image_models : []) as Partial<ImageModel>[];
+          if (imageModels().some(m => m.id === b.imageModel) || mine.some(m => String(m?.id) === b.imageModel))
+            await db`update users set image_model = ${b.imageModel}, updated_at = now() where id = ${me}`;
+        }
         if (["short", "normal", "long"].includes(b.replyLength)) await db`update users set reply_length = ${b.replyLength}, updated_at = now() where id = ${me}`;
         return NextResponse.json({ ok: true });
       }

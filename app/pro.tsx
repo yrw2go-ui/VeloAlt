@@ -12,7 +12,10 @@ export type Profile = {
   chatModel: string; models: { id: string; label: string; by: string; where: string }[];
   backupBrain?: string; backups?: { id: string; label: string; about: string }[];
   personality: string; adultConfirmed: boolean; customFace?: string;
-  videoModel?: string; videoModels?: { id: string; label: string }[]; checkins?: string; replyLength?: string;
+  videoModel?: string; videoModels?: { id: string; label: string }[];
+  imageModel?: string;
+  imageModels?: { id: string; label: string; about: string; mine: boolean }[];
+  myImageModels?: { id: string; label: string; t2i: string; edit: string; mine: boolean }[]; checkins?: string; replyLength?: string;
   paused?: boolean;
   bio?: { text: string; birthday: string; age: number | null; state: string; photo: string; photoNote: string };
 };
@@ -290,6 +293,73 @@ export function ReplyLengthCard({ profile, onChange }: { profile: Profile; onCha
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/** 🖼️ Which Seedream writes the pictures. It stays on what you pick until you pick something
+ *  else — and a model Atlas Cloud has just added can be typed in rather than waited for. */
+export function PictureCard({ profile, onChange }: { profile: Profile; onChange: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [f, setF] = useState({ label: "", t2i: "", edit: "" });
+  const list = [...(profile.imageModels || []), ...(profile.myImageModels || [])];
+  if (!list.length) return null;
+  const cur = profile.imageModel || "seedream-5.0-pro";
+  const pick = async (id: string) => {
+    if (id === cur) return;
+    setBusy(true); setErr("");
+    await data("profile.update", { imageModel: id }).catch(() => {});
+    setBusy(false); onChange();
+  };
+  const add = async () => {
+    setBusy(true); setErr("");
+    try { await data("imagemodel.add", f); setF({ label: "", t2i: "", edit: "" }); setAdding(false); onChange(); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't add it."); }
+    setBusy(false);
+  };
+  const remove = async (id: string, label: string) => {
+    if (!(await confirmAsk(`Take ${label} off the list? Pictures go back to Seedream 5.0 Pro if it's the one in use.`, { yes: "Remove", danger: true }))) return;
+    setBusy(true); setErr("");
+    await data("imagemodel.remove", { id }).catch(() => {});
+    setBusy(false); onChange();
+  };
+  const field = { width: "100%", padding: "8px 10px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)", fontSize: 14 } as const;
+  return (
+    <div className="card" data-testid="image-model">
+      <div style={{ fontWeight: 700 }}>🖼️ Pictures</div>
+      <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>The Seedream that makes every photo — in chats, on Picagram, everywhere. It stays on this until you change it back.</div>
+      <div role="radiogroup" aria-label="Picture model" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {list.map(m => {
+          const on = m.id === cur;
+          const mine = "mine" in m && m.mine;
+          return (
+            <div key={m.id} className="row" style={{ gap: 6 }}>
+              <button role="radio" aria-checked={on} disabled={busy} onClick={() => pick(m.id)} data-testid={`image-model-${m.id}`}
+                style={{ flex: 1, textAlign: "left", background: on ? "rgba(124,140,255,0.12)" : "var(--surface2)", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, borderRadius: 12, padding: "10px 12px", color: "var(--text)", cursor: on ? "default" : "pointer" }}>
+                <div style={{ fontWeight: 700 }}>{on ? "✓ " : ""}{m.label}{m.id === "seedream-5.0-pro" ? <span className="muted" style={{ fontWeight: 400, fontSize: 13 }}> · default</span> : null}</div>
+                <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{"about" in m && m.about ? m.about : "t2i" in m ? m.t2i : ""}</div>
+              </button>
+              {mine && <button className="ghost" disabled={busy} aria-label={`Remove ${m.label}`} onClick={() => remove(m.id, m.label)} style={{ padding: "6px 10px" }} data-testid={`image-model-del-${m.id}`}>🗑</button>}
+            </div>
+          );
+        })}
+      </div>
+      {!adding && <button className="ghost" disabled={busy} onClick={() => setAdding(true)} data-testid="image-model-add" style={{ marginTop: 10, padding: "6px 10px", fontSize: 13 }}>+ Add another model</button>}
+      {adding && (
+        <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+          <div className="muted" style={{ fontSize: 12 }}>From Atlas Cloud&apos;s model page. Two ids: one for a picture from words, one for a picture built on reference photos.</div>
+          <input style={field} placeholder="Name you'll see, e.g. Seedream 6" value={f.label} onChange={e => setF({ ...f, label: e.target.value })} aria-label="Model name" data-testid="image-model-label" />
+          <input style={field} placeholder="bytedance/seedream-v5.5/text-to-image" value={f.t2i} onChange={e => setF({ ...f, t2i: e.target.value.trim() })} aria-label="From words" autoCapitalize="none" data-testid="image-model-t2i" />
+          <input style={field} placeholder="bytedance/seedream-v5.5/edit" value={f.edit} onChange={e => setF({ ...f, edit: e.target.value.trim() })} aria-label="From reference photos" autoCapitalize="none" data-testid="image-model-edit" />
+          <div className="row" style={{ gap: 8 }}>
+            <button className="btn" disabled={busy || !f.t2i || !f.edit} onClick={add} data-testid="image-model-save">Add and use it</button>
+            <button className="ghost" disabled={busy} onClick={() => { setAdding(false); setErr(""); }}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {err && <div style={{ color: "var(--bad)", fontSize: 13, marginTop: 6 }}>⚠️ {err}</div>}
     </div>
   );
 }

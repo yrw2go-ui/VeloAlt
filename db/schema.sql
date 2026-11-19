@@ -959,3 +959,8 @@ alter table gift_edits add column if not exists hidden boolean not null default 
 -- 🛟 A backup brain, off unless it's switched on. '' (the default) means off: the brain
 -- picked in Settings is the only one used, and nothing falls back to Claude behind the scenes.
 alter table users add column if not exists backup_brain text not null default '';
+-- 🖼️ Which Seedream writes the pictures. '' = the built-in default (Seedream 5.0 Pro).
+-- image_models holds any model you added yourself in Settings, so a new one can be used
+-- the day Atlas Cloud has it, without a deploy.
+alter table users add column if not exists image_model text not null default '';
+alter table users add column if not exists image_models jsonb not null default '[]'::jsonb;
