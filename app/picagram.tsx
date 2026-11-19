@@ -47,15 +47,19 @@ export default function Picagram({ name, userId, onChat, openProfile, onProfileO
   // 📍 Back where you were: a refresh (or an update) keeps the screen you had open.
   const [place] = useState(() => (typeof window === "undefined" || !userId ? {} : readPlace(userId).pica || {}));
   const [profile, setProfile] = useState<string | null>(openProfile || place.profile || null);
-  useEffect(() => { if (openProfile) { setProfile(openProfile); onProfileOpened?.(); } }, [openProfile]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [savedOpen, setSavedOpen] = useState(!!place.saved);
   const [making, setMaking] = useState(false);
   const [mine, setMine] = useState(!!place.mine);
   const [followingOpen, setFollowingOpen] = useState(!!place.following);
   // ✉️ DMs with accounts (characters chat in the normal chat).
-  const [inbox, setInbox] = useState(!!place.inbox);
-  const [thread, setThread] = useState<string | null>(place.thread || null);
+  const [inbox, setInbox] = useState(!openProfile && !!place.inbox);
+  const [thread, setThread] = useState<string | null>(openProfile ? null : place.thread || null);
   const [dmUnread, setDmUnread] = useState(0);
+  // 📍 Sent here to see someone: that is who you see. Any DM thread or inbox left open last time is
+  // put away first — a thread renders over the top of a profile, so without this you land on
+  // whoever you were last messaging instead of the person you just asked for.
+  useEffect(() => { if (openProfile) { setInbox(false); setThread(null); setProfile(openProfile); onProfileOpened?.(); } }, [openProfile]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (userId) savePlace(userId, { pica: { inbox, thread, profile, following: followingOpen, saved: savedOpen, mine } });
   }, [userId, inbox, thread, profile, followingOpen, savedOpen, mine]);
