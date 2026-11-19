@@ -934,7 +934,31 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
     catch (e) { setErr(e instanceof Error ? e.message : "That picture didn't upload."); setSending(""); }
   };
   const end = useRef<HTMLDivElement>(null);
-  useEffect(() => { api<{ account: DmAccount; messages: DmMsg[]; brains?: { id: string; label: string }[] }>("/api/pica", { action: "dm.open", id }).then(r => { setAcc(r.account); setMsgs(r.messages); setBrains(r.brains || []); }).catch(e => setErr(e instanceof Error ? e.message : "Couldn't open it.")); }, [id]);
+  // ⏳ Her reply is written whether you are looking or not. If you sent something and left before
+  // it landed — out of the thread, onto another tab, out of the app — this picks it up when you
+  // come back, the same way the chat does.
+  const [waiting, setWaiting] = useState(0);
+  useEffect(() => {
+    api<{ account: DmAccount; messages: DmMsg[]; brains?: { id: string; label: string }[] }>("/api/pica", { action: "dm.open", id })
+      .then(r => {
+        setAcc(r.account); setMsgs(r.messages); setBrains(r.brains || []);
+        const last = r.messages[r.messages.length - 1];
+        if (last?.role === "user" && last.created_at && Date.now() - Date.parse(last.created_at) < 3 * 60_000) setWaiting(Date.now());
+      })
+      .catch(e => setErr(e instanceof Error ? e.message : "Couldn't open it."));
+  }, [id]);
+  useEffect(() => {
+    if (!waiting) return;
+    let n = 0;
+    const t = setInterval(async () => {
+      n++;
+      const r = await api<{ messages: DmMsg[] }>("/api/pica", { action: "dm.open", id }).catch(() => null);
+      const last = r?.messages[r.messages.length - 1];
+      if (r && last?.role === "assistant") { setMsgs(r.messages); setWaiting(0); clearInterval(t); }
+      else if (n >= 30) { setWaiting(0); clearInterval(t); }
+    }, 4000);
+    return () => clearInterval(t);
+  }, [waiting, id]);
   useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [msgs, busy]);
   const send = async () => {
     const t = hideSecrets(text.trim()).text;
