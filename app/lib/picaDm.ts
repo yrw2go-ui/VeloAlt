@@ -8,7 +8,7 @@ import { writeText } from "./llm";
 import { wordingFor } from "./wording";
 import {  say } from "./words";
 import { wordsFor } from "./wordsDb";
-import { forgetPicaLines } from "./forget";
+import { forgetPicaLines, rewordedPicaLine } from "./forget";
 import { scrub } from "./secrets";
 import { wornLately, startMedia, MediaError, type Media } from "./media";
 import { availableBrains } from "./models";
@@ -131,9 +131,20 @@ export async function dmEdit(userId: string, accountId: string, id: string, text
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
   const body = scrub(String(text ?? "").replace(/\r/g, "").trim()).slice(0, 2000);
   if (!body) return null;
+  // What it said before, so anything she wrote down from the old wording can be put right.
+  const [was] = await sql()`select role, content, created_at::text as at from pica_dms where id = ${id} and user_id = ${userId} and account_id = ${accountId}`;
   const [row] = await sql()`update pica_dms set content = ${body}
     where id = ${id} and user_id = ${userId} and account_id = ${accountId} and media_id is null returning id, content`;
-  return row ? { id: String(row.id), content: String(row.content) } : null;
+  if (!row) return null;
+  // ✏️ She doesn't get to keep what she took from the old wording. It takes a moment, so it runs
+  // behind the reply: the reworded message is on screen either way.
+  if (was && String(was.content) !== body) void (async () => {
+    const a = await account(userId, accountId);
+    const u = await userInfo(userId);
+    const who = was.role === "assistant" ? String(a.name) : u.name || "Them";
+    await rewordedPicaLine(userId, accountId, who, String(was.content), body, String(was.at), brainOf(a, u.chatModel));
+  })().catch(e => console.error("pica dm: reworded", e instanceof Error ? e.message : e));
+  return { id: String(row.id), content: String(row.content) };
 }
 
 export async function dmDelete(userId: string, accountId: string, ids: string[]): Promise<number> {

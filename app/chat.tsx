@@ -14,7 +14,7 @@ import { stamp } from "./lib/when";
 import { confirmAsk } from "./lib/dialog";
 import { useDictation } from "./dictate";
 import { CharacterFace, LinkBackForm } from "./characters";
-import { MediaView, ReactionBar, type Media } from "./media";
+import { MediaView, PhotoReaction, ReactionBar, type Media } from "./media";
 import { EditSheet } from "./edit";
 import { MentionPicker, putName } from "./mention";
 import { isHot } from "./lib/reactions";
@@ -884,7 +884,7 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
       <div className="muted" style={{ fontSize: 11 }}>👀 Peek · {who} doesn&apos;t know</div>
       <div style={{ maxWidth: "min(86%, 400px)" }}>
         <MediaView media={m.media} onReady={onMedia} onFailed={onFailed} who={who} onDelete={onDeleteOne && m.id ? () => onDeleteOne(m.id!) : undefined} onAnswer={x => onAnswer(x)} />
-        {m.media.status === "done" && <ReactionBar value={m.media.reaction} onPick={r => onReact(m.media!.id, r)} />}
+        {m.media.status === "done" && <PhotoReaction value={m.media.reaction} onPick={r => onReact(m.media!.id, r)} side="right" />}
         <When at={m.at} align="center" />
       </div>
     </div>
@@ -904,7 +904,7 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
       {face}
       <div style={{ maxWidth: "min(80%, 380px)" }}>
         <MediaView media={m.media} onReady={onMedia} onFailed={onFailed} who={who} onDelete={onDeleteOne && m.id ? () => onDeleteOne(m.id!) : undefined} onAnswer={x => onAnswer(x)} />
-        {m.media.status === "done" && <ReactionBar value={m.media.reaction} onPick={r => onReact(m.media!.id, r)} />}
+        {m.media.status === "done" && <PhotoReaction value={m.media.reaction} onPick={r => onReact(m.media!.id, r)} side={mine ? "left" : "right"} />}
         {social && m.media.status === "done" && <SocialButton done={!!m.media.social} openHandle={openHandle} onGo={() => social(m.media!)} />}
         <When at={m.at} align={mine ? "right" : "left"} />
       </div>

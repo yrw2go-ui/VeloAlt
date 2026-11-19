@@ -13,7 +13,7 @@ const luckOf = (b: Record<string, unknown>): "yes" | "no" | undefined =>
   (process.env.VELO_TEST_LUCK === "1" ? (b.luck === "ask" ? undefined : b.luck === "no" ? "no" : "yes") : undefined);
 import { awayFor, awayText, myPhotos } from "../../lib/picagram";
 import { cleanTags } from "../../lib/text";
-import { deleteMessages } from "../../lib/forget";
+import { deleteMessages, rewordedLine } from "../../lib/forget";
 import { sql } from "../../lib/db";
 import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
@@ -240,9 +240,21 @@ export async function POST(req: NextRequest) {
         if (!needId()) return bad("Unknown message.");
         const text = scrub(String(b.text ?? "").replace(/\r/g, "").trim()).slice(0, 4000);
         if (!text) return bad("A message can't be empty — delete it instead.");
+        // What it said before, so anything she wrote down from the old wording can be put right.
+        const [was] = await db`select content, character_id, created_at::text as at from velo_messages where id = ${id} and user_id = ${me}`;
         const [m] = await db`update velo_messages set content = ${text}, edited = true
           where id = ${id} and user_id = ${me} and media_id is null and not peek returning id, role, content`;
-        return m ? NextResponse.json({ id: String(m.id), role: m.role, content: String(m.content) }) : bad("That one can't be edited.");
+        if (!m) return bad("That one can't be edited.");
+        // ✏️ Her memories don't get to keep the old wording. This takes a moment, so it runs behind
+        // the reply: the reworded message is on screen either way.
+        if (was && String(was.content) !== text) {
+          const ch = was.character_id ? await getCharacterFor(me, String(was.character_id)) : null;
+          const [u] = await db`select name from users where id = ${me}`;
+          const who = m.role === "assistant" ? (ch?.name || "Velo") : (String(u?.name || "").split(/\s+/)[0] || "Them");
+          void rewordedLine(me, ch?.id || null, who, String(was.content), text, String(was.at), ch?.brain || "")
+            .catch(e => console.error("data: reworded", e instanceof Error ? e.message : e));
+        }
+        return NextResponse.json({ id: String(m.id), role: m.role, content: String(m.content) });
       }
       // 🗑 Delete up to 10 messages; she forgets whatever she learned only from them.
       case "messages.delete": {

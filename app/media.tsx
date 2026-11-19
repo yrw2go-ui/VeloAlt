@@ -30,6 +30,25 @@ export function ReactionBar({ value, onPick }: { value: string | null | undefine
   );
 }
 
+/**
+ * 😍 Reacting to a photo. The row of faces is for choosing; once you've chosen, it gets out of
+ * the way and leaves your pick sitting on the photo's corner, the way it does on a written
+ * message. Tapping that pick brings the row back, so you can change it or take it off.
+ */
+export function PhotoReaction({ value, onPick, side = "left" }: { value: string | null | undefined; onPick: (r: string) => void; side?: "left" | "right" }) {
+  const [open, setOpen] = useState(false);
+  // Chosen, and not being changed: just the one you picked.
+  if (value && !open) return (
+    <div style={{ display: "flex", justifyContent: side === "right" ? "flex-end" : "flex-start", marginTop: -13, position: "relative", zIndex: 1 }}>
+      <button type="button" data-testid="photo-reaction" aria-label={`You reacted ${value} — tap to change`} title="Tap to change"
+        onClick={e => { e.stopPropagation(); setOpen(true); }}
+        style={{ [side === "right" ? "marginRight" : "marginLeft"]: 6, fontSize: 15, lineHeight: 1, padding: "3px 5px", borderRadius: 999, cursor: "pointer",
+          background: "var(--surface)", border: "1px solid var(--border)", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }}>{value}</button>
+    </div>
+  );
+  return <ReactionBar value={value} onPick={r => { setOpen(false); onPick(r); }} />;
+}
+
 /** Keeps checking a photo/video until it's done (backs off from 4s to 15s; retries through errors). */
 export function useMedia(initial: Media, onReady?: (m: Media) => void, onFailed?: () => void): Media {
   const [m, setM] = useState(initial);
