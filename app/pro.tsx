@@ -518,10 +518,12 @@ export function AdminCard() {
 }
 
 const BOX = { background: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 7px", fontSize: 12.5 };
+const KIND_WORD: Record<string, string> = { jewellery: "jewelry" };
+const kindWord = (k: string) => KIND_WORD[k] || k;
 const KINDS = [
   { id: "clothes", label: "👗 Clothes (she can wear it)" },
   { id: "shoes", label: "👠 Shoes (she can wear it)" },
-  { id: "jewellery", label: "📿 Jewellery (she can wear it)" },
+  { id: "jewellery", label: "📿 Jewelry (she can wear it)" },
   { id: "bag", label: "👜 Bag (she can wear it)" },
   { id: "beauty", label: "💄 Beauty" },
   { id: "tech", label: "🎧 Tech" },
@@ -618,7 +620,7 @@ export function GiftsAdminCard() {
   };
 
   const hunt = q.trim().toLowerCase();
-  const shown = (gifts || []).filter(g => !hunt || `${g.brand} ${g.name} ${g.kind}`.toLowerCase().includes(hunt));
+  const shown = (gifts || []).filter(g => !hunt || `${g.brand} ${g.name} ${g.kind} ${kindWord(g.kind)}`.toLowerCase().includes(hunt));
   const changed = (gifts || []).filter(g => g.edited).length;
 
   return (
@@ -691,7 +693,7 @@ export function GiftsAdminCard() {
                     onChange={e => pickIcon(g, e.target.value)} style={{ ...BOX, width: 56, fontSize: 15, padding: "3px 4px" }}>
                     {icons.map(i => <option key={i} value={i}>{i}</option>)}
                   </select>
-                ) : <span style={{ fontSize: 17, width: 24, textAlign: "center" }} title={g.kind}>{g.emoji}</span>}
+                ) : <span style={{ fontSize: 17, width: 24, textAlign: "center" }} title={kindWord(g.kind)}>{g.emoji}</span>}
                 <input value={draft[g.id]?.brand ?? ""} aria-label={`${g.name} brand`} maxLength={60}
                   onChange={e => setDraft(d => ({ ...d, [g.id]: { ...d[g.id], brand: e.target.value } }))}
                   style={{ width: 110, background: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 7px", fontSize: 12.5 }} />
