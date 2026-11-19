@@ -12,6 +12,9 @@ import { writeText } from "./llm";
  * new could be invented at all — the button just said it couldn't bring anyone in. It now follows
  * your choice, the same way a chat and a DM already do, and Claude is still behind it.
  */
+/** ⏱️ How long one ask may take. Three of these and a caption still fit inside the route's minute. */
+const THINK = { ms: 8_000 };
+
 const picaBrain = async (userId: string): Promise<string> => {
   const [u] = await sql()`select chat_model from users where id = ${userId}`;
   const b = String(u?.chat_model || "");
@@ -560,7 +563,7 @@ async function newAccount(userId: string, follow = false): Promise<Record<string
 ${vibeNote()}
 ${intoWomen ? "⚢ SHE IS A LESBIAN — into women, not men. Let her bio say so the way a real profile would (a flag, \"she/her 🏳️‍🌈\", \"girls only\", a line about her girlfriend or ex-girlfriend) without making it the whole bio, and keep the rest of her exactly as the lane says.\n" : ""}${t.pica_unique}${where} ${hobbyRule(Math.random())}
 JSON only: {"name":"First Last (a plain modern American name, as described above)","handle":"lowercase_handle (from her name, like ava.miller or mia_russo — no made-up words)","bio":"short bio with emojis","look":"${t.pica_look}","lives":"City, State","followers":12000}`,
-      `${names.length ? `ALREADY TAKEN — avoid these names, surnames and handles entirely:\n${names.slice(-60).join(", ")}` : "(nobody yet)"}${clash ? `\n\nYour last try clashed with ${clash} — pick a completely different name.` : ""}`, 1600).catch(() => "");
+      `${names.length ? `ALREADY TAKEN — avoid these names, surnames and handles entirely:\n${names.slice(-60).join(", ")}` : "(nobody yet)"}${clash ? `\n\nYour last try clashed with ${clash} — pick a completely different name.` : ""}`, 1600, THINK).catch(() => "");
     let a: { name?: string; handle?: string; bio?: string; look?: string; lives?: string; followers?: number } = {};
     try { a = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); } catch { continue; }
     const handle = String(a.handle || a.name || "").toLowerCase().replace(/[^a-z0-9._]/g, "").slice(0, 28);
@@ -686,7 +689,11 @@ export async function newFaces(userId: string, n: number): Promise<{ made: numbe
   const u = await userInfo(userId);
   const people: Record<string, unknown>[] = [];
   let error = "";
+  // ⏱️ The route has about a minute. Stop asking for another once there isn't time to invent one
+  // and give her a photo — better two who really turned up than three the clock cut short.
+  const until = Date.now() + 45_000;
   for (let i = 0; i < room; i++) {
+    if (Date.now() > until) { console.warn(`pica: out of time after ${people.length} of ${want}`); break; }
     try {
       const a = await newAccount(userId, true);
       if (!a) { error = error || "Couldn't invent a new person just now — try again in a moment."; break; }
@@ -699,6 +706,8 @@ export async function newFaces(userId: string, n: number): Promise<{ made: numbe
   }
   const posted = await Promise.all(people.map(async (a, i) => {
     try {
+      // ⏱️ She exists now; give her a post only if there is still time for one.
+      if (Date.now() > until) { console.warn("pica: out of time before a post"); return ""; }
       const ok = await postFor(userId, a, u, Date.now() - (room - i) * rand(2, 12) * 60_000, undefined, true);
       return ok ? String(a.name) : "";
     } catch (e) {
@@ -721,7 +730,7 @@ async function postFor(userId: string, a: Record<string, unknown>, u: U, at: num
   if (!photo) {
     const w = await wordingFor(userId);
     const raw = await writeText(await picaBrain(userId), `Today is ${when}. Write ONE Picagram post for @${a.handle} (${a.name}): ${a.bio}${a.personality ? ` — who she is: ${String(a.personality).slice(0, 400)}` : ""} — a photo of her in her everyday life or her niche, with a caption — ${t.post_caption}. ${u.adult ? "Flattering, flirty and confident is fine; no nudity or lingerie." : "Family-friendly, fully clothed."} "photo" describes exactly what the picture shows (where, outfit, pose, light) in 1–2 sentences. ${w.no_looks} It follows this SHOT and TONE exactly so it doesn't look like her last one — SHOT: ${shotFor(`${a.id}:${when}`, rand(0, 9))}; TONE: ${TONES[toneFor(String(a.id), rand(0, 5), a.folk ? FOLK_SUGGESTIVE : hash(`${a.id}:how`) % 9, u.adult)]}. ${PLAIN_WORDS} JSON only: {"caption":"...","photo":"..."}`,
-      `She looks like: ${a.look}`, 1000).catch(() => "");
+      `She looks like: ${a.look}`, 1000, THINK).catch(() => "");
     try { const j = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); caption = scrub(String(j.caption || "✨")).slice(0, 600); photo = scrub(String(j.photo || "")).slice(0, 600); } catch { /* fall back below */ }
   }
   if (!photo) photo = plainFacePhoto(String(a.name));
