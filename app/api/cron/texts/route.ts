@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
     // 📸 Picagram keeps going even when nobody looks: one person's day of posts per minute, at most.
     let pica = 0;
     // (Paused for anyone who hasn't looked at Picagram in 4 days.)
-    const active = await sql()`select u.id from users u where u.pica_looked_at > now() - interval '4 days'
+    const active = await sql()`select u.id from users u where not u.paused and u.pica_looked_at > now() - interval '4 days'
       and not exists (select 1 from pica_days d where d.user_id = u.id and d.day >= current_date) order by random() limit 5`;
     for (const u of active) { if (pica) break; pica += await ensurePicaDays(String(u.id), 1, true).catch(() => 0); }
     return NextResponse.json({ sent, resent, pica });

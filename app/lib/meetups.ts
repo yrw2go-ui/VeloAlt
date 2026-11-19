@@ -78,7 +78,7 @@ export async function maybeInvite(userId: string, force = false): Promise<{ char
 
 /** ⏰ The round the scheduler runs: a few people, most of whom nobody asks. */
 export async function runInvites(): Promise<number> {
-  const users = await sql()`select id from users where exists (select 1 from chat_characters c where c.local and not c.live_in and (c.owner_id is null or c.owner_id = users.id)) order by random() limit 40`;
+  const users = await sql()`select id from users where not users.paused and exists (select 1 from chat_characters c where c.local and not c.live_in and (c.owner_id is null or c.owner_id = users.id)) order by random() limit 40`;
   let sent = 0;
   for (const u of users) {
     try { if (await maybeInvite(String(u.id))) sent++; }

@@ -76,7 +76,7 @@ export async function setPlanStatus(userId: string, planId: string, status: "don
 export async function planNudges(): Promise<number> {
   const rows = await sql()`select p.id, p.user_id, p.character_id, p.title, p.day::text, u.time_zone, c.name, f.url as portrait_url from chat_plans p
     join users u on u.id = p.user_id join chat_characters c on c.id = p.character_id left join velo_files f on f.id = c.portrait_file_id
-    where p.status = 'planned' and p.notified_at is null and p.day between current_date - 1 and current_date + 1
+    where p.status = 'planned' and not u.paused and p.notified_at is null and p.day between current_date - 1 and current_date + 1
       and exists (select 1 from push_subscriptions s where s.user_id = p.user_id) limit 200`;
   let sent = 0;
   for (const r of rows) {
