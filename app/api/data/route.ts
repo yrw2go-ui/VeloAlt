@@ -123,8 +123,8 @@ export async function POST(req: NextRequest) {
           videoModels: VIDEO_MODELS.map(m => ({ id: m.id, label: m.label })),
           // 🖼️ Which Seedream writes the pictures: the built-in ones plus any you added yourself.
           imageModel: String(u?.image_model || "") || DEFAULT_IMAGE_MODEL,
-          imageModels: imageModels().map(m => ({ id: m.id, label: m.label, about: m.about || "", mine: false })),
-          myImageModels: ((Array.isArray(u?.image_models) ? u.image_models : []) as Record<string, unknown>[]).map(m => ({ id: String(m.id || ""), label: String(m.label || m.id || ""), t2i: String(m.t2i || ""), edit: String(m.edit || ""), mine: true })),
+          imageModels: imageModels().map(m => ({ id: m.id, label: m.label, about: m.about || "", price: m.price || "", mine: false })),
+          myImageModels: ((Array.isArray(u?.image_models) ? u.image_models : []) as Record<string, unknown>[]).map(m => ({ id: String(m.id || ""), label: String(m.label || m.id || ""), t2i: String(m.t2i || ""), edit: String(m.edit || ""), price: String(m.price || ""), mine: true })),
           replyLength: ["short", "normal", "long"].includes(u?.reply_length) ? u?.reply_length : "normal",
           // Anything unknown (or romantic without the 18+ confirmation) shows as Friend.
           personality: !PERSONALITIES.includes(u?.personality) || (u?.personality === "romantic" && !u?.adult_confirmed_at) ? "friend" : u?.personality,
@@ -135,7 +135,7 @@ export async function POST(req: NextRequest) {
       // today without a deploy. Two ids: one for a picture from words, one for a picture built
       // on reference photos. Nothing is checked against Atlas here — the first picture tells you.
       case "imagemodel.add": {
-        const label = clean(b.label, 40), t2i = clean(b.t2i, 160), edit = clean(b.edit, 160);
+        const label = clean(b.label, 40), t2i = clean(b.t2i, 160), edit = clean(b.edit, 160), price = clean(b.price, 24);
         if (!t2i || !edit) return bad("Both model ids are needed — one for a picture from words, one for a picture from reference photos.");
         if (!/^[a-z0-9._\-]+\/[a-z0-9._\-]+(\/[a-z0-9._\-]+)?$/i.test(t2i) || !/^[a-z0-9._\-]+\/[a-z0-9._\-]+(\/[a-z0-9._\-]+)?$/i.test(edit))
           return bad("That doesn't look like an Atlas Cloud model id — they look like bytedance/seedream-v5.5/text-to-image.");
@@ -144,7 +144,7 @@ export async function POST(req: NextRequest) {
         if (mine.length >= 10) return bad("That's ten of your own already — remove one first.");
         const id = `mine-${t2i.replace(/[^a-z0-9]+/gi, "-").slice(0, 40).toLowerCase()}`;
         if (imageModels().some(m => m.id === id) || mine.some(m => String(m.id) === id)) return bad("That one is already in the list.");
-        const next = [...mine, { id, label: label || t2i, t2i, edit }];
+        const next = [...mine, { id, label: label || t2i, t2i, edit, ...(price ? { price } : {}) }];
         await db`update users set image_models = ${JSON.stringify(next)}::jsonb, image_model = ${id}, updated_at = now() where id = ${me}`;
         return NextResponse.json({ ok: true, id });
       }
