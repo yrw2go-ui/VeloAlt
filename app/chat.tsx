@@ -781,7 +781,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
           <button className="btn" onClick={deleteSelected} disabled={!selected.size || deleting} data-testid="select-delete" style={{ background: "var(--bad)" }}>{deleting ? "…" : `🗑 Delete${selected.size > 1 ? ` ${selected.size}` : ""}`}</button>
         </div>
       )}
-      <form onSubmit={e => { e.preventDefault(); send(text); }} className="row" style={{ position: "relative", padding: "10px 12px", borderTop: "1px solid var(--border)", ...(selected ? { display: "none" } : {}) }}>
+      <form onSubmit={e => { e.preventDefault(); send(text); }} className="row" style={{ position: "relative", flexWrap: "nowrap", padding: "10px 12px", borderTop: "1px solid var(--border)", ...(selected ? { display: "none" } : {}) }}>
         {/* 🗣️ Typing "@" offers the people you could name. Naming someone doesn't mean they've met. */}
         <MentionPicker text={text} caret={caret} onPick={(name, at) => { setText(t => putName(t, at, caret, name)); box.current?.focus(); }} />
         <input ref={picker} type="file" accept={ACCEPT} hidden onChange={e => pick(e.target.files?.[0])} data-testid="chat-file-input" />
@@ -797,6 +797,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
                 {cid && !scene && inPerson && <button type="button" role="menuitem" data-testid="icu-open" disabled={!!peekSheet} onClick={() => { setMoreOpen(false); openPeek(true); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", fontSize: 15, cursor: "pointer" }}><span style={{ fontSize: 19 }}>👁️</span> ICU — see {who} right now</button>}
                 <button type="button" role="menuitem" data-testid="chat-from-gallery" onClick={() => { setMoreOpen(false); setPickGallery(true); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", fontSize: 15, cursor: "pointer" }}><span style={{ fontSize: 19 }}>🖼️</span> From my gallery</button>
                 <button type="button" role="menuitem" data-testid="chat-attach" disabled={uploading} onClick={() => { setMoreOpen(false); picker.current?.click(); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", fontSize: 15, cursor: "pointer" }}><span style={{ fontSize: 19 }}>📎</span> Photo or file</button>
+                {mic.supported && <button type="button" role="menuitem" data-testid="chat-mic" aria-pressed={mic.listening} onClick={() => { setMoreOpen(false); if (mic.listening) mic.stop(); else mic.start(text); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: mic.listening ? "var(--bad)" : "var(--text)", fontSize: 15, cursor: "pointer" }}><span style={{ fontSize: 19 }}>{mic.listening ? "⏹" : "🎙️"}</span> {mic.listening ? "Stop listening" : "Talk instead of typing"}</button>}
               </div>
             </>
           )}
@@ -805,21 +806,12 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
           onSelect={e => setCaret((e.target as HTMLTextAreaElement).selectionStart ?? 0)}
           placeholder={msgs ? `Message ${who}…` : "Loading…"} aria-label={`Message ${who}`} disabled={!msgs}
           onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(text); } }}
-          style={{ resize: "none", maxHeight: 140, borderRadius: 20 }} />
-        {mic.supported && (
-          <button type="button" onClick={() => (mic.listening ? mic.stop() : mic.start(text))} disabled={!msgs || busy}
-            aria-label={mic.listening ? "Stop listening" : "Talk instead of typing"} aria-pressed={mic.listening} data-testid="chat-mic"
-            style={{ borderRadius: 999, width: 46, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 20,
-              border: `1px solid ${mic.listening ? "var(--bad)" : "var(--border)"}`, background: mic.listening ? "rgba(248,113,113,0.18)" : "var(--surface2)", color: "var(--text)",
-              animation: mic.listening ? "micPulse 1.4s infinite" : undefined }}>
-            {mic.listening ? "⏹" : "🎙️"}
-          </button>
-        )}
+          style={{ resize: "none", maxHeight: 140, borderRadius: 20, flex: 1, minWidth: 0, width: "auto" }} />
         <button className="btn" disabled={(!text.trim() && !attach) || busy || uploading} aria-label="Send" style={{ borderRadius: 999, width: 46, height: 46, padding: 0, flexShrink: 0 }}>➤</button>
       </form>
       {(mic.listening || mic.error) && (
         <div style={{ padding: "0 14px 8px", fontSize: 12, color: mic.error ? "var(--bad)" : "var(--muted)" }}>
-          {mic.error ? `⚠️ ${mic.error}` : "Listening… tap ⏹ when you're done, then Send."}
+          {mic.error ? `⚠️ ${mic.error}` : "Listening… tap ＋ then ⏹ when you're done, and Send."}
         </div>
       )}
       <style>{`@keyframes micPulse { 0% { box-shadow: 0 0 0 0 rgba(248,113,113,.5) } 70% { box-shadow: 0 0 0 10px rgba(248,113,113,0) } 100% { box-shadow: 0 0 0 0 rgba(248,113,113,0) } }`}</style>
