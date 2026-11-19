@@ -318,6 +318,16 @@ export function wearOdds(t: { humor?: number; coldness?: number; flirty?: number
 export const PHOTO_ODDS = 0.7;
 
 /**
+ * 🖐️ How many hands the picture has to work with.
+ *
+ * A present she's HOLDING, photographed on her own phone, needs one hand for the thing and one for
+ * the phone — and if nothing says so the picture grows a second pair of arms to manage both. A
+ * present she's WEARING leaves both hands free, so an ordinary two-handed selfie is fine.
+ */
+export const HANDS_HELD = "She is holding it in ONE hand only; her other arm is the one holding the phone that is taking the picture, reaching toward the camera and out of shot. She has exactly two arms and two hands in total — no third or fourth arm, and no spare hand supporting the thing she is holding.";
+export const HANDS_WORN = "She is wearing it, so both of her hands are free: she can hold the phone however she likes. She has exactly two arms and two hands in total.";
+
+/**
  * What the picture is of, when there is one.
  *
  * `wearing` says she has the present ON. When she has, nothing else is described for her to wear:
@@ -325,22 +335,23 @@ export const PHOTO_ODDS = 0.7;
  * someone holding boots. Whether she has it on at all is `wears` (see wearOdds): someone who hardly
  * knows you holds the boots up to the camera rather than putting them on for you.
  */
-export function photoBrief(what: string, kind: "gift" | "money", g: Pick<Gift, "emoji" | "name" | "brand" | "kind"> & { team?: true; theirs?: true } | null, wears = 0.5, roll = Math.random()): { brief: string; wearing: boolean } {
+export function photoBrief(what: string, kind: "gift" | "money", g: Pick<Gift, "emoji" | "name" | "brand" | "kind"> & { team?: true; theirs?: true } | null, wears = 0.5, roll = Math.random()): { brief: string; wearing: boolean; hands: string } {
   const hasOn = roll < wears;
-  const held = (brief: string) => ({ brief, wearing: false });
+  const held = (brief: string) => ({ brief, wearing: false, hands: HANDS_HELD });
+  const worn = (brief: string) => ({ brief, wearing: true, hands: HANDS_WORN });
   if (kind === "money") return held(`holding up a fan of cash — ${what} in notes — grinning at the camera`);
   // One of yours, or something we don't know: she holds it up. ("a present" reads as "the present".)
   if (!g || g.kind === "mine") return held(`holding up the ${what.replace(/^(?:an?|the)\s+/i, "") || "present"} they've just been sent, pleased with it`);
   // 🏟️ Team gear is whatever team is actually theirs — the one they follow, or the one they play for.
   const team = `their OWN team, the one they follow or play for (from their description: their college side, their city's team, the sport they play), in that team's real colours`;
   if (g.team) return hasOn
-    ? { brief: `wearing the team gear they've just been sent — ${team} — showing it off to the camera`, wearing: true }
+    ? worn(`wearing the team gear they've just been sent — ${team} — showing it off to the camera`)
     : held(`holding up the team gear they've just been sent — ${team} — to the camera, pleased with it`);
   // ☕🍦🥡 A coffee, a pudding, dinner: whatever THIS person actually orders, not a stock answer.
   if (g.theirs) return held(`with the ${g.name} they've just been sent — their OWN usual, the drink or the food THIS person actually orders (from their description, where they live, what they're like), never a stock answer and never tacos unless tacos are genuinely theirs — holding it up to the camera, pleased`);
   // 👗 Something she can wear: on, or held up to the camera — how often depends on who she is and
   // how well she knows you (wearOdds).
   const canWear = ["clothes", "shoes", "jewellery", "bag"].includes(g.kind);
-  if (canWear && hasOn) return { brief: `wearing the ${g.brand} ${g.name} they've just been sent, showing it off to the camera`, wearing: true };
+  if (canWear && hasOn) return worn(`wearing the ${g.brand} ${g.name} they've just been sent, showing it off to the camera`);
   return held(`holding up the ${g.brand} ${g.name} they've just been sent${canWear ? ", showing it off to the camera" : ", pleased with it"}`);
 }

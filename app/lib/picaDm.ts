@@ -267,7 +267,8 @@ export async function dmGiftPhoto(userId: string, accountId: string, what: strin
   const g = giftId ? giftById(giftId) : null;
   const t = cleanTraits((a.traits || {}) as Record<string, unknown>);
   const who = g?.team || g?.theirs ? ` ${a.bio || ""} ${a.lives || ""}`.replace(/\s+/g, " ").trim().slice(0, 300) : "";
-  const desc = `${photoBrief(what, kind, g, wearOdds(t, closeness)).brief}. ${giftFace(t, closeness, big)}${who ? ` About her: ${who}` : ""} It is clearly the same woman as in the reference pictures — her face, her hair, her build. Taken on her own phone where she is, candid and real.`;
+  const shot = photoBrief(what, kind, g, wearOdds(t, closeness));
+  const desc = `${shot.brief}. ${giftFace(t, closeness, big)}${who ? ` About her: ${who}` : ""} It is clearly the same woman as in the reference pictures — her face, her hair, her build. Taken on her own phone where she is, candid and real. ${shot.hands}`;
   const m = await sendPhotoOf(userId, a, scrub(desc).replace(/\s+/g, " ").trim().slice(0, 1500), u.adult)
     .catch(e => { console[e instanceof MediaError ? "warn" : "error"]("pica dm: gift photo", e instanceof Error ? e.message : e); return null; });
   if (m && m.status !== "failed") await addDm(userId, accountId, "assistant", "", m.id, 1000);

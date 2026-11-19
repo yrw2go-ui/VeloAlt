@@ -47,6 +47,35 @@ ok(odds({ coldness: 10, moody: 10 }, 0) >= 0.05 && odds({ flirty: 10, energetic:
 // Something that's somehow not in the list still gives a sensible picture.
 ok(/holding up the present/.test(photoBrief("a present", "gift", null).brief), "an unknown present still works");
 
+// 🖐️ Hands. A present she is HOLDING is photographed on her own phone, so one hand is on the thing
+// and the other is on the phone. Said nothing, the picture grows a second pair of arms to manage
+// both at once — which is exactly what it was doing.
+const heldShot = photoBrief("Gucci GG Marmont purse", "gift", giftById("gucci-purse"), 0);
+const wornShot = photoBrief("Gucci GG Marmont purse", "gift", giftById("gucci-purse"), 1);
+ok(/ONE hand/.test(heldShot.hands), "holding it: one hand on the thing");
+ok(/other arm[\s\S]*phone/.test(heldShot.hands), "…and the other arm is the one holding the phone");
+ok(/two arms and two hands/.test(heldShot.hands), "…two arms and two hands in total, said out loud");
+ok(/no third or fourth arm/.test(heldShot.hands), "…and no third or fourth arm");
+ok(/both of her hands are free/.test(wornShot.hands), "wearing it: both hands free");
+ok(/two arms and two hands/.test(wornShot.hands), "…still only two arms and two hands");
+ok(heldShot.hands !== wornShot.hands, "the two cases say different things");
+
+// Every kind of present says something about hands, not just the clothes.
+for (const [label, shot] of [
+  ["cash", photoBrief("$500", "money", null)],
+  ["a coffee", photoBrief("a large iced latte", "gift", giftById("iced-latte"))],
+  ["team gear worn", photoBrief("team gear", "gift", giftById("team-gear"), 1)],
+  ["team gear held", photoBrief("team gear", "gift", giftById("team-gear"), 0)],
+  ["one of yours", photoBrief("courtside tickets", "gift", { id: "mine:x", name: "courtside tickets", brand: "Bulls", kind: "mine", price: 900, emoji: "🛍️" })],
+  ["a speaker", photoBrief("Bose SoundLink speaker", "gift", giftById("bose-speaker"))],
+] as const) {
+  ok(/two arms and two hands/.test(shot.hands), `${label}: the hands are accounted for`);
+  ok(shot.wearing ? /both of her hands are free/.test(shot.hands) : /ONE hand/.test(shot.hands),
+    `${label}: ${shot.wearing ? "wearing it leaves both hands free" : "holding it uses one hand"}`);
+}
+// Cash and food are always held, so they always get the one-hand rule.
+ok(!photoBrief("$500", "money", null).wearing && /ONE hand/.test(photoBrief("$500", "money", null).hands), "cash is held in one hand, with the other on the phone");
+
 // 😊 Her face is hers: her sliders decide it, and how close you are changes where she's looking.
 const face = (t: Record<string, number>, close = 50, big = false) => giftFace(t, close, big);
 ok(/barely smiling/.test(face({ coldness: 9 })), "someone cold gives you the smallest smile she's got");

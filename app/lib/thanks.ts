@@ -37,7 +37,7 @@ Reply with the message only — no quotes, no name, no stage directions.`,
   let media = null;
   if (Math.random() < PHOTO_ODDS) {
     // 👗 On her, or held up to the camera: how close you are and who she is decide which.
-    const { brief, wearing } = photoBrief(what, kind, g, wearOdds(t, closeness));
+    const { brief, wearing, hands } = photoBrief(what, kind, g, wearOdds(t, closeness));
     // 🏟️ Team gear: her own team, so whatever her description says she follows or plays for goes in.
     // 🏟️☕ Team gear and the edible ones are whatever is genuinely hers, so she's described to the
     // picture: her hobbies, her life, where she is.
@@ -47,7 +47,7 @@ Reply with the message only — no quotes, no name, no stage directions.`,
     // 📸 with_me is what makes her OWN reference photos go to the picture service (the same flag a
     // peek and a Picagram DM use). Without it her references are fetched and then thrown away, the
     // picture is drawn from words alone, and it doesn't look like her.
-    media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: `${brief}. ${face}${who ? ` About her: ${who}` : ""} ${ch.casual_wear && !wearing ? `Wearing ${ch.casual_wear}.` : ""} It is clearly the same woman as in the reference pictures — her face, her hair, her build. Taken on her own phone where she is, candid and real.` },
+    media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: `${brief}. ${face}${who ? ` About her: ${who}` : ""} ${ch.casual_wear && !wearing ? `Wearing ${ch.casual_wear}.` : ""} It is clearly the same woman as in the reference pictures — her face, her hair, her build. Taken on her own phone where she is, candid and real. ${hands}` },
       { characterId: ch.id, who: ch.name, appearance: ch.appearance, refs: await referenceUrls(ch).catch(() => []),
         romantic: romantic && allowsSuggestive(ch.traits), mood: mediaMood(ch.traits), offer: false })
       .catch(e => { console[e instanceof MediaError ? "warn" : "error"]("thanks: photo", e instanceof Error ? e.message : e); return null; });
