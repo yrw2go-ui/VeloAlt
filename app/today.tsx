@@ -5,6 +5,7 @@ import { data } from "./lib/api";
 import { confirmAsk } from "./lib/dialog";
 
 type Reminder = { id: string; text: string; remind_at: string; status: string };
+type Ongoing = { characterId: string; kind: string; who: string; title: string; portrait: string | null };
 type Task = { id: string; text: string; due_date: string | null; done: boolean };
 const when = (iso: string) => new Date(iso).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
@@ -42,9 +43,45 @@ export default function Today({ refresh }: { refresh: number }) {
     setTick(x => x + 1);
   };
 
+  // 🛑 What is going on this minute — together in person, or on a video chat — and a way to
+  // finish each one from here.
+  const [ongoing, setOngoing] = useState<Ongoing[] | null>(null);
+  const [ending, setEnding] = useState("");
+  useEffect(() => { data<{ ongoing: Ongoing[] }>("ongoing").then(r => setOngoing(r.ongoing || [])).catch(() => setOngoing([])); }, [tick]);
+  const end = async (o: Ongoing) => {
+    const call = o.kind !== "person";
+    if (!(await confirmAsk(call ? `End the video chat with ${o.who}?` : `Leave ${o.who}? You two are together right now.`,
+      { yes: call ? "Hang up" : "Leave" }))) return;
+    setEnding(o.characterId);
+    await data(call ? "scene.end" : "inperson.end", { characterId: o.characterId }).catch(() => {});
+    setEnding("");
+    setTick(x => x + 1);
+  };
+
   const now = Date.now();
   return (
     <div style={{ width: "100%", minWidth: 0, maxWidth: "100%", padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
+      {!!ongoing?.length && (
+        <section className="card" data-testid="today-ongoing">
+          <div style={{ fontWeight: 800, marginBottom: 10 }}>🟢 Going on right now</div>
+          {ongoing.map(o => (
+            <div key={`${o.kind}:${o.characterId}`} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderTop: "1px solid var(--border)" }}>
+              {o.portrait
+                ? <img src={o.portrait} alt="" width={34} height={34} style={{ width: 34, height: 34, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
+                : <span aria-hidden style={{ width: 34, height: 34, borderRadius: "50%", flexShrink: 0, background: "var(--surface2)", display: "grid", placeItems: "center", fontSize: 14, fontWeight: 700 }}>{o.who.slice(0, 1)}</span>}
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ fontWeight: 700, fontSize: 14 }}>{o.kind === "person" ? "🧍" : "🎥"} {o.who}</span>
+                <br />
+                <span className="muted" style={{ fontSize: 13 }}>{o.title || (o.kind === "person" ? "Together in person" : "On a video chat")}</span>
+              </span>
+              <button className="ghost" data-testid={`today-end-${o.characterId}`} disabled={ending === o.characterId} onClick={() => void end(o)}
+                style={{ flexShrink: 0, padding: "4px 10px", fontSize: 12, whiteSpace: "nowrap", color: "var(--bad)" }}>
+                {ending === o.characterId ? "…" : o.kind === "person" ? "Leave" : "End call"}
+              </button>
+            </div>
+          ))}
+        </section>
+      )}
       <section className="card">
         <div style={{ fontWeight: 800, marginBottom: 10 }}>⏰ Reminders</div>
         {rems === null ? <div className="muted">Loading…</div> : !rems.length ? (
