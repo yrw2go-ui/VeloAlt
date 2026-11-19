@@ -16,6 +16,7 @@ import { sql } from "./db";
 import { wordsOf, fill } from "./wording";
 import { rememberPartnerPic } from "./partner";
 import { noLipBite, noLooks } from "./mediaWords";
+import { imageModelFor, refsShape } from "./imageModels";
 import { scrub } from "./secrets";
 import { sendPush } from "./push";
 
@@ -80,8 +81,6 @@ export class MediaError extends Error {}
 
 const ATLAS = () => process.env.ATLASCLOUD_API_URL || "https://api.atlascloud.ai";
 export const mediaReady = () => !!(process.env.ATLASCLOUD_API_KEY && process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
-const IMAGE_MODEL = () => process.env.ATLASCLOUD_IMAGE_MODEL || "bytedance/seedream-v5.0-pro/text-to-image";
-const EDIT_MODEL = () => process.env.ATLASCLOUD_IMAGE_EDIT_MODEL || "bytedance/seedream-v5.0-pro/edit";
 export const DAILY = { image: 200, video: 6 };
 const GIVE_UP_MS = 3 * 3600_000;
 
@@ -125,9 +124,9 @@ export const SEND_MEDIA_TOOL = (who: string, romantic = false, explicitOk = fals
   },
 });
 
-async function atlasStart(kind: "image" | "video", model: string, prompt: string, refs: string[]): Promise<string> {
+async function atlasStart(kind: "image" | "video", model: string, prompt: string, refs: string[], refsKey: "images" | "reference_images" = "images", orElse = false): Promise<string> {
   const body = kind === "image"
-    ? { model, prompt, size: "1664*2496", output_format: "jpeg", ...(refs.length ? { images: refs } : {}) }
+    ? { model, prompt, size: "1664*2496", output_format: "jpeg", ...(refs.length ? { [refsKey]: refs } : {}) }
     : { model, prompt, duration: 5, resolution: "720p", aspect_ratio: "9:16", ...(refs[0] ? { image: refs[0] } : {}) };
   const res = await fetch(`${ATLAS()}/api/v1/model/${kind === "image" ? "generateImage" : "generateVideo"}`, {
     method: "POST",
@@ -137,6 +136,13 @@ async function atlasStart(kind: "image" | "video", model: string, prompt: string
   const raw = await res.text();
   if (!res.ok) {
     console.error(`media: Atlas ${kind} start ${model} ${res.status} ${raw.slice(0, 300)}`);
+    // 🖼️ A model added by hand may want its reference photos under the other field name: one more
+    // go under that name before giving up, rather than a failed picture over a naming difference.
+    if (orElse && refs.length && res.status >= 400 && res.status < 500) {
+      const other = refsKey === "images" ? "reference_images" : "images";
+      console.warn(`media: ${model} refused "${refsKey}" — trying "${other}"`);
+      return atlasStart(kind, model, prompt, refs, other, false);
+    }
     // 4xx = it won't work if we try again (bad model, refused prompt); 5xx = try again later.
     throw res.status >= 400 && res.status < 500 && res.status !== 429 ? new MediaError("refused") : new Error(`atlas ${res.status}`);
   }
@@ -184,7 +190,7 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
   if (n >= DAILY[kind]) throw new MediaError(`That's the limit of ${kind === "image" ? "photos" : "videos"} for today. Tell them you'll send more tomorrow.`);
   if (!ctx.pica) await sql()`update velo_media set status = 'declined' where user_id = ${userId} and character_id is not distinct from ${ctx.characterId} and status = 'offered'`;
 
-  const [u] = await sql()`select video_model, prompt_words from users where id = ${userId}`;
+  const [u] = await sql()`select video_model, image_model, image_models, prompt_words from users where id = ${userId}`;
   const w = wordsOf(u); // 📝 Settings → Photo wording: theirs if they changed it, else the default.
   const withMe = a.with_me === true;
   // 👥 Someone else they know of can be in it (her references first), with or without them.
@@ -226,7 +232,10 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
   const outfit = refs.length && !prev ? `${fill(w.outfit, {})} ` : "";
   // A group peek keeps the one line saying which reference picture is who, so faces don't get mixed up.
   const prompt = ctx.raw ? (people ? `${groupSubject}${desc}` : desc) : `${subject}${desc}. ${outfit}${framing}${withMe && !o && !people && ctx.mood ? `${ctx.mood} ` : ""}${style}, ${kind === "image" ? w.tail_image : w.tail_video}.`.slice(0, 1500);
-  const model = kind === "image" ? (ref ? EDIT_MODEL() : IMAGE_MODEL()) : videoModel(String(u?.video_model || DEFAULT_VIDEO_MODEL), !!ref);
+  // 🖼️ The Seedream they picked in Settings (or one they added there); videos keep their own picker.
+  const model = kind === "image"
+    ? imageModelFor(u?.image_model, u?.image_models, !!ref).model
+    : videoModel(String(u?.video_model || DEFAULT_VIDEO_MODEL), !!ref);
   const sendRefs = kind === "image" ? refs : ref ? [ref] : [];
   const who = people ? null : o ? (withMe ? `me+${o.name}` : o.name) : withMe ? "me" : "none";
   // 💬 Her line when it arrives — but only for one she offered. A picture they ASKED for speaks for
@@ -243,7 +252,8 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
 export async function launch(id: string, kind: "image" | "video", model: string, prompt: string, refs: string[], desc: string | null): Promise<Media> {
   const row = { id };
   try {
-    const job = await atlasStart(kind, model, prompt, refs);
+    const shape = kind === "image" ? refsShape(model) : { refs: "images" as const, known: true };
+    const job = await atlasStart(kind, model, prompt, refs, shape.refs, !shape.known);
     await sql()`update velo_media set job_id = ${job} where id = ${row.id}`;
   } catch (e) {
     if (e instanceof MediaError) {
