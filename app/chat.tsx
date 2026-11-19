@@ -503,6 +503,16 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     if (next.has(id)) next.delete(id); else if (next.size < 10) next.add(id);
     return next.size ? next : null;
   });
+  // 🗑 Just this one, from the expanded picture: pressing and holding the picture itself never
+  // selects it, because the phone wants to do its own thing with an image.
+  const deleteOne = async (id: string) => {
+    if (!(await confirmAsk(`Delete this message? Are you sure? ${who} will forget what was in it. The picture stays in your gallery.`, { yes: "Delete", danger: true }))) return;
+    setErr("");
+    try {
+      await data("messages.delete", { ...thread, ids: [id] });
+      setMsgs(msgsRef.current.filter(m => m.id !== id));
+    } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't delete."); }
+  };
   const deleteSelected = async () => {
     if (!selected?.size) return;
     const n = selected.size;
@@ -722,7 +732,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       <div data-testid="chat-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
         {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : (
           <Selectable key={m.media?.id || m.id || i} id={m.id} selecting={selected} onStart={id => setSelected(new Set([id]))} onToggle={toggleSelect}>
-            <Bubble m={m} onEdit={editMsg} social={character && onSocial && socialOk(m.media) ? createSocial : undefined} openHandle={already(m.media)} onReactMsg={reactMsg} face={face(28)} onMedia={mediaArrived} onFailed={reload} onReact={react} who={who} onAnswer={x => setMsgs(list => (list || []).map(y => (y.media?.id === x.id ? { ...y, content: mediaNote({ ...y.media!, ...x }), media: { ...y.media!, ...x } } : y)))} />
+            <Bubble m={m} onEdit={editMsg} onDeleteOne={deleteOne} social={character && onSocial && socialOk(m.media) ? createSocial : undefined} openHandle={already(m.media)} onReactMsg={reactMsg} face={face(28)} onMedia={mediaArrived} onFailed={reload} onReact={react} who={who} onAnswer={x => setMsgs(list => (list || []).map(y => (y.media?.id === x.id ? { ...y, content: mediaNote({ ...y.media!, ...x }), media: { ...y.media!, ...x } } : y)))} />
           </Selectable>
         ))}
         {character && msgs && !msgs.length && (
@@ -833,7 +843,7 @@ const When = ({ at, align }: { at?: string; align?: "left" | "right" | "center" 
   return t ? <div data-testid="when" style={{ fontSize: 10, lineHeight: 1.6, opacity: 0.55, color: "var(--text)", padding: "2px 4px 0", textAlign: align || "left", alignSelf: align === "right" ? "flex-end" : align === "center" ? "center" : "flex-start" }}>{t}</div> : null;
 };
 
-function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg, social, openHandle, onEdit }: { onEdit?: (id: string, text: string) => Promise<void>; openHandle?: string | null; social?: (md: Media) => void; m: ChatMsg; face: React.ReactNode; who: string; onMedia: (x: Media) => void; onFailed?: () => void; onReact: (id: string, r: string) => void; onAnswer: (x: Media) => void; onReactMsg: (id: string, r: string) => void }) {
+function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg, social, openHandle, onEdit, onDeleteOne }: { onDeleteOne?: (id: string) => void | Promise<void>; onEdit?: (id: string, text: string) => Promise<void>; openHandle?: string | null; social?: (md: Media) => void; m: ChatMsg; face: React.ReactNode; who: string; onMedia: (x: Media) => void; onFailed?: () => void; onReact: (id: string, r: string) => void; onAnswer: (x: Media) => void; onReactMsg: (id: string, r: string) => void }) {
   const mine = m.role === "user";
   const [picking, setPicking] = useState(false);
   // ✏️ Double-tap a written message to reword it — hers or yours. Pictures and markers aren't editable.
@@ -867,7 +877,7 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
     <div data-testid="peek-media" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
       <div className="muted" style={{ fontSize: 11 }}>👀 Peek · {who} doesn&apos;t know</div>
       <div style={{ maxWidth: "min(86%, 400px)" }}>
-        <MediaView media={m.media} onReady={onMedia} onFailed={onFailed} who={who} onAnswer={x => onAnswer(x)} />
+        <MediaView media={m.media} onReady={onMedia} onFailed={onFailed} who={who} onDelete={onDeleteOne && m.id ? () => onDeleteOne(m.id!) : undefined} onAnswer={x => onAnswer(x)} />
         {m.media.status === "done" && <ReactionBar value={m.media.reaction} onPick={r => onReact(m.media!.id, r)} />}
         <When at={m.at} align="center" />
       </div>
@@ -887,7 +897,7 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
     <div data-testid="chat-media" style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
       {face}
       <div style={{ maxWidth: "min(80%, 380px)" }}>
-        <MediaView media={m.media} onReady={onMedia} onFailed={onFailed} who={who} onAnswer={x => onAnswer(x)} />
+        <MediaView media={m.media} onReady={onMedia} onFailed={onFailed} who={who} onDelete={onDeleteOne && m.id ? () => onDeleteOne(m.id!) : undefined} onAnswer={x => onAnswer(x)} />
         {m.media.status === "done" && <ReactionBar value={m.media.reaction} onPick={r => onReact(m.media!.id, r)} />}
         {social && m.media.status === "done" && <SocialButton done={!!m.media.social} openHandle={openHandle} onGo={() => social(m.media!)} />}
         <When at={m.at} align={mine ? "right" : "left"} />

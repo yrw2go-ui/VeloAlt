@@ -848,10 +848,21 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
     const r = await api<{ id: string; content: string }>("/api/pica", { action: "dm.edit", id, messageId: mid, text });
     setMsgs(list => (list || []).map(m => (m.id === r.id ? { ...m, content: r.content } : m)));
   };
+  // 🗑 Just this one, from the expanded picture — the thread loses the message, the gallery keeps it.
+  const deleteOne = async (mid: string, isPic = false) => {
+    if (!(await confirmAsk(`Delete this message? Are you sure? ${acc?.name || "She"} will forget what was in it.${isPic ? " The picture stays in your gallery." : ""}`, { yes: "Delete", danger: true }))) return;
+    try {
+      await api("/api/pica", { action: "dm.delete", id, ids: [mid] });
+      setMsgs(list => (list || []).filter(m => m.id !== mid));
+    } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't delete."); }
+  };
+
   const deleteSelected = async () => {
     if (!selected?.size) return;
     const n = selected.size;
-    if (!(await confirmAsk(`Delete ${n === 1 ? "this message" : `these ${n} messages`}? Are you sure?`, { yes: "Delete", danger: true }))) return;
+    // 📸 Say so when a picture is among them: the message goes, the picture stays in your gallery.
+    const pics = (msgs || []).filter(m => selected.has(m.id) && m.media).length;
+    if (!(await confirmAsk(`Delete ${n === 1 ? "this message" : `these ${n} messages`}? Are you sure? ${acc?.name || "She"} will forget what was in ${n === 1 ? "it" : "them"}.${pics ? ` ${pics === 1 ? "The picture stays" : "The pictures stay"} in your gallery.` : ""}`, { yes: "Delete", danger: true }))) return;
     setDeleting(true);
     try {
       await api("/api/pica", { action: "dm.delete", id, ids: [...selected] });
@@ -936,14 +947,15 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
         {(msgs || []).map(m => {
           const bubble = (
             <div key={m.id} data-testid={m.role === "user" ? "dm-mine" : "dm-hers"} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "80%" }}>
-              {m.media ? <MediaView media={m.media} who={acc?.name || ""} /> : (
+              {m.media ? <MediaView media={m.media} who={acc?.name || ""} onDelete={() => deleteOne(m.id, true)} /> : (
                 <DmText m={m} onEdit={editMsg} />
               )}
               <When at={m.created_at} align={m.role === "user" ? "right" : "left"} />
             </div>
           );
-          // A picture message is never selectable: long-press it and the phone does its own thing.
-          return m.media ? bubble : (
+          // 📸 A picture is picked out the same way anything else is — press and hold, exactly as in
+          // the chat. Deleting it takes the message out of the thread; the picture stays in your gallery.
+          return (
             <Selectable key={m.id} id={m.id} selecting={selected} onStart={x => setSelected(new Set([x]))} onToggle={toggleSelect}>{bubble}</Selectable>
           );
         })}

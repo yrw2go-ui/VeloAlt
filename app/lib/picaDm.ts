@@ -122,8 +122,8 @@ async function describePhoto(userId: string, a: Record<string, unknown>, u: { na
 
 /** 💬 They send a DM; she answers in her own voice (and sometimes with a photo of herself). */
 /**
- * 🗑 Delete messages from a DM thread — the written ones only. A message carrying a picture is
- * left alone: her photos are yours to keep (delete one from the gallery if you want it gone).
+ * 🗑 Delete messages from a DM thread, the same as in the chat — a message carrying a picture
+ * included. The picture itself stays in your gallery; only the message goes from the thread.
  * Returns how many went.
  */
 /** ✏️ Reword one written message in a thread. Pictures and empty text are left alone. */
@@ -139,15 +139,17 @@ export async function dmEdit(userId: string, accountId: string, id: string, text
 export async function dmDelete(userId: string, accountId: string, ids: string[]): Promise<number> {
   const want = ids.filter(x => /^[0-9a-f-]{36}$/i.test(x)).slice(0, 50);
   if (!want.length) return 0;
+  // 📸 A message carrying a picture goes too, exactly as it does in the chat. The picture itself
+  // stays in your gallery — only the message is removed from the thread.
   const gone = await sql()`delete from pica_dms where user_id = ${userId} and account_id = ${accountId}
-    and id = any(${want}::uuid[]) and media_id is null returning id, role, content, created_at::text`;
+    and id = any(${want}::uuid[]) returning id, role, content, media_id, created_at::text`;
   if (!gone.length) return 0;
   // 🧠 …and she forgets what she only knew because of them, the same as deleting a chat message.
   try {
     const a = await account(userId, accountId);
     const u = await userInfo(userId);
     const since = gone.map(r => String(r.created_at)).sort()[0];
-    const lines = gone.map(r => `${r.role === "assistant" ? String(a.name) : u.name || "Them"}: ${String(r.content).slice(0, 600)}`).join("\n");
+    const lines = gone.map(r => `${r.role === "assistant" ? String(a.name) : u.name || "Them"}: ${String(r.content).trim() ? String(r.content).slice(0, 600) : "(a picture)"}`).join("\n");
     await forgetPicaLines(userId, accountId, lines, since, brainOf(a, u.chatModel));
   } catch (e) { console.error("pica dm: forget", e instanceof Error ? e.message : e); }
   return gone.length;

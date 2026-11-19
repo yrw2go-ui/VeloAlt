@@ -53,11 +53,11 @@ export function useMedia(initial: Media, onReady?: (m: Media) => void, onFailed?
 const fit = { display: "block", width: "100%", maxHeight: "min(62dvh, 560px)", height: "auto", objectFit: "contain", borderRadius: 14, margin: "0 auto", background: "#000" } as const;
 
 /** The photo/video itself (or its placeholder). */
-export function MediaView({ media, onReady, onFailed, onAnswer, big = false, who = "Velo" }: { media: Media; onReady?: (m: Media) => void; onFailed?: () => void; onAnswer?: (m: Media) => void; big?: boolean; who?: string }) {
+export function MediaView({ media, onReady, onFailed, onAnswer, onDelete, big = false, who = "Velo" }: { media: Media; onReady?: (m: Media) => void; onFailed?: () => void; onAnswer?: (m: Media) => void; onDelete?: () => void | Promise<void>; big?: boolean; who?: string }) {
   const [cur, setCur] = useState(media);
   // 📸 Offered on their own: nothing is made until they accept.
   if (cur.status === "offered" || cur.status === "declined") return <OfferCard m={cur} who={who} big={big} onAnswer={x => { setCur(x); onAnswer?.(x); }} />;
-  return <MediaShown key={cur.id + cur.status} media={cur} onReady={onReady} onFailed={onFailed} big={big} />;
+  return <MediaShown key={cur.id + cur.status} media={cur} onReady={onReady} onFailed={onFailed} onDelete={onDelete} big={big} />;
 }
 
 /** "Mira wants to send you a photo: 'my view from the balcony'" — Accept / No thanks. */
@@ -87,7 +87,7 @@ function OfferCard({ m, who, big, onAnswer }: { m: Media; who: string; big: bool
   );
 }
 
-function MediaShown({ media, onReady, onFailed, big = false }: { media: Media; onReady?: (m: Media) => void; onFailed?: () => void; big?: boolean }) {
+function MediaShown({ media, onReady, onFailed, onDelete, big = false }: { media: Media; onReady?: (m: Media) => void; onFailed?: () => void; onDelete?: () => void | Promise<void>; big?: boolean }) {
   const m = useMedia(media, onReady, onFailed);
   const [full, setFull] = useState(false);
   if (m.status === "failed") return <div className="muted" data-testid="media-failed" style={{ fontSize: 13 }}>📵 That {m.kind === "image" ? "photo" : "video"} didn&apos;t send.</div>;
@@ -110,7 +110,13 @@ function MediaShown({ media, onReady, onFailed, big = false }: { media: Media; o
   return (
     <>
       <div style={{ width: big ? "min(86vw, 420px)" : "min(72vw, 320px)", cursor: "zoom-in" }} onClick={e => { e.stopPropagation(); setFull(true); }}>{el}</div>
-      {full && <Viewer m={m} onClose={() => setFull(false)}><SaveButton m={m} /></Viewer>}
+      {full && <Viewer m={m} onClose={() => setFull(false)}>
+        <SaveButton m={m} />
+        {/* 🗑 Taking it out of the thread, where you can actually see it — pressing and holding the
+            picture itself never selects it, because the phone wants to do its own thing with an image. */}
+        {onDelete && <button className="ghost" data-testid="viewer-delete" onClick={async () => { await onDelete(); setFull(false); }}
+          style={{ padding: "6px 12px", fontSize: 13, color: "var(--bad)" }}>🗑 Delete</button>}
+      </Viewer>}
     </>
   );
 }
