@@ -39,7 +39,7 @@ export default function Memory({ refresh }: { refresh: number }) {
   };
 
   return (
-    <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={{ width: "100%", minWidth: 0, maxWidth: "100%", padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
       <div className="muted" style={{ fontSize: 14 }}>Velo remembers these so she can follow up like a friend would. Only you can see them.</div>
       {SECTIONS.map(s => {
         const list = (mems || []).filter(s.pick);

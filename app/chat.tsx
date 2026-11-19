@@ -582,7 +582,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     .filter(m => m.media || m.file || m.draft || !NOTE_ONLY.test(m.content || ""));
 
   return (
-    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+    <div style={{ flex: 1, minHeight: 0, minWidth: 0, width: "100%", maxWidth: "100%", display: "flex", flexDirection: "column" }}>
       {character?.romantic && !adult && !skipRomance && (
         <div data-testid="romance-confirm" className="row" style={{ gap: 10, padding: "10px 14px", borderBottom: "1px solid var(--border)", background: "rgba(236,72,153,0.10)", fontSize: 13, flexWrap: "wrap" }}>
           <div style={{ flex: "1 1 200px" }}>💕 {character.name} is a romantic character. Confirm you&apos;re 18+ to unlock romance — until then {character.name} keeps it friendly.</div>

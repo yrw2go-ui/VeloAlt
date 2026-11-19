@@ -44,7 +44,7 @@ export default function Today({ refresh }: { refresh: number }) {
 
   const now = Date.now();
   return (
-    <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={{ width: "100%", minWidth: 0, maxWidth: "100%", padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
       <section className="card">
         <div style={{ fontWeight: 800, marginBottom: 10 }}>⏰ Reminders</div>
         {rems === null ? <div className="muted">Loading…</div> : !rems.length ? (

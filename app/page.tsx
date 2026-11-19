@@ -352,9 +352,9 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   };
 
   return (
-    <div style={{ height: "100dvh", display: "flex", flexDirection: "column", width: "100%", minWidth: 0, maxWidth: "min(720px, 100%)", margin: "0 auto", overflowX: "hidden" }}>
+    <div style={{ height: "100dvh", display: "flex", flexDirection: "column", width: "100%", minWidth: 0, maxWidth: "min(720px, 100%)", margin: "0 auto" }}>
       {calling && callMini && <div aria-hidden style={{ height: "calc(max(8px, env(safe-area-inset-top)) + 50px)", flexShrink: 0 }} />}
-      <header className="row" style={{ gap: 8, width: "100%", minWidth: 0, maxWidth: "100%", overflow: "hidden", padding: "max(6px, env(safe-area-inset-top)) 12px 6px", borderBottom: "1px solid var(--border)" }}>
+      <header className="row" style={{ gap: 8, width: "100%", minWidth: 0, maxWidth: "100%", flexShrink: 0, padding: "max(6px, env(safe-area-inset-top)) 12px 6px", borderBottom: "1px solid var(--border)" }}>
         <VeloLogo size={32} />
         <div className="row" style={{ flex: 1, minWidth: 0, gap: 6, alignItems: "baseline" }}>
           <div style={{ fontWeight: 800, fontSize: 15 }}>Velo 2</div>
@@ -445,7 +445,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
           chars={chars} admin={admin} brains={brains} brainModels={brainModels} onCharChange={c => setChars(cs => cs.map(x => (x.id === c.id ? { ...x, brain: c.brain } : x)))} />}
       </main>
 
-      <nav style={{ display: "flex", width: "100%", minWidth: 0, maxWidth: "100%", overflow: "hidden", borderTop: "1px solid var(--border)", paddingBottom: "env(safe-area-inset-bottom)", background: "var(--surface)" }}>
+      <nav style={{ display: "flex", width: "100%", minWidth: 0, maxWidth: "100%", flexShrink: 0, borderTop: "1px solid var(--border)", paddingBottom: "env(safe-area-inset-bottom)", background: "var(--surface)" }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} aria-current={tab === t.id ? "page" : undefined}
             style={{ flex: "1 1 0", minWidth: 0, background: "none", border: "none", padding: "10px 0 12px", color: tab === t.id ? "var(--accent)" : "var(--muted)", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, fontSize: 12, fontWeight: 700 }}>
@@ -497,7 +497,7 @@ function Settings({ name, setName, onOut, profile, onProfile, chars = [], admin 
     if (ok) { setName(n); setSaved(true); setTimeout(() => setSaved(false), 1500); }
   };
   return (
-    <div style={{ width: "100%", minWidth: 0, maxWidth: "100%", overflowX: "hidden", padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={{ width: "100%", minWidth: 0, maxWidth: "100%", padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
       <div className="card">
         <div style={{ fontWeight: 700, marginBottom: 8 }}>What should Velo call you?</div>
         <div className="row">

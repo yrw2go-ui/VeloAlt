@@ -222,11 +222,11 @@ export function BrainCard({ profile, onChange, chars = [], admin = false, brains
   const opt = (on: boolean) => ({ textAlign: "left" as const, background: on ? "rgba(124,140,255,0.12)" : "var(--surface2)", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, borderRadius: 12, padding: "10px 12px", color: "var(--text)", cursor: on ? "default" : "pointer" });
   const tabStyle = (on: boolean) => ({ flexShrink: 0, padding: "6px 12px", borderRadius: 999, fontSize: 13, fontWeight: 700, cursor: "pointer", color: "var(--text)", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, background: on ? "rgba(124,140,255,0.15)" : "var(--surface2)" });
   return (
-    <div className="card" data-testid="brain" style={{ width: "100%", maxWidth: "100%", minWidth: 0, overflow: "hidden" }}>
+    <div className="card" data-testid="brain" style={{ minWidth: 0, maxWidth: "100%" }}>
       <div style={{ fontWeight: 700 }}>🧠 Brains</div>
       <div className="muted" style={{ fontSize: 13, margin: "2px 0 10px" }}>The AI behind Velo and each character. Their memory and everything else stay the same. Passwords and codes are hidden from every one of them.</div>
       {showChars && (
-        <div role="tablist" aria-label="Whose brain" style={{ display: "flex", gap: 6, width: "100%", maxWidth: "100%", minWidth: 0, overflowX: "auto", paddingBottom: 8 }}>
+        <div role="tablist" aria-label="Whose brain" style={{ display: "flex", gap: 6, maxWidth: "100%", overflowX: "auto", overflowY: "hidden", paddingBottom: 8 }}>
           <button role="tab" aria-selected={tab === "velo"} onClick={() => setTab("velo")} style={tabStyle(tab === "velo")} data-testid="brain-tab-velo">Velo</button>
           {chars.map(c => <button key={c.id} role="tab" aria-selected={tab === c.id} onClick={() => setTab(c.id)} style={tabStyle(tab === c.id)} data-testid={`brain-tab-${c.name}`}>{c.name}{c.brain ? " 🧠" : ""}</button>)}
         </div>
