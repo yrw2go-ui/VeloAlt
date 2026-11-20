@@ -44,3 +44,14 @@ export function retryChoices(picked: unknown, ready: string[]): { id: string; la
 export const COMMENT_ORDER = ["qwen", "deepseek", "kimi"] as const;
 /** The cheap brains to write comments with, cheapest first. Empty = nobody: the free lines do it. */
 export const commentBrains = (ready: string[]): string[] => COMMENT_ORDER.filter(id => ready.includes(id));
+
+// 🤝 Befriending someone off Picagram writes her a whole character card, which is the dearest
+// bit of writing in the app — so you get to say who writes her instead of it just happening.
+/** Who you could pick to write her, the Settings brain first, with roughly what each costs. */
+export function befriendChoices(picked: unknown, ready: string[]): { id: string; label: string; cost: string; mine: boolean }[] {
+  const first = String(picked || "").trim() || "claude";
+  const label: Record<string, string> = { claude: "Claude", qwen: "Qwen (fast)", qwen2: "Qwen (big)", deepseek: "DeepSeek", kimi: "Kimi" };
+  return [...new Set([first, "claude", "qwen", "qwen2", "deepseek", "kimi"])]
+    .filter(id => id === first || id === "claude" || ready.includes(id))
+    .map(id => ({ id, label: label[id] || id, cost: roughCost(id), mine: id === first }));
+}

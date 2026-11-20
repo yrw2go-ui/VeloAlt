@@ -449,11 +449,20 @@ function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: 
     try { await api("/api/pica", { action: "account.delete", id }); onDeleted?.(id); onClose(); }
     catch (e) { setErr(e instanceof Error ? e.message : "Couldn't delete her."); }
   };
-  const befriend = async () => {
-    setBefriending(true); setErr("");
-    try { const r = await api<{ characterId: string }>("/api/pica", { action: "befriend", id }); setData(d => (d ? { ...d, account: { ...d.account, character_id: r.characterId, followed: true } } : d)); onFollow(id, true); }
+  // 🧠 Her character card is a lot of writing, so you say who does it: the brain picked in
+  // Settings is the obvious one, but any other that's set up is right there — with roughly
+  // what each costs — in case you'd rather she were written by one of them.
+  const [who, setWho] = useState<{ id: string; label: string; cost: string; mine: boolean }[] | null>(null);
+  const befriend = async (brain?: string) => {
+    setBefriending(true); setErr(""); setWho(null);
+    try { const r = await api<{ characterId: string }>("/api/pica", { action: "befriend", id, ...(brain ? { brain } : {}) }); setData(d => (d ? { ...d, account: { ...d.account, character_id: r.characterId, followed: true } } : d)); onFollow(id, true); }
     catch (e) { setErr(e instanceof Error ? e.message : "Couldn't befriend her."); }
     setBefriending(false);
+  };
+  const askWho = async () => {
+    setErr("");
+    try { const r = await api<{ choices: NonNullable<typeof who> }>("/api/pica", { action: "befriend.who" }); setWho(r.choices); }
+    catch { await befriend(); } // couldn't ask: get on with it using the Settings brain
   };
   const [view, setView] = useState<Photo | null>(null);
   // ↻ Redo: the picture being replaced, and a note while the new one is on its way.
@@ -599,9 +608,24 @@ function Profile({ id, onClose, onFollow, onChat, onMessage, onDeleted }: { id: 
               ? <button className="btn" onClick={() => onChat?.(data.account.character_id!)} data-testid="pica-chat" style={{ flex: 1 }}>💬 Chat</button>
               : <>
                   <button className="ghost" onClick={() => onMessage?.(id)} data-testid="pica-message" style={{ flex: 1 }}>✉️ Message</button>
-                  <button className="ghost" onClick={befriend} disabled={befriending} data-testid="pica-befriend" style={{ flex: 1 }}>{befriending ? "Making her profile…" : "🤝 Befriend"}</button>
+                  <button className="ghost" onClick={askWho} disabled={befriending} data-testid="pica-befriend" style={{ flex: 1 }}>{befriending ? "Making her profile…" : "🤝 Befriend"}</button>
                 </>}
           </div>
+          {who && (
+            <div data-testid="pica-befriend-who" style={{ margin: "0 16px 12px", padding: 12, border: "1px solid var(--border)", borderRadius: 12, background: "var(--surface2)" }}>
+              <b style={{ fontSize: 14 }}>Who should write her?</b>
+              <div className="muted" style={{ fontSize: 12, margin: "2px 0 10px" }}>She gets a whole character card. Costs are rough estimates for the writing — her pictures cost the same either way.</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {who.map(o => (
+                  <button key={o.id} className="ghost" disabled={befriending} onClick={() => befriend(o.id)} data-testid={`pica-befriend-${o.id}`}
+                    style={{ textAlign: "left", padding: "10px 12px", borderRadius: 10, border: "1px solid var(--border)" }}>
+                    <b>{o.label}</b>{o.mine ? " ✓" : ""} <span className="muted" style={{ fontSize: 12 }}>· {o.cost}{o.mine ? " · your Settings brain" : ""}</span>
+                  </button>
+                ))}
+                <button className="ghost" onClick={() => setWho(null)} style={{ padding: "6px 10px", fontSize: 13 }}>Not now</button>
+              </div>
+            </div>
+          )}
           {!data.account.character_id && (
             <div style={{ padding: "0 16px 10px" }}>
               <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>🖼️ Her pictures <span style={{ opacity: 0.8 }}>· what every new photo of her is built from (up to 4)</span></div>
