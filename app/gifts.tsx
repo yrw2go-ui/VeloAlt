@@ -131,7 +131,9 @@ export default function Gifts() {
 
       {chosen && (
         <>
-          {/* 💭 Their wishlist, which moves on each week. */}
+          {/* 💭 Their wishlist, which moves on each week. A man keeps none, so there's no box
+              for him at all — you just pick something and send it. */}
+          {chosen.wishlist.length > 0 && (
           <div data-testid="wishlist" style={{ padding: "10px 12px", borderRadius: 12, background: "rgba(244,114,182,.10)", border: "1px solid rgba(244,114,182,.35)" }}>
             <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>💭 {chosen.name}&apos;s wishlist this week
               {chosen.hinting && <span data-testid="has-hinted" style={{ fontWeight: 500, marginLeft: 6 }}>· 🔴 {chosen.name} has been hinting</span>}</div>
@@ -143,6 +145,7 @@ export default function Gifts() {
               ))}
             </div>
           </div>
+          )}
 
           {/* 💵 Money, with a note. */}
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
