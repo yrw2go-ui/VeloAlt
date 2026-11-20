@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import { aiReady, aiError } from "../../lib/brain";
-import { listGroups, getGroup, createGroup, deleteGroup, groupMessages, sendToGroup, rememberGroup, startGroupScene, endGroupScene, banterNext, reactInGroup, draftGroupPeek, groupPeekAt, bringTogether, endGroupInPerson, deleteGroupMessages, GroupError } from "../../lib/groups";
+import { listGroups, getGroup, createGroup, deleteGroup, groupMessages, sendToGroup, rememberGroup, startGroupScene, endGroupScene, banterNext, reactInGroup, editGroupMessage, draftGroupPeek, groupPeekAt, bringTogether, endGroupInPerson, deleteGroupMessages, GroupError } from "../../lib/groups";
 import { MediaError } from "../../lib/media";
 import { availableBrains } from "../../lib/models";
 import { sql } from "../../lib/db";
 import { getCharacterFor } from "../../lib/characters";
 import { awayFor, awayText } from "../../lib/picagram";
 import { isReaction } from "../../lib/reactions";
+import { scrub } from "../../lib/secrets";
 
 // 👥 Group chats. POST { action, ... }:
 //   list → { groups }                         create { memberIds, title?, name? } → { group }
@@ -72,6 +73,14 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ marker, group: await getGroup(c.userId, g.id) });
       }
       case "scene.end": return NextResponse.json({ marker: await endGroupScene(c.userId, g) });
+      // ✏️ Reword a line by double-tapping it — yours or one of theirs.
+      case "messages.edit": {
+        const text = scrub(String(b.text ?? "").replace(/\r/g, "").trim()).slice(0, 4000);
+        if (!text) return bad("A message can't be empty — delete it instead.");
+        const r = await editGroupMessage(c, g, String(b.msgId || ""), text, name);
+        if (!r) return bad("That one can't be edited.");
+        return NextResponse.json(r);
+      }
       case "messages.delete": {
         const ids = Array.isArray(b.ids) ? b.ids.map(String) : [];
         if (!ids.length || ids.length > 10) return bad("Pick 1 to 10 messages.");
