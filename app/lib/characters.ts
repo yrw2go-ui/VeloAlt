@@ -267,6 +267,15 @@ export async function startPortrait(name: string, appearance: string): Promise<s
 export async function checkPortrait(adminId: string, c: Character): Promise<"working" | "done" | "failed"> {
   if (!c.portrait_job) return "done";
   const res = await fetch(`${ATLAS()}/api/v1/model/prediction/${encodeURIComponent(c.portrait_job)}`, { headers: { Authorization: `Bearer ${process.env.ATLASCLOUD_API_KEY}` } });
+  // 🩹 Atlas has never heard of this job: it's old enough to have been forgotten, or it never
+  // really started. Calling that "working" leaves the character stuck for good — a portrait that
+  // never arrives, and a greyed-out button, because a new one won't start while a job is set.
+  // So the job is let go and they can simply try again. A 429 or a 5xx is only Atlas being busy.
+  if (res.status >= 400 && res.status < 500 && res.status !== 429) {
+    console.error(`characters: Atlas has no job ${c.portrait_job} (${res.status}) — letting it go`);
+    await sql()`update chat_characters set portrait_job = null where id = ${c.id}`;
+    return "failed";
+  }
   if (!res.ok) return "working";
   const p = await res.json().catch(() => ({}));
   const status = String(p?.data?.status || "");
