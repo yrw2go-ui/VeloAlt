@@ -44,8 +44,12 @@ export function atlasBrain(b: unknown): OpenAiProvider | null {
   const key = process.env.ATLASCLOUD_API_KEY;
   const model = BRAINS.includes(b as Brain) ? brainModel(b as Brain) : "";
   if (!key || !model) return null;
-  // Some Atlas models reason before answering: leave them room so short replies don't come back empty.
-  return { baseUrl: process.env.ATLASCLOUD_LLM_URL || "https://api.atlascloud.ai/v1", key, model, minTokens: 8000 };
+  // 🧠 Some Atlas models reason before answering, and the room they're given is also their
+  // thinking room: too little and they think until it's gone and come back empty. Too much and
+  // they settle in and think past the time the app can wait, which is what 8000 was doing — every
+  // one of them timed out. 2000 leaves room to think and still answer. A reply here is a few
+  // hundred tokens; nothing in the app asks for more than 800.
+  return { baseUrl: process.env.ATLASCLOUD_LLM_URL || "https://api.atlascloud.ai/v1", key, model, minTokens: 2000 };
 }
 /** Which brains this server can give a character (set up in the environment). */
 // 🔗 "qwen-chain": Qwen (fast) first, Qwen (big) if that fails, then Claude if both do.
