@@ -16,9 +16,17 @@ export async function pickedBrain(userId: string): Promise<string[]> {
   return brainOrder(u?.chat_model, "");
 }
 
-/** Same as brainFor, reached through one of their characters. */
+/** Same as brainFor, reached through one of their characters. A character belongs to whoever
+ *  owns her, or failing that whoever made her — a shared one has no owner. Never throws: a
+ *  character we can't place falls back to the default rather than taking her words down with it. */
 export async function brainForCharacter(characterId: unknown): Promise<string[]> {
   if (!characterId) return ["claude"];
-  const [c] = await sql()`select user_id from chat_characters where id = ${String(characterId)}`;
-  return c ? brainFor(String(c.user_id)) : ["claude"];
+  try {
+    const [c] = await sql()`select owner_id, created_by from chat_characters where id = ${String(characterId)}`;
+    const who = String(c?.owner_id || c?.created_by || "");
+    return who ? brainFor(who) : ["claude"];
+  } catch (e) {
+    console.error("whichBrain: whose character is this?", e instanceof Error ? e.message : e);
+    return ["claude"];
+  }
 }
