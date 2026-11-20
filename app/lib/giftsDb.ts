@@ -209,6 +209,14 @@ export async function alreadyGiven(userId: string): Promise<Map<string, Set<stri
 export const wishlistOf = (whoId: string, now = Date.now(), mine: Gift[] = [], closeness = 100, got: Set<string> = new Set()): Gift[] =>
   wishlistFor(whoId, weekOf(now), mine, closeness, got);
 
+/** 👔 The men among your characters. The shop's wishlists are a women's thing here: a man has
+ *  none, hints at nothing, and a present to him is never "the one he wanted". */
+export async function maleCharacters(userId: string): Promise<Set<string>> {
+  const rows = await sql()`select id from chat_characters
+    where (owner_id is null or owner_id = ${userId}) and voice_kind = 'male'`;
+  return new Set(rows.map(r => String(r.id)));
+}
+
 /** 💞 How close each of your characters is to you — the higher of love and trust, as stored. */
 export async function closenessMap(userId: string): Promise<Map<string, number>> {
   const rows = await sql()`select character_id, greatest(coalesce(love, 0), coalesce(trust, 0)) as close
@@ -218,7 +226,7 @@ export async function closenessMap(userId: string): Promise<Map<string, number>>
 
 /** 💝 Everyone you can send to: your characters, and the Picagram people you follow. */
 export async function peopleToGift(userId: string) {
-  const chars = await sql()`select c.id, c.name, f.url as face from chat_characters c
+  const chars = await sql()`select c.id, c.name, c.voice_kind, f.url as face from chat_characters c
     left join velo_files f on f.id = c.portrait_file_id
     where c.owner_id is null or c.owner_id = ${userId} order by c.name`;
   const accounts = await sql()`select a.id, a.name, a.handle, f.url as face from pica_accounts a
@@ -233,9 +241,15 @@ export async function peopleToGift(userId: string) {
   // something that is already theirs.
   const got = await alreadyGiven(userId);
   return [
-    ...chars.map(r => ({ id: String(r.id), kind: "character" as const, name: String(r.name), handle: null as string | null,
-      face: r.face ? String(r.face) : null, wishlist: wishlistOf(String(r.id), now, mine, close.get(String(r.id)) || 0, got.get(String(r.id)) || new Set<string>()),
-      hinting: hints.has(String(r.id)) })),
+    // 👔 A man has no wishlist and does no hinting — you still send him things, he just isn't
+    // hoping for anything in particular.
+    ...chars.map(r => {
+      const man = String(r.voice_kind || "") === "male";
+      return { id: String(r.id), kind: "character" as const, name: String(r.name), handle: null as string | null,
+        face: r.face ? String(r.face) : null,
+        wishlist: man ? [] : wishlistOf(String(r.id), now, mine, close.get(String(r.id)) || 0, got.get(String(r.id)) || new Set<string>()),
+        hinting: !man && hints.has(String(r.id)) };
+    }),
     // Someone you only follow on Picagram is never close enough for one of yours.
     ...accounts.map(r => ({ id: String(r.id), kind: "account" as const, name: String(r.name), handle: String(r.handle || ""),
       face: r.face ? String(r.face) : null, wishlist: wishlistOf(String(r.id), now, [], 0, got.get(String(r.id)) || new Set<string>()), hinting: false })),
@@ -261,7 +275,9 @@ export async function sendGift(userId: string, to: { kind: "character" | "accoun
   const close = to.kind === "character" ? (await closenessMap(userId)).get(to.id) || 0 : 0;
   // 🎀 Judged on the list as it stood BEFORE this one, so the gift being sent still counts.
   const givenBefore = (await alreadyGiven(userId)).get(to.id) || new Set<string>();
-  const wished = !!gift && onWishlist(to.id, weekOf(now), gift.id, await myGifts(userId), close, givenBefore);
+  // 👔 A man keeps no wishlist, so nothing sent to him was ever on one.
+  const man = to.kind === "character" && (await maleCharacters(userId)).has(to.id);
+  const wished = !!gift && !man && onWishlist(to.id, weekOf(now), gift.id, await myGifts(userId), close, givenBefore);
   const note = scrub(String(what.note || "")).replace(/\s+/g, " ").trim().slice(0, 300);
   await sql()`update users set wallet = wallet - ${amount} where id = ${userId}`;
   const [row] = await sql()`insert into pica_gift_sent (user_id, character_id, account_id, kind, gift_id, amount, wished, note)
@@ -327,7 +343,9 @@ export async function giftHistory(userId: string, limit = 30) {
 /** Raise this week's hints for anyone who has one, and give back everyone with a live one. */
 export async function liveHints(userId: string, now = Date.now()): Promise<Map<string, { kind: string; giftId: string; at: number }>> {
   const week = weekOf(now);
-  const chars = await sql()`select id from chat_characters where owner_id is null or owner_id = ${userId}`;
+  // 👔 Men don't hint for presents here, so they're left out of the weekly pick.
+  const chars = await sql()`select id from chat_characters
+    where (owner_id is null or owner_id = ${userId}) and coalesce(voice_kind, '') <> 'male'`;
   const mine = await myGifts(userId);
   const close = await closenessMap(userId);
   // 🎁 Nobody hints for something you have already given them.
