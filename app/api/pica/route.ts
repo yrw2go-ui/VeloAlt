@@ -3,7 +3,7 @@ import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import { sql } from "../../lib/db";
 import { availableBrains } from "../../lib/models";
-import { retryChoices } from "../../lib/pickBrain";
+import { retryChoices, befriendChoices } from "../../lib/pickBrain";
 import { MediaError, mediaReady } from "../../lib/media";
 import { dmThreads, dmUnread, dmOpen, dmSend, dmSendPhoto, dmPhotoMake, dmBrain, dmMyPhotoDraft, dmMyPhoto, dmSendMine, DmError, dmDelete, dmEdit } from "../../lib/picaDm";
 import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSetAvatar, picaRefs, picaSavedList, picaFollowing, picaBefriend, picaCounts, picaDeletePost, picaCreateAccount, picaPictureAbout, picaRedoDraft, picaRedo, picaWithMe, picaMe, picaMeBio, picaBio, picaPersona, picaLives, picaName, picaHandle, picaCaption, picaCharacters, picaHide, accountFor, picaNew, picaFromPhoto, myPhotoDraft, newFaces, picaDeleteAccount, PicaLimit, picaCommentEdit } from "../../lib/picagram";
@@ -12,7 +12,7 @@ import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment
 //   feed { before? } → { posts }   (a few at a time; today's and missed days' posts are made as needed)
 //   comments { id } → { comments }   like { id, on }   seen { ids }   comment { id, text } → { added }
 //   follow { id, on }   profile { id } → { account, photos }   save { id: mediaId, on }   saved { before? } → { items }   (🔖 their Picagram gallery)
-//   following → { accounts } (up to 70)   befriend { id } → { characterId }   (🤝 she becomes a character)
+//   following → { accounts } (up to 70)   befriend.who → { choices }   befriend { id, brain? } → { characterId }   (🤝 she becomes a character)
 //   post { caption, photo?, useMyPhotos?, withId? } → { id }   (photo: a description; Atlas makes it; withId: a character in it with you)
 //   mine → { characters } (who you could put in a photo with you)
 const bad = (error: string, status = 400) => NextResponse.json({ error }, { status });
@@ -150,10 +150,18 @@ export async function POST(req: NextRequest) {
       // 👥 Who you could be in a picture with (your characters, the ones with a face on file first).
       case "withme": return NextResponse.json({ characters: await picaWithMe(me) });
       case "following": return NextResponse.json({ accounts: await picaFollowing(me) });
+      // 🧠 Who you could have write her character card, before anything is spent. The brain
+      // picked in Settings is marked as yours; the rest are there if you'd rather one of them.
+      case "befriend.who": {
+        const [u] = await sql()`select chat_model from users where id = ${me}`;
+        return NextResponse.json({ choices: befriendChoices(u?.chat_model, availableBrains()) });
+      }
       case "befriend": {
         if (!UUID.test(id)) return bad("Unknown account.");
         if (!allow(`pica-f:${me}`, [{ ms: 60_000, max: 3 }, { ms: 86_400_000, max: 20 }])) return bad("Slow down a little — try again in a bit.", 429);
-        return NextResponse.json({ characterId: await picaBefriend(me, id) });
+        // The one you chose in the popup, and only if we can actually reach it.
+        const who = typeof b.brain === "string" && (b.brain === "claude" || availableBrains().includes(b.brain)) ? b.brain : "";
+        return NextResponse.json({ characterId: await picaBefriend(me, id, who || undefined) });
       }
       // 🗑 Delete someone you don't like: her, her posts, her DMs and her pictures.
       case "account.delete": {

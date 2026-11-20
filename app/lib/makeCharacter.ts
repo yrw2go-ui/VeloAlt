@@ -12,7 +12,7 @@ import { vibeNote, rollLesbian, LESBIAN_ASK, AGE_FROM, AGE_TO, clearName } from 
 import { defaults as wordDefaults, type Words } from "./words";
 import { hobbyRule } from "./hobbies";
 
-export type Hints = { userId?: string; name?: string; vibe?: string; job?: string; romantic?: boolean; male?: boolean; avoidNames?: string[]; lives?: string; liveIn?: boolean; local?: boolean; lesbian?: boolean; words?: Words };
+export type Hints = { userId?: string; name?: string; vibe?: string; job?: string; romantic?: boolean; male?: boolean; avoidNames?: string[]; lives?: string; liveIn?: boolean; local?: boolean; lesbian?: boolean; words?: Words; brain?: string };
 const str = (v: unknown, n: number) => scrub(String(v ?? "").replace(/\s+/g, " ").trim()).slice(0, n);
 
 /** 🙅 Every name already in their world — characters and the people on their Picagram — so a new
@@ -37,11 +37,15 @@ Reply with ONLY a JSON object with these keys:
   // 🧠 Written by the brain picked in Settings (and their backup after it, if one is on). She's
   // a lot to write, so it gets two goes: if the JSON comes back cut off, once more with twice
   // the room.
-  const picked = h.userId ? await brainFor(h.userId) : ["claude"];
+  // 🧠 If a brain was chosen for this one (the popup when you befriend someone off
+  // Picagram), that is who writes her: nobody else is asked, and no backup comes in
+  // behind her. You picked her writer, so the app does not quietly use another.
+  const chosen = String(h.brain || "").trim();
+  const picked = chosen ? [chosen] : h.userId ? await brainFor(h.userId) : ["claude"];
   // 🛟 And then, only if that came to nothing, every other brain that's set up gets a turn.
   // Making someone is a one-off you're sitting and waiting for: far better she's written by a
   // second choice than not written at all. Nothing extra is spent while the first one works.
-  const rest = [...new Set(["claude", ...availableBrains()].filter(b => !picked.includes(b)))];
+  const rest = chosen ? [] : [...new Set(["claude", ...availableBrains()].filter(b => !picked.includes(b)))];
   const tries = [{ brain: picked, tokens: 3000, again: false }, { brain: picked, tokens: 6000, again: true },
     ...rest.map(b => ({ brain: [b], tokens: 6000, again: false }))];
   // ⏱️ The route has about a minute, and a brain that has gone quiet takes a minute on its own

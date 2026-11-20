@@ -1,6 +1,6 @@
 // 🧠 One brain, from Settings — plus a backup only when one is switched on. And comments,
 // which are many and cheap, never going to the dearest brain.
-import { brainOrder, retryChoices, roughCost, commentBrains, BACKUP_OPTIONS } from "../app/lib/pickBrain.ts";
+import { brainOrder, retryChoices, befriendChoices, roughCost, commentBrains, BACKUP_OPTIONS } from "../app/lib/pickBrain.ts";
 import { QUICK, quickComment } from "../app/lib/picaComments.ts";
 
 let bad = 0;
@@ -36,6 +36,19 @@ ok(QUICK.every(c => c.length <= 30), "…all of them short");
 ok(new Set(QUICK).size === QUICK.length, "…with no repeats");
 ok(QUICK.includes("Nice!") && QUICK.includes("Love it ❤️") && QUICK.includes("HMU 😏") && QUICK.includes("Coffee sometime?"), "…including the ones asked for");
 ok(QUICK.includes(quickComment()), "…and one picked at random is one of them");
+
+// 🤝 Who you can pick to write her when you befriend someone off Picagram.
+{
+  const r = befriendChoices("qwen", ["qwen", "deepseek"]);
+  same(r[0].id, "qwen", "your Settings brain is offered first");
+  ok(r[0].mine === true, "…and marked as yours");
+  ok(r.filter(c => c.mine).length === 1, "…only it is marked as yours");
+  ok(r.some(c => c.id === "claude"), "Claude is always on offer");
+  ok(!r.some(c => c.id === "kimi"), "…a brain that isn't set up is not");
+  ok(r.every(c => !!c.label && !!c.cost), "…each one says what it is and roughly what it costs");
+  same(befriendChoices("", []).map(c => c.id), ["claude"], "nothing set up → Claude alone");
+  same(befriendChoices("claude", ["kimi"]).map(c => c.id), ["claude", "kimi"], "Claude picked: no second Claude in the list");
+}
 
 console.log(bad ? `${bad} failed` : "all good");
 process.exitCode = bad ? 1 : 0;
