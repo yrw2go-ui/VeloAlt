@@ -8,6 +8,7 @@ import { hideSecrets } from "./lib/secrets";
 import { dropThoughts, noJargon } from "./lib/text";
 import { timeZone } from "./lib/tz";
 import { confirmAsk } from "./lib/dialog";
+import { EditSheet } from "./edit";
 import { CharacterFace, type Character } from "./characters";
 import { stamp } from "./lib/when";
 import { BRAIN_OPTIONS } from "./lib/brainOptions";
@@ -145,6 +146,27 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
     } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't delete."); }
     setDeleting(false); setBusy(false);
   };
+  // ✏️ Double-tap a line to reword it — yours or one of theirs. What each of them wrote down
+  // from the old wording is put right behind the scenes; nothing else about the group changes.
+  const [editing, setEditing] = useState<{ id: string; who: string; text: string } | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const lastTap = useRef(0);
+  const editable = (m: Msg) => !!m.id && !m.id.startsWith("tmp-") && !m.media && !m.peek
+    && !(!m.speaker_id && /^(🎬|🎥|🧍)/.test(m.content));
+  const startEdit = (m: Msg) => { if (editable(m)) setEditing({ id: m.id, who: m.speaker_id ? byId.get(m.speaker_id)?.name || "Her message" : "Your message", text: m.content }); };
+  // Phones send two clicks before dblclick: the second mustn't also toggle the reactions.
+  const tapped = (m: Msg) => { const now = Date.now(), quick = now - lastTap.current < 400; lastTap.current = now; if (quick) { startEdit(m); setPicking(null); } return quick; };
+  const saveEdit = async () => {
+    const text = (editing?.text || "").trim();
+    if (!text || !editing) return;
+    setSavingEdit(true);
+    try {
+      const r = await api<{ id: string; content: string }>("/api/groups", { action: "messages.edit", id: group.id, msgId: editing.id, text, name });
+      setMsgs(list => (list || []).map(x => (x.id === r.id ? { ...x, content: r.content } : x)));
+      setEditing(null); unsaved.current++;
+    } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't save that."); }
+    setSavingEdit(false);
+  };
   // 😮 Tap one of their messages to react (tap the same reaction again to take it back).
   const [picking, setPicking] = useState<string | null>(null);
   const react = async (id: string, emoji: string) => {
@@ -198,7 +220,7 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
           if (!m.speaker_id) return (
             <div key={m.id} style={{ alignSelf: "flex-end", maxWidth: "80%", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
               {m.private_to && <div data-testid="group-private-label" style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)" }}>🔒 Private · @{byId.get(m.private_to)?.name || "someone"}</div>}
-              <div data-testid={m.private_to ? "group-private-mine" : undefined} style={{ padding: "10px 14px", borderRadius: 18, background: m.private_to ? "var(--surface)" : "linear-gradient(135deg, var(--accent), var(--accent2))", border: m.private_to ? "1.5px dashed var(--accent)" : undefined, whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 15, opacity: m.pending ? 0.75 : 1 }}>{m.content}</div>
+              <div data-testid={m.private_to ? "group-private-mine" : undefined} onClick={() => tapped(m)} onDoubleClick={() => startEdit(m)} style={{ cursor: "pointer", padding: "10px 14px", borderRadius: 18, background: m.private_to ? "var(--surface)" : "linear-gradient(135deg, var(--accent), var(--accent2))", border: m.private_to ? "1.5px dashed var(--accent)" : undefined, whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 15, opacity: m.pending ? 0.75 : 1 }}>{m.content}</div>
               {Object.keys(m.their_reactions || {}).length > 0 && (
                 <div data-testid="group-their-reactions" style={{ display: "flex", gap: 4 }}>
                   {Object.entries(m.their_reactions || {}).map(([id, e]) => (
@@ -216,7 +238,7 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
               {c ? <CharacterFace c={c} size={28} /> : <span style={{ width: 28 }} />}
               <div>
                 <div className="muted" style={{ fontSize: 11, fontWeight: 700, margin: "0 0 2px 6px" }}>{c?.name || "Someone"}{m.private_to ? <span data-testid="group-private-label"> · 🔒 Private, to you</span> : null}</div>
-                <div data-testid={m.private_to ? "group-private-reply" : undefined} onClick={() => setPicking(p => (p === m.id ? null : m.id))} style={{ position: "relative", cursor: "pointer", padding: "10px 14px", borderRadius: 18, background: "var(--surface2)", border: m.private_to ? "1.5px dashed var(--accent)" : undefined, whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 15, lineHeight: 1.45 }}>
+                <div data-testid={m.private_to ? "group-private-reply" : undefined} onClick={() => { if (tapped(m)) return; setPicking(p => (p === m.id ? null : m.id)); }} onDoubleClick={() => startEdit(m)} style={{ position: "relative", cursor: "pointer", padding: "10px 14px", borderRadius: 18, background: "var(--surface2)", border: m.private_to ? "1.5px dashed var(--accent)" : undefined, whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 15, lineHeight: 1.45 }}>
                   {noJargon(dropThoughts(m.content))}
                   {m.reaction && <span data-testid="group-reaction" style={{ position: "absolute", bottom: -12, right: -6, fontSize: 15, lineHeight: 1, padding: "3px 5px", borderRadius: 999, background: "var(--surface)", border: "1px solid var(--border)" }}>{m.reaction}</span>}
                 </div>
@@ -237,6 +259,8 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
           ))}
         </div>
       )}
+      {editing && <EditSheet testid="group-edit" who={editing.who} value={editing.text} busy={savingEdit}
+        onChange={v => setEditing(e => (e ? { ...e, text: v } : e))} onSave={() => void saveEdit()} onClose={() => setEditing(null)} />}
       {selected && (
         <div data-testid="select-bar" className="row" style={{ padding: "10px 12px", borderTop: "1px solid var(--border)", gap: 8 }}>
           <span style={{ flex: 1, fontSize: 14 }}><b>{selected.size}</b> selected <span className="muted" style={{ fontSize: 12 }}>(up to 10)</span></span>

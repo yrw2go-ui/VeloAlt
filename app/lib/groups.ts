@@ -15,7 +15,7 @@ import { writeText } from "./llm";
 import { brainFor } from "./whichBrain";
 import { sceneFallback } from "./peek";
 import { roomForMore } from "./together";
-import { forgetLines } from "./forget";
+import { forgetLines, rewordedLine } from "./forget";
 import { sceneClockNote, sceneTime, HHMM } from "./sceneClock";
 import { isValidTimeZone } from "./localTime";
 
@@ -337,6 +337,34 @@ export async function endGroupInPerson(userId: string, g: Group): Promise<GroupM
 
 // 🗑 Deleting up to 10 messages in a group: gone from the thread, and each character forgets what she
 // learned only from the ones she could see. If their own message is now the latest, it gets answered again.
+/** ✏️ Reword a line in a group — yours or one of theirs. The text is simply replaced; everyone
+ *  there carries on from what it says now, and anything written down from the old wording is put
+ *  right, for the ones who could actually see it. */
+export async function editGroupMessage(caller: Caller, g: Group, id: string, text: string, personName: string): Promise<{ id: string; content: string } | null> {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+  // Pictures and peeks aren't words, so there is nothing to reword in them.
+  const [was] = await sql()`select speaker_id, content, created_at::text as at, private_to from chat_group_messages
+    where id = ${id} and group_id = ${g.id} and user_id = ${caller.userId} and media_id is null and not peek`;
+  if (!was) return null;
+  // 🎬 The scene notes aren't anybody's words either.
+  if (!was.speaker_id && /^(🎬|🎥|🧍)/.test(String(was.content))) return null;
+  const [row] = await sql()`update chat_group_messages set content = ${text}
+    where id = ${id} and group_id = ${g.id} and user_id = ${caller.userId} returning id, content`;
+  if (!row) return null;
+  if (String(was.content) !== text) {
+    const chars = await members(g);
+    const who = was.speaker_id ? chars.find(c => c.id === String(was.speaker_id))?.name || "Someone" : personName || "Them";
+    const brain = await brainFor(caller.userId);
+    // 🔒 A private @text was between the two of you: nobody else wrote anything down from it.
+    for (const c of chars) {
+      if (was.private_to && String(was.private_to) !== c.id) continue;
+      await rewordedLine(caller.userId, c.id, who, String(was.content), text, String(was.at), brain)
+        .catch(e => console.error("groups: reworded", e instanceof Error ? e.message : e));
+    }
+  }
+  return { id: String(row.id), content: String(row.content) };
+}
+
 export async function deleteGroupMessages(caller: Caller, g: Group, ids: string[], timeZone: unknown, personName: string): Promise<{ deleted: number; replies: GroupMsg[] }> {
   const want = [...new Set(ids.filter(x => /^[0-9a-f-]{36}$/i.test(x)))].slice(0, 10);
   if (!want.length) return { deleted: 0, replies: [] };

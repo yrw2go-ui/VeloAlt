@@ -40,12 +40,39 @@ const ASK = `Some chat messages were deleted: it's as if they were never said. B
 
 type Mem = { id: string; text: string };
 
+const REWORD_ASK = `A chat message was reworded. The OLD wording below was never said — only the NEW wording was. Below are memories saved since then. For each memory that rests on the old wording, either remove it (if that's all it is about) or rewrite it so it matches the new wording (keep everything else exactly, and keep any date it starts with). Leave memories that don't rest on the old wording alone. Reply with JSON only: {"remove":[numbers],"rewrite":{"number":"new text"}}.`;
+
+/**
+ * ✏️ A message was reworded, so what she took from the old wording is wrong. Memories saved since
+ * it was sent get checked: dropped, or rewritten to match what the message says now.
+ *
+ * Her reply is left alone — she said what she said. This only fixes what she wrote down.
+ */
+export async function rewordedLine(userId: string, characterId: string | null, who: string, before: string, after: string, since: string, brain: unknown): Promise<number> {
+  const lines = said(who, before, after);
+  if (!lines) return 0;
+  const mems = await sql()`select id, text from velo_memories where user_id = ${userId} and character_id is not distinct from ${characterId} and status = 'active'
+    and created_at >= ${since}::timestamptz - interval '1 minute' order by created_at limit 40`;
+  return forget(userId, mems as unknown as Mem[], lines, brain,
+    id => sql()`delete from velo_memories where id = ${id} and user_id = ${userId}`,
+    (id, text) => sql()`update velo_memories set text = ${text}, updated_at = now() where id = ${id} and user_id = ${userId}`, REWORD_ASK);
+}
+
+/** Nothing to do when the wording didn't really change. */
+function said(who: string, before: string, after: string): string {
+  const a = String(before || "").trim(), b = String(after || "").trim();
+  if (!a || !b || a === b) return "";
+  return `OLD (never said) — ${who}: ${a.slice(0, 600)}\nNEW (what was said) — ${who}: ${b.slice(0, 600)}`;
+}
+
+
+
 /** Ask her which of these memories only existed because of the deleted lines, then do it. */
 async function forget(userId: string, mems: Mem[], lines: string, brain: unknown,
-  drop: (id: string) => Promise<unknown>, rewrite: (id: string, text: string) => Promise<unknown>): Promise<number> {
+  drop: (id: string) => Promise<unknown>, rewrite: (id: string, text: string) => Promise<unknown>, ask = ASK): Promise<number> {
   if (!mems.length) return 0;
   const list = mems.map((m, i) => `${i + 1}. ${m.text}`).join("\n");
-  const raw = await writeText(brain, ASK, `DELETED MESSAGES:\n${lines}\n\nMEMORIES:\n${list}`, 1200).catch(() => "");
+  const raw = await writeText(brain, ask, `DELETED MESSAGES:\n${lines}\n\nMEMORIES:\n${list}`, 1200).catch(() => "");
   let plan: { remove?: unknown; rewrite?: unknown } = {};
   try { plan = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); } catch { /* not JSON: forget nothing */ }
   let forgot = 0;
