@@ -4,6 +4,7 @@
 import { sql } from "./db";
 import { writeText } from "./llm";
 import { brainFor } from "./whichBrain";
+import { availableBrains } from "./models";
 import { cleanTraits, TRAITS } from "./traits";
 import { CHARACTER_VOICES } from "./voices";
 import { scrub } from "./secrets";
@@ -33,19 +34,24 @@ ${hobbyRule(Math.random())}
 Reply with ONLY a JSON object with these keys:
 "name" (first name${h.avoidNames?.length ? `, not ${h.avoidNames.slice(0, 40).join(", ")}` : ""}), "age" (a number, ${h.male ? "21–45" : `${AGE_FROM}–${AGE_TO}`}), "personality" (2–4 sentences: how they talk and act), "backstory" (3–5 sentences: where they're from, what shaped them, what they care about), "relation" (who they are to the user, e.g. "a new neighbor you keep running into"), "appearance" (one detailed sentence for a portrait: age, hair, eyes, build, style — no clothing brands), "lives_in" (the town or city where they live NOW, as "Town, ST" — where they are today, not where they grew up, and it must match where the backstory puts them now), "job" (specific, with a place), "casual_wear", "hobbies", "work_attire", "work_days" (array of day numbers 0=Sun…6=Sat), "work_start" ("HH:MM" 24h), "part_time" (true/false), "birthday" ("MM-DD"), ${h.romantic ? '"romance_arc" (2–3 sentences), ' : ""}${lesbian ? '"lesbian_personality" (as described above), ' : ""}"traits" (object of 0–10 numbers for: ${TRAITS.map(t => t.key).join(", ")}; suggestive at most ${h.romantic ? 4 : 1}, language at most 3).`;
   const user = `HINTS (optional — keep any that are given):\nName: ${str(h.name, 40) || "(you pick)"}\nVibe / personality: ${str(h.vibe, 300) || "(surprise me)"}\nJob: ${str(h.job, 120) || "(you pick)"}`;
-  // 🧠 Written by the brain picked in Settings (and their backup after it, if one is on).
-  const brain = h.userId ? await brainFor(h.userId) : ["claude"];
-  const ask = (tokens: number) => writeText(brain, sys, user, tokens);
-  // 🪫 She's a lot to write: if the JSON comes back cut off, one more go with twice the room
-  // rather than "couldn't come up with one".
+  // 🧠 Written by the brain picked in Settings (and their backup after it, if one is on). She's
+  // a lot to write, so it gets two goes: if the JSON comes back cut off, once more with twice
+  // the room.
+  const picked = h.userId ? await brainFor(h.userId) : ["claude"];
+  // 🛟 And then, only if that came to nothing, every other brain that's set up gets a turn.
+  // Making someone is a one-off you're sitting and waiting for: far better she's written by a
+  // second choice than not written at all. Nothing extra is spent while the first one works.
+  const rest = [...new Set(["claude", ...availableBrains()].filter(b => !picked.includes(b)))];
+  const tries = [{ brain: picked, tokens: 3000 }, { brain: picked, tokens: 6000 },
+    ...rest.map(b => ({ brain: [b], tokens: 6000 }))];
   let j: Record<string, unknown> = {};
   let name = "";
-  for (const tokens of [3000, 6000]) {
-    const raw = await ask(tokens);
+  for (const t of tries) {
+    const raw = await writeText(t.brain, sys, user, t.tokens).catch(() => "");
     try { j = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); } catch { j = {}; }
     name = str(h.name, 40) || str(j.name, 40);
     if (name && str(j.personality, 10)) break;
-    console.error(`makeCharacter: nothing usable back at ${tokens} tokens${tokens === 3000 ? " — asking again with more room" : ""}`);
+    console.error(`makeCharacter: nothing usable from [${t.brain.join(", ")}] at ${t.tokens} tokens`);
     j = {}; name = "";
   }
   if (!name || !str(j.personality, 10)) throw new Error("Couldn't come up with one — try again.");
