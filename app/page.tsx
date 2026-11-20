@@ -441,10 +441,10 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
           chars={chars} admin={admin} brains={brains} brainModels={brainModels} onCharChange={c => setChars(cs => cs.map(x => (x.id === c.id ? { ...x, brain: c.brain } : x)))} />}
       </main>
 
-      <nav style={{ display: "flex", width: "100%", minWidth: 0, maxWidth: "100%", flexShrink: 0, borderTop: "1px solid var(--border)", paddingBottom: "env(safe-area-inset-bottom)", background: "var(--surface)" }}>
+      <nav style={{ display: "flex", width: "100%", minWidth: 0, maxWidth: "100%", flexShrink: 0, borderTop: "1px solid var(--nav-border)", paddingBottom: "env(safe-area-inset-bottom)", background: "var(--nav-bg)" }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} aria-current={tab === t.id ? "page" : undefined}
-            style={{ flex: "1 1 0", minWidth: 0, maxWidth: "100%", overflow: "hidden", background: "none", border: "none", padding: "10px 0 12px", color: tab === t.id ? "var(--accent)" : "var(--muted)", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, fontSize: 12, fontWeight: 700 }}>
+            style={{ flex: "1 1 0", minWidth: 0, maxWidth: "100%", overflow: "hidden", background: "none", border: "none", padding: "10px 0 12px", color: tab === t.id ? "var(--nav-active)" : "var(--nav-muted)", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, fontSize: 12, fontWeight: 700 }}>
             <span style={{ fontSize: 20, position: "relative" }}>{t.icon}
               {t.id === "pica" && picaNew > 0 && tab !== "pica" && <span data-testid="pica-badge" aria-label={`${picaNew} new posts`} style={{ position: "absolute", top: -6, right: -14, minWidth: 18, height: 18, padding: "0 5px", borderRadius: 999, background: "#ef4444", color: "#fff", fontSize: 11, fontWeight: 800, lineHeight: "18px", textAlign: "center" }}>{picaNew > 99 ? "99+" : picaNew}</span>}
             </span>{t.label}

@@ -4,6 +4,9 @@
   --good: #10b981; --bad: #f87171;
   /* 🧭 How tall the bottom tab bar is: full-screen views stop here, so the tabs stay reachable. */
   --nav-h: calc(64px + env(safe-area-inset-bottom));
+  /* 🍷 The bottom tab bar is deep burgundy, so it needs its own text colours to stay readable
+     on it — the usual muted blue-grey all but disappears against red. */
+  --nav-bg: #4a0f1c; --nav-border: #6b1526; --nav-muted: #e9b8c0; --nav-active: #fff1f3;
 }
 * { box-sizing: border-box; }
 html { font-size: 16px; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
