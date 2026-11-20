@@ -42,12 +42,25 @@ Reply with ONLY a JSON object with these keys:
   // Making someone is a one-off you're sitting and waiting for: far better she's written by a
   // second choice than not written at all. Nothing extra is spent while the first one works.
   const rest = [...new Set(["claude", ...availableBrains()].filter(b => !picked.includes(b)))];
-  const tries = [{ brain: picked, tokens: 3000 }, { brain: picked, tokens: 6000 },
-    ...rest.map(b => ({ brain: [b], tokens: 6000 }))];
+  const tries = [{ brain: picked, tokens: 3000, again: false }, { brain: picked, tokens: 6000, again: true },
+    ...rest.map(b => ({ brain: [b], tokens: 6000, again: false }))];
+  // ⏱️ The route has about a minute, and a brain that has gone quiet takes a minute on its own
+  // — so without a clock the goes above add up to far longer than the request is allowed and it
+  // is killed mid-way, which is how this looks when it "doesn't work". Each go gets what's left,
+  // and once there isn't enough left for another the trying stops and says so.
+  const until = Date.now() + 45_000;
+  const left = () => until - Date.now();
   let j: Record<string, unknown> = {};
   let name = "";
+  let quiet = false; // the last go said nothing at all, rather than saying something unusable
   for (const t of tries) {
-    const raw = await writeText(t.brain, sys, user, t.tokens).catch(() => "");
+    // 🔇 The second go at the same brain is for words that came back cut off. A brain that said
+    // nothing at all has gone quiet, and more room won't change that: straight on to the next one.
+    if (t.again && quiet) { console.error("makeCharacter: it said nothing — not asking it again"); continue; }
+    if (left() < 4_000) { console.error("makeCharacter: out of time — not starting another go"); break; }
+    // No single brain may eat the whole minute: one that has gone quiet must leave the others a turn.
+    const raw = await writeText(t.brain, sys, user, t.tokens, { ms: Math.min(left(), 20_000) }).catch(() => "");
+    quiet = !raw.trim();
     try { j = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); } catch { j = {}; }
     name = str(h.name, 40) || str(j.name, 40);
     if (name && str(j.personality, 10)) break;
