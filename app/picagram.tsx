@@ -1074,15 +1074,15 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
           <button type="button" className="btn" onClick={deleteSelected} disabled={deleting} data-testid="dm-select-delete" style={{ background: "var(--bad)" }}>{deleting ? "…" : `🗑 Delete${selected.size > 1 ? ` ${selected.size}` : ""}`}</button>
         </div>
       )}
-      <form onSubmit={e => { e.preventDefault(); send(); }} className="row" style={{ position: "relative", padding: "10px 12px", gap: 8, borderTop: "1px solid var(--border)", ...(selected ? { display: "none" } : {}) }}>
+      <form onSubmit={e => { e.preventDefault(); send(); }} className="row" style={{ position: "relative", flexWrap: "nowrap", padding: "10px 12px", gap: 8, borderTop: "1px solid var(--border)", ...(selected ? { display: "none" } : {}) }}>
         {/* 🗣️ "@" offers the people you could name — she's told who, never that she's met them. */}
         <MentionPicker testid="dm-mention" text={text} caret={caret} onPick={(name, at) => setText(t => putName(t, at, caret, name))} />
         <PicMenu busy={sending} onMine={() => setMySheet(true)} onGallery={() => setPick(true)} onUpload={() => upIn.current?.click()} />
         <input ref={upIn} type="file" accept="image/jpeg,image/png,image/webp" hidden data-testid="dm-upload-file" onChange={e => uploadMine(e.target.files?.[0])} />
         <input value={text} onChange={e => { setText(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length); }}
           onSelect={e => setCaret((e.target as HTMLInputElement).selectionStart ?? 0)}
-          placeholder={`Message ${acc?.name || ""}…`} aria-label="Message" maxLength={2000} disabled={!msgs} style={{ borderRadius: 999 }} />
-        <button className="btn" disabled={!text.trim() || busy || !msgs} style={{ borderRadius: 999, padding: "10px 16px" }}>Send</button>
+          placeholder={`Message ${acc?.name || ""}…`} aria-label="Message" maxLength={2000} disabled={!msgs} style={{ borderRadius: 999, flex: "1 1 auto", width: "auto", minWidth: 0 }} />
+        <button className="btn" disabled={!text.trim() || busy || !msgs} style={{ borderRadius: 999, padding: "10px 16px", flexShrink: 0 }}>Send</button>
       </form>
     </div>
   );
@@ -1107,7 +1107,7 @@ function PicMenu({ busy, onMine, onGallery, onUpload }: { busy: string; onMine: 
   return (
     <div style={{ position: "relative", flexShrink: 0 }}>
       <button type="button" className="ghost" onClick={() => setOpen(o => !o)} aria-expanded={open} aria-haspopup="menu"
-        aria-label="Send a picture" data-testid="dm-plus" style={{ padding: "8px 12px", fontSize: 18, lineHeight: 1 }}>{busy || (open ? "✕" : "📷")}</button>
+        aria-label="Send a picture" data-testid="dm-plus" style={{ padding: "8px 12px", fontSize: 18, lineHeight: 1, flexShrink: 0 }}>{busy || (open ? "✕" : "📷")}</button>
       {open && (
         <>
           <div role="menu" data-testid="dm-pic-menu" style={{ position: "absolute", bottom: "calc(100% + 8px)", left: 0, zIndex: 2601, minWidth: 210, background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden", boxShadow: "0 10px 30px rgba(0,0,0,.45)" }}>
