@@ -32,7 +32,8 @@ const ASKS: Record<Ask, string> = {
 
 // ⏱️ She's writing one short line while they wait on a spinner. If her brain is being slow,
 // her plain words go out instead — nobody waits a minute for "not tonight".
-const SAY_BUDGET = { ms: 12_000 };
+// ⏱️ Shared by every brain in the order, so a backup gets what the first one leaves.
+const SAY_BUDGET = { ms: 20_000 };
 
 /** The reasons she might beg off, with how she'd put it. */
 const REASONS = {
