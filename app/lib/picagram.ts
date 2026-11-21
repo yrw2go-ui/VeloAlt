@@ -16,7 +16,11 @@ import { availableBrains } from "./models";
  * your choice, the same way a chat and a DM already do, and Claude is still behind it.
  */
 /** ⏱️ How long one ask may take. Three of these and a caption still fit inside the route's minute. */
-const THINK = { ms: 8_000 };
+// ⏱️ How long a brain gets to write one of these. It covers the whole order, so with a backup
+// switched on both goes share it. Eight seconds was too mean for the Atlas brains: they think
+// before they answer, and every one of them was being cut off mid-thought and never answering
+// at all, which is what "none of [kimi, claude] could write it" in the logs was.
+const THINK = { ms: 20_000 };
 
 const picaBrain = async (userId: string): Promise<string> => {
   const [u] = await sql()`select chat_model from users where id = ${userId}`;
@@ -517,7 +521,7 @@ async function newFolk(userId: string, f: Folk, brain?: unknown): Promise<Record
 ${folkNote(f, tied ? String(tied.name) : "", t.pica_folk)}
 ${t.pica_unique}${near} ${hobbyRule(Math.random())}
 JSON only: {"name":"First Last (a plain modern American name)","handle":"lowercase_handle from her name","bio":"short bio, the way a small ordinary account reads","look":"${t.pica_look} — no glamour","lives":"City, State"}`,
-    `ALREADY TAKEN — avoid these entirely:\n${taken.map(t => t.name).slice(-60).join(", ") || "(nobody yet)"}`, 1200).catch(() => "");
+    `ALREADY TAKEN — avoid these entirely:\n${taken.map(t => t.name).slice(-60).join(", ") || "(nobody yet)"}`, 1200, THINK).catch(() => "");
   let a: { name?: string; handle?: string; bio?: string; look?: string; lives?: string } = {};
   try { a = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); } catch { return null; }
   const name = scrub(String(a.name || "")).replace(/\s+/g, " ").trim().slice(0, 60);
@@ -858,7 +862,7 @@ export async function ensurePersona(userId: string, accountId: string): Promise<
 "traits": a number 0–10 for each of ${TRAITS.map(t => t.key).join(", ")} — fit them to her (suggestive at most 4, language at most 3).
 ${a.folk ? "She's an ordinary person rather than an influencer: keep her plain and real, and keep suggestive at 0 or 1." : ""}
 JSON only: {"personality":"...","traits":{${TRAITS.map(t => `"${t.key}":5`).join(",")}}}`,
-    `@${a.handle} (${a.name})\nBio: ${a.bio || "(none)"}\nLooks: ${a.look || "(not said)"}${a.lives ? `\nLives: ${a.lives}` : ""}`, 900).catch(() => "");
+    `@${a.handle} (${a.name})\nBio: ${a.bio || "(none)"}\nLooks: ${a.look || "(not said)"}${a.lives ? `\nLives: ${a.lives}` : ""}`, 900, THINK).catch(() => "");
   let j: { personality?: string; traits?: unknown } = {};
   try { j = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); } catch { return; }
   const text = scrub(String(j.personality || "")).replace(/\s+/g, " ").trim().slice(0, 2000);

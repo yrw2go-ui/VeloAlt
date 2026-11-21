@@ -34,7 +34,7 @@ async function inviteLine(userId: string, c: Character, kind: InviteKind, name: 
   const raw = await writeText(await brainFor(userId), `You are ${c.name}. ${c.personality || ""}
 You live close to ${name || "them"} — near enough to see each other on an ordinary evening. ${brief}${c.hobbies ? `\nThings you're into: ${c.hobbies}` : ""}${c.lives_in ? `\nYou're in ${c.lives_in}.` : ""}
 Write ONE short text in your own voice, the way you'd really send it — under 140 characters, no quotes, no sign-off. Just the text.`,
-    "You're texting them first.", 80, { ms: 8_000 }).catch(() => "");
+    "You're texting them first.", 80, { ms: 18_000 }).catch(() => "");
   const line = scrub(raw.replace(/\s+/g, " ").replace(/^["']|["']$/g, "").trim()).slice(0, 200);
   return line || PLAIN[kind][Math.floor(Math.random() * PLAIN[kind].length)];
 }

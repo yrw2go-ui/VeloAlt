@@ -46,7 +46,11 @@ Reply with ONLY a JSON object with these keys:
   // Making someone is a one-off you're sitting and waiting for: far better she's written by a
   // second choice than not written at all. Nothing extra is spent while the first one works.
   const rest = chosen ? [] : [...new Set(["claude", ...availableBrains()].filter(b => !picked.includes(b)))];
-  const tries = [{ brain: picked, tokens: 3000, again: false }, { brain: picked, tokens: 6000, again: true },
+  // ⏱️ One brain per go, each with its own clock. They used to share one: the picked brain
+  // timed out on the whole of it and the backup behind it was handed the two seconds that
+  // were left, so a backup that was switched on was never really tried at all.
+  const tries = [
+    ...picked.flatMap(b => [{ brain: [b], tokens: 3000, again: false }, { brain: [b], tokens: 6000, again: true }]),
     ...rest.map(b => ({ brain: [b], tokens: 6000, again: false }))];
   // ⏱️ The route has about a minute, and a brain that has gone quiet takes a minute on its own
   // — so without a clock the goes above add up to far longer than the request is allowed and it
@@ -63,7 +67,7 @@ Reply with ONLY a JSON object with these keys:
     if (t.again && quiet) { console.error("makeCharacter: it said nothing — not asking it again"); continue; }
     if (left() < 4_000) { console.error("makeCharacter: out of time — not starting another go"); break; }
     // No single brain may eat the whole minute: one that has gone quiet must leave the others a turn.
-    const raw = await writeText(t.brain, sys, user, t.tokens, { ms: Math.min(left(), 20_000) }).catch(() => "");
+    const raw = await writeText(t.brain, sys, user, t.tokens, { ms: Math.min(left(), 25_000) }).catch(() => "");
     quiet = !raw.trim();
     try { j = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); } catch { j = {}; }
     name = str(h.name, 40) || str(j.name, 40);

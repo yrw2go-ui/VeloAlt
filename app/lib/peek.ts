@@ -16,7 +16,7 @@ import { inPersonFor } from "./inPerson";
 
 // ⏱️ They're watching a spinner for this one: if a brain drags its feet, the plain description
 // (the scene's own details and her usual clothes) goes in the box for them to edit instead.
-const DRAFT_BUDGET = { ms: 20_000 };
+const DRAFT_BUDGET = { ms: 25_000 };
 
 export const PEEK = /^\s*\*?\s*pe(e|a)k\s*\*?\s*[.!]?\s*$/i;
 // 👁️ "ICU": you're with her in person right now (no scene) — a picture of what you see.
