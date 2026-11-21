@@ -48,6 +48,12 @@ export async function POST(req: NextRequest) {
     const action = String(b.action || "");
     const admin = await isAdmin(me);
 
+    // 🗂️ One character, everything about her — what the card needs when you open it.
+    if (action === "get") {
+      const c = await getCharacterFor(me, String(b.id || ""));
+      if (!c) return bad("That character wasn't found.");
+      return NextResponse.json({ character: c });
+    }
     if (action === "list") {
       const list = await listCharacters(me);
       // Newer tables and columns (chat_off, ended_at, at_mine) may not be on this database yet.
@@ -81,7 +87,16 @@ export async function POST(req: NextRequest) {
         const busy = due.atWork ? (due.kind || (inClass(c) ? "class" : "work")) : null;
         return { ...c, busy, ditched: !!busy && skived, home: c.live_in && home.has(c.id), together: with_.has(c.id), at_yours: atYours.has(c.id), hinting: hinting.has(c.id) };
       });
-      return NextResponse.json({ characters, portraits: portraitsReady(), admin, brains: admin ? availableBrains() : [], brainModels: admin ? brainList() : [] });
+      // 📋 The chips need a name, a face and a handful of flags. Her personality, backstory,
+      // appearance and the rest of the long writing — thousands of characters each, for every
+      // character — were going to the phone on every load, and only the card ever shows them.
+      // It asks for one character's writing when you open her ("get", below).
+      const slim = characters.map(c => {
+        const { personality, backstory, appearance, lesbian_personality, romance_arc, casual_wear, hobbies, work_attire, relation, ...rest } = c as Record<string, unknown>;
+        void personality; void backstory; void appearance; void lesbian_personality; void romance_arc; void casual_wear; void hobbies; void work_attire; void relation;
+        return rest;
+      });
+      return NextResponse.json({ characters: slim, portraits: portraitsReady(), admin, brains: admin ? availableBrains() : [], brainModels: admin ? brainList() : [] });
     }
     if (action === "link.suggest") {
       const ch = admin ? await getCharacter(id) : null;

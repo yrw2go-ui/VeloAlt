@@ -120,6 +120,15 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   const [picaDm, setPicaDm] = useState<string | null>(() => urlParam("dm"));
   const [withId, setWithId] = useState<string | null>(() => { const c = urlParam("chat"); return c ? (c !== "velo" ? c : null) : place.withId || null; });
   const [editing, setEditing] = useState<Character | "new" | null>(null);
+  // 🗂️ Her card holds the long writing the list no longer carries, so it is fetched when you open
+  // her. If that fails the card stays shut on purpose: opening it with empty boxes would save
+  // blank over her personality and backstory the moment you touched anything.
+  const openCard = async (c: Character) => {
+    try {
+      const r = await api<{ character: Character }>("/api/characters", { action: "get", id: c.id });
+      setEditing({ ...c, ...r.character });
+    } catch { await confirmAsk(`Couldn't open ${c.name}'s card just now — her details didn't load, and opening it without them could wipe them. Try again in a moment.`, { yes: "OK" }); }
+  };
   // ✨ ＋ New first asks: make one for me (a filled-in draft), or start from scratch.
   const [newChar, setNewChar] = useState(false);
   const [draft, setDraft] = useState<Partial<Character> | null>(null);
@@ -445,7 +454,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       )}
 
       <main ref={mainRef} onScroll={onMainScroll} style={{ flex: 1, width: "100%", minWidth: 0, maxWidth: "100%", minHeight: 0, overflowX: "hidden", overflowY: tab === "chat" ? "hidden" : "auto", display: "flex", flexDirection: "column" }}>
-        {tab === "chat" && <CharacterStrip characters={chars} active={withChar?.id || null} admin={admin} onPick={pickChat} onNew={() => setNewChar(true)} onEdit={setEditing} onGallery={() => setGallery(true)} unread={unread}
+        {tab === "chat" && <CharacterStrip characters={chars} active={withChar?.id || null} admin={admin} onPick={pickChat} onNew={() => setNewChar(true)} onEdit={c => void openCard(c)} onGallery={() => setGallery(true)} unread={unread}
           groups={groups} activeGroup={inGroup?.id || null} onPickGroup={setGroupId} onNewGroup={() => setMakingGroup(true)} />}
         {inGroup && <Boundary what="This group chat"><GroupChat key={inGroup.id} group={inGroup} chars={chars} name={name} brains={brains} onDeleted={id => { setGroups(gs => gs.filter(g => g.id !== id)); setGroupId(null); }} /></Boundary>}
         {tab === "chat" && !inGroup && !(groupId && !groupsLoaded) && <Chat key={`${withChar?.id || "velo"}-${chatTick}`} calls={{ can: canCallVelo() && !calling && !inGroup, ringing, continuing, have: historyCount, need: CONTINUE_MIN, onCall: startCall, onContinue: continueCall }} startPlan={startingPlan} onPlanStarted={() => setStartPlan(null)} brains={brains} userId={userId} name={name} onChanged={bump} added={chatAdd} onAdded={() => setChatAdd(null)} character={withChar} adult={!!profile?.adultConfirmed} onAdult={() => setProfileTick(t => t + 1)} onHistory={h => { chatHistory.current = h; setHistoryCount(h.length); }}
