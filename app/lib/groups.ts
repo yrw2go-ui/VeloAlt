@@ -345,17 +345,25 @@ Two or three sentences, under 380 characters: where it is, what they're wearing,
 }
 
 /** 📸 Make it, and put it in the group where everyone can see it (a peek is the hidden one). */
-export async function groupPhoto(userId: string, g: Group, ids: string[], withMe: boolean, adult: boolean, description: string): Promise<GroupMsg[]> {
+export async function groupPhoto(userId: string, g: Group, ids: string[], withMe: boolean, adult: boolean, description: string, personName = ""): Promise<GroupMsg[]> {
   const chars = await photoCast(userId, g, ids, withMe);
   const desc = scrub(description.replace(/\s+/g, " ").trim()).slice(0, 1500);
   if (desc.length < 10) throw new GroupError("Describe the picture a little more.");
-  const mine = withMe ? [{ name: "me", refs: await myRefs(userId), appearance: "" }] : [];
-  const cast = [...(await Promise.all(chars.map(async c => ({ name: c.name, refs: await referenceUrls(c), appearance: c.appearance })))), ...mine];
-  const first = chars[0];
+  // 👥 The first one in the picture is the main subject, and `startMedia` puts her at the head of
+  // the cast itself — so what goes in `people` is everyone ELSE. Handing it the whole cast put her
+  // in twice: her face took two of the four reference slots, the last person's references were
+  // squeezed out altogether, and the note telling the model who is who read "Carol, Carol, Jen".
+  const [first, ...rest] = chars;
+  const others = [
+    ...(await Promise.all(rest.map(async c => ({ name: c.name, refs: await referenceUrls(c), appearance: c.appearance })))),
+    // 🙋 You, when you're in it — unless you're the only one, and then you're the subject below.
+    ...(withMe && first ? [{ name: personName || "you", refs: await myRefs(userId), appearance: "" }] : []),
+  ];
   const media = await startMedia(userId, { kind: "image", with_me: withMe, they_asked: true, description: desc },
-    { characterId: first?.id || null, who: first?.name || "me", appearance: first?.appearance || "", refs: first ? await referenceUrls(first) : await myRefs(userId),
-      romantic: chars.every(c => romanticFor(c, adult)), offer: false, other: null, raw: true, people: cast.length > 1 ? cast : undefined });
-  const caption = `📸 ${[...chars.map(c => c.name), ...(withMe ? ["me"] : [])].join(", ")}`;
+    { characterId: first?.id || null, who: first?.name || personName || "you", appearance: first?.appearance || "",
+      refs: first ? await referenceUrls(first) : await myRefs(userId),
+      romantic: chars.every(c => romanticFor(c, adult)), offer: false, other: null, raw: true, people: others.length ? others : undefined });
+  const caption = `📸 ${[...chars.map(c => c.name), ...(withMe ? [personName || "me"] : [])].join(", ")}`;
   const [row] = await sql()`insert into chat_group_messages (group_id, user_id, content, media_id) values (${g.id}, ${userId}, ${caption}, ${media.id}) returning id, speaker_id, content, created_at`;
   return [{ ...(row as GroupMsg), speaker_id: null, media }];
 }

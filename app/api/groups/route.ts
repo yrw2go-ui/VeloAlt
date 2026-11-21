@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
         const withMe = b.withMe === true;
         if (action === "photo.draft") return NextResponse.json({ description: await draftGroupPhoto(c.userId, g, who, withMe, String(b.about || ""), !!u2?.adult_confirmed_at, name, writerBrain(b.writer)) });
         if (!mediaReady()) return bad("Photos aren't set up yet.");
-        return NextResponse.json({ added: await groupPhoto(c.userId, g, who, withMe, !!u2?.adult_confirmed_at, String(b.description || "")) });
+        return NextResponse.json({ added: await groupPhoto(c.userId, g, who, withMe, !!u2?.adult_confirmed_at, String(b.description || ""), name) });
       }
       case "peek.draft":
       case "peek": {
