@@ -30,11 +30,14 @@ const writerBrain = (picked: unknown): string => {
 };
 
 export async function POST(req: NextRequest) {
+  // 📣 Kept out here so that if something goes wrong we can still say which action it was.
+  let which = "?";
   try {
     const c = await resolveCaller(req);
     if (!c) return bad("Please sign in again.", 401);
     const b = await req.json().catch(() => ({}));
     const action = String(b.action || "");
+    which = action;
     const name = String(b.name || "").trim().split(/\s+/)[0].slice(0, 40);
     if (action === "list") return NextResponse.json({ groups: await listGroups(c.userId) });
     if (action === "create") {
@@ -104,6 +107,9 @@ export async function POST(req: NextRequest) {
     }
   } catch (e) {
     if (e instanceof GroupError || e instanceof MediaError) return bad(e.message);
+    // 📣 Say what went wrong. Without this line a group that won't open leaves nothing behind
+    // at all — the phone shows an error and the logs show silence, which is no way to find it.
+    console.error(`groups ${which}`, e instanceof Error ? e.message : e);
     const { error, status } = aiError(e);
     return bad(error, status);
   }
