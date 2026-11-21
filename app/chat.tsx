@@ -17,6 +17,7 @@ import { CharacterFace, LinkBackForm } from "./characters";
 import { MediaView, PhotoReaction, ReactionBar, type Media } from "./media";
 import { EditSheet } from "./edit";
 import { MentionPicker, putName } from "./mention";
+import { StarButton, tapStar } from "./star";
 import { isHot } from "./lib/reactions";
 import { dropThoughts, noJargon, dropSentNote } from "./lib/text";
 import { claimsMedia } from "./lib/mediaWords";
@@ -818,6 +819,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
           placeholder={msgs ? `Message ${who}…` : "Loading…"} aria-label={`Message ${who}`} disabled={!msgs}
           onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(text); } }}
           style={{ resize: "none", maxHeight: 140, borderRadius: 20, flex: 1, minWidth: 0, width: "auto" }} />
+        <StarButton testid="chat-star" disabled={!msgs} onTap={() => tapStar(box, text, caret, setText, setCaret)} />
         <button className="btn" disabled={(!text.trim() && !attach) || busy || uploading} aria-label="Send" style={{ borderRadius: 999, width: 46, height: 46, padding: 0, flexShrink: 0 }}>➤</button>
       </form>
       {(mic.listening || mic.error) && (

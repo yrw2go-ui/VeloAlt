@@ -15,6 +15,7 @@ import { BRAIN_OPTIONS } from "./lib/brainOptions";
 import { SceneSheet, Selectable, type SceneClockChoice } from "./chat";
 import { MediaView, ReactionBar, type Media } from "./media";
 import { MentionPicker, putName } from "./mention";
+import { StarButton, tapStar } from "./star";
 
 export type Group = { id: string; title: string; member_ids: string[]; updated_at: string; scene_title?: string | null; scene_details?: string | null; in_person_place?: string | null };
 type Msg = { id: string; speaker_id: string | null; content: string; created_at: string; pending?: boolean; peek?: boolean; media?: Media | null; reaction?: string | null; their_reactions?: Record<string, string>; private_to?: string | null };
@@ -45,6 +46,7 @@ const When = ({ at, align }: { at?: string; align?: "left" | "right" | "center" 
 export function GroupChat({ group: initial, chars, name, brains = [], onDeleted }: { group: Group; chars: Character[]; name: string; brains?: string[]; onDeleted: (id: string) => void }) {
   const [group, setGroup] = useState(initial);
   const [sceneSheet, setSceneSheet] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false); // ➕ the composer's menu
   const [peek, setPeek] = useState(false);
   const [msgs, setMsgs] = useState<Msg[] | null>(null);
   const [text, setText] = useState("");
@@ -73,6 +75,7 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
   };
   useEffect(() => () => { run.current++; }, []);
   const log = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLTextAreaElement>(null); // the message box, for putting the caret back after a *
   const members = group.member_ids.map(id => chars.find(c => c.id === id)).filter((c): c is Character => !!c);
   const byId = new Map(members.map(c => [c.id, c]));
 
@@ -278,16 +281,34 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
           <button className="btn" onClick={deleteSelected} disabled={!selected.size || deleting} data-testid="select-delete" style={{ background: "var(--bad)" }}>{deleting ? "…" : `🗑 Delete${selected.size > 1 ? ` ${selected.size}` : ""}`}</button>
         </div>
       )}
-      <form onSubmit={e => { e.preventDefault(); send(); }} className="row" style={{ position: "relative", padding: "10px 12px", borderTop: "1px solid var(--border)", ...(selected ? { display: "none" } : {}) }}>
+      <form onSubmit={e => { e.preventDefault(); send(); }} className="row" style={{ position: "relative", flexWrap: "nowrap", padding: "10px 12px", borderTop: "1px solid var(--border)", ...(selected ? { display: "none" } : {}) }}>
         {/* 🗣️ "@" offers the people you could name here too. */}
         <MentionPicker testid="group-mention" text={text} caret={caret} onPick={(name, at) => setText(t => putName(t, at, caret, name))} />
-        {!group.scene_title && <button type="button" onClick={() => setSceneSheet(true)} disabled={!msgs || busy} aria-label="Start a video chat" data-testid="group-scene-open"
-          style={{ borderRadius: 999, width: 36, height: 46, padding: 0, flexShrink: 0, cursor: "pointer", fontSize: 19, border: "none", background: "transparent", color: "var(--muted)" }}>🎥</button>}
-        <textarea rows={1} value={text} onChange={e => { setText(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length); }}
+        {/* ➕ Everything you can do here, behind one button — the same menu a one-to-one text has,
+            so the box, the menu and Send sit on one line instead of the row growing a button each. */}
+        <div style={{ position: "relative", flexShrink: 0 }}>
+          <button type="button" onClick={() => setMoreOpen(o => !o)} disabled={!msgs || busy} aria-label={moreOpen ? "Close menu" : "More: video chat, ICU"} aria-expanded={moreOpen} data-testid="group-more"
+            style={{ position: "relative", zIndex: 42, borderRadius: 999, width: 40, height: 46, padding: 0, cursor: "pointer", fontSize: 24, lineHeight: 1, border: "none", background: "transparent", color: "var(--muted)" }}>＋</button>
+          {moreOpen && (
+            <>
+              <div onClick={() => setMoreOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+              <div role="menu" data-testid="group-more-menu" className="card" style={{ position: "absolute", bottom: 52, left: 0, zIndex: 41, minWidth: 220, padding: 6, display: "flex", flexDirection: "column", gap: 2 }}>
+                {!group.scene_title && <button type="button" role="menuitem" data-testid="group-scene-open" onClick={() => { setMoreOpen(false); setSceneSheet(true); }}
+                  style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", cursor: "pointer", fontSize: 14 }}>🎥 Video chat</button>}
+                {!group.scene_title && group.in_person_place != null && <button type="button" role="menuitem" data-testid="group-menu-icu" onClick={() => { setMoreOpen(false); setPeek(true); }}
+                  style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", cursor: "pointer", fontSize: 14 }}>👁️ ICU — see everyone</button>}
+                {group.scene_title && <button type="button" role="menuitem" data-testid="group-menu-peek" onClick={() => { setMoreOpen(false); setPeek(true); }}
+                  style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", cursor: "pointer", fontSize: 14 }}>👀 Peek — see them on screen</button>}
+              </div>
+            </>
+          )}
+        </div>
+        <textarea ref={box} rows={1} value={text} onChange={e => { setText(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length); }}
           onSelect={e => setCaret((e.target as HTMLTextAreaElement).selectionStart ?? 0)}
           placeholder={msgs ? `Message ${group.title}…` : "Loading…"} aria-label="Message the group" disabled={!msgs}
-          onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }} style={{ resize: "none", maxHeight: 140, borderRadius: 20 }} />
-        <button className="btn" disabled={!text.trim() || busy || !msgs} style={{ borderRadius: 999, padding: "10px 16px" }}>Send</button>
+          onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }} style={{ resize: "none", maxHeight: 140, borderRadius: 20, flex: 1, minWidth: 0, width: "auto" }} />
+        <StarButton testid="group-star" disabled={!msgs} onTap={() => tapStar(box, text, caret, setText, setCaret)} />
+        <button className="btn" disabled={!text.trim() || busy || !msgs} aria-label="Send" style={{ borderRadius: 999, width: 46, height: 46, padding: 0, flexShrink: 0 }}>➤</button>
       </form>
       {sceneSheet && <SceneSheet who={members.map(c => c.name).join(" & ")} onClose={() => setSceneSheet(false)} onStart={startScene} />}
       {peek && <GroupPeekSheet group={group} members={members} name={name} brains={brains} onClose={() => setPeek(false)} onMade={added => { setMsgs(m => [...(m || []), ...added]); setPeek(false); }} />}

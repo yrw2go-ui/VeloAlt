@@ -9,6 +9,7 @@ import { noJargon } from "./lib/text";
 import { MediaView, useSwipeNav, SwipeArrow, type Media } from "./media";
 import { EditSheet } from "./edit";
 import { MentionPicker, putName } from "./mention";
+import { StarButton, tapStar } from "./star";
 import { RedoSheet } from "./redo";
 import { TraitSliders } from "./characters";
 import { Selectable } from "./chat";
@@ -967,6 +968,7 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
   const [pick, setPick] = useState(false);
   const [sending, setSending] = useState("");
   const upIn = useRef<HTMLInputElement>(null);
+  const dmBox = useRef<HTMLInputElement>(null); // the message box, for putting the caret back after a *
   const sendMine = async (mediaId: string) => {
     setSending("…"); setErr("");
     try { const r = await api<{ added: DmMsg[] }>("/api/pica", { action: "dm.me.send", id, mediaId }); setMsgs(m => [...(m || []), ...r.added]); }
@@ -1103,9 +1105,10 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
         <MentionPicker testid="dm-mention" text={text} caret={caret} onPick={(name, at) => setText(t => putName(t, at, caret, name))} />
         <PicMenu busy={sending} onMine={() => setMySheet(true)} onGallery={() => setPick(true)} onUpload={() => upIn.current?.click()} />
         <input ref={upIn} type="file" accept="image/jpeg,image/png,image/webp" hidden data-testid="dm-upload-file" onChange={e => uploadMine(e.target.files?.[0])} />
-        <input value={text} onChange={e => { setText(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length); }}
+        <input ref={dmBox} value={text} onChange={e => { setText(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length); }}
           onSelect={e => setCaret((e.target as HTMLInputElement).selectionStart ?? 0)}
           placeholder={`Message ${acc?.name || ""}…`} aria-label="Message" maxLength={2000} disabled={!msgs} style={{ borderRadius: 999, flex: "1 1 auto", width: "auto", minWidth: 0 }} />
+        <StarButton testid="dm-star" disabled={!msgs} onTap={() => tapStar(dmBox, text, caret, setText, setCaret)} />
         <button className="btn" disabled={!text.trim() || busy || !msgs} style={{ borderRadius: 999, padding: "10px 16px", flexShrink: 0 }}>Send</button>
       </form>
     </div>
