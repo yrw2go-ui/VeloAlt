@@ -141,8 +141,11 @@ export async function dmEdit(userId: string, accountId: string, id: string, text
 export async function dmDelete(userId: string, accountId: string, ids: string[]): Promise<number> {
   const want = ids.filter(x => /^[0-9a-f-]{36}$/i.test(x)).slice(0, 50);
   if (!want.length) return 0;
+  // 🖼️ A picture message goes too, the same as in a text: the message is removed, while the
+  // picture itself stays wherever it was saved. It used to be refused outright here, which is
+  // why a photo in a DM could never be deleted however you tried.
   const gone = await sql()`delete from pica_dms where user_id = ${userId} and account_id = ${accountId}
-    and id = any(${want}::uuid[]) and media_id is null returning id, role, content, created_at::text`;
+    and id = any(${want}::uuid[]) returning id, role, content, created_at::text`;
   if (!gone.length) return 0;
   // 🧠 …and she forgets what she only knew because of them, the same as deleting a chat message.
   try {

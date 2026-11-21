@@ -1073,8 +1073,10 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
               <When at={m.created_at} align={m.role === "user" ? "right" : "left"} />
             </div>
           );
-          // A picture message is never selectable: long-press it and the phone does its own thing.
-          return m.media ? bubble : (
+          // 🖼️ A picture message can be picked too, the same as in a text: long-pressing the
+          // picture itself still leaves it to the phone, so it's the row around it — the time
+          // underneath — that starts a selection. Leaving them out meant they could never go.
+          return (
             <Selectable key={m.id} id={m.id} selecting={selected} onStart={x => setSelected(new Set([x]))} onToggle={toggleSelect}>{bubble}</Selectable>
           );
         })}
