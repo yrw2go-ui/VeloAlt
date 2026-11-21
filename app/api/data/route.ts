@@ -33,7 +33,7 @@ import { maybeInvite } from "../../lib/meetups";
 import { getCharacterFor, trustFor, happyFor, loveFor, activeScene, saveFeelings, referenceUrls, pictureOf } from "../../lib/characters";
 import { US_STATES } from "../../lib/states";
 import { mediaMood, allowsSuggestive } from "../../lib/traits";
-import { myRefs } from "../../lib/picagram";
+import { myRefs, myPhotoDraft, myPhotoMake } from "../../lib/picagram";
 import { BITS, merge, keepEdits } from "../../lib/wording";
 import { SECTIONS as TALK_SECTIONS, merge as talkMerge, keepEdits as talkKeep } from "../../lib/words";
 import { imageModels, DEFAULT_IMAGE_MODEL, type ImageModel } from "../../lib/imageModels";
@@ -475,6 +475,30 @@ export async function POST(req: NextRequest) {
         } catch (e) {
           if (e instanceof MediaError && /can't be sent/.test(e.message)) return bad(/family-friendly/.test(e.message) ? "Keep it family-friendly (fully clothed, nothing suggestive) — try changing the description." : "Flirty and suggestive is fine, but no nudity or lingerie. Try changing the description.");
           return bad(e instanceof MediaError ? "Couldn't peek right now — try again in a moment." : "Couldn't peek right now.");
+        }
+      }
+      // 📸 A photo of YOU to send her, in a text — the same two steps a DM has: have the
+      // description written from a line of yours, or write the whole thing yourself, then make
+      // it. What you end up with goes to the picture service exactly as written.
+      case "me.photo.draft":
+      case "me.photo.make": {
+        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
+        if (!ch) return bad("That character wasn't found.");
+        if (!mediaReady()) return bad("Photos aren't set up yet.");
+        if (!allow(`myphoto:${me}`, [{ ms: 60_000, max: 6 }, { ms: 86_400_000, max: 200 }])) return NextResponse.json({ error: "Slow down a little — try again in a bit." }, { status: 429 });
+        try {
+          if (b.action === "me.photo.draft") {
+            const recent = await db`select role, content from velo_messages where user_id = ${me} and character_id = ${ch.id}
+              and not peek and media_id is null order by created_at desc limit 12`;
+            const lines = recent.reverse().map(r => `${r.role === "assistant" ? ch.name : "Them"}: ${String(r.content || "").replace(/\s+/g, " ").slice(0, 300)}`).join("\n");
+            return NextResponse.json({ description: await myPhotoDraft(me, String(b.about || ""), `a text to ${ch.name}. Recent messages:\n${lines}`) });
+          }
+          const media = await myPhotoMake(me, String(b.description || ""));
+          if (media.status === "failed") return bad("The picture service wouldn't make that one — try changing the description.");
+          return NextResponse.json({ media });
+        } catch (e) {
+          if (e instanceof MediaError) return bad(e.message);
+          return bad(e instanceof Error ? e.message : "Couldn't make that photo.");
         }
       }
       // 📞 Calling her: she doesn't always pick up — she's at work, in class, or can't talk — and
