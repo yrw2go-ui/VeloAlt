@@ -16,6 +16,7 @@ import { SceneSheet, Selectable, type SceneClockChoice } from "./chat";
 import { MediaView, ReactionBar, type Media } from "./media";
 import { MentionPicker, putName } from "./mention";
 import { StarButton, tapStar } from "./star";
+import { useDictation } from "./dictate";
 
 export type Group = { id: string; title: string; member_ids: string[]; updated_at: string; scene_title?: string | null; scene_details?: string | null; in_person_place?: string | null };
 type Msg = { id: string; speaker_id: string | null; content: string; created_at: string; pending?: boolean; peek?: boolean; media?: Media | null; reaction?: string | null; their_reactions?: Record<string, string>; private_to?: string | null };
@@ -47,6 +48,8 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
   const [group, setGroup] = useState(initial);
   const [sceneSheet, setSceneSheet] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false); // ➕ the composer's menu
+  // 🧍 Together in person: the same thing a one-to-one does, for everyone here at once.
+  const [togetherSheet, setTogetherSheet] = useState<{ place: string; busy: boolean; error?: string } | null>(null);
   const [peek, setPeek] = useState(false);
   const [msgs, setMsgs] = useState<Msg[] | null>(null);
   const [text, setText] = useState("");
@@ -76,6 +79,7 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
   useEffect(() => () => { run.current++; }, []);
   const log = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLTextAreaElement>(null); // the message box, for putting the caret back after a *
+  const mic = useDictation(setText); // 🎙️ talking instead of typing
   const members = group.member_ids.map(id => chars.find(c => c.id === id)).filter((c): c is Character => !!c);
   const byId = new Map(members.map(c => [c.id, c]));
 
@@ -95,6 +99,21 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
     document.addEventListener("visibilitychange", onHide);
     return () => { document.removeEventListener("visibilitychange", onHide); memo(); };
   }, [group.id, name]);
+
+  // 🧍 Everyone here, together in person: the server reuses this very group (same members),
+  // sets where you are and drops a marker in, exactly as bringing them together from a
+  // one-to-one does. Nothing new is created.
+  const startTogether = async (place: string) => {
+    setTogetherSheet(t => (t ? { ...t, busy: true, error: undefined } : t));
+    try {
+      const r = await api<{ group: Group }>("/api/groups", { action: "bring", fromId: members[0]?.id, ids: members.slice(1).map(c => c.id), place, name });
+      setGroup(g => ({ ...g, ...r.group }));
+      setTogetherSheet(null);
+      run.current++; setChatting(false);
+      const m = await api<{ messages: Msg[] }>("/api/groups", { action: "messages", id: group.id });
+      setMsgs(m.messages);
+    } catch (e) { setTogetherSheet(t => (t ? { ...t, busy: false, error: e instanceof Error ? e.message : "Try again." } : t)); }
+  };
 
   const send = async () => {
     // 🔒 Passwords and codes are hidden right here, before anything leaves the phone.
@@ -299,6 +318,12 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
                   style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", cursor: "pointer", fontSize: 14 }}>👁️ ICU — see everyone</button>}
                 {group.scene_title && <button type="button" role="menuitem" data-testid="group-menu-peek" onClick={() => { setMoreOpen(false); setPeek(true); }}
                   style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", cursor: "pointer", fontSize: 14 }}>👀 Peek — see them on screen</button>}
+                {/* 🧍 All of you in one place: she talks face to face instead of texting. */}
+                {!group.scene_title && group.in_person_place == null && <button type="button" role="menuitem" data-testid="group-inperson-open" onClick={() => { setMoreOpen(false); setTogetherSheet({ place: "", busy: false }); }}
+                  style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", cursor: "pointer", fontSize: 14 }}>🧍 Together in person</button>}
+                {/* 🎙️ Say it instead of typing it — the words land in the box to send yourself. */}
+                {mic.supported && <button type="button" role="menuitem" data-testid="group-mic" aria-pressed={mic.listening} onClick={() => { setMoreOpen(false); if (mic.listening) mic.stop(); else mic.start(text); }}
+                  style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: mic.listening ? "var(--bad)" : "var(--text)", cursor: "pointer", fontSize: 14 }}>{mic.listening ? "⏹ Stop listening" : "🎙️ Talk instead of typing"}</button>}
               </div>
             </>
           )}
@@ -310,6 +335,26 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
         <StarButton testid="group-star" disabled={!msgs} onTap={() => tapStar(box, text, caret, setText, setCaret)} />
         <button className="btn" disabled={!text.trim() || busy || !msgs} aria-label="Send" style={{ borderRadius: 999, width: 46, height: 46, padding: 0, flexShrink: 0 }}>➤</button>
       </form>
+      {/* 🎙️ While it's listening, so you know the box is filling itself. */}
+      {(mic.listening || mic.error) && (
+        <div style={{ padding: "0 14px 8px", fontSize: 12, color: mic.error ? "var(--bad)" : "var(--muted)" }}>
+          {mic.error ? `⚠️ ${mic.error}` : "Listening… tap ＋ then ⏹ when you're done, and Send."}
+        </div>
+      )}
+      {togetherSheet && (
+        <div role="dialog" aria-modal="true" data-testid="group-inperson-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 3000 }} onClick={() => setTogetherSheet(null)}>
+          <form className="card" onClick={e => e.stopPropagation()} onSubmit={e => { e.preventDefault(); startTogether(togetherSheet.place.trim()); }} style={{ width: "100%", maxWidth: 520, margin: 10, padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+            <div className="row" style={{ justifyContent: "space-between" }}>
+              <div style={{ fontWeight: 800, fontSize: 17 }}>🧍 Together with {members.map(c => c.name).join(" & ")}</div>
+              <button type="button" className="ghost" onClick={() => setTogetherSheet(null)} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
+            </div>
+            <div className="muted" style={{ fontSize: 12 }}>You&apos;re all in one place — they&apos;ll talk face to face instead of texting, and 👁️ ICU shows what you&apos;d see.</div>
+            <input value={togetherSheet.place} onChange={e => setTogetherSheet(t => (t ? { ...t, place: e.target.value } : t))} maxLength={120} autoFocus aria-label="Where are you all?" placeholder="Where are you? (the kitchen, the pub…)" data-testid="group-inperson-place" style={{ borderRadius: 12 }} />
+            {togetherSheet.error && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {togetherSheet.error}</div>}
+            <button className="btn" disabled={togetherSheet.busy} data-testid="group-inperson-go">{togetherSheet.busy ? "…" : "🧍 We're together"}</button>
+          </form>
+        </div>
+      )}
       {sceneSheet && <SceneSheet who={members.map(c => c.name).join(" & ")} onClose={() => setSceneSheet(false)} onStart={startScene} />}
       {peek && <GroupPeekSheet group={group} members={members} name={name} brains={brains} onClose={() => setPeek(false)} onMade={added => { setMsgs(m => [...(m || []), ...added]); setPeek(false); }} />}
     </div>
