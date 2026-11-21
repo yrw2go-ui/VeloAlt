@@ -16,6 +16,7 @@ import Picagram from "./picagram";
 import { CharacterStrip, CharacterEditor, CharacterFace, NewCharacterSheet, type Character } from "./characters";
 import Gifts from "./gifts";
 import { GroupChat, GroupMaker, type Group } from "./groups";
+import { Boundary } from "./boundary";
 import Gallery from "./gallery";
 import AboutCard from "./about";
 import CheckinsCard from "./notify";
@@ -429,7 +430,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       <main ref={mainRef} onScroll={onMainScroll} style={{ flex: 1, width: "100%", minWidth: 0, maxWidth: "100%", minHeight: 0, overflowX: "hidden", overflowY: tab === "chat" ? "hidden" : "auto", display: "flex", flexDirection: "column" }}>
         {tab === "chat" && <CharacterStrip characters={chars} active={withChar?.id || null} admin={admin} onPick={pickChat} onNew={() => setNewChar(true)} onEdit={setEditing} onGallery={() => setGallery(true)} unread={unread}
           groups={groups} activeGroup={inGroup?.id || null} onPickGroup={setGroupId} onNewGroup={() => setMakingGroup(true)} />}
-        {inGroup && <GroupChat key={inGroup.id} group={inGroup} chars={chars} name={name} brains={brains} onDeleted={id => { setGroups(gs => gs.filter(g => g.id !== id)); setGroupId(null); }} />}
+        {inGroup && <Boundary what="This group chat"><GroupChat key={inGroup.id} group={inGroup} chars={chars} name={name} brains={brains} onDeleted={id => { setGroups(gs => gs.filter(g => g.id !== id)); setGroupId(null); }} /></Boundary>}
         {tab === "chat" && !inGroup && !(groupId && !groupsLoaded) && <Chat key={`${withChar?.id || "velo"}-${chatTick}`} calls={{ can: canCallVelo() && !calling && !inGroup, ringing, continuing, have: historyCount, need: CONTINUE_MIN, onCall: startCall, onContinue: continueCall }} startPlan={startingPlan} onPlanStarted={() => setStartPlan(null)} brains={brains} userId={userId} name={name} onChanged={bump} added={chatAdd} onAdded={() => setChatAdd(null)} character={withChar} adult={!!profile?.adultConfirmed} onAdult={() => setProfileTick(t => t + 1)} onHistory={h => { chatHistory.current = h; setHistoryCount(h.length); }}
           onNewCharacter={() => api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => setChars(r.characters)).catch(() => {})}
           others={chars.map(c => ({ id: c.id, name: c.name, pica_handle: c.pica_handle || null }))} onSocial={id => { setPicaOpen(id); setTab("pica"); }} onGroup={g => { setGroups(gs => [g, ...gs.filter(x => x.id !== g.id)]); setGroupId(g.id); }} />}

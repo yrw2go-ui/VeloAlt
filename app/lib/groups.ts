@@ -64,12 +64,23 @@ async function meet(userId: string, chars: Character[], personName: string) {
   }
 }
 
+// 😍 Who reacted to a message, and with what. It usually arrives as an object, but can come
+// back as text — and a single unreadable one must cost that message its reactions, never the
+// whole chat: this used to throw, and a group that wouldn't open was the result.
+function theirReactions(v: unknown): Record<string, string> {
+  if (typeof v === "string") {
+    try { const j = JSON.parse(v); return j && typeof j === "object" ? j as Record<string, string> : {}; }
+    catch { console.error("groups: unreadable reactions on a message — showing it without them"); return {}; }
+  }
+  return v && typeof v === "object" ? v as Record<string, string> : {};
+}
+
 export async function groupMessages(userId: string, groupId: string, limit = 200): Promise<GroupMsg[]> {
   const rows = await sql()`select g.id, g.speaker_id, g.content, g.created_at, g.peek, g.private_to, g.reaction, g.their_reactions, md.id as media_id, md.kind as media_kind, md.status as media_status, md.description as media_description, mf.url as media_url
     from chat_group_messages g left join velo_media md on md.id = g.media_id left join velo_files mf on mf.id = md.file_id
     where g.group_id = ${groupId} and g.user_id = ${userId} order by g.created_at desc limit ${limit}`;
   return rows.reverse().map(r => ({ id: String(r.id), speaker_id: r.speaker_id ? String(r.speaker_id) : null, content: String(r.content), created_at: String(r.created_at), ...(r.peek ? { peek: true } : {}), ...(r.private_to ? { private_to: String(r.private_to) } : {}),
-    reaction: r.reaction || null, their_reactions: typeof r.their_reactions === "string" ? JSON.parse(r.their_reactions) : (r.their_reactions && typeof r.their_reactions === "object" ? r.their_reactions : {}),
+    reaction: r.reaction || null, their_reactions: theirReactions(r.their_reactions),
     ...(r.media_id ? { media: { id: String(r.media_id), kind: r.media_kind, status: r.media_status, url: r.media_status === "done" ? r.media_url : null, description: r.media_description || null } as Media } : {}) }));
 }
 const groupClock = (g: Group) => ({ clock: g.scene_clock, set_time: g.scene_set_time, started_at: g.scene_started_at || undefined });
