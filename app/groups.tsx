@@ -279,11 +279,14 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
               {c ? <CharacterFace c={c} size={28} /> : <span style={{ width: 28 }} />}
               <div>
                 <div className="muted" style={{ fontSize: 11, fontWeight: 700, margin: "0 0 2px 6px" }}>{c?.name || "Someone"}{m.private_to ? <span data-testid="group-private-label"> · 🔒 Private, to you</span> : null}</div>
-                <div data-testid={m.private_to ? "group-private-reply" : undefined} onClick={() => { if (tapped(m)) return; setPicking(p => (p === m.id ? null : m.id)); }} onDoubleClick={() => startEdit(m)} style={{ position: "relative", cursor: "pointer", padding: "10px 14px", borderRadius: 18, background: "var(--surface2)", border: m.private_to ? "1.5px dashed var(--accent)" : undefined, whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 15, lineHeight: 1.45 }}>
+                <div data-testid={m.private_to ? "group-private-reply" : undefined} onClick={() => { tapped(m); }} onDoubleClick={() => startEdit(m)} style={{ position: "relative", cursor: "pointer", padding: "10px 14px", borderRadius: 18, background: "var(--surface2)", border: m.private_to ? "1.5px dashed var(--accent)" : undefined, whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 15, lineHeight: 1.45 }}>
                   {noJargon(dropThoughts(m.content))}
-                  {asEmoji(m.reaction) && <span data-testid="group-reaction" style={{ position: "absolute", bottom: -12, right: -6, fontSize: 15, lineHeight: 1, padding: "3px 5px", borderRadius: 999, background: "var(--surface)", border: "1px solid var(--border)" }}>{asEmoji(m.reaction)}</span>}
+                  {asEmoji(m.reaction) && <span data-testid="group-reaction" onClick={e => { e.stopPropagation(); setPicking(p => (p === m.id ? null : m.id)); }} title="Tap to change it" style={{ cursor: "pointer", position: "absolute", bottom: -12, right: -6, fontSize: 15, lineHeight: 1, padding: "3px 5px", borderRadius: 999, background: "var(--surface)", border: "1px solid var(--border)" }}>{asEmoji(m.reaction)}</span>}
                 </div>
-                {picking === m.id && <ReactionBar value={m.reaction} onPick={r => react(m.id, r)} />}
+                {/* 😮 A few to hand under her message. Once you have picked one the row goes
+                    entirely and the badge on the corner brings it back — it never opens from
+                    tapping the words, which is what made double-tapping to edit so hard. */}
+                {(picking === m.id || !asEmoji(m.reaction)) && <ReactionBar value={m.reaction} onPick={r => react(m.id, r)} />}
                 <When at={m.created_at} />
               </div>
             </div>
