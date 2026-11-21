@@ -867,6 +867,7 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
   // A small badge on the bubble's corner, like a text-message reaction.
   const badge = (r: string, who: string) => (
     <span data-testid={mine ? "their-reaction" : "my-reaction"} aria-label={`${who} reacted ${r}`}
+      onClick={mine ? undefined : e => { e.stopPropagation(); setPicking(p => !p); }} title={mine ? undefined : "Tap to change it"}
       style={{ position: "absolute", bottom: -12, [mine ? "left" : "right"]: -6, fontSize: 15, lineHeight: 1, padding: "3px 5px", borderRadius: 999, background: "var(--surface)", border: "1px solid var(--border)", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }}>{r}</span>
   );
   // ⏰ / 👍: her brain was down / is back — just for them; she never sees these.
@@ -911,7 +912,7 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
     <div style={{ display: "flex", gap: 8, alignItems: "flex-end", justifyContent: mine ? "flex-end" : "flex-start", marginBottom: (mine ? m.theirReaction : m.reaction) ? 10 : 0 }}>
       {!mine && face}
       <div style={{ maxWidth: "80%", display: "flex", flexDirection: "column", alignItems: mine ? "flex-end" : "flex-start" }}>
-      <div onClick={() => { if (tapped()) return; if (!mine && m.id) setPicking(p => !p); }} onDoubleClick={startEdit} data-testid={mine ? "my-bubble" : "her-bubble"}
+      <div onClick={() => { tapped(); }} onDoubleClick={startEdit} data-testid={mine ? "my-bubble" : "her-bubble"}
         style={{ position: "relative", cursor: !mine && m.id ? "pointer" : undefined, padding: "10px 14px", borderRadius: 18, borderBottomLeftRadius: mine ? 18 : 4, borderBottomRightRadius: mine ? 4 : 18,
         background: mine ? "linear-gradient(135deg, var(--accent), var(--accent2))" : "var(--surface2)", color: "var(--text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", lineHeight: 1.45, fontSize: 15 }}>
         {m.file && <div style={{ marginBottom: m.content && m.content !== "📎" ? 8 : 0 }}><FileThumb f={m.file} size={180} /></div>}
@@ -921,7 +922,10 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
         {mine && m.theirReaction && badge(m.theirReaction, who)}
         {!mine && m.reaction && badge(m.reaction, "You")}
       </div>
-      {picking && m.id && <ReactionBar value={m.reaction} onPick={r => { onReactMsg(m.id!, r); setPicking(false); }} />}
+      {/* 😮 A few to hand under her message. Once you have picked one the row goes entirely and
+          the badge on the corner is what brings it back — it never opens from tapping the words,
+          which is what made double-tapping to edit so hard. */}
+      {!mine && m.id && (picking || !m.reaction) && <ReactionBar value={m.reaction} onPick={r => { onReactMsg(m.id!, r); setPicking(false); }} />}
       {/* 📅 What you two have on — quiet, until the last hour. */}
       {m.plan && (
         <div data-testid={m.plan.urgent ? "plan-tag-urgent" : "plan-tag"} style={{ alignSelf: "flex-end", marginTop: 3, maxWidth: "100%", overflowWrap: "anywhere", fontSize: 11, fontStyle: "italic",

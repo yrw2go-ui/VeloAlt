@@ -14,11 +14,19 @@ export type Media = { id: string; kind: "image" | "video"; status: "offered" | "
 import { REACTIONS } from "./lib/reactions";
 export { REACTIONS };
 
-/** The reaction row right under a photo/video. Tap one to react; tap it again to take it back. */
+/** 😮 How many are offered before you ask for the rest. All twenty at once is a wall of faces
+ *  that pushes the message about while you are trying to tap it. */
+const FEW = 6;
+
+/** The reaction row under a message, photo or video: a few to hand, ➕ for the rest, and tapping
+ *  the one you chose takes it back. */
 export function ReactionBar({ value, onPick }: { value: string | null | undefined; onPick: (r: string) => void }) {
+  const [all, setAll] = useState(false);
+  // The one you picked is always shown, even when it is further down the list.
+  const shown = all ? [...REACTIONS] : [...new Set([...REACTIONS.slice(0, FEW), ...(value ? [value] : [])])];
   return (
     <div role="group" aria-label="React" data-testid="reactions" style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap" }}>
-      {REACTIONS.map(r => {
+      {shown.map(r => {
         const on = value === r;
         return (
           <button key={r} type="button" onClick={e => { e.stopPropagation(); onPick(r); }} aria-pressed={on} aria-label={`React ${r}`}
@@ -26,6 +34,10 @@ export function ReactionBar({ value, onPick }: { value: string | null | undefine
               background: on ? "rgba(124,140,255,0.22)" : "var(--surface2)", transform: on ? "scale(1.12)" : "none", transition: "transform .15s" }}>{r}</button>
         );
       })}
+      {!all && (
+        <button type="button" onClick={e => { e.stopPropagation(); setAll(true); }} data-testid="reactions-more" aria-label="More reactions"
+          style={{ fontSize: 16, lineHeight: 1, padding: "6px 10px", borderRadius: 999, cursor: "pointer", border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--muted)" }}>＋</button>
+      )}
     </div>
   );
 }
