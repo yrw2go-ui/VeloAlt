@@ -18,6 +18,7 @@ import { MediaView, PhotoReaction, ReactionBar, type Media } from "./media";
 import { EditSheet } from "./edit";
 import { MentionPicker, putName } from "./mention";
 import { StarButton, tapStar } from "./star";
+import { MyPhotoSheet } from "./myphoto";
 import { isHot } from "./lib/reactions";
 import { dropThoughts, noJargon, dropSentNote } from "./lib/text";
 import { claimsMedia } from "./lib/mediaWords";
@@ -499,6 +500,18 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     catch (e) { setErr(e instanceof Error ? e.message : "Couldn't make her account."); }
   };
   const [pickGallery, setPickGallery] = useState(false);
+  // 📸 A photo of YOU to send her, the same as a DM has: written for you from a line, or written
+  // by you from scratch. Whatever the box ends up saying goes to the picture service as written.
+  const [mySheet, setMySheet] = useState(false);
+  const sendMyPhoto = async (description: string) => {
+    const r = await data<{ media: Media }>("me.photo.make", { ...thread, description });
+    const saved = await data<{ ids?: string[] }>("messages.add", { ...thread, messages: [{ role: "user", content: "", mediaId: r.media.id }] }).catch(() => ({ ids: [] as string[] }));
+    const mine: ChatMsg = { role: "user", content: "", media: r.media, id: saved.ids?.[0] };
+    const next = [...msgsRef.current, mine];
+    setMsgs(next); setMySheet(false);
+    unsaved.current++;
+    await respond(next, mine.id);
+  };
   const [deleting, setDeleting] = useState(false);
   const toggleSelect = (id: string) => setSelected(sel => {
     if (!sel) return sel;
@@ -715,6 +728,9 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
           </form>
         </div>
       )}
+      {mySheet && <MyPhotoSheet title={`Send ${who} a photo of you`}
+        draft={a => data<{ description: string }>("me.photo.draft", { ...thread, about: a }).then(r => r.description)}
+        onMake={sendMyPhoto} onClose={() => setMySheet(false)} />}
       {ask && <AskSheet who={who} ask={ask} busy={asking} onChange={d => setAsk(a => (a ? { ...a, description: d } : a))} onSend={sendAsk}
         onClose={() => { setAsk(null); setHidden(null); }} onHide={() => { setHidden(ask); setAsk(null); }} />}
       {!ask && hidden && (
@@ -808,6 +824,8 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
                 {cid && !scene && !inPerson && !character?.live_in && <button type="button" role="menuitem" data-testid="inperson-open" onClick={() => { setMoreOpen(false); setTogetherSheet({ place: "", busy: false }); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", fontSize: 15, cursor: "pointer" }}><span style={{ fontSize: 19 }}>🧍</span> Together in person</button>}
                 {cid && !scene && inPerson && <button type="button" role="menuitem" data-testid="icu-open" disabled={!!peekSheet} onClick={() => { setMoreOpen(false); openPeek(true); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", fontSize: 15, cursor: "pointer" }}><span style={{ fontSize: 19 }}>👁️</span> ICU — see {who} right now</button>}
                 <button type="button" role="menuitem" data-testid="chat-from-gallery" onClick={() => { setMoreOpen(false); setPickGallery(true); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", fontSize: 15, cursor: "pointer" }}><span style={{ fontSize: 19 }}>🖼️</span> From my gallery</button>
+                {/* 📸 One of you, made to order — the same thing a DM can do. */}
+                <button type="button" role="menuitem" data-testid="chat-my-photo" onClick={() => { setMoreOpen(false); setMySheet(true); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", fontSize: 15, cursor: "pointer" }}><span style={{ fontSize: 19 }}>📸</span> A photo of you</button>
                 <button type="button" role="menuitem" data-testid="chat-attach" disabled={uploading} onClick={() => { setMoreOpen(false); picker.current?.click(); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", fontSize: 15, cursor: "pointer" }}><span style={{ fontSize: 19 }}>📎</span> Photo or file</button>
                 {mic.supported && <button type="button" role="menuitem" data-testid="chat-mic" aria-pressed={mic.listening} onClick={() => { setMoreOpen(false); if (mic.listening) mic.stop(); else mic.start(text); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: mic.listening ? "var(--bad)" : "var(--text)", fontSize: 15, cursor: "pointer" }}><span style={{ fontSize: 19 }}>{mic.listening ? "⏹" : "🎙️"}</span> {mic.listening ? "Stop listening" : "Talk instead of typing"}</button>}
               </div>
