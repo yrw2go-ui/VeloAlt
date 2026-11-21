@@ -41,7 +41,7 @@ function Avatar({ name, url, size = 34 }: { name: string; url: string | null; si
   return <span style={{ width: size, height: size, borderRadius: "50%", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: GRADS[0], color: "#fff", fontWeight: 800, fontSize: size * 0.42 }}>{name.slice(0, 1).toUpperCase()}</span>;
 }
 
-export default function Picagram({ name, userId, onChat, openProfile, onProfileOpened, openDm, onDmOpened }: { name: string; userId?: string; onChat?: (characterId: string) => void; openProfile?: string | null; onProfileOpened?: () => void; openDm?: string | null; onDmOpened?: () => void }) {
+export default function Picagram({ name, userId, onChat, openProfile, onProfileOpened, openDm, onDmOpened, home = 0 }: { name: string; userId?: string; onChat?: (characterId: string) => void; openProfile?: string | null; onProfileOpened?: () => void; openDm?: string | null; onDmOpened?: () => void; home?: number }) {
   const [posts, setPosts] = useState<Post[] | null>(null);
   const [more, setMore] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -61,6 +61,16 @@ export default function Picagram({ name, userId, onChat, openProfile, onProfileO
   // ✉️ Sent here by a notification about a DM: her thread, not wherever you last were.
   useEffect(() => { if (openDm) { setThread(openDm); setInbox(false); setProfile(null); onDmOpened?.(); } }, [openDm]); // eslint-disable-line react-hooks/exhaustive-deps
   const [dmUnread, setDmUnread] = useState(0);
+  // 👆👆 Two taps on Picagram: out of whatever is open, back to the feed.
+  // Watching the number change rather than counting runs on purpose: React runs an effect twice on
+  // the way in during development, which is enough to make a "skip the first one" flag wipe the
+  // screen you were being put back on.
+  const lastHome = useRef(home);
+  useEffect(() => {
+    if (home === lastHome.current) return;
+    lastHome.current = home;
+    setProfile(null); setThread(null); setInbox(false); setSavedOpen(false); setMine(false); setFollowingOpen(false);
+  }, [home]);
   useEffect(() => {
     if (userId) savePlace(userId, { pica: { inbox, thread, profile, following: followingOpen, saved: savedOpen, mine } });
   }, [userId, inbox, thread, profile, followingOpen, savedOpen, mine]);
