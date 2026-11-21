@@ -32,13 +32,16 @@ export async function POST(req: NextRequest) {
     switch (action) {
       // 🛍️ Everything on one screen: what's in stock this week, who to send to, your wallet.
       case "shop": {
-        // ⚡ All of it at once, instead of one query waiting on the last. Each of these is its own
-        // round trip to the database, and there were a dozen of them in a row before anything drew.
-        // `mine` is also what `shopFull` puts at the front of the shop, so it's fetched once and
-        // used twice rather than fetched twice.
-        const [acc, mine, shopRest, people, history] = await Promise.all([
-          accountsFor(me), myGifts(me), shopNow(Date.now()), peopleToGift(me), giftHistory(me, 20),
-        ]);
+        // 🐌 One at a time, on purpose. This database is reached through a transaction pooler with
+        // a single connection per invocation (app/lib/db.ts, `max: 1`), shared by every request on
+        // that instance — so firing these off together jammed it, the request ran to the 300-second
+        // limit, and everything queued behind it, sign-in included. `mine` is still fetched once
+        // and used twice, which is the part of this that was free.
+        const acc = await accountsFor(me);
+        const mine = await myGifts(me);
+        const shopRest = await shopNow(Date.now());
+        const people = await peopleToGift(me);
+        const history = await giftHistory(me, 20);
         return NextResponse.json({ shop: [...mine, ...shopRest], mine, maxMine: MAX_MY_GIFTS, people, history,
           wallet: acc.spend, bank: acc.bank, paid: acc.paid, interest: acc.interest, weeks: acc.weeks,
           bankName: BANK, rate: WEEKLY_RATE, payLow: PAY_LOW, payHigh: PAY_HIGH });
