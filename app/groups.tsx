@@ -20,6 +20,16 @@ export type Group = { id: string; title: string; member_ids: string[]; updated_a
 type Msg = { id: string; speaker_id: string | null; content: string; created_at: string; pending?: boolean; peek?: boolean; media?: Media | null; reaction?: string | null; their_reactions?: Record<string, string>; private_to?: string | null };
 const PEEK = /^\s*\*?\s*pe(e|a)k\s*\*?\s*[.!]?\s*$/i;
 
+// 😍 What someone reacted with, only if it's something we can actually show. Anything else in
+// there — an empty object, a number, whatever — is skipped: React refuses to render an object
+// as text and takes the whole app down with it, which turned a group with one odd reaction on
+// one message into a chat that could never be opened again.
+const asEmoji = (v: unknown): string => (typeof v === "string" ? v.slice(0, 8) : "");
+const shownReactions = (v: unknown): [string, string][] =>
+  v && typeof v === "object" && !Array.isArray(v)
+    ? Object.entries(v as Record<string, unknown>).map(([id, e]) => [id, asEmoji(e)] as [string, string]).filter(([, e]) => !!e)
+    : [];
+
 /** Up to three faces, overlapping, for a group's chip. */
 export function GroupFaces({ g, chars, size }: { g: Group; chars: Character[]; size: number }) {
   const list = g.member_ids.map(id => chars.find(c => c.id === id)).filter((c): c is Character => !!c).slice(0, 3);
@@ -221,9 +231,9 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
             <div key={m.id} style={{ alignSelf: "flex-end", maxWidth: "80%", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
               {m.private_to && <div data-testid="group-private-label" style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)" }}>🔒 Private · @{byId.get(m.private_to)?.name || "someone"}</div>}
               <div data-testid={m.private_to ? "group-private-mine" : undefined} onClick={() => tapped(m)} onDoubleClick={() => startEdit(m)} style={{ cursor: "pointer", padding: "10px 14px", borderRadius: 18, background: m.private_to ? "var(--surface)" : "linear-gradient(135deg, var(--accent), var(--accent2))", border: m.private_to ? "1.5px dashed var(--accent)" : undefined, whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 15, opacity: m.pending ? 0.75 : 1 }}>{m.content}</div>
-              {Object.keys(m.their_reactions || {}).length > 0 && (
+              {shownReactions(m.their_reactions).length > 0 && (
                 <div data-testid="group-their-reactions" style={{ display: "flex", gap: 4 }}>
-                  {Object.entries(m.their_reactions || {}).map(([id, e]) => (
+                  {shownReactions(m.their_reactions).map(([id, e]) => (
                     <span key={id} title={`${byId.get(id)?.name || "Someone"} reacted`} style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 13, padding: "2px 6px", borderRadius: 999, background: "var(--surface)", border: "1px solid var(--border)" }}>
                       {e}{byId.get(id) && <CharacterFace c={byId.get(id)!} size={14} />}
                     </span>
@@ -240,7 +250,7 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
                 <div className="muted" style={{ fontSize: 11, fontWeight: 700, margin: "0 0 2px 6px" }}>{c?.name || "Someone"}{m.private_to ? <span data-testid="group-private-label"> · 🔒 Private, to you</span> : null}</div>
                 <div data-testid={m.private_to ? "group-private-reply" : undefined} onClick={() => { if (tapped(m)) return; setPicking(p => (p === m.id ? null : m.id)); }} onDoubleClick={() => startEdit(m)} style={{ position: "relative", cursor: "pointer", padding: "10px 14px", borderRadius: 18, background: "var(--surface2)", border: m.private_to ? "1.5px dashed var(--accent)" : undefined, whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 15, lineHeight: 1.45 }}>
                   {noJargon(dropThoughts(m.content))}
-                  {m.reaction && <span data-testid="group-reaction" style={{ position: "absolute", bottom: -12, right: -6, fontSize: 15, lineHeight: 1, padding: "3px 5px", borderRadius: 999, background: "var(--surface)", border: "1px solid var(--border)" }}>{m.reaction}</span>}
+                  {asEmoji(m.reaction) && <span data-testid="group-reaction" style={{ position: "absolute", bottom: -12, right: -6, fontSize: 15, lineHeight: 1, padding: "3px 5px", borderRadius: 999, background: "var(--surface)", border: "1px solid var(--border)" }}>{asEmoji(m.reaction)}</span>}
                 </div>
                 {picking === m.id && <ReactionBar value={m.reaction} onPick={r => react(m.id, r)} />}
                 <When at={m.created_at} />
