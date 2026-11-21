@@ -150,7 +150,9 @@ export default function Picagram({ name, userId, onChat, openProfile, onProfileO
       {loading && <div className="muted" style={{ textAlign: "center", padding: 18 }} data-testid="pica-loading">Loading…</div>}
       {!more && posts && posts.length > 0 && <div className="muted" style={{ textAlign: "center", padding: 18, fontSize: 13 }}>You&apos;re all caught up ✨</div>}
       {err && <div style={{ color: "var(--bad)", padding: 14 }}>⚠️ {err}</div>}
-      {profile && <Profile id={profile} onClose={() => setProfile(null)} onFollow={setFollowed} onChat={onChat} onMessage={id => { setProfile(null); setThread(id); }} onDeleted={id => setPosts(ps => (ps || []).filter(p => p.author.account?.id !== id))} />}
+      {profile && <Profile id={profile} onClose={() => setProfile(null)} onFollow={setFollowed} // 💬 Her text thread opens underneath, so her profile has to get out of the way first —
+        // it is a full-screen overlay, and leaving it up made the button look like it did nothing.
+        onChat={id => { setProfile(null); onChat?.(id); }} onMessage={id => { setProfile(null); setThread(id); }} onDeleted={id => setPosts(ps => (ps || []).filter(p => p.author.account?.id !== id))} />}
       {inbox && <Inbox onClose={() => setInbox(false)} onOpen={id => setThread(id)} />}
       {thread && <Thread id={thread} onClose={() => setThread(null)} onProfile={id => { setThread(null); setInbox(false); setProfile(id); }} />}
       {followingOpen && <Following onClose={() => setFollowingOpen(false)} onUnfollow={acc => setFollowed(acc, false)} onOpen={id => { setFollowingOpen(false); setProfile(id); }}
