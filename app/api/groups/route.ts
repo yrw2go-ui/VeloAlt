@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import { aiReady, aiError } from "../../lib/brain";
-import { listGroups, getGroup, createGroup, deleteGroup, groupMessages, sendToGroup, rememberGroup, startGroupScene, endGroupScene, banterNext, reactInGroup, editGroupMessage, draftGroupPeek, groupPeekAt, bringTogether, endGroupInPerson, deleteGroupMessages, GroupError } from "../../lib/groups";
-import { MediaError } from "../../lib/media";
+import { listGroups, getGroup, createGroup, deleteGroup, groupMessages, sendToGroup, rememberGroup, startGroupScene, endGroupScene, banterNext, reactInGroup, editGroupMessage, draftGroupPeek, groupPeekAt, bringTogether, endGroupInPerson, deleteGroupMessages, GroupError, draftGroupPhoto, groupPhoto } from "../../lib/groups";
+import { MediaError, mediaReady } from "../../lib/media";
 import { availableBrains } from "../../lib/models";
 import { sql } from "../../lib/db";
 import { getCharacterFor } from "../../lib/characters";
@@ -20,6 +20,7 @@ import { scrub } from "../../lib/secrets";
 //   scene.start { id, kind: live|past, title, details } → { marker, group }   scene.end { id } → { marker }
 //   messages.delete { id, ids (1–10), timeZone, name } → { deleted, replies }   (🗑 they forget what was in them; your latest gets re-answered)
 //   bring { fromId, ids, place } → { group }   (🧍 bring characters together in person; their 1:1s carry over)   inperson.end { id } → { marker }
+//   photo.draft { id, ids, withMe, about } → { description }   photo { id, ids, withMe, description } → { added }
 //   peek.draft { id, ids } → { description }   peek { id, ids, description } → { added }   (👀 nobody in the group knows)
 const bad = (error: string, status = 400) => NextResponse.json({ error }, { status });
 
@@ -90,6 +91,19 @@ export async function POST(req: NextRequest) {
         return NextResponse.json(await deleteGroupMessages(c, g, ids, b.timeZone, name));
       }
       case "inperson.end": return NextResponse.json({ marker: await endGroupInPerson(c.userId, g) });
+      // 📸 A photo in the group: who's in it (three faces at most, counting you), then the
+      // description — blank, written for you, or your own words. Everyone in the group sees it.
+      case "photo.draft":
+      case "photo": {
+        if (!aiReady()) return bad("Velo isn't set up yet (missing AI settings).", 503);
+        if (!allow(`groupphoto:${c.userId}`, [{ ms: 60_000, max: 4 }, { ms: 86_400_000, max: 100 }])) return bad("That's a lot of photos — give it a minute.", 429);
+        const [u2] = await sql()`select adult_confirmed_at from users where id = ${c.userId}`;
+        const who = Array.isArray(b.ids) ? b.ids.map(String) : [];
+        const withMe = b.withMe === true;
+        if (action === "photo.draft") return NextResponse.json({ description: await draftGroupPhoto(c.userId, g, who, withMe, String(b.about || ""), !!u2?.adult_confirmed_at, name, writerBrain(b.writer)) });
+        if (!mediaReady()) return bad("Photos aren't set up yet.");
+        return NextResponse.json({ added: await groupPhoto(c.userId, g, who, withMe, !!u2?.adult_confirmed_at, String(b.description || "")) });
+      }
       case "peek.draft":
       case "peek": {
         if (!aiReady()) return bad("Velo isn't set up yet (missing AI settings).", 503);

@@ -14,6 +14,7 @@ import { allowsSuggestive } from "./traits";
 import { writeText } from "./llm";
 import { brainFor } from "./whichBrain";
 import { sceneFallback } from "./peek";
+import { myRefs } from "./picagram";
 import { roomForMore } from "./together";
 import { forgetLines, rewordedLine } from "./forget";
 import { sceneClockNote, sceneTime, HHMM } from "./sceneClock";
@@ -296,6 +297,66 @@ ${chars.every(c => c.explicit_ok) && romantic ? "Nudity is fine when it fits." :
   const text = raw.replace(/\s+/g, " ").trim();
   return text.slice(0, 400) || sceneFallback(who, g.scene_title || "", g.scene_details || "", sceneTime(groupClock(g), await userTz(userId)).label, lastPeek);
 }
+/**
+ * 📸 A photo in a group chat — not a peek. You pick who's in it (up to three faces, counting
+ * yourself), and the description is yours: blank to begin with, written for you if you ask, or
+ * typed from scratch. What the box says is what the picture service is given.
+ *
+ * 🧍 Where they are depends on the group. Together in person, it's all of them in that one place
+ * right now. Otherwise they are apart, each in her own town and her own day — so a picture of
+ * two of them together can only be one from a day they actually spent together, and a picture of
+ * one of them is wherever she is now, dressed for it. The draft is told which of the two it is.
+ */
+const photoCast = async (userId: string, g: Group, ids: string[], withMe: boolean) => {
+  const chars = await pickedMembers(g, ids);
+  if (!chars.length && !withMe) throw new GroupError("Pick who's in the picture.");
+  if (chars.length + (withMe ? 1 : 0) > 3) throw new GroupError("Three in a picture at most — you and two of them, or three of them.");
+  return chars;
+};
+/** 🧭 How the photo has to make sense for this group, told to whoever writes it. */
+const whereThey = (g: Group, chars: Character[]) => g.in_person_place != null
+  ? `THEY ARE ALL TOGETHER IN PERSON right now${g.in_person_place ? `, at ${g.in_person_place}` : ""} — so this is a photo of them there, together, as things are now.`
+  : `THEY ARE NOT TOGETHER. ${chars.map(c => `${c.name} is at home in ${c.lives_in || "her own town"}`).join("; ")}. Each of them is somewhere of her own right now, so either:
+ • a photo of ONE of them where she is at the moment, in what she'd really be wearing for it, or
+ • an older photo from a day they WERE together — say so in the description ("a photo from…"), and dress them for that day, not today.
+Never put two of them in the same room as if it were happening now.`;
+
+export async function draftGroupPhoto(userId: string, g: Group, ids: string[], withMe: boolean, about: string, adult: boolean, personName: string, writer?: string): Promise<string> {
+  const chars = await photoCast(userId, g, ids, withMe);
+  const rows = await groupMessages(userId, g.id, 40);
+  const names = new Map((await members(g)).map(c => [c.id, c.name]));
+  const talk = rows.filter(r => !r.peek && !r.private_to).slice(-14)
+    .map(r => `${r.speaker_id ? names.get(r.speaker_id) || "Someone" : personName || "Them"}: ${String(r.content).replace(/\s+/g, " ").slice(0, 200)}`).join("\n");
+  const romantic = chars.every(c => romanticFor(c, adult));
+  const who = [...chars.map(c => `${c.name} — ${c.appearance || "as she looks"}${c.casual_wear ? `, usually in ${c.casual_wear}` : ""}${c.job ? `, works as ${c.job}` : ""}`),
+    ...(withMe ? [`${personName || "them"} — the person whose group this is, in it too`] : [])].join("\n");
+  const raw = await writeText(writer ?? await brainFor(userId), `You write the description for ONE photo for an image generator, for a group chat.
+WHO IS IN IT (nobody else):\n${who}
+${whereThey(g, chars)}
+${chars.every(c => c.explicit_ok) && romantic ? "Nudity is fine when it fits." : romantic ? "Flattering and flirty is fine; swimwear at the beach or pool is okay; no nudity or lingerie." : "Family-friendly, fully clothed."}
+Two or three sentences, under 380 characters: where it is, what they're wearing, what they're doing, the light. No names of real people, no brands. Write only the description.`,
+    `${about.trim() ? `WHAT THEY ASKED FOR: ${scrub(about).replace(/\s+/g, " ").slice(0, 300)}\n\n` : ""}THE CHAT SO FAR:\n${talk}`, 500).catch(() => "");
+  const desc = scrub(raw.replace(/^```(json)?|```$/g, "").replace(/\s+/g, " ").trim()).slice(0, 1500);
+  if (!desc) throw new GroupError("Couldn't write one just now — write it yourself, or try again.");
+  return desc;
+}
+
+/** 📸 Make it, and put it in the group where everyone can see it (a peek is the hidden one). */
+export async function groupPhoto(userId: string, g: Group, ids: string[], withMe: boolean, adult: boolean, description: string): Promise<GroupMsg[]> {
+  const chars = await photoCast(userId, g, ids, withMe);
+  const desc = scrub(description.replace(/\s+/g, " ").trim()).slice(0, 1500);
+  if (desc.length < 10) throw new GroupError("Describe the picture a little more.");
+  const mine = withMe ? [{ name: "me", refs: await myRefs(userId), appearance: "" }] : [];
+  const cast = [...(await Promise.all(chars.map(async c => ({ name: c.name, refs: await referenceUrls(c), appearance: c.appearance })))), ...mine];
+  const first = chars[0];
+  const media = await startMedia(userId, { kind: "image", with_me: withMe, they_asked: true, description: desc },
+    { characterId: first?.id || null, who: first?.name || "me", appearance: first?.appearance || "", refs: first ? await referenceUrls(first) : await myRefs(userId),
+      romantic: chars.every(c => romanticFor(c, adult)), offer: false, other: null, raw: true, people: cast.length > 1 ? cast : undefined });
+  const caption = `📸 ${[...chars.map(c => c.name), ...(withMe ? ["me"] : [])].join(", ")}`;
+  const [row] = await sql()`insert into chat_group_messages (group_id, user_id, content, media_id) values (${g.id}, ${userId}, ${caption}, ${media.id}) returning id, speaker_id, content, created_at`;
+  return [{ ...(row as GroupMsg), speaker_id: null, media }];
+}
+
 export async function groupPeekAt(userId: string, g: Group, ids: string[], adult: boolean, description: string): Promise<GroupMsg[]> {
   if (!g.scene_title && g.in_person_place == null) throw new GroupError("Peeks are for scenes or when you're together in person — start one first.");
   const chars = await pickedMembers(g, ids);

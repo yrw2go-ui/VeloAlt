@@ -48,6 +48,7 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
   const [group, setGroup] = useState(initial);
   const [sceneSheet, setSceneSheet] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false); // ➕ the composer's menu
+  const [photoSheet, setPhotoSheet] = useState(false); // 📸 a photo in the group
   // 🧍 Together in person: the same thing a one-to-one does, for everyone here at once.
   const [togetherSheet, setTogetherSheet] = useState<{ place: string; busy: boolean; error?: string } | null>(null);
   const [peek, setPeek] = useState(false);
@@ -247,6 +248,14 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
               <When at={m.created_at} align="center" />
             </div>
           );
+          // 📸 A photo in the group — everyone can see this one, unlike a peek.
+          if (m.media && !m.peek) return (
+            <div key={m.id} data-testid="group-photo" style={{ alignSelf: "flex-end", maxWidth: "80%", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+              <div style={{ maxWidth: 380 }}><MediaView media={m.media} who={group.title} /></div>
+              {m.content && <div className="muted" style={{ fontSize: 11 }}>{m.content}</div>}
+              <When at={m.created_at} align="right" />
+            </div>
+          );
           if (m.peek) return <div key={m.id} className="muted" style={{ alignSelf: "flex-end", fontSize: 12, padding: "4px 10px", borderRadius: 999, border: "1px dashed var(--border)" }}>👀 you peeked</div>;
           if (!m.speaker_id && (m.content.startsWith("🎬") || m.content.startsWith("🎥") || m.content.startsWith("🧍"))) return <div key={m.id} data-testid="group-scene-note" className="muted" style={{ alignSelf: "center", maxWidth: "90%", textAlign: "center", fontSize: 12, padding: "6px 12px", borderRadius: 999, background: "var(--surface2)", border: "1px solid var(--border)" }}>{m.content}</div>;
           if (!m.speaker_id) return (
@@ -322,6 +331,9 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
                 {!group.scene_title && group.in_person_place == null && <button type="button" role="menuitem" data-testid="group-inperson-open" onClick={() => { setMoreOpen(false); setTogetherSheet({ place: "", busy: false }); }}
                   style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", cursor: "pointer", fontSize: 14 }}>🧍 Together in person</button>}
                 {/* 🎙️ Say it instead of typing it — the words land in the box to send yourself. */}
+                {/* 📸 A photo of some of them, or of them and you. */}
+                <button type="button" role="menuitem" data-testid="group-photo-open" onClick={() => { setMoreOpen(false); setPhotoSheet(true); }}
+                  style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", cursor: "pointer", fontSize: 14 }}>📸 A photo</button>
                 {mic.supported && <button type="button" role="menuitem" data-testid="group-mic" aria-pressed={mic.listening} onClick={() => { setMoreOpen(false); if (mic.listening) mic.stop(); else mic.start(text); }}
                   style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: mic.listening ? "var(--bad)" : "var(--text)", cursor: "pointer", fontSize: 14 }}>{mic.listening ? "⏹ Stop listening" : "🎙️ Talk instead of typing"}</button>}
               </div>
@@ -356,6 +368,8 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
         </div>
       )}
       {sceneSheet && <SceneSheet who={members.map(c => c.name).join(" & ")} onClose={() => setSceneSheet(false)} onStart={startScene} />}
+      {photoSheet && <GroupPhotoSheet group={group} members={members} name={name} brains={brains} onClose={() => setPhotoSheet(false)}
+        onMade={added => { setMsgs(m => [...(m || []), ...added]); setPhotoSheet(false); unsaved.current++; }} />}
       {peek && <GroupPeekSheet group={group} members={members} name={name} brains={brains} onClose={() => setPeek(false)} onMade={added => { setMsgs(m => [...(m || []), ...added]); setPeek(false); }} />}
     </div>
   );
@@ -454,6 +468,83 @@ function GroupPeekSheet({ group, members, name, brains, onClose, onMade }: { gro
         </div>
         {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
         <button className="btn" onClick={go} disabled={loading || !ids.length || desc.trim().length < 10} data-testid="peek-go">{loading ? "…" : "👀 Peek"}</button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 📸 A photo in a group: pick who's in it — up to three faces, counting you — then the
+ * description. It starts blank: tap ✍️ Write it for one written from the chat, or just type your
+ * own. Whatever the box says is what the picture is made from, word for word.
+ */
+function GroupPhotoSheet({ group, members, name, brains, onClose, onMade }: { group: Group; members: Character[]; name: string; brains: string[]; onClose: () => void; onMade: (added: Msg[]) => void }) {
+  useBack(true, onClose); // the phone's back button closes this, one step at a time
+  const [ids, setIds] = useState<string[]>(members[0] ? [members[0].id] : []);
+  const [withMe, setWithMe] = useState(false);
+  const [about, setAbout] = useState("");
+  const [desc, setDesc] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+  const [writer, setWriter] = useState(() => { const b = members[0]?.brain; return b && b !== "claude" ? b : ""; });
+  const picked = ids.length + (withMe ? 1 : 0);
+  const full = picked >= 3;
+  const toggle = (id: string) => setIds(p => (p.includes(id) ? p.filter(x => x !== id) : full ? p : [...p, id]));
+  const write = async () => {
+    setLoading(true); setErr("");
+    try { setDesc((await api<{ description: string }>("/api/groups", { action: "photo.draft", id: group.id, ids, withMe, about, name, writer })).description); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't write one."); }
+    setLoading(false);
+  };
+  const go = async () => {
+    setLoading(true); setErr("");
+    try { onMade((await api<{ added: Msg[] }>("/api/groups", { action: "photo", id: group.id, ids, withMe, description: desc })).added); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't make it."); setLoading(false); }
+  };
+  const chip = (on: boolean) => ({ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px 4px 4px", borderRadius: 999, cursor: "pointer", fontSize: 13, fontWeight: 700,
+    color: "var(--text)", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, background: on ? "rgba(124,140,255,0.15)" : "var(--surface2)" } as const);
+  return (
+    <div role="dialog" aria-modal="true" data-testid="group-photo-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 3000 }} onClick={onClose}>
+      <div className="card" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 10, padding: 14 }}>
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          <div style={{ fontWeight: 800, fontSize: 17 }}>📸 A photo</div>
+          <button className="ghost" onClick={onClose} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
+        </div>
+        <div className="muted" style={{ fontSize: 12 }}>
+          Who&apos;s in it? Up to three, counting you. {group.in_person_place != null
+            ? "You're all together, so it's the lot of you where you are now."
+            : "You're not together, so it's one of them where she is now — or an older photo from a day they were."}
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {members.map(c => {
+            const on = ids.includes(c.id);
+            return (
+              <button key={c.id} type="button" onClick={() => toggle(c.id)} aria-pressed={on} disabled={!on && full} data-testid={`group-photo-who-${c.name}`}
+                style={{ ...chip(on), opacity: !on && full ? 0.5 : 1 }}>
+                <CharacterFace c={c} size={24} /> {c.name}{on ? " ✓" : ""}
+              </button>
+            );
+          })}
+          <button type="button" onClick={() => setWithMe(v => !v)} aria-pressed={withMe} disabled={!withMe && full} data-testid="group-photo-me"
+            style={{ ...chip(withMe), opacity: !withMe && full ? 0.5 : 1, padding: "6px 12px" }}>🙋 Me{withMe ? " ✓" : ""}</button>
+        </div>
+        <div className="row" style={{ gap: 8 }}>
+          <input value={about} onChange={e => setAbout(e.target.value)} maxLength={300} aria-label="What photo" data-testid="group-photo-about"
+            placeholder="e.g. at the pub last Friday" style={{ flex: 1, minWidth: 0, borderRadius: 12 }} />
+          <button className="ghost" onClick={write} disabled={loading || !picked} data-testid="group-photo-write" style={{ flexShrink: 0 }}>{loading && !desc ? "…" : "✍️ Write it"}</button>
+        </div>
+        <textarea value={desc} onChange={e => setDesc(e.target.value)} maxLength={1500} rows={5} aria-label="Photo description" data-testid="group-photo-desc"
+          placeholder="…or write the photo yourself: where they are, what they're wearing, what's happening" style={{ resize: "vertical", borderRadius: 12 }} />
+        {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
+        <div className="row" style={{ justifyContent: "space-between", gap: 8 }}>
+          <label className="row muted" style={{ gap: 4, fontSize: 12 }} title="Who writes it">🧠
+            <select value={writer} aria-label="Who writes it" data-testid="group-photo-writer" disabled={loading} onChange={e => setWriter(e.target.value)} style={{ padding: "4px 6px", fontSize: 12 }}>
+              {[{ id: "", label: "Claude (same as Velo)" }, ...BRAIN_OPTIONS.filter(o => o.atlas && (brains.includes(o.id) || o.id === writer)).map(o => ({ id: o.id as string, label: o.label }))]
+                .map(o => <option key={o.id || "same"} value={o.id}>{o.label}</option>)}
+            </select>
+          </label>
+          <button className="btn" onClick={go} disabled={loading || !picked || desc.trim().length < 10} data-testid="group-photo-go">{loading && desc ? "Making it…" : "📸 Make this photo"}</button>
+        </div>
       </div>
     </div>
   );
