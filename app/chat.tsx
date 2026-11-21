@@ -586,12 +586,9 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     } catch { /* a reaction reply is a bonus; skip it on errors */ }
     finally { setBusy(false); }
   };
-  // 💕 A romantic character: romance needs a one-time 18+ confirmation; until then it's friendly.
-  const [skipRomance, setSkipRomance] = useState(false);
-  const confirmAdult = async () => {
-    if (!(await confirmAsk(`${character?.name} is a romantic character. Romance can be explicit, and it is for adults. Are you 18 or older?`, { yes: "I'm 18 or older" }))) return;
-    try { await data("profile.update", { adultConfirmed: true }); onAdult?.(); } catch { setErr("Couldn't save that. Try again."); }
-  };
+  // 💕 Romance needs a one-time 18+ confirmation, and that lives in Settings → Velo's
+  // personality, where picking Romantic asks for it. A chat has no business asking again: it
+  // was a banner on top of every romantic character's thread, over and over.
   const openingLine = msgs && !msgs.length && !name ? INTRO : HELLO(name.split(" ")[0])[hello];
   const NOTE_ONLY = /^\s*\((sent|sending) an? (photo|video|picture)\b/i;
   const shown: ChatMsg[] = (msgs && !msgs.length && !cid ? [{ role: "assistant" as const, content: openingLine }] : msgs || [])
@@ -599,13 +596,6 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
 
   return (
     <div style={{ flex: 1, minHeight: 0, minWidth: 0, width: "100%", maxWidth: "100%", display: "flex", flexDirection: "column" }}>
-      {character?.romantic && !adult && !skipRomance && (
-        <div data-testid="romance-confirm" className="row" style={{ gap: 10, padding: "10px 14px", borderBottom: "1px solid var(--border)", background: "rgba(236,72,153,0.10)", fontSize: 13, flexWrap: "wrap" }}>
-          <div style={{ flex: "1 1 200px" }}>💕 {character.name} is a romantic character. Confirm you&apos;re 18+ to unlock romance — until then {character.name} keeps it friendly.</div>
-          <button className="btn" onClick={confirmAdult} style={{ padding: "6px 12px", fontSize: 13 }}>I&apos;m 18+</button>
-          <button className="ghost" onClick={() => setSkipRomance(true)} aria-label="Keep it friendly" style={{ padding: "6px 10px", fontSize: 13 }}>Not now</button>
-        </div>
-      )}
       {character && trust !== null && (
         <div data-testid="trust-meter" title="How much she trusts you — it grows with honesty and consistency" className="row" style={{ gap: 8, padding: "6px 14px", borderBottom: "1px solid var(--border)", fontSize: 12 }}>
           <span>🤝 {character.name}&apos;s trust</span>
