@@ -120,9 +120,9 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     let n = 0;
     const t = setInterval(async () => {
       n++;
-      const r = await data<{ messages: ChatMsg[] }>("messages.list", thread).catch(() => null);
-      const last = r ? [...r.messages].reverse().find(x => !x.peek) : null;
-      if (r && last?.role === "assistant") { reload(); setWaiting(0); clearInterval(t); }
+      // 👂 One row, not the whole thread: this runs every few seconds while she's writing.
+      const r = await data<{ role: string }>("messages.last", thread).catch(() => null);
+      if (r && r.role === "assistant") { reload(); setWaiting(0); clearInterval(t); }
       else if (n >= 30) { setWaiting(0); clearInterval(t); setErr(`${who} didn't answer — try sending again.`); }
     }, 4000);
     return () => clearInterval(t);

@@ -32,8 +32,14 @@ export async function POST(req: NextRequest) {
     switch (action) {
       // 🛍️ Everything on one screen: what's in stock this week, who to send to, your wallet.
       case "shop": {
-        const acc = await accountsFor(me);
-        return NextResponse.json({ shop: await shopFull(me), mine: await myGifts(me), maxMine: MAX_MY_GIFTS, people: await peopleToGift(me), history: await giftHistory(me, 20),
+        // ⚡ All of it at once, instead of one query waiting on the last. Each of these is its own
+        // round trip to the database, and there were a dozen of them in a row before anything drew.
+        // `mine` is also what `shopFull` puts at the front of the shop, so it's fetched once and
+        // used twice rather than fetched twice.
+        const [acc, mine, shopRest, people, history] = await Promise.all([
+          accountsFor(me), myGifts(me), shopNow(Date.now()), peopleToGift(me), giftHistory(me, 20),
+        ]);
+        return NextResponse.json({ shop: [...mine, ...shopRest], mine, maxMine: MAX_MY_GIFTS, people, history,
           wallet: acc.spend, bank: acc.bank, paid: acc.paid, interest: acc.interest, weeks: acc.weeks,
           bankName: BANK, rate: WEEKLY_RATE, payLow: PAY_LOW, payHigh: PAY_HIGH });
       }
