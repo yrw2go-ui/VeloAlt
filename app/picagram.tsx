@@ -10,6 +10,7 @@ import { MediaView, useSwipeNav, SwipeArrow, type Media } from "./media";
 import { EditSheet } from "./edit";
 import { MentionPicker, putName } from "./mention";
 import { StarButton, tapStar } from "./star";
+import { claimsMedia } from "./lib/mediaWords";
 import { RedoSheet } from "./redo";
 import { TraitSliders } from "./characters";
 import { Selectable } from "./chat";
@@ -1038,8 +1039,9 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
   };
   // 📸 She said she's sending a photo but none came through.
   const last = (msgs || []).at(-1);
-  const pendingPic = !busy && !!last && last.role === "assistant" && !last.media
-    && /\b(pic|pics|picture|photo|selfie|snap)\b/i.test(last.content) && /\b(send|sending|sent|here'?s|here you go|coming|on (its|it's) way|incoming|let me)\b/i.test(last.content);
+  // 📣 The same words a text uses to spot a claim, so "*sent it*" or "*should be popping up*"
+  // brings the button up here too — this had its own, narrower list and missed those.
+  const pendingPic = !busy && !!last && last.role === "assistant" && !last.media && claimsMedia(last.content);
   const sendPic = async () => {
     setBusy(true); setErr("");
     try { const r = await api<{ added: DmMsg[]; note?: string; ask?: string }>("/api/pica", { action: "dm.photo", id }); if (r.ask) { setAsk(r.ask); setHiddenAsk(null); } else if (r.added.length) setMsgs(m => [...(m || []), ...r.added]); else setErr(r.note || "Couldn't send it."); }

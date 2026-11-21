@@ -59,3 +59,14 @@ for (const line of ["can you send it again? it didn't come through", "I didn't g
   ok(askedForMedia(curly(line)) && askedForMedia(line), `…asking too: "${curly(line)}"`);
 ok(agreesMedia(curly("here ya go, hope you like it")), "…and agreeing");
 ok(plain("\u201Chere\u2019s\u201D \u2014 it\u2019s fine\u2026").includes("here's") && plain("it\u2019s\u2026").endsWith("..."), "quotes, dashes and ellipses all come out plain");
+
+// 📸 The ways she says a picture is coming without ever naming it — each of these used to leave
+// her claiming one was sent with no button to make it happen.
+for (const line of ["*I sent it*", "*sent it*", "*sending it now*", "*send you one*",
+  "*should be popping up*", "it should be popping up now", "*sends pic*", "*snaps a photo*",
+  "*takes a selfie*", "*shares a photo*"])
+  ok(claimsMedia(line), `she claims one: ${line}`);
+// 🎭 And the ordinary action notes that must stay quiet.
+for (const line of ["*takes her hand*", "*sends a smile*", "*takes a sip of coffee*", "*drops her keys*",
+  "*picks up the phone*", "did you send the email?", "I posted the letter this morning"])
+  ok(!claimsMedia(line), `not a picture: ${line}`);
