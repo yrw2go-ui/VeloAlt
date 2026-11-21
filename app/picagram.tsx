@@ -793,6 +793,15 @@ function Saved({ onClose }: { onClose: () => void }) {
   );
 }
 
+// ✨ Bringing someone new in takes a while, and it used to belong to the Following sheet: step out
+// of Picagram and the sheet came apart, taking the outcome with it — the work carried on, but you
+// never saw who arrived, or the offer to try another AI if it hadn't worked. The request lives out
+// here instead, so leaving and coming back picks it up where it was.
+type NewFaces = { made: number; names: string[]; error?: string; tried?: string; retry?: { id: string; label: string; cost: string }[] };
+let facesInFlight: Promise<NewFaces> | null = null;
+let facesDone: NewFaces | null = null;      // finished while you were away; shown when you come back
+let facesFailed: string | null = null;
+
 /** 👥 Who you follow (up to 70) — unfollow some to make room for new ones. */
 function Following({ onClose, onUnfollow, onOpen, onNewFaces }: { onClose: () => void; onUnfollow: (id: string) => void; onOpen: (id: string) => void; onNewFaces?: (names: string[], error?: string) => void }) {
   useBack(true, onClose); // the phone's back button closes this, one step at a time
@@ -809,17 +818,35 @@ function Following({ onClose, onUnfollow, onOpen, onNewFaces }: { onClose: () =>
   // 🧠 If the brain you picked couldn't manage it, these are the others you could retry with,
   // and roughly what each would cost. Nothing is spent again unless you choose one.
   const [retry, setRetry] = useState<{ tried: string; list: { id: string; label: string; cost: string }[] } | null>(null);
+  // 📥 What came of it, whether you were watching or not.
+  const landed = (r: NewFaces) => {
+    if (!r.made) {
+      if (r.retry?.length) { setSaid(""); setRetry({ tried: r.tried || "", list: r.retry }); }
+      else setSaid(r.error || "Couldn't bring anyone new in just now — try again in a moment.");
+      setBusy(false); return;
+    }
+    onNewFaces?.(r.names, r.error);
+  };
+  // 🔄 Still going when you came back: pick the thread up rather than start again.
+  useEffect(() => {
+    if (facesDone) { const r = facesDone; facesDone = null; setBusy(true); landed(r); return; }
+    if (facesFailed) { setSaid(facesFailed); facesFailed = null; return; }
+    if (!facesInFlight) return;
+    setBusy(true); setSaid("✨ Bringing someone new in — a moment…");
+    facesInFlight.then(r => { facesDone = null; landed(r); }, () => { setSaid("Couldn't bring anyone new in."); setBusy(false); });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const newFaces = async (brain?: string) => {
+    if (facesInFlight) return; // one at a time — it's already on its way
     setBusy(true); setRetry(null); setSaid(brain ? "✨ Trying again — a moment…" : "✨ Bringing someone new in — a moment…");
     try {
-      const r = await api<{ made: number; names: string[]; error?: string; tried?: string; retry?: { id: string; label: string; cost: string }[] }>("/api/pica", { action: "newfaces", count: 1, ...(brain ? { brain } : {}) });
-      if (!r.made) {
-        if (r.retry?.length) { setSaid(""); setRetry({ tried: r.tried || "", list: r.retry }); }
-        else setSaid(r.error || "Couldn't bring anyone new in just now — try again in a moment.");
-        setBusy(false); return;
-      }
-      onNewFaces?.(r.names, r.error);
-    } catch (e) { setSaid(e instanceof Error && e.message ? e.message : "Couldn't bring anyone new in."); setBusy(false); }
+      const call = api<NewFaces>("/api/pica", { action: "newfaces", count: 1, ...(brain ? { brain } : {}) });
+      facesInFlight = call;
+      // Whatever happens, it is remembered out here — the sheet may be long gone by then.
+      call.then(r => { facesDone = r; facesInFlight = null; }, e => { facesFailed = e instanceof Error && e.message ? e.message : "Couldn't bring anyone new in."; facesInFlight = null; });
+      const r = await call;
+      facesDone = null;
+      landed(r);
+    } catch (e) { facesFailed = null; setSaid(e instanceof Error && e.message ? e.message : "Couldn't bring anyone new in."); setBusy(false); }
   };
   useEffect(() => { api<{ accounts: NonNullable<typeof list> }>("/api/pica", { action: "following" }).then(r => setList(r.accounts)).catch(() => setList([])); }, []);
   useEffect(() => { api<{ characters: NonNullable<typeof chars> }>("/api/pica", { action: "characters" }).then(r => setChars(r.characters)).catch(() => setChars([])); }, []);
