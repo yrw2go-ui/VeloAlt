@@ -204,6 +204,17 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true });
       }
 
+      // 👂 "Has she answered yet?" — one row, no joins. The chat asks this every few seconds
+      // while it waits, and it used to ask for the whole 60-message history with all its joins
+      // just to read the role off the last line.
+      case "messages.last": {
+        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
+        if (b.characterId && !ch) return bad("That character wasn't found.");
+        const [row] = await db`select role, created_at::text as at from velo_messages
+          where user_id = ${me} and character_id is not distinct from ${ch?.id || null} and not peek
+          order by created_at desc, id desc limit 1`;
+        return NextResponse.json({ role: row?.role || "", at: row?.at || "" });
+      }
       case "messages.list": {
         // Velo's chat (no characterId) or one character's chat.
         const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
