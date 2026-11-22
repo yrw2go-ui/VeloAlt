@@ -225,7 +225,7 @@ export async function closenessMap(userId: string): Promise<Map<string, number>>
 }
 
 /** 💝 Everyone you can send to: your characters, and the Picagram people you follow. */
-export async function peopleToGift(userId: string, listed?: Gift[]) {
+export async function peopleToGift(userId: string, listed?: Gift[], shop?: Gift[]) {
   // 🧍 Everyone you could send to in ONE query instead of two: the characters, then the people you
   // only follow on Picagram. The database is reached through a single connection (app/lib/db.ts),
   // so every separate query here is another wait with the whole screen empty behind it.
@@ -246,10 +246,16 @@ export async function peopleToGift(userId: string, listed?: Gift[]) {
   // The caller usually has these already; fetching them twice was a wait for nothing.
   const mine = listed || (await myGifts(userId));
   const close = await closenessMap(userId);
-  const hints = await liveHints(userId, now).catch(() => new Map());
   // 🎁 One read of what each of them has already been given, so a wishlist never offers
-  // something that is already theirs.
+  // something that is already theirs — and the hints are handed all of it rather than re-reading.
   const got = await alreadyGiven(userId);
+  // ⏱️ The hints are the one thing here that writes as well as reads, and the whole screen was
+  // waiting on them: if they stall, nobody's money, people or shop ever arrive. They're worth a
+  // red dot, not the page — so after three seconds the screen goes on without them.
+  const hints = await Promise.race([
+    liveHints(userId, now, { listed: mine, close, got, shop }).catch(() => new Map()),
+    new Promise<Map<string, { kind: string; giftId: string; at: number }>>(ok => setTimeout(() => ok(new Map()), 3000)),
+  ]);
   return [
     // 👔 A man has no wishlist and does no hinting — you still send him things, he just isn't
     // hoping for anything in particular.
@@ -332,14 +338,14 @@ export async function lastGiftWords(userId: string, characterId: string): Promis
 }
 
 /** 🧾 What you've sent lately. */
-export async function giftHistory(userId: string, limit = 30) {
+export async function giftHistory(userId: string, limit = 30, listed?: Gift[]) {
   const rows = await sql()`select s.id, s.kind, s.gift_id, s.amount, s.wished, s.note, s.created_at::text as at,
       coalesce(c.name, a.name) as who, a.handle
     from pica_gift_sent s left join chat_characters c on c.id = s.character_id left join pica_accounts a on a.id = s.account_id
     where s.user_id = ${userId} order by s.created_at desc limit ${limit}`;
-  const listed = new Map((await myGifts(userId)).map(g => [g.id, g]));
+  const mineById = new Map((listed || (await myGifts(userId))).map(g => [g.id, g]));
   return rows.map(r => {
-    const g = giftById(String(r.gift_id || "")) || listed.get(String(r.gift_id || "")) || null;
+    const g = giftById(String(r.gift_id || "")) || mineById.get(String(r.gift_id || "")) || null;
     return { id: String(r.id), kind: String(r.kind), who: String(r.who || "someone"), handle: r.handle ? String(r.handle) : null,
       what: String(r.kind) === "money" ? `$${Number(r.amount).toLocaleString()}` : g ? `${g.emoji} ${g.brand} ${g.name}` : "a present",
       amount: Number(r.amount), wished: !!r.wished, note: String(r.note || ""), at: String(r.at) };
@@ -351,26 +357,29 @@ export async function giftHistory(userId: string, limit = 30) {
 // 💅 Hints: who's dropped one, whether the dot is still up, and dealing with it.
 
 /** Raise this week's hints for anyone who has one, and give back everyone with a live one. */
-export async function liveHints(userId: string, now = Date.now()): Promise<Map<string, { kind: string; giftId: string; at: number }>> {
+/** What a caller already has in hand, so this doesn't go and fetch it all over again. */
+type HintBits = { listed?: Gift[]; close?: Map<string, number>; got?: Map<string, Set<string>>; shop?: Gift[] };
+export async function liveHints(userId: string, now = Date.now(), have: HintBits = {}): Promise<Map<string, { kind: string; giftId: string; at: number }>> {
   const week = weekOf(now);
   // 👔 Men don't hint for presents here, so they're left out of the weekly pick.
   const chars = await sql()`select id from chat_characters
     where (owner_id is null or owner_id = ${userId}) and coalesce(voice_kind, '') <> 'male'`;
-  const mine = await myGifts(userId);
-  const close = await closenessMap(userId);
-  // 🎁 Nobody hints for something you have already given them.
-  const got = await alreadyGiven(userId);
-  // Whoever is due one this week and hasn't got a row yet gets one now.
-  for (const c of chars) {
-    const id = String(c.id);
-    if (!hintsThisWeek(userId, id, week)) continue;
+  // 🎁 Nobody hints for something you have already given them. Picagifts has all four of these
+  // in hand by the time it gets here, and this used to fetch every one of them a second time —
+  // on a single connection, each one is another wait with the screen still empty.
+  const mine = have.listed || (await myGifts(userId));
+  const close = have.close || (await closenessMap(userId));
+  const got = have.got || (await alreadyGiven(userId));
+  // Whoever is due one this week and hasn't got a row yet gets one now — all of them in ONE
+  // insert, rather than a round trip each.
+  const due = chars.map(c => String(c.id)).filter(id => hintsThisWeek(userId, id, week)).map(id => {
     const pick = hintPick(userId, id, week, wishlistOf(id, now, mine, close.get(id) || 0, got.get(id) || new Set<string>()));
-    await sql()`insert into chat_hints (user_id, character_id, week, kind, gift_id)
-      values (${userId}, ${id}, ${week}, ${pick.kind}, ${pick.giftId}) on conflict do nothing`;
-  }
+    return { user_id: userId, character_id: id, week, kind: pick.kind, gift_id: pick.giftId };
+  });
+  if (due.length) await sql()`insert into chat_hints ${sql()(due, "user_id", "character_id", "week", "kind", "gift_id")} on conflict do nothing`;
   const rows = await sql()`select character_id, kind, gift_id, created_at, done_at from chat_hints
     where user_id = ${userId} and done_at is null and created_at > now() - interval '48 hours'`;
-  const shop = new Set([...(await shopNow(now)).map(g => g.id), ...mine.map(g => g.id)]);
+  const shop = new Set([...(have.shop || (await shopNow(now))).map(g => g.id), ...mine.map(g => g.id)]);
   const out = new Map<string, { kind: string; giftId: string; at: number }>();
   for (const r of rows) {
     const h = { created_at: Date.parse(String(r.created_at)), done_at: r.done_at ? Date.parse(String(r.done_at)) : null, kind: String(r.kind), gift_id: String(r.gift_id || "") };
