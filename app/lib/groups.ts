@@ -311,13 +311,17 @@ ${chars.every(c => c.explicit_ok) && romantic ? "Nudity is fine when it fits." :
  * one of them is wherever she is now, dressed for it. The draft is told which of the two it is.
  */
 const photoCast = async (userId: string, g: Group, ids: string[], withMe: boolean) => {
-  const chars = await pickedMembers(g, ids);
+  // 🙋 Just you is a picture too. `pickedMembers` refuses an empty pick, so it's only asked when
+  // one of them is actually in it — otherwise the cast is nobody but you.
+  const chars = ids.length ? await pickedMembers(g, ids) : [];
   if (!chars.length && !withMe) throw new GroupError("Pick who's in the picture.");
   if (chars.length + (withMe ? 1 : 0) > 3) throw new GroupError("Three in a picture at most — you and two of them, or three of them.");
   return chars;
 };
 /** 🧭 How the photo has to make sense for this group, told to whoever writes it. */
-const whereThey = (g: Group, chars: Character[]) => g.in_person_place != null
+const whereThey = (g: Group, chars: Character[], personName = "") => !chars.length
+  ? `THIS IS A PHOTO OF ${(personName || "the person whose group this is").toUpperCase()} ALONE — nobody else is in it. It's wherever they are right now, in what they'd really be wearing for it.`
+  : g.in_person_place != null
   ? `THEY ARE ALL TOGETHER IN PERSON right now${g.in_person_place ? `, at ${g.in_person_place}` : ""} — so this is a photo of them there, together, as things are now.`
   : `THEY ARE NOT TOGETHER. ${chars.map(c => `${c.name} is at home in ${c.lives_in || "her own town"}`).join("; ")}. Each of them is somewhere of her own right now, so either:
  • a photo of ONE of them where she is at the moment, in what she'd really be wearing for it, or
@@ -330,13 +334,13 @@ export async function draftGroupPhoto(userId: string, g: Group, ids: string[], w
   const names = new Map((await members(g)).map(c => [c.id, c.name]));
   const talk = rows.filter(r => !r.peek && !r.private_to).slice(-14)
     .map(r => `${r.speaker_id ? names.get(r.speaker_id) || "Someone" : personName || "Them"}: ${String(r.content).replace(/\s+/g, " ").slice(0, 200)}`).join("\n");
-  const romantic = chars.every(c => romanticFor(c, adult));
+  const romantic = chars.length ? chars.every(c => romanticFor(c, adult)) : adult;
   const who = [...chars.map(c => `${c.name} — ${c.appearance || "as she looks"}${c.casual_wear ? `, usually in ${c.casual_wear}` : ""}${c.job ? `, works as ${c.job}` : ""}`),
     ...(withMe ? [`${personName || "them"} — the person whose group this is, in it too`] : [])].join("\n");
   const raw = await writeText(writer ?? await brainFor(userId), `You write the description for ONE photo for an image generator, for a group chat.
 WHO IS IN IT (nobody else):\n${who}
-${whereThey(g, chars)}
-${chars.every(c => c.explicit_ok) && romantic ? "Nudity is fine when it fits." : romantic ? "Full nudity; explicit graphic nudity and sex is ok." : "Family-friendly, mostly clothed but suggestive is ok."}
+${whereThey(g, chars, personName)}
+${chars.length && chars.every(c => c.explicit_ok) && romantic ? "Nudity is fine when it fits." : romantic ? "Full nudity; explicit graphic nudity and sex is ok." : "Family-friendly, mostly clothed but suggestive is ok."}
 Two or three sentences, under 380 characters: where it is, what they're wearing, what they're doing, the light. No names of real people, no brands. Write only the description.`,
     `${about.trim() ? `WHAT THEY ASKED FOR: ${scrub(about).replace(/\s+/g, " ").slice(0, 300)}\n\n` : ""}THE CHAT SO FAR:\n${talk}`, 500).catch(() => "");
   const desc = scrub(raw.replace(/^```(json)?|```$/g, "").replace(/\s+/g, " ").trim()).slice(0, 1500);
@@ -375,7 +379,7 @@ export async function groupPhoto(userId: string, g: Group, ids: string[], withMe
   const media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: `${whose}${desc}` },
     { characterId: first?.id || null, who: first?.name || personName || "you", appearance: first?.appearance || "",
       refs: subject,
-      romantic: chars.every(c => romanticFor(c, adult)), offer: false, other: null, raw: true, people: others.length ? others : undefined });
+      romantic: chars.length ? chars.every(c => romanticFor(c, adult)) : adult, offer: false, other: null, raw: true, people: others.length ? others : undefined });
   // 📨 Whose photo it is. It lands in the thread under her name, so the others answer her about
   // it rather than a picture that arrived from nowhere — and the words you wrote are the caption,
   // which is the only way any of them learns what is actually in it.
