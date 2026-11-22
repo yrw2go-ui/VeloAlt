@@ -488,6 +488,24 @@ export async function POST(req: NextRequest) {
           return bad(e instanceof MediaError ? "Couldn't peek right now — try again in a moment." : "Couldn't peek right now.");
         }
       }
+      // 🖼️ A picture from your gallery, shared into a text. What it is travels with it: the
+      // description it was saved with becomes the line she reads, the same way a DM does it —
+      // otherwise a picture turns up in the chat and she has no idea what she is looking at.
+      case "media.share": {
+        const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
+        if (b.characterId && !ch) return bad("That character wasn't found.");
+        const [m] = await db`select m.id, m.kind, m.status, m.description, m.subject, m.kept, f.url, t.url as thumb
+          from velo_media m join velo_files f on f.id = m.file_id left join velo_files t on t.id = m.thumb_file_id
+          where m.id = ${String(b.mediaId || "")} and m.user_id = ${me} and m.status = 'done'`;
+        if (!m) return bad("That picture wasn't found.");
+        const media = { id: String(m.id), kind: String(m.kind) as "image" | "video", status: "done" as const, url: String(m.url),
+          thumb: m.thumb ? String(m.thumb) : null, description: m.description ? String(m.description) : null, subject: m.subject ? String(m.subject) : null, kept: !!m.kept };
+        const what = media.kind === "image" ? "photo" : "video";
+        const content = `(sent a ${what} from their gallery${media.description ? `: ${media.description}` : ""})`;
+        const [row] = await db`insert into velo_messages (user_id, character_id, role, content, media_id)
+          values (${me}, ${ch?.id || null}, 'user', ${content.slice(0, 2000)}, ${media.id}) returning id`;
+        return NextResponse.json({ id: String(row.id), content, media });
+      }
       // 📸 A photo of YOU to send her, in a text — the same two steps a DM has: have the
       // description written from a line of yours, or write the whole thing yourself, then make
       // it. What you end up with goes to the picture service exactly as written.
