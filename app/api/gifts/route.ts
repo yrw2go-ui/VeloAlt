@@ -5,7 +5,7 @@ import { sql } from "../../lib/db";
 import { getCharacterFor, isAdmin } from "../../lib/characters";
 import { thankThem } from "../../lib/thanks";
 import { dmSend, dmGiftPhoto } from "../../lib/picaDm";
-import { shopFull, peopleToGift, sendGift, giftHistory, accountsFor, moveAcross, listMyGift, unlistMyGift, myGifts, closenessMap, alreadyGiven, GiftError, BANK, WEEKLY_RATE, PAY_LOW, PAY_HIGH, catalogue, editGift, rotatingCount, setRotating, addExtra, editExtra, removeExtra, shopNow, liveHints } from "../../lib/giftsDb";
+import { shopFull, peopleToGift, sendGift, giftHistory, accountsFor, moveAcross, listMyGift, unlistMyGift, myGifts, closenessMap, alreadyGiven, wishlistFor1, GiftError, BANK, WEEKLY_RATE, PAY_LOW, PAY_HIGH, catalogue, editGift, rotatingCount, setRotating, addExtra, editExtra, removeExtra, shopNow, liveHints } from "../../lib/giftsDb";
 import { MAX_MY_GIFTS, MAX_EXTRAS, GIFT_ICONS } from "../../lib/gifts";
 
 const UUID = /^[0-9a-f-]{36}$/i;
@@ -45,6 +45,13 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ shop: [...mine, ...shopRest], mine, maxMine: MAX_MY_GIFTS, people, history,
           wallet: acc.spend, bank: acc.bank, paid: acc.paid, interest: acc.interest, weeks: acc.weeks,
           bankName: BANK, rate: WEEKLY_RATE, payLow: PAY_LOW, payHigh: PAY_HIGH });
+      }
+      // 🎁 Her wishlist, asked for when you pick her rather than worked out for everyone on load.
+      case "wishlist": {
+        const kind = b.toKind === "account" ? "account" as const : "character" as const;
+        const id = String(b.toId || "");
+        if (!UUID.test(id)) return bad("Who's it for?");
+        return NextResponse.json({ id, wishlist: await wishlistFor1(me, id, kind) });
       }
       // 🔴 Who has been hinting. Asked for on its own once the screen is up: raising this week's
       // hints writes rows and is the slowest thing here, and it used to hold up the whole page.
