@@ -71,6 +71,10 @@ export default function Gifts() {
       const r = await api<{ sent: { amount: number; wished: boolean }; wallet: number; bank: number; history: Sent[] }>("/api/gifts",
         { action: "send", toKind: chosen.kind, toId: chosen.id, giftId: gift?.id, money: amount, note });
       setWallet(r.wallet); setBank(r.bank); setHistory(r.history); setNote(""); setCash("");
+      // 💌 What she does about it — her reply, her photo, her DM — happens behind this, so the
+      // present lands the moment it's paid for instead of waiting on her to write back.
+      void api("/api/gifts", { action: "send.after", toKind: chosen.kind, toId: chosen.id, giftId: gift?.id,
+        amount: r.sent.amount, wished: r.sent.wished, note }).catch(() => {});
       await confirmAsk(`${gift ? `${gift.emoji} ${gift.brand} ${gift.name}` : money(r.sent.amount)} sent to ${chosen.name}.${r.sent.wished ? ` It was on ${chosen.name}'s wishlist — that one really lands.` : ""}\n\nFor the next two days ${chosen.name} is warmer with you, keener to meet up or get on video, and much more likely to slip away from work or class for you.`, { yes: "Lovely", danger: false });
     } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't send that."); }
     finally { setBusy(""); }

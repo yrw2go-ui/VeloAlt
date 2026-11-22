@@ -114,8 +114,19 @@ export async function POST(req: NextRequest) {
         if (!UUID.test(id)) return bad("Who's it for?");
         const note = String(b.note || "");
         const r = await sendGift(me, { kind, id }, { giftId: b.giftId ? String(b.giftId) : undefined, money: Number(b.money) || 0, note });
-        // 💌 She writes back the moment it lands, usually with a photo of herself with it.
-        // Either way the thread says what turned up first: "🎁 Received: …", then her reply.
+        // 🏃 Her reply, her photo and her DM are the slow half of this — an AI answer and a picture
+        // to start — and the screen was held for all of it before the present was even confirmed.
+        // The present is done here; the app asks for the rest ("send.after") right behind it.
+        return NextResponse.json({ sent: r, said: null, wallet: r.wallet, bank: (await accountsFor(me)).bank, history: await giftHistory(me, 20) });
+      }
+      // 💌 What she does about the present that just arrived. Slow on purpose, and on its own.
+      case "send.after": {
+        const kind = b.toKind === "account" ? "account" as const : "character" as const;
+        const id = String(b.toId || "");
+        if (!UUID.test(id)) return bad("Who's it for?");
+        const note = String(b.note || "");
+        const r = { amount: Math.max(0, Math.round(Number(b.amount) || 0)), wished: b.wished === true,
+          gift: b.giftId ? (await shopFull(me)).find(g => g.id === String(b.giftId)) || null : null };
         let said = null;
         const what = r.gift ? `${r.gift.brand ? `${r.gift.brand} ` : ""}${r.gift.name}` : `$${r.amount.toLocaleString()}`;
         if (kind === "account") {
@@ -133,7 +144,7 @@ export async function POST(req: NextRequest) {
           if (ch) said = await thankThem(me, ch, what, r.gift ? "gift" : "money", r.gift?.id || "", note, !!u?.adult_confirmed_at, close, r.amount >= 500 || r.wished)
             .catch(e => { console.error("gifts: thank you", e instanceof Error ? e.message : e); return null; });
         }
-        return NextResponse.json({ sent: r, said, wallet: r.wallet, bank: (await accountsFor(me)).bank, history: await giftHistory(me, 20) });
+        return NextResponse.json({ said });
       }
       // 🛍️ Your own things to send: listed by hand, never rotated away.
       case "list": {
