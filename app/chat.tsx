@@ -481,8 +481,11 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     if (sub === "me" || sub.startsWith("me+")) return false;
     // One of your characters: only worth a button when she's already on Picagram — then it opens her.
     if (sub && sub !== "none") return !others.some(o => o.name.toLowerCase() === sub.toLowerCase()) || !!already(md);
-    return /\b(woman|girl|lady|she|her|blonde|brunette|redhead|model|babe)\b/i.test(desc)
-      && !others.some(o => new RegExp(`\\b${o.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(desc));
+    // 📷 Anyone who isn't you and isn't one of the ones you both already know is someone new, so
+    // the button is there. It used to wait for the description to use one of a handful of words
+    // (woman, blonde, babe…), which most real descriptions don't — "a barista behind the counter,
+    // smiling" is plainly a photo of someone, and it never offered.
+    return !others.some(o => new RegExp(`\\b${o.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(desc));
   };
   // ✏️ Double-tapped a bubble: the new words replace the old ones, in her chat and in what she reads back.
   const editMsg = async (id: string, text: string) => {
