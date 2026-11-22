@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import { aiReady, aiError } from "../../lib/brain";
-import { listGroups, getGroup, createGroup, deleteGroup, groupMessages, sendToGroup, rememberGroup, startGroupScene, endGroupScene, banterNext, reactInGroup, editGroupMessage, draftGroupPeek, groupPeekAt, bringTogether, endGroupInPerson, deleteGroupMessages, GroupError, draftGroupPhoto, groupPhoto, shareToGroup } from "../../lib/groups";
+import { listGroups, getGroup, createGroup, deleteGroup, groupMessages, sendToGroup, rememberGroup, startGroupScene, endGroupScene, banterNext, reactInGroup, editGroupMessage, draftGroupPeek, groupPeekAt, bringTogether, endGroupInPerson, deleteGroupMessages, GroupError, draftGroupPhoto, groupPhoto, shareToGroup, groupFaces } from "../../lib/groups";
 import { MediaError, mediaReady } from "../../lib/media";
 import { availableBrains } from "../../lib/models";
 import { sql } from "../../lib/db";
@@ -56,7 +56,10 @@ export async function POST(req: NextRequest) {
     const g = await getGroup(c.userId, String(b.id || ""));
     if (!g) return bad("That group wasn't found.", 404);
     switch (action) {
-      case "messages": return NextResponse.json({ messages: await groupMessages(c.userId, g.id) });
+      // 🧑‍🤝‍🧑 The messages come with who's in the group — their names and faces. The screen used to
+      // look each speaker up in the characters list the app loads separately, so when that request
+      // failed or hung, everyone in the group was called "Someone" and nothing said why.
+      case "messages": return NextResponse.json({ messages: await groupMessages(c.userId, g.id), members: await groupFaces(g) });
       case "delete": return NextResponse.json({ ok: await deleteGroup(c.userId, g.id) });
       case "send": {
         if (!aiReady()) return bad("Velo isn't set up yet (missing AI settings).", 503);

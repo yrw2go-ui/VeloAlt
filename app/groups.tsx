@@ -84,9 +84,16 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
   const mic = useDictation(setText); // 🎙️ talking instead of typing
   const members = group.member_ids.map(id => chars.find(c => c.id === id)).filter((c): c is Character => !!c);
   const byId = new Map(members.map(c => [c.id, c]));
+  // 🧑‍🤝‍🧑 …and who the server says is in it, for anyone the characters list doesn't have. That list
+  // is loaded by a separate request, and when it failed or hadn't arrived every speaker here was
+  // called "Someone" — their own messages, with their name missing.
+  const [said, setSaid] = useState<Map<string, { name: string; portrait_url: string | null }>>(new Map());
+  const nameOf = (id: string | null) => (id ? byId.get(id)?.name || said.get(id)?.name || null : null);
 
   useEffect(() => {
-    api<{ messages: Msg[] }>("/api/groups", { action: "messages", id: group.id }).then(r => setMsgs(r.messages)).catch(e => { setMsgs([]); setErr(e instanceof Error ? e.message : "Couldn't load the group."); });
+    api<{ messages: Msg[]; members?: { id: string; name: string; portrait_url: string | null }[] }>("/api/groups", { action: "messages", id: group.id })
+      .then(r => { setMsgs(r.messages); if (r.members?.length) setSaid(new Map(r.members.map(m => [m.id, { name: m.name, portrait_url: m.portrait_url }]))); })
+      .catch(e => { setMsgs([]); setErr(e instanceof Error ? e.message : "Couldn't load the group."); });
   }, [group.id]);
   useEffect(() => { log.current?.scrollTo({ top: log.current.scrollHeight }); }, [msgs, busy]);
 
@@ -266,12 +273,12 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
           if (!m.speaker_id && (m.content.startsWith("🎬") || m.content.startsWith("🎥") || m.content.startsWith("🧍"))) return <div key={m.id} data-testid="group-scene-note" className="muted" style={{ alignSelf: "center", maxWidth: "90%", textAlign: "center", fontSize: 12, padding: "6px 12px", borderRadius: 999, background: "var(--surface2)", border: "1px solid var(--border)" }}>{m.content}</div>;
           if (!m.speaker_id) return (
             <div key={m.id} style={{ alignSelf: "flex-end", maxWidth: "80%", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
-              {m.private_to && <div data-testid="group-private-label" style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)" }}>🔒 Private · @{byId.get(m.private_to)?.name || "someone"}</div>}
+              {m.private_to && <div data-testid="group-private-label" style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)" }}>🔒 Private · @{byId.get(m.private_to)?.name || nameOf(m.private_to) || "someone"}</div>}
               <div data-testid={m.private_to ? "group-private-mine" : undefined} onClick={() => tapped(m)} onDoubleClick={() => startEdit(m)} style={{ cursor: "pointer", padding: "10px 14px", borderRadius: 18, background: m.private_to ? "var(--surface)" : "linear-gradient(135deg, var(--accent), var(--accent2))", border: m.private_to ? "1.5px dashed var(--accent)" : undefined, whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 15, opacity: m.pending ? 0.75 : 1 }}>{m.content}</div>
               {shownReactions(m.their_reactions).length > 0 && (
                 <div data-testid="group-their-reactions" style={{ display: "flex", gap: 4 }}>
                   {shownReactions(m.their_reactions).map(([id, e]) => (
-                    <span key={id} title={`${byId.get(id)?.name || "Someone"} reacted`} style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 13, padding: "2px 6px", borderRadius: 999, background: "var(--surface)", border: "1px solid var(--border)" }}>
+                    <span key={id} title={`${byId.get(id)?.name || nameOf(id) || "Someone"} reacted`} style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 13, padding: "2px 6px", borderRadius: 999, background: "var(--surface)", border: "1px solid var(--border)" }}>
                       {e}{byId.get(id) && <CharacterFace c={byId.get(id)!} size={14} />}
                     </span>
                   ))}
@@ -284,7 +291,7 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
             <div key={m.id} data-testid="group-reply" className="row" style={{ alignItems: "flex-end", gap: 8, maxWidth: "85%" }}>
               {c ? <CharacterFace c={c} size={28} /> : <span style={{ width: 28 }} />}
               <div>
-                <div className="muted" style={{ fontSize: 11, fontWeight: 700, margin: "0 0 2px 6px" }}>{c?.name || "Someone"}{m.private_to ? <span data-testid="group-private-label"> · 🔒 Private, to you</span> : null}</div>
+                <div className="muted" style={{ fontSize: 11, fontWeight: 700, margin: "0 0 2px 6px" }}>{c?.name || nameOf(m.speaker_id) || "Someone"}{m.private_to ? <span data-testid="group-private-label"> · 🔒 Private, to you</span> : null}</div>
                 <div data-testid={m.private_to ? "group-private-reply" : undefined} onClick={() => { tapped(m); }} onDoubleClick={() => startEdit(m)} style={{ position: "relative", cursor: "pointer", padding: "10px 14px", borderRadius: 18, background: "var(--surface2)", border: m.private_to ? "1.5px dashed var(--accent)" : undefined, whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 15, lineHeight: 1.45 }}>
                   {noJargon(dropThoughts(m.content))}
                   {asEmoji(m.reaction) && <span data-testid="group-reaction" onClick={e => { e.stopPropagation(); setPicking(p => (p === m.id ? null : m.id)); }} title="Tap to change it" style={{ cursor: "pointer", position: "absolute", bottom: -12, right: -6, fontSize: 15, lineHeight: 1, padding: "3px 5px", borderRadius: 999, background: "var(--surface)", border: "1px solid var(--border)" }}>{asEmoji(m.reaction)}</span>}
