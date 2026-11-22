@@ -828,6 +828,19 @@ export async function accountFor(userId: string, characterId: string): Promise<s
     await sql()`update pica_posts set account_id = ${had.id} where user_id = ${userId} and author_id = ${c.id} and account_id is null`;
     return String(had.id);
   }
+  // 🙋 She may already be on Picagram under her own name — invented as one of the new faces, say,
+  // before she was ever a character. Take that account over rather than making a second her with a
+  // handle like @Lea2: only when exactly one account carries the name and nobody else holds it.
+  const [same] = await sql()`select id from pica_accounts where user_id = ${userId} and character_id is null
+    and lower(name) = lower(${String(c.name)})
+    and (select count(*) from pica_accounts a2 where a2.user_id = ${userId} and lower(a2.name) = lower(${String(c.name)})) = 1
+    limit 1`;
+  if (same) {
+    await sql()`update pica_accounts set character_id = ${c.id}, followed = true where id = ${String(same.id)}`;
+    await sql()`update pica_posts set account_id = ${String(same.id)} where user_id = ${userId} and author_id = ${c.id} and account_id is null`;
+    await sql()`update pica_posts set author_id = ${c.id} where user_id = ${userId} and account_id = ${String(same.id)} and author_id is null`;
+    return String(same.id);
+  }
   // Her handle keeps her name's capitals (@RaeMori) — it's her name, not a label.
   const taken = new Set((await sql()`select handle from pica_accounts where user_id = ${userId}`).map(r => String(r.handle).toLowerCase()));
   let handle = String(c.name).replace(/[^A-Za-z0-9._]/g, "").slice(0, 24) || "friend";
