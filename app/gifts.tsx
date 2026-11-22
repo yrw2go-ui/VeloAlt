@@ -8,7 +8,7 @@ import { confirmAsk } from "./lib/dialog";
 import { isMyGift } from "./lib/gifts";
 
 type Gift = { id: string; name: string; brand: string; kind: string; price: number; emoji: string; was?: number; off?: number };
-type Person = { id: string; kind: "character" | "account"; name: string; handle: string | null; face: string | null; wishlist: Gift[]; hinting?: boolean };
+type Person = { id: string; kind: "character" | "account"; name: string; handle: string | null; face: string | null; wishlist: Gift[]; hasWishlist?: boolean; hinting?: boolean };
 type Sent = { id: string; kind: string; who: string; handle: string | null; what: string; amount: number; wished: boolean; note: string; at: string };
 
 const money = (n: number) => `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
@@ -71,7 +71,19 @@ export default function Gifts() {
 
   // Whoever is picked keeps their wishlist in view, so you can see what they're hoping for.
   const chosen = who ? people.find(p => p.id === who.id) || who : null;
-  const wished = (g: Gift) => !!chosen?.wishlist.some(w => w.id === g.id);
+  // 🎁 …and her list is fetched when you pick her, not worked out for everyone the moment the
+  // screen opens. Once it's here it stays, so going back to her costs nothing.
+  const [lists, setLists] = useState<Record<string, Gift[]>>({});
+  useEffect(() => {
+    if (!chosen || !chosen.hasWishlist || lists[chosen.id]) return;
+    let stop = false;
+    api<{ id: string; wishlist: Gift[] }>("/api/gifts", { action: "wishlist", toKind: chosen.kind, toId: chosen.id })
+      .then(r => { if (!stop) setLists(l => ({ ...l, [r.id]: r.wishlist })); })
+      .catch(() => {});
+    return () => { stop = true; };
+  }, [chosen?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const theirList = chosen ? lists[chosen.id] || [] : [];
+  const wished = (g: Gift) => theirList.some(w => w.id === g.id);
 
   const send = async (gift: Gift | null, amount = 0) => {
     if (!chosen) { setErr("Pick who it's for first."); return; }
@@ -160,12 +172,13 @@ export default function Gifts() {
         <>
           {/* 💭 Their wishlist, which moves on each week. A man keeps none, so there's no box
               for him at all — you just pick something and send it. */}
-          {chosen.wishlist.length > 0 && (
+          {(theirList.length > 0 || (chosen.hasWishlist && !lists[chosen.id])) && (
           <div data-testid="wishlist" style={{ padding: "10px 12px", borderRadius: 12, background: "rgba(244,114,182,.10)", border: "1px solid rgba(244,114,182,.35)" }}>
             <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>💭 {chosen.name}&apos;s wishlist this week
               {chosen.hinting && <span data-testid="has-hinted" style={{ fontWeight: 500, marginLeft: 6 }}>· 🔴 {chosen.name} has been hinting</span>}</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              {chosen.wishlist.map(g => (
+              {!lists[chosen.id] && <div className="muted" style={{ fontSize: 13 }}>Looking at what she&apos;s hoping for…</div>}
+              {theirList.map(g => (
                 <div key={g.id} className="row" style={{ justifyContent: "space-between", gap: 8, fontSize: 13 }}>
                   <span>{g.emoji} {g.brand} {g.name}</span><span className="muted">{money(g.price)}</span>
                 </div>

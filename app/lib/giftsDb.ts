@@ -245,10 +245,6 @@ export async function peopleToGift(userId: string, listed?: Gift[]) {
   // What you listed yourself counts — but only for someone close enough to want one of yours.
   // The caller usually has these already; fetching them twice was a wait for nothing.
   const mine = listed || (await myGifts(userId));
-  const close = await closenessMap(userId);
-  // 🎁 One read of what each of them has already been given, so a wishlist never offers
-  // something that is already theirs — and the hints are handed all of it rather than re-reading.
-  const got = await alreadyGiven(userId);
   // ⏱️ The hints are NOT raised here any more. They are the one part of this screen that writes,
   // they are the slowest thing in it, and the whole screen was waiting on them: if they stalled,
   // nobody's money, people or shop ever arrived. A time limit can't help — this database has one
@@ -262,13 +258,31 @@ export async function peopleToGift(userId: string, listed?: Gift[]) {
       const man = String(r.voice_kind || "") === "male";
       return { id: String(r.id), kind: "character" as const, name: String(r.name), handle: null as string | null,
         face: r.face ? String(r.face) : null,
-        wishlist: man ? [] : wishlistOf(String(r.id), now, mine, close.get(String(r.id)) || 0, got.get(String(r.id)) || new Set<string>()),
-        hinting: false };
+        wishlist: [] as Gift[], hasWishlist: !man, hinting: false };
     }),
     // Someone you only follow on Picagram is never close enough for one of yours.
     ...accounts.map(r => ({ id: String(r.id), kind: "account" as const, name: String(r.name), handle: String(r.handle || ""),
-      face: r.face ? String(r.face) : null, wishlist: wishlistOf(String(r.id), now, [], 0, got.get(String(r.id)) || new Set<string>()), hinting: false })),
+      face: r.face ? String(r.face) : null, wishlist: [] as Gift[], hasWishlist: true, hinting: false })),
   ];
+}
+
+/** 🎁 One person's wishlist, worked out when you pick her. It used to be worked out for everyone
+ *  the moment the screen opened — two more reads of the database for lists you mostly never saw. */
+export async function wishlistFor1(userId: string, whoId: string, kind: "character" | "account"): Promise<Gift[]> {
+  if (kind === "character") {
+    const [c] = await sql()`select voice_kind from chat_characters where id = ${whoId} and (owner_id is null or owner_id = ${userId})`;
+    if (!c) return [];
+    // 👔 A man has no wishlist — you still send him things, he just isn't hoping for anything.
+    if (String(c.voice_kind || "") === "male") return [];
+  } else {
+    const [a] = await sql()`select id from pica_accounts where id = ${whoId} and user_id = ${userId}`;
+    if (!a) return [];
+  }
+  const got = (await alreadyGiven(userId)).get(whoId) || new Set<string>();
+  // Someone you only follow on Picagram is never close enough for one of yours.
+  const mine = kind === "character" ? await myGifts(userId) : [];
+  const close = kind === "character" ? (await closenessMap(userId)).get(whoId) || 0 : 0;
+  return wishlistOf(whoId, Date.now(), mine, close, got);
 }
 
 /** 🎀 Send it. The money leaves the wallet, and it's remembered for the warm spell afterwards. */
