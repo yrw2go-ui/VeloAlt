@@ -822,6 +822,16 @@ function Following({ onClose, onUnfollow, onOpen, onNewFaces }: { onClose: () =>
     setChars(cs => (cs || []).map(c => (c.id === id ? { ...c, hidden: on } : c)));
     await api("/api/pica", { action: "hide", id, on }).catch(() => setChars(cs => (cs || []).map(c => (c.id === id ? { ...c, hidden: !on } : c))));
   };
+  // 🧠 Who writes everyone's posts here. Separate from the brain you chat with, because when that
+  // one stops answering the feed simply goes quiet and nothing says why.
+  const [postBrain, setPostBrain] = useState<{ brain: string; options: { id: string; label: string }[] } | null>(null);
+  useEffect(() => { api<{ brain: string; options: { id: string; label: string }[] }>("/api/pica", { action: "post.brain" }).then(setPostBrain).catch(() => {}); }, []);
+  const pickPostBrain = async (brain: string) => {
+    const was = postBrain?.brain || "";
+    setPostBrain(p => (p ? { ...p, brain } : p));
+    try { await api("/api/pica", { action: "post.brain.set", brain }); }
+    catch (e) { setPostBrain(p => (p ? { ...p, brain: was } : p)); setSaid(e instanceof Error ? e.message : "Couldn't save that."); }
+  };
   // ✨ Bring new women in right now, instead of waiting for the one who turns up each day.
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState("");
@@ -884,6 +894,15 @@ function Following({ onClose, onUnfollow, onOpen, onNewFaces }: { onClose: () =>
         <button className="ghost" onClick={() => newFaces()} disabled={busy} data-testid="pica-new-faces" style={{ padding: "4px 10px", fontSize: 13 }}>{busy ? "…" : "✨ New face"}</button>
       </div>
       <div style={{ maxWidth: 560, margin: "0 auto" }}>
+        {postBrain && (
+          <label className="row" data-testid="pica-post-brain" style={{ gap: 6, padding: "8px 14px 0", fontSize: 12 }}>
+            <span className="muted">🧠 Posts written by</span>
+            <select value={postBrain.brain} onChange={e => void pickPostBrain(e.target.value)} aria-label="Who writes the posts"
+              style={{ padding: "4px 6px", fontSize: 12 }}>
+              {postBrain.options.map(o => <option key={o.id || "same"} value={o.id}>{o.label}</option>)}
+            </select>
+          </label>
+        )}
         {said && <div data-testid="pica-new-faces-said" role="status" style={{ margin: "10px 14px", padding: "10px 12px", borderRadius: 12, fontSize: 14, background: said.startsWith("✨") && !said.includes("Couldn't") ? "rgba(236,72,153,.14)" : "rgba(245,158,11,.15)", border: "1px solid rgba(245,158,11,.45)" }}>{said.startsWith("✨") ? said : `⚠️ ${said}`}</div>}
         {retry && (
           <div data-testid="pica-new-faces-retry" style={{ margin: "10px 14px", padding: 12, border: "1px solid var(--border)", borderRadius: 12, background: "var(--surface2)" }}>
