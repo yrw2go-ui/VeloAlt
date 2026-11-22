@@ -488,9 +488,20 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     return !others.some(o => new RegExp(`\\b${o.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(desc));
   };
   // ✏️ Double-tapped a bubble: the new words replace the old ones, in her chat and in what she reads back.
+  // The new words go up on screen at once and the save goes off behind them, because waiting for
+  // the server meant sitting in the editor for a whole round trip every time. If the save fails,
+  // the old words come back and it says so — nothing is quietly lost.
   const editMsg = async (id: string, text: string) => {
-    const r = await api<{ id: string; content: string }>("/api/data", { action: "messages.edit", id, text });
-    setMsgs(list => (list || []).map(x => (x.id === r.id ? { ...x, content: r.content } : x)));
+    let was = "";
+    setMsgs(list => (list || []).map(x => { if (x.id !== id) return x; was = x.content; return { ...x, content: text }; }));
+    try {
+      const r = await api<{ id: string; content: string }>("/api/data", { action: "messages.edit", id, text });
+      setMsgs(list => (list || []).map(x => (x.id === r.id ? { ...x, content: r.content } : x)));
+    } catch (e) {
+      setMsgs(list => (list || []).map(x => (x.id === id ? { ...x, content: was } : x)));
+      setErr(e instanceof Error ? e.message : "Couldn't save that edit.");
+      throw e;
+    }
   };
   const createSocial = async (md: Media) => {
     setErr("");
@@ -876,9 +887,10 @@ function Bubble({ m, face, who, onMedia, onFailed, onReact, onAnswer, onReactMsg
   const save = async () => {
     const text = (editing || "").trim();
     if (!text || !m.id || !onEdit) return;
-    setSaving(true);
-    try { await onEdit(m.id, text); setEditing(null); } catch { /* leave the editor open */ }
-    setSaving(false);
+    // Closed and shown straight away; the save catches up behind it (and puts the old words back
+    // if it fails), so nobody waits in the editor for a round trip.
+    setEditing(null);
+    void onEdit(m.id, text).catch(() => {});
   };
   // A small badge on the bubble's corner, like a text-message reaction.
   const badge = (r: string, who: string) => (
