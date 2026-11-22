@@ -20,7 +20,7 @@ import { scrub } from "../../lib/secrets";
 //   scene.start { id, kind: live|past, title, details } → { marker, group }   scene.end { id } → { marker }
 //   messages.delete { id, ids (1–10), timeZone, name } → { deleted, replies }   (🗑 they forget what was in them; your latest gets re-answered)
 //   bring { fromId, ids, place } → { group }   (🧍 bring characters together in person; their 1:1s carry over)   inperson.end { id } → { marker }
-//   photo.draft { id, ids, withMe, about } → { description }   photo { id, ids, withMe, description } → { added }
+//   photo.draft { id, ids, withMe, about } → { description }   photo { id, ids, withMe, from, description } → { added }
 //   peek.draft { id, ids } → { description }   peek { id, ids, description } → { added }   (👀 nobody in the group knows)
 const bad = (error: string, status = 400) => NextResponse.json({ error }, { status });
 
@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
         const withMe = b.withMe === true;
         if (action === "photo.draft") return NextResponse.json({ description: await draftGroupPhoto(c.userId, g, who, withMe, String(b.about || ""), !!u2?.adult_confirmed_at, name, writerBrain(b.writer)) });
         if (!mediaReady()) return bad("Photos aren't set up yet.");
-        return NextResponse.json({ added: await groupPhoto(c.userId, g, who, withMe, !!u2?.adult_confirmed_at, String(b.description || ""), name) });
+        return NextResponse.json({ added: await groupPhoto(c.userId, g, who, withMe, !!u2?.adult_confirmed_at, String(b.description || ""), name, String(b.from || "")) });
       }
       case "peek.draft":
       case "peek": {

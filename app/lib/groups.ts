@@ -345,7 +345,7 @@ Two or three sentences, under 380 characters: where it is, what they're wearing,
 }
 
 /** 📸 Make it, and put it in the group where everyone can see it (a peek is the hidden one). */
-export async function groupPhoto(userId: string, g: Group, ids: string[], withMe: boolean, adult: boolean, description: string, personName = ""): Promise<GroupMsg[]> {
+export async function groupPhoto(userId: string, g: Group, ids: string[], withMe: boolean, adult: boolean, description: string, personName = "", fromId = ""): Promise<GroupMsg[]> {
   const chars = await photoCast(userId, g, ids, withMe);
   const desc = scrub(description.replace(/\s+/g, " ").trim()).slice(0, 1500);
   if (desc.length < 10) throw new GroupError("Describe the picture a little more.");
@@ -376,9 +376,16 @@ export async function groupPhoto(userId: string, g: Group, ids: string[], withMe
     { characterId: first?.id || null, who: first?.name || personName || "you", appearance: first?.appearance || "",
       refs: subject,
       romantic: chars.every(c => romanticFor(c, adult)), offer: false, other: null, raw: true, people: others.length ? others : undefined });
-  const caption = `📸 ${[...chars.map(c => c.name), ...(withMe ? [personName || "me"] : [])].join(", ")}`;
-  const [row] = await sql()`insert into chat_group_messages (group_id, user_id, content, media_id) values (${g.id}, ${userId}, ${caption}, ${media.id}) returning id, speaker_id, content, created_at`;
-  return [{ ...(row as GroupMsg), speaker_id: null, media }];
+  // 📨 Whose photo it is. It lands in the thread under her name, so the others answer her about
+  // it rather than a picture that arrived from nowhere — and the words you wrote are the caption,
+  // which is the only way any of them learns what is actually in it.
+  const all = await members(g);
+  const sender = all.find(c => c.id === fromId) || first || null;
+  const caption = `📸 ${[...chars.map(c => c.name), ...(withMe ? [personName || "me"] : [])].join(", ")} — ${desc}`;
+  const [row] = await sql()`insert into chat_group_messages (group_id, user_id, speaker_id, content, media_id)
+    values (${g.id}, ${userId}, ${sender?.id || null}, ${caption.slice(0, 2000)}, ${media.id}) returning id, speaker_id, content, created_at`;
+  await sql()`update chat_groups set updated_at = now() where id = ${g.id}`;
+  return [{ ...(row as GroupMsg), speaker_id: sender?.id || null, media }];
 }
 
 export async function groupPeekAt(userId: string, g: Group, ids: string[], adult: boolean, description: string): Promise<GroupMsg[]> {

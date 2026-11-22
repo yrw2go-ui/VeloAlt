@@ -248,12 +248,17 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
               <When at={m.created_at} align="center" />
             </div>
           );
-          // 📸 A photo in the group — everyone can see this one, unlike a peek.
+          // 📸 A photo in the group — everyone can see this one, unlike a peek. It comes from
+          // whoever was named as sending it, so it sits on her side with her face beside it.
           if (m.media && !m.peek) return (
-            <div key={m.id} data-testid="group-photo" style={{ alignSelf: "flex-end", maxWidth: "80%", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
-              <div style={{ maxWidth: 380 }}><MediaView media={m.media} who={group.title} /></div>
-              {m.content && <div className="muted" style={{ fontSize: 11 }}>{m.content}</div>}
-              <When at={m.created_at} align="right" />
+            <div key={m.id} data-testid="group-photo" className="row" style={{ alignItems: "flex-end", gap: 8, maxWidth: "85%", alignSelf: c ? "flex-start" : "flex-end" }}>
+              {c ? <CharacterFace c={c} size={28} /> : null}
+              <div style={{ display: "flex", flexDirection: "column", alignItems: c ? "flex-start" : "flex-end", gap: 2 }}>
+                {c && <div className="muted" style={{ fontSize: 11, fontWeight: 700, margin: "0 0 2px 6px" }}>{c.name}</div>}
+                <div style={{ maxWidth: 380 }}><MediaView media={m.media} who={c?.name || group.title} /></div>
+                {m.content && <div className="muted" style={{ fontSize: 11 }}>{m.content}</div>}
+                <When at={m.created_at} align={c ? "left" : "right"} />
+              </div>
             </div>
           );
           if (m.peek) return <div key={m.id} className="muted" style={{ alignSelf: "flex-end", fontSize: 12, padding: "4px 10px", borderRadius: 999, border: "1px dashed var(--border)" }}>👀 you peeked</div>;
@@ -484,6 +489,9 @@ function GroupPeekSheet({ group, members, name, brains, onClose, onMade }: { gro
 function GroupPhotoSheet({ group, members, name, brains, onClose, onMade }: { group: Group; members: Character[]; name: string; brains: string[]; onClose: () => void; onMade: (added: Msg[]) => void }) {
   useBack(true, onClose); // the phone's back button closes this, one step at a time
   const [ids, setIds] = useState<string[]>(members[0] ? [members[0].id] : []);
+  // 📨 Whose photo it is when it lands in the chat — one of the ones in it, so the others have
+  // someone to answer. Follows your first pick unless you say otherwise.
+  const [from, setFrom] = useState<string>(members[0]?.id || "");
   const [withMe, setWithMe] = useState(false);
   const [about, setAbout] = useState("");
   const [desc, setDesc] = useState("");
@@ -492,7 +500,11 @@ function GroupPhotoSheet({ group, members, name, brains, onClose, onMade }: { gr
   const [writer, setWriter] = useState(() => { const b = members[0]?.brain; return b && b !== "claude" ? b : ""; });
   const picked = ids.length + (withMe ? 1 : 0);
   const full = picked >= 3;
-  const toggle = (id: string) => setIds(p => (p.includes(id) ? p.filter(x => x !== id) : full ? p : [...p, id]));
+  const toggle = (id: string) => setIds(p => {
+    const next = p.includes(id) ? p.filter(x => x !== id) : full ? p : [...p, id];
+    setFrom(f => (next.includes(f) ? f : next[0] || ""));
+    return next;
+  });
   const write = async () => {
     setLoading(true); setErr("");
     try { setDesc((await api<{ description: string }>("/api/groups", { action: "photo.draft", id: group.id, ids, withMe, about, name, writer })).description); }
@@ -501,7 +513,7 @@ function GroupPhotoSheet({ group, members, name, brains, onClose, onMade }: { gr
   };
   const go = async () => {
     setLoading(true); setErr("");
-    try { onMade((await api<{ added: Msg[] }>("/api/groups", { action: "photo", id: group.id, ids, withMe, description: desc })).added); }
+    try { onMade((await api<{ added: Msg[] }>("/api/groups", { action: "photo", id: group.id, ids, withMe, from, description: desc })).added); }
     catch (e) { setErr(e instanceof Error ? e.message : "Couldn't make it."); setLoading(false); }
   };
   const chip = (on: boolean) => ({ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px 4px 4px", borderRadius: 999, cursor: "pointer", fontSize: 13, fontWeight: 700,
@@ -531,6 +543,15 @@ function GroupPhotoSheet({ group, members, name, brains, onClose, onMade }: { gr
           <button type="button" onClick={() => setWithMe(v => !v)} aria-pressed={withMe} disabled={!withMe && full} data-testid="group-photo-me"
             style={{ ...chip(withMe), opacity: !withMe && full ? 0.5 : 1, padding: "6px 12px" }}>🙋 Me{withMe ? " ✓" : ""}</button>
         </div>
+        {ids.length > 1 && (
+          <div className="row" style={{ gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            <span className="muted" style={{ fontSize: 12 }}>📨 Sent by</span>
+            {members.filter(c => ids.includes(c.id)).map(c => (
+              <button key={c.id} type="button" onClick={() => setFrom(c.id)} aria-pressed={from === c.id} data-testid={`group-photo-from-${c.name}`}
+                style={{ ...chip(from === c.id), padding: "4px 10px" }}>{c.name}{from === c.id ? " ✓" : ""}</button>
+            ))}
+          </div>
+        )}
         <div className="row" style={{ gap: 8 }}>
           <input value={about} onChange={e => setAbout(e.target.value)} maxLength={300} aria-label="What photo" data-testid="group-photo-about"
             placeholder="e.g. at the pub last Friday" style={{ flex: 1, minWidth: 0, borderRadius: 12 }} />
