@@ -5,7 +5,7 @@ import { sql } from "../../lib/db";
 import { getCharacterFor, isAdmin } from "../../lib/characters";
 import { thankThem } from "../../lib/thanks";
 import { dmSend, dmGiftPhoto } from "../../lib/picaDm";
-import { shopFull, peopleToGift, sendGift, giftHistory, accountsFor, moveAcross, listMyGift, unlistMyGift, myGifts, closenessMap, GiftError, BANK, WEEKLY_RATE, PAY_LOW, PAY_HIGH, catalogue, editGift, rotatingCount, setRotating, addExtra, editExtra, removeExtra, shopNow, liveHints } from "../../lib/giftsDb";
+import { shopFull, peopleToGift, sendGift, giftHistory, accountsFor, moveAcross, listMyGift, unlistMyGift, myGifts, closenessMap, alreadyGiven, GiftError, BANK, WEEKLY_RATE, PAY_LOW, PAY_HIGH, catalogue, editGift, rotatingCount, setRotating, addExtra, editExtra, removeExtra, shopNow, liveHints } from "../../lib/giftsDb";
 import { MAX_MY_GIFTS, MAX_EXTRAS, GIFT_ICONS } from "../../lib/gifts";
 
 const UUID = /^[0-9a-f-]{36}$/i;
@@ -49,7 +49,11 @@ export async function POST(req: NextRequest) {
       // 🔴 Who has been hinting. Asked for on its own once the screen is up: raising this week's
       // hints writes rows and is the slowest thing here, and it used to hold up the whole page.
       case "hints": {
-        const hints = await liveHints(me).catch(() => new Map());
+        // 🐌 One connection serves this whole app (app/lib/db.ts), so this asks for each thing once:
+        // left to itself, liveHints re-reads your gifts, their closeness, what they already have and
+        // the shop — and the screen that asked for it was waiting behind all of it.
+        const [listed, close, got, shop] = [await myGifts(me), await closenessMap(me), await alreadyGiven(me), await shopNow(Date.now())];
+        const hints = await liveHints(me, Date.now(), { listed, close, got, shop }).catch(() => new Map());
         return NextResponse.json({ hinting: [...hints.keys()] });
       }
       // 💸 Bring money across from the bank into what you can spend.
