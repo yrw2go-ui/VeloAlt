@@ -1,7 +1,28 @@
 "use client";
 // Calls Velo's server routes as the signed-in person (the session cookie rides along).
 
+// 📵 Leaving the app kills whatever was in flight, and the browser's own words for it are
+// "Failed to fetch" — nothing to do with Velo being down. So a request that dies that way waits
+// for the app to be back on screen and goes again, once. Anything the server actually answered
+// (an error, a refusal) is not retried: only a connection that never completed.
+const dropped = (e: unknown) => e instanceof TypeError;
+const backOnScreen = () => (typeof document === "undefined" || document.visibilityState === "visible"
+  ? Promise.resolve()
+  : new Promise<void>(ok => {
+      const look = () => { if (document.visibilityState === "visible") { document.removeEventListener("visibilitychange", look); ok(); } };
+      document.addEventListener("visibilitychange", look);
+    }));
+
 export async function api<T = unknown>(path: string, body: unknown): Promise<T> {
+  try { return await once<T>(path, body); }
+  catch (e) {
+    if (!dropped(e)) throw e;
+    await backOnScreen();
+    return await once<T>(path, body);
+  }
+}
+
+async function once<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const data = await res.json().catch(() => ({}));
   if (res.status === 401 && path !== "/api/auth") window.dispatchEvent(new Event("velo:signed-out"));
