@@ -111,8 +111,10 @@ export async function POST(req: NextRequest) {
         const pickBrain = typeof b.brain === "string" && (b.brain === "claude" || availableBrains().includes(b.brain)) ? b.brain : "";
         const r = await newFaces(me, want, pickBrain || undefined);
         if (r.made) return NextResponse.json(r);
-        const [u] = await sql()`select chat_model from users where id = ${me}`;
-        return NextResponse.json({ made: 0, names: [], tried: pickBrain || String(u?.chat_model || "claude"), retry: retryChoices(pickBrain || u?.chat_model, availableBrains()) });
+        // 🧠 Claude unless you chose otherwise, so that is who the popup says couldn't manage it,
+        // and the others are what it offers you to try instead.
+        const tried = pickBrain || "claude";
+        return NextResponse.json({ made: 0, names: [], tried, retry: retryChoices(tried, availableBrains()) });
       }
       // 👩 Make one yourself: your specs, your bio, your pictures.
       case "account.create": {
