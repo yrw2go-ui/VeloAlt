@@ -55,6 +55,7 @@ export default function Picagram({ name, userId, onChat, openProfile, onProfileO
   const [making, setMaking] = useState(false);
   const [mine, setMine] = useState(!!place.mine);
   const [followingOpen, setFollowingOpen] = useState(!!place.following);
+  const [newPost, setNewPost] = useState(false); // 🆕 a post from one of them, on demand
   // ✉️ DMs with accounts (characters chat in the normal chat).
   const [inbox, setInbox] = useState(!!place.inbox);
   const [thread, setThread] = useState<string | null>(openDm || place.thread || null);
@@ -146,6 +147,7 @@ export default function Picagram({ name, userId, onChat, openProfile, onProfileO
         <button className="ghost" onClick={() => setFollowingOpen(true)} aria-label="Following" data-testid="pica-following-open" style={{ padding: "6px 10px" }}>👥</button>
         <button className="ghost" onClick={() => setMine(true)} aria-label="My profile" data-testid="pica-me-open" style={{ padding: "6px 10px" }}>🙋</button>
         <button className="ghost" onClick={() => setMaking(true)} aria-label="Make someone" data-testid="pica-make-open" style={{ padding: "6px 10px" }}>👩</button>
+        <button className="ghost" onClick={() => setNewPost(true)} aria-label="New post" data-testid="pica-newpost-open" style={{ padding: "6px 10px" }}>📝</button>
         <button className="ghost" onClick={() => setSavedOpen(true)} aria-label="Saved pictures" data-testid="pica-saved-open" style={{ padding: "6px 10px" }}>🔖</button>
         <button className="ghost" onClick={() => load(true)} disabled={loading} aria-label="Refresh" style={{ padding: "6px 10px" }}>↻</button>
         <button className="btn" onClick={() => setComposing(true)} data-testid="pica-new" style={{ padding: "8px 14px" }}>＋ Post</button>
@@ -165,6 +167,7 @@ export default function Picagram({ name, userId, onChat, openProfile, onProfileO
         onChat={id => { setProfile(null); onChat?.(id); }} onMessage={id => { setProfile(null); setThread(id); }} onDeleted={id => setPosts(ps => (ps || []).filter(p => p.author.account?.id !== id))} />}
       {inbox && <Inbox onClose={() => setInbox(false)} onOpen={id => setThread(id)} />}
       {thread && <Thread id={thread} onClose={() => setThread(null)} onProfile={id => { setThread(null); setInbox(false); setProfile(id); }} />}
+      {newPost && <NewPostSheet onClose={() => setNewPost(false)} onPosted={() => { setNewPost(false); load(true); }} />}
       {followingOpen && <Following onClose={() => setFollowingOpen(false)} onUnfollow={acc => setFollowed(acc, false)} onOpen={id => { setFollowingOpen(false); setProfile(id); }}
         onNewFaces={(names, error) => { setFollowingOpen(false); setNote(error ? `✨ ${names.join(", ")} just posted. ${error}` : `✨ ${names.join(", ")} just posted — have a look.`); load(true); }} />}
       {savedOpen && <Saved onClose={() => setSavedOpen(false)} />}
@@ -1495,5 +1498,60 @@ function DmText({ m, onEdit }: { m: { id: string; role: string; content: string 
       {editing !== null && <EditSheet testid="dm-edit" who={mine ? "Your message" : "Her message"} value={editing} busy={saving}
         onChange={setEditing} onSave={() => void save()} onClose={() => setEditing(null)} />}
     </>
+  );
+}
+
+/**
+ * 📝 A post, on demand: one of the people already on Picagram puts something up. Pick who (or
+ * leave it to chance), pick what it's about, and she writes it — or write the picture and the
+ * blurb yourself, in which case your words for the picture go to the picture service unaltered.
+ */
+function NewPostSheet({ onClose, onPosted }: { onClose: () => void; onPosted: () => void }) {
+  useBack(true, onClose); // the phone's back button closes this, one step at a time
+  type Who = { id: string; name: string; handle: string };
+  const [list, setList] = useState<Who[] | null>(null);
+  const [who, setWho] = useState("");
+  const [setting, setSetting] = useState("random");
+  const [photo, setPhoto] = useState("");
+  const [caption, setCaption] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  useEffect(() => { api<{ accounts: Who[] }>("/api/pica", { action: "following" }).then(r => setList(r.accounts)).catch(() => setList([])); }, []);
+  const go = async () => {
+    setBusy(true); setErr("");
+    try { await api("/api/pica", { action: "post.new", accountId: who, setting, photo: photo.trim(), caption: caption.trim() }); onPosted(); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't post that."); setBusy(false); }
+  };
+  const chip = (on: boolean) => ({ padding: "5px 12px", borderRadius: 999, cursor: "pointer", fontSize: 13, fontWeight: 700, color: "var(--text)",
+    border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, background: on ? "rgba(124,140,255,0.15)" : "var(--surface2)" } as const);
+  const SETTINGS = [["random", "🎲 Anywhere"], ["work", "💼 At work"], ["class", "🎓 In class"], ["suggestive", "🔥 Suggestive"]] as const;
+  return (
+    <div role="dialog" aria-modal="true" data-testid="pica-newpost" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 3000 }} onClick={onClose}>
+      <div className="card" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, maxHeight: "86dvh", overflowY: "auto", borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 10, padding: 14 }}>
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          <div style={{ fontWeight: 800, fontSize: 17 }}>📝 New post</div>
+          <button className="ghost" onClick={onClose} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
+        </div>
+        <div className="muted" style={{ fontSize: 12 }}>Who&apos;s posting?</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          <button type="button" onClick={() => setWho("")} aria-pressed={!who} data-testid="newpost-who-random" style={chip(!who)}>🎲 Anyone</button>
+          {(list || []).map(a => (
+            <button key={a.id} type="button" onClick={() => setWho(a.id)} aria-pressed={who === a.id} data-testid={`newpost-who-${a.handle || a.name}`} style={chip(who === a.id)}>{a.name}</button>
+          ))}
+        </div>
+        <div className="muted" style={{ fontSize: 12 }}>What&apos;s it about? <span style={{ opacity: 0.7 }}>(ignored if you write the picture yourself)</span></div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {SETTINGS.map(([id, label]) => (
+            <button key={id} type="button" onClick={() => setSetting(id)} aria-pressed={setting === id} data-testid={`newpost-set-${id}`} style={chip(setting === id)}>{label}</button>
+          ))}
+        </div>
+        <textarea value={photo} onChange={e => setPhoto(e.target.value)} maxLength={600} rows={4} aria-label="The picture" data-testid="newpost-photo"
+          placeholder="…or write the picture yourself: where she is, what she's wearing, what's happening (sent as written)" style={{ resize: "vertical", borderRadius: 12 }} />
+        <textarea value={caption} onChange={e => setCaption(e.target.value)} maxLength={600} rows={2} aria-label="The caption" data-testid="newpost-caption"
+          placeholder="Her caption — leave it blank and she'll write her own" style={{ resize: "vertical", borderRadius: 12 }} />
+        {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
+        <button className="btn" onClick={go} disabled={busy} data-testid="newpost-go">{busy ? "Posting…" : "✨ Post it"}</button>
+      </div>
+    </div>
   );
 }

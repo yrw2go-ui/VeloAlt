@@ -762,20 +762,23 @@ export async function newFaces(userId: string, n: number, pickBrain?: unknown): 
 }
 
 /** One post from one account, with its photo, at the given moment. */
-async function postFor(userId: string, a: Record<string, unknown>, u: U, at: number, plan?: { caption?: string; photo?: string }, strict = false, brain?: unknown): Promise<boolean> {
+async function postFor(userId: string, a: Record<string, unknown>, u: U, at: number, plan?: { caption?: string; photo?: string }, strict = false, brain?: unknown, about = "", raw = false): Promise<boolean> {
   const t = await wordsFor(userId); // 🛠️ Admin → Messaging & wording
   const when = new Date(at).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: u.tz });
   let caption = scrub(String(plan?.caption || "")).slice(0, 600), photo = scrub(String(plan?.photo || "")).slice(0, 600);
   if (!photo) {
     const w = await wordingFor(userId);
-    const raw = await writeText(brain ?? await picaBrain(userId), `Today is ${when}. Write ONE Picagram post for @${a.handle} (${a.name}): ${a.bio}${a.personality ? ` — who she is: ${String(a.personality).slice(0, 400)}` : ""} — a photo of her in her everyday life or her niche, with a caption — ${t.post_caption}. ${u.adult ? "Flattering, flirty and confident is fine; no nudity or lingerie." : "Family-friendly, fully clothed."} "photo" describes exactly what the picture shows (where, outfit, pose, light) in 1–2 sentences. ${w.no_looks} It follows this SHOT and TONE exactly so it doesn't look like her last one — SHOT: ${shotFor(`${a.id}:${when}`, rand(0, 9))}; TONE: ${TONES[toneFor(String(a.id), rand(0, 5), a.folk ? FOLK_SUGGESTIVE : hash(`${a.id}:how`) % 9, u.adult)]}. ${PLAIN_WORDS} JSON only: {"caption":"...","photo":"..."}`,
+    const raw = await writeText(brain ?? await picaBrain(userId), `Today is ${when}. Write ONE Picagram post for @${a.handle} (${a.name}): ${a.bio}${a.personality ? ` — who she is: ${String(a.personality).slice(0, 400)}` : ""} — ${about || "a photo of her in her everyday life or her niche"}, with a caption — ${t.post_caption}. ${u.adult ? "Flattering, flirty and confident is fine; no nudity or lingerie." : "Family-friendly, fully clothed."} "photo" describes exactly what the picture shows (where, outfit, pose, light) in 1–2 sentences. ${w.no_looks} It follows this SHOT and TONE exactly so it doesn't look like her last one — SHOT: ${shotFor(`${a.id}:${when}`, rand(0, 9))}; TONE: ${TONES[toneFor(String(a.id), rand(0, 5), a.folk ? FOLK_SUGGESTIVE : hash(`${a.id}:how`) % 9, u.adult)]}. ${PLAIN_WORDS} JSON only: {"caption":"...","photo":"..."}`,
       `She looks like: ${a.look}`, 1000, THINK).catch(() => "");
-    try { const j = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); caption = scrub(String(j.caption || "✨")).slice(0, 600); photo = scrub(String(j.photo || "")).slice(0, 600); } catch { /* fall back below */ }
+    // A blurb you wrote yourself stays yours — only what you left blank is filled in.
+    try { const j = JSON.parse((raw.match(/\{[\s\S]*\}/) || ["{}"])[0]); if (!caption) caption = scrub(String(j.caption || "✨")).slice(0, 600); photo = scrub(String(j.photo || "")).slice(0, 600); } catch { /* fall back below */ }
   }
   if (!photo) photo = plainFacePhoto(String(a.name));
   const refs = await refsOf(a);
+  // ✍️ A photo you described yourself goes to the picture service word for word, the way the
+  // popup prompts and group photos do — her own pictures still carry her face.
   const shoot = (description: string) => startMedia(userId, { kind: "image", with_me: true, they_asked: true, description },
-    { characterId: null, who: String(a.name), appearance: String(a.look), refs, romantic: u.adult, offer: false, other: null, pica: true });
+    { characterId: null, who: String(a.name), appearance: String(a.look), refs, romantic: u.adult, offer: false, other: null, pica: true, ...(raw && refs.length ? { raw: true } : {}) });
   let media = await shoot(photo).catch((e: unknown) => e);
   // A description that mentions lingerie (even to forbid it) is refused. One plain retry still makes her face.
   if (media instanceof Error) {
@@ -797,6 +800,33 @@ async function postFor(userId: string, a: Record<string, unknown>, u: U, at: num
   for (const c of randomComments(`${caption} ${photo}`, "image", rand(3, 5)))
     await sql()`insert into pica_comments (post_id, user_id, name, text, created_at) values (${post.id}, ${userId}, ${c.name}, ${c.text}, ${new Date(at + rand(2, 300) * 60_000).toISOString()})`;
   return true;
+}
+
+/** 🆕 A post you asked for: one of the people already on Picagram, in the setting you picked —
+ *  or your own words for the picture and the caption, posted as whoever you choose. */
+export async function picaNewPost(userId: string, want: { accountId?: string; setting?: string; caption?: string; photo?: string }): Promise<{ who: string; handle: string }> {
+  const u = await userInfo(userId);
+  const id = String(want.accountId || "");
+  // Whoever you picked, or one of them at random — the ones you follow first, and ones with
+  // pictures of their own before ones without, so the face in the post is really hers.
+  const [a] = id
+    ? await sql()`select * from pica_accounts where id = ${id} and user_id = ${userId} and not mine`
+    : await sql()`select * from pica_accounts where user_id = ${userId} and not mine
+        order by (avatar_media_id is not null) desc, followed desc, random() limit 1`;
+  if (!a) throw new PicaLimit(id ? "That account wasn't found." : "There's nobody on Picagram yet.");
+  const photo = scrub(String(want.photo || "")).replace(/\s+/g, " ").trim().slice(0, 600);
+  const caption = scrub(String(want.caption || "")).trim().slice(0, 600);
+  const mine = !!photo;
+  // 🎚️ What you picked it to be about. Suggestive is only on offer once 18+ is confirmed.
+  const setting = String(want.setting || "random");
+  const about = mine ? "" : setting === "work" ? "a photo of her at work, in what she really wears for it"
+    : setting === "class" ? "a photo of her at school — in class, on campus or studying"
+    : setting === "suggestive" && u.adult ? "a photo of her looking her best, flirty and confident"
+    : "";
+  const ok = await postFor(userId, a, u, Date.now(), mine || caption ? { caption, photo } : undefined, true,
+    undefined, about, mine);
+  if (!ok) throw new PicaLimit("Her photo didn't start.");
+  return { who: String(a.name), handle: String(a.handle || "") };
 }
 
 export class PicaLimit extends Error {}
