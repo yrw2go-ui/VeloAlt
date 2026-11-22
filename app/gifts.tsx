@@ -40,6 +40,10 @@ export default function Gifts() {
   const [maxMine, setMaxMine] = useState(5);
   const [newGift, setNewGift] = useState({ brand: "", name: "", price: "" });
 
+  // ⏳ Everything on this screen comes from one request. Until it lands, the money, the people and
+  // the shop show that they're still coming rather than $0 and "make a character first", which
+  // read like answers and aren't.
+  const loading = shop === null && !err;
   const load = () => api<{ shop: Gift[]; mine: Gift[]; maxMine: number; people: Person[]; wallet: number; bank: number; history: Sent[]; paid: number; interest: number; weeks: number; bankName: string }>("/api/gifts", { action: "shop" })
     .then(r => { setShop(r.shop); setMine(r.mine); setMaxMine(r.maxMine); setPeople(r.people); setWallet(r.wallet); setBank(r.bank); setHistory(r.history); setBankName(r.bankName);
       if (r.weeks > 0) setPayday({ paid: r.paid, interest: r.interest, weeks: r.weeks }); })
@@ -90,11 +94,11 @@ export default function Gifts() {
       <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, borderRadius: 14, background: "var(--surface2)", border: "1px solid var(--border)" }}>
         <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
           <span style={{ fontSize: 13, fontWeight: 700 }}>💳 To spend</span>
-          <span data-testid="wallet" style={{ fontWeight: 800, fontSize: 20 }}>{money(wallet)}</span>
+          <span data-testid="wallet" style={{ fontWeight: 800, fontSize: 20, opacity: loading ? 0.45 : 1 }}>{loading ? "…" : money(wallet)}</span>
         </div>
         <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
           <span className="muted" style={{ fontSize: 13 }}>🏦 {bankName || "Savings"}</span>
-          <span data-testid="bank" className="muted" style={{ fontWeight: 700 }}>{money(bank)}</span>
+          <span data-testid="bank" className="muted" style={{ fontWeight: 700, opacity: loading ? 0.45 : 1 }}>{loading ? "…" : money(bank)}</span>
         </div>
         <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
           {[1000, 5000, 10000].map(n => (
@@ -125,7 +129,8 @@ export default function Gifts() {
               <Face p={p} size={26} />{p.hinting && <span data-testid="hint-dot" title={`${p.name} has hinted at something`} style={{ width: 8, height: 8, borderRadius: "50%", background: "#ef4444", display: "inline-block" }} />}{p.name}
             </button>
           ))}
-          {!people.length && <span className="muted" style={{ fontSize: 13 }}>Make a character first, or follow someone on Picagram.</span>}
+          {loading && <span className="muted" style={{ fontSize: 13 }}>Finding everyone…</span>}
+          {!loading && !people.length && <span className="muted" style={{ fontSize: 13 }}>Make a character first, or follow someone on Picagram.</span>}
         </div>
       </div>
 
@@ -212,7 +217,7 @@ export default function Gifts() {
                   </div>
                 </div>
               ))}
-              {!shop && <span className="muted" style={{ fontSize: 13 }}>Opening the shop…</span>}
+              {loading && <span className="muted" style={{ fontSize: 13 }}>Opening the shop…</span>}
             </div>
           </div>
         </>

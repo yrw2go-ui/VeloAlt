@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
-import { sql } from "../../lib/db";
+import { missingSchema, sql } from "../../lib/db";
 import { availableBrains } from "../../lib/models";
+import { BRAIN_OPTIONS } from "../../lib/brainOptions";
 import { retryChoices, befriendChoices } from "../../lib/pickBrain";
 import { MediaError, mediaReady } from "../../lib/media";
 import { dmThreads, dmUnread, dmOpen, dmSend, dmSendPhoto, dmPhotoMake, dmBrain, dmMyPhotoDraft, dmMyPhoto, dmSendMine, DmError, dmDelete, dmEdit } from "../../lib/picaDm";
@@ -151,6 +152,23 @@ export async function POST(req: NextRequest) {
       }
       // 👥 Who you could be in a picture with (your characters, the ones with a face on file first).
       case "withme": return NextResponse.json({ characters: await picaWithMe(me) });
+      // 🧠 Who writes the posts here. Empty means the brain picked in Settings, which is how it
+      // was before this existed — the point of it is that a chat brain which stops answering
+      // shouldn't take the whole feed down with it.
+      case "post.brain": {
+        let brain = "";
+        try { const [u] = await sql()`select post_brain from users where id = ${me}`; brain = String(u?.post_brain || ""); }
+        catch (e) { if (!missingSchema(e)) throw e; }
+        return NextResponse.json({ brain, options: [{ id: "", label: "Same as Settings" }, { id: "claude", label: "Claude" },
+          ...BRAIN_OPTIONS.filter(o => o.atlas && availableBrains().includes(o.id)).map(o => ({ id: o.id as string, label: o.label }))] });
+      }
+      case "post.brain.set": {
+        const want = String(b.brain || "");
+        if (want && want !== "claude" && !availableBrains().includes(want)) return bad("That one isn't set up on this server.");
+        try { await sql()`update users set post_brain = ${want} where id = ${me}`; }
+        catch (e) { if (!missingSchema(e)) throw e; return bad("This database doesn't have that setting yet — run the migration first."); }
+        return NextResponse.json({ brain: want });
+      }
       case "following": return NextResponse.json({ accounts: await picaFollowing(me) });
       // 🧠 Who you could have write her character card, before anything is spent. The brain
       // picked in Settings is marked as yours; the rest are there if you'd rather one of them.

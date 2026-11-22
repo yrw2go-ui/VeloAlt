@@ -28,9 +28,20 @@ const THINK = { ms: 20_000 };
 // the retry. Her posts, captions and comments still go to the brain picked in Settings.
 const NEW_FACE_BRAIN = ["claude"];
 
+// 🧠 Who writes the posts, captions and comments here: whoever is picked for posts on Picagram,
+// and otherwise the brain picked in Settings. They are separate because a chat brain that stops
+// answering takes the whole feed down with it — nobody posts, and nothing says why.
 const picaBrain = async (userId: string): Promise<string> => {
-  const [u] = await sql()`select chat_model from users where id = ${userId}`;
-  const b = String(u?.chat_model || "");
+  let b = "";
+  try {
+    const [u] = await sql()`select chat_model, post_brain from users where id = ${userId}`;
+    b = String(u?.post_brain || u?.chat_model || "");
+  } catch (e) {
+    // The column isn't on this database yet: carry on with the Settings brain as before.
+    if (!missingSchema(e)) throw e;
+    const [u] = await sql()`select chat_model from users where id = ${userId}`;
+    b = String(u?.chat_model || "");
+  }
   return b === "claude" ? "" : b;
 };
 import { scrub } from "./secrets";
