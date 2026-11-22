@@ -5,7 +5,7 @@ import { sql } from "../../lib/db";
 import { getCharacterFor, isAdmin } from "../../lib/characters";
 import { thankThem } from "../../lib/thanks";
 import { dmSend, dmGiftPhoto } from "../../lib/picaDm";
-import { shopFull, peopleToGift, sendGift, giftHistory, accountsFor, moveAcross, listMyGift, unlistMyGift, myGifts, closenessMap, GiftError, BANK, WEEKLY_RATE, PAY_LOW, PAY_HIGH, catalogue, editGift, rotatingCount, setRotating, addExtra, editExtra, removeExtra, shopNow } from "../../lib/giftsDb";
+import { shopFull, peopleToGift, sendGift, giftHistory, accountsFor, moveAcross, listMyGift, unlistMyGift, myGifts, closenessMap, GiftError, BANK, WEEKLY_RATE, PAY_LOW, PAY_HIGH, catalogue, editGift, rotatingCount, setRotating, addExtra, editExtra, removeExtra, shopNow, liveHints } from "../../lib/giftsDb";
 import { MAX_MY_GIFTS, MAX_EXTRAS, GIFT_ICONS } from "../../lib/gifts";
 
 const UUID = /^[0-9a-f-]{36}$/i;
@@ -40,11 +40,17 @@ export async function POST(req: NextRequest) {
         const acc = await accountsFor(me);
         const mine = await myGifts(me);
         const shopRest = await shopNow(Date.now());
-        const people = await peopleToGift(me, mine, shopRest);
+        const people = await peopleToGift(me, mine);
         const history = await giftHistory(me, 20, mine);
         return NextResponse.json({ shop: [...mine, ...shopRest], mine, maxMine: MAX_MY_GIFTS, people, history,
           wallet: acc.spend, bank: acc.bank, paid: acc.paid, interest: acc.interest, weeks: acc.weeks,
           bankName: BANK, rate: WEEKLY_RATE, payLow: PAY_LOW, payHigh: PAY_HIGH });
+      }
+      // 🔴 Who has been hinting. Asked for on its own once the screen is up: raising this week's
+      // hints writes rows and is the slowest thing here, and it used to hold up the whole page.
+      case "hints": {
+        const hints = await liveHints(me).catch(() => new Map());
+        return NextResponse.json({ hinting: [...hints.keys()] });
       }
       // 💸 Bring money across from the bank into what you can spend.
       // 🛠️ Admin → Gifts: the whole catalogue, what each one costs, how many rotate, and the

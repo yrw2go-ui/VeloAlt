@@ -49,6 +49,16 @@ export default function Gifts() {
       if (r.weeks > 0) setPayday({ paid: r.paid, interest: r.interest, weeks: r.weeks }); })
     .catch(e => setErr(e instanceof Error ? e.message : "Couldn't open the shop."));
   useEffect(() => { load(); }, []);
+  // 🔴 The red dots come a moment after the screen, on their own: raising this week's hints is the
+  // slowest thing here and it used to hold up everything else.
+  useEffect(() => {
+    if (!people.length) return;
+    let stop = false;
+    api<{ hinting: string[] }>("/api/gifts", { action: "hints" })
+      .then(r => { if (!stop && r.hinting.length) { const on = new Set(r.hinting); setPeople(l => l.map(p => (on.has(p.id) ? { ...p, hinting: true } : p))); } })
+      .catch(() => {});
+    return () => { stop = true; };
+  }, [people.length]);
 
   // Whoever is picked keeps their wishlist in view, so you can see what they're hoping for.
   const chosen = who ? people.find(p => p.id === who.id) || who : null;
