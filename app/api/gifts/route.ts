@@ -40,8 +40,8 @@ export async function POST(req: NextRequest) {
         const acc = await accountsFor(me);
         const mine = await myGifts(me);
         const shopRest = await shopNow(Date.now());
-        const people = await peopleToGift(me, mine);
-        const history = await giftHistory(me, 20);
+        const people = await peopleToGift(me, mine, shopRest);
+        const history = await giftHistory(me, 20, mine);
         return NextResponse.json({ shop: [...mine, ...shopRest], mine, maxMine: MAX_MY_GIFTS, people, history,
           wallet: acc.spend, bank: acc.bank, paid: acc.paid, interest: acc.interest, weeks: acc.weeks,
           bankName: BANK, rate: WEEKLY_RATE, payLow: PAY_LOW, payHigh: PAY_HIGH });
