@@ -7,7 +7,7 @@ import { BRAIN_OPTIONS } from "../../lib/brainOptions";
 import { retryChoices, befriendChoices } from "../../lib/pickBrain";
 import { MediaError, mediaReady } from "../../lib/media";
 import { dmThreads, dmUnread, dmOpen, dmSend, dmSendPhoto, dmPhotoMake, dmBrain, dmMyPhotoDraft, dmMyPhoto, dmSendMine, DmError, dmDelete, dmEdit } from "../../lib/picaDm";
-import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSetAvatar, picaRefs, picaSavedList, picaFollowing, picaBefriend, picaCounts, picaDeletePost, picaCreateAccount, picaPictureAbout, picaRedoDraft, picaRedo, picaWithMe, picaMe, picaMeBio, picaBio, picaPersona, picaLives, picaName, picaHandle, picaCaption, picaCharacters, picaHide, accountFor, picaNew, picaFromPhoto, myPhotoDraft, newFaces, picaDeleteAccount, PicaLimit, picaCommentEdit } from "../../lib/picagram";
+import { ensurePicaDays, picaFeed, picaComments, picaLike, picaSeen, picaComment, picaPost, picaLooked, picaFollow, picaProfile, picaSave, picaSetAvatar, picaRefs, picaSavedList, picaFollowing, picaBefriend, picaCounts, picaDeletePost, picaCreateAccount, picaPictureAbout, picaRedoDraft, picaRedo, picaWithMe, picaMe, picaMeBio, picaBio, picaPersona, picaLives, picaName, picaHandle, picaCaption, picaCharacters, picaHide, accountFor, picaNew, picaNewPost, picaFromPhoto, myPhotoDraft, newFaces, picaDeleteAccount, PicaLimit, picaCommentEdit } from "../../lib/picagram";
 
 // 📸 Picagram. POST { action, ... }:
 //   feed { before? } → { posts }   (a few at a time; today's and missed days' posts are made as needed)
@@ -191,6 +191,12 @@ export async function POST(req: NextRequest) {
         // She's one of your characters: her account stays — hide her posts instead.
         if (r === "friend") return bad("She's one of your characters — hide her posts instead (👥 Following), or delete her from her character card.");
         return NextResponse.json({ ok: true });
+      }
+      // 🆕 A post you asked for, from one of the people already on Picagram.
+      case "post.new": {
+        const r = await picaNewPost(me, { accountId: b.accountId ? String(b.accountId) : "", setting: String(b.setting || "random"),
+          caption: String(b.caption || ""), photo: String(b.photo || "") });
+        return NextResponse.json(r);
       }
       case "follow": return UUID.test(id) && (await picaFollow(me, id, b.on === true)) ? NextResponse.json({ ok: true }) : bad("Unknown account.");
       // 🖼️ Her profile picture, on its own — one of her photos, or one you uploaded for it.
