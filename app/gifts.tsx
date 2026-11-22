@@ -22,6 +22,15 @@ function Face({ p, size }: { p: Person; size: number }) {
   );
 }
 
+// 💌 What she does about a present — her reply, her photo, her DM — runs behind the screen, but
+// one at a time: sending three in a row shouldn't start three of them at once. On a database
+// reached through a single connection, that overlap is what jams everything behind it.
+let afterHer: Promise<unknown> = Promise.resolve();
+const tellHer = (body: Record<string, unknown>) => {
+  afterHer = afterHer.catch(() => {}).then(() => api("/api/gifts", { action: "send.after", ...body }).catch(() => {}));
+  return afterHer;
+};
+
 export default function Gifts() {
   const [shop, setShop] = useState<Gift[] | null>(null);
   const [people, setPeople] = useState<Person[]>([]);
@@ -73,8 +82,7 @@ export default function Gifts() {
       setWallet(r.wallet); setBank(r.bank); setHistory(r.history); setNote(""); setCash("");
       // 💌 What she does about it — her reply, her photo, her DM — happens behind this, so the
       // present lands the moment it's paid for instead of waiting on her to write back.
-      void api("/api/gifts", { action: "send.after", toKind: chosen.kind, toId: chosen.id, giftId: gift?.id,
-        amount: r.sent.amount, wished: r.sent.wished, note }).catch(() => {});
+      void tellHer({ toKind: chosen.kind, toId: chosen.id, giftId: gift?.id, amount: r.sent.amount, wished: r.sent.wished, note });
       await confirmAsk(`${gift ? `${gift.emoji} ${gift.brand} ${gift.name}` : money(r.sent.amount)} sent to ${chosen.name}.${r.sent.wished ? ` It was on ${chosen.name}'s wishlist — that one really lands.` : ""}\n\nFor the next two days ${chosen.name} is warmer with you, keener to meet up or get on video, and much more likely to slip away from work or class for you.`, { yes: "Lovely", danger: false });
     } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't send that."); }
     finally { setBusy(""); }
