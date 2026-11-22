@@ -950,12 +950,12 @@ export async function picaCaption(userId: string, postId: string, caption: strin
   return rows.length ? text : null;
 }
 
-/** ✍️ Her @handle, yours to change — not once she's a character, and never one already taken. */
+/** ✍️ Her @handle, yours to change — never one already taken. Her Picagram username is her own,
+ *  not her character card's: linking her to a character doesn't take it away from you. */
 export async function picaHandle(userId: string, accountId: string, handle: string): Promise<string | "friend" | "taken" | null> {
   const [a] = await sql()`select id, character_id from pica_accounts where id = ${accountId} and user_id = ${userId}`;
   if (!a) return null;
-  if (a.character_id) return "friend";
-  const text = String(handle || "").replace(/^@/, "").replace(/[^A-Za-z0-9._]/g, "").slice(0, 28);
+    const text = String(handle || "").replace(/^@/, "").replace(/[^A-Za-z0-9._]/g, "").slice(0, 28);
   if (text.length < 2) return null;
   const [clash] = await sql()`select 1 from pica_accounts where user_id = ${userId} and id <> ${a.id} and lower(handle) = lower(${text})`;
   if (clash) return "taken";
@@ -963,12 +963,12 @@ export async function picaHandle(userId: string, accountId: string, handle: stri
   return text;
 }
 
-/** ✍️ Her name, yours to change — not once she's a character (that's her character card's). */
+/** ✍️ Her name on Picagram, yours to change. It belongs to the account, so it stays yours to set
+ *  even once she's a character — her character card keeps its own name. */
 export async function picaName(userId: string, accountId: string, name: string): Promise<string | "friend" | null> {
   const [a] = await sql()`select id, character_id from pica_accounts where id = ${accountId} and user_id = ${userId}`;
   if (!a) return null;
-  if (a.character_id) return "friend";
-  const text = scrub(name).replace(/\s+/g, " ").trim().slice(0, 60);
+    const text = scrub(name).replace(/\s+/g, " ").trim().slice(0, 60);
   if (!text) return null;
   await sql()`update pica_accounts set name = ${text} where id = ${a.id} and user_id = ${userId}`;
   return text;
