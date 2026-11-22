@@ -35,12 +35,12 @@ export async function POST(req: NextRequest) {
         // 🐌 One at a time, on purpose. This database is reached through a transaction pooler with
         // a single connection per invocation (app/lib/db.ts, `max: 1`), shared by every request on
         // that instance — so firing these off together jammed it, the request ran to the 300-second
-        // limit, and everything queued behind it, sign-in included. `mine` is still fetched once
-        // and used twice, which is the part of this that was free.
+        // limit, and everything queued behind it, sign-in included. `mine` really is fetched once
+        // now and handed to peopleToGift, which used to go and fetch it a second time.
         const acc = await accountsFor(me);
         const mine = await myGifts(me);
         const shopRest = await shopNow(Date.now());
-        const people = await peopleToGift(me);
+        const people = await peopleToGift(me, mine);
         const history = await giftHistory(me, 20);
         return NextResponse.json({ shop: [...mine, ...shopRest], mine, maxMine: MAX_MY_GIFTS, people, history,
           wallet: acc.spend, bank: acc.bank, paid: acc.paid, interest: acc.interest, weeks: acc.weeks,
