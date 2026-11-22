@@ -388,6 +388,24 @@ export async function groupPhoto(userId: string, g: Group, ids: string[], withMe
   return [{ ...(row as GroupMsg), speaker_id: sender?.id || null, media }];
 }
 
+// 🖼️ A picture from your gallery, shared into the group. The words it was saved with become the
+// caption, which is the only way any of them learns what they are looking at — same as a DM.
+export async function shareToGroup(userId: string, g: Group, mediaId: string): Promise<GroupMsg[]> {
+  const [m] = await sql()`select m.id, m.kind, m.description, f.url, t.url as thumb
+    from velo_media m join velo_files f on f.id = m.file_id left join velo_files t on t.id = m.thumb_file_id
+    where m.id = ${mediaId} and m.user_id = ${userId} and m.status = 'done'`;
+  if (!m) throw new GroupError("That picture wasn't found.");
+  const media = { id: String(m.id), kind: String(m.kind) as "image" | "video", status: "done" as const,
+    url: String(m.url), thumb: m.thumb ? String(m.thumb) : null,
+    description: m.description ? String(m.description) : null } as Media;
+  const what = media.kind === "image" ? "photo" : "video";
+  const caption = `(shared a ${what} from their gallery${media.description ? `: ${media.description}` : ""})`;
+  const [row] = await sql()`insert into chat_group_messages (group_id, user_id, content, media_id)
+    values (${g.id}, ${userId}, ${caption.slice(0, 2000)}, ${media.id}) returning id, speaker_id, content, created_at`;
+  await sql()`update chat_groups set updated_at = now() where id = ${g.id}`;
+  return [{ ...(row as GroupMsg), media }];
+}
+
 export async function groupPeekAt(userId: string, g: Group, ids: string[], adult: boolean, description: string): Promise<GroupMsg[]> {
   if (!g.scene_title && g.in_person_place == null) throw new GroupError("Peeks are for scenes or when you're together in person — start one first.");
   const chars = await pickedMembers(g, ids);

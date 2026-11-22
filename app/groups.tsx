@@ -12,7 +12,7 @@ import { EditSheet } from "./edit";
 import { CharacterFace, type Character } from "./characters";
 import { stamp } from "./lib/when";
 import { BRAIN_OPTIONS } from "./lib/brainOptions";
-import { SceneSheet, Selectable, type SceneClockChoice } from "./chat";
+import { SceneSheet, Selectable, GalleryPicker, type SceneClockChoice } from "./chat";
 import { MediaView, ReactionBar, type Media } from "./media";
 import { MentionPicker, putName } from "./mention";
 import { StarButton, tapStar } from "./star";
@@ -49,6 +49,7 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
   const [sceneSheet, setSceneSheet] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false); // ➕ the composer's menu
   const [photoSheet, setPhotoSheet] = useState(false); // 📸 a photo in the group
+  const [pickGallery, setPickGallery] = useState(false); // 🖼️ a picture out of your gallery
   // 🧍 Together in person: the same thing a one-to-one does, for everyone here at once.
   const [togetherSheet, setTogetherSheet] = useState<{ place: string; busy: boolean; error?: string } | null>(null);
   const [peek, setPeek] = useState(false);
@@ -342,6 +343,9 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
                 {/* 📸 A photo of some of them, or of them and you. */}
                 <button type="button" role="menuitem" data-testid="group-photo-open" onClick={() => { setMoreOpen(false); setPhotoSheet(true); }}
                   style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", cursor: "pointer", fontSize: 14 }}>📸 A photo</button>
+                {/* 🖼️ A picture you already have: it goes in with the words it was saved with, so they know what it is. */}
+                <button type="button" role="menuitem" data-testid="group-gallery-open" onClick={() => { setMoreOpen(false); setPickGallery(true); }}
+                  style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", cursor: "pointer", fontSize: 14 }}>🖼️ Share a picture</button>
                 {mic.supported && <button type="button" role="menuitem" data-testid="group-mic" aria-pressed={mic.listening} onClick={() => { setMoreOpen(false); if (mic.listening) mic.stop(); else mic.start(text); }}
                   style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: mic.listening ? "var(--bad)" : "var(--text)", cursor: "pointer", fontSize: 14 }}>{mic.listening ? "⏹ Stop listening" : "🎙️ Talk instead of typing"}</button>}
               </div>
@@ -376,6 +380,16 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
         </div>
       )}
       {sceneSheet && <SceneSheet who={members.map(c => c.name).join(" & ")} onClose={() => setSceneSheet(false)} onStart={startScene} />}
+      {pickGallery && <GalleryPicker onClose={() => setPickGallery(false)} onPick={async f => {
+        setPickGallery(false);
+        if (!f.mediaId) return;
+        setBusy(true); setErr("");
+        try {
+          const r = await api<{ messages: Msg[] }>("/api/groups", { action: "photo.share", id: group.id, mediaId: f.mediaId });
+          setMsgs(m => [...(m || []), ...r.messages]); unsaved.current++;
+        } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't share that."); }
+        setBusy(false);
+      }} />}
       {photoSheet && <GroupPhotoSheet group={group} members={members} name={name} brains={brains} onClose={() => setPhotoSheet(false)}
         onMade={added => { setMsgs(m => [...(m || []), ...added]); setPhotoSheet(false); unsaved.current++; }} />}
       {peek && <GroupPeekSheet group={group} members={members} name={name} brains={brains} onClose={() => setPeek(false)} onMade={added => { setMsgs(m => [...(m || []), ...added]); setPeek(false); }} />}

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolveCaller } from "../../lib/caller";
 import { allow } from "../../lib/rateLimit";
 import { aiReady, aiError } from "../../lib/brain";
-import { listGroups, getGroup, createGroup, deleteGroup, groupMessages, sendToGroup, rememberGroup, startGroupScene, endGroupScene, banterNext, reactInGroup, editGroupMessage, draftGroupPeek, groupPeekAt, bringTogether, endGroupInPerson, deleteGroupMessages, GroupError, draftGroupPhoto, groupPhoto } from "../../lib/groups";
+import { listGroups, getGroup, createGroup, deleteGroup, groupMessages, sendToGroup, rememberGroup, startGroupScene, endGroupScene, banterNext, reactInGroup, editGroupMessage, draftGroupPeek, groupPeekAt, bringTogether, endGroupInPerson, deleteGroupMessages, GroupError, draftGroupPhoto, groupPhoto, shareToGroup } from "../../lib/groups";
 import { MediaError, mediaReady } from "../../lib/media";
 import { availableBrains } from "../../lib/models";
 import { sql } from "../../lib/db";
@@ -104,6 +104,8 @@ export async function POST(req: NextRequest) {
         if (!mediaReady()) return bad("Photos aren't set up yet.");
         return NextResponse.json({ added: await groupPhoto(c.userId, g, who, withMe, !!u2?.adult_confirmed_at, String(b.description || ""), name, String(b.from || "")) });
       }
+      case "photo.share":
+        return NextResponse.json({ messages: await shareToGroup(c.userId, g, String(b.mediaId || "")) });
       case "peek.draft":
       case "peek": {
         if (!aiReady()) return bad("Velo isn't set up yet (missing AI settings).", 503);
