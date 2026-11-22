@@ -4,7 +4,7 @@
 // person saw, liked or commented), the person's posts, and when they're out of town on vacation.
 import { missingSchema, sql } from "./db";
 import { writeText } from "./llm";
-import { brainFor, pickedBrain } from "./whichBrain";
+import { brainFor } from "./whichBrain";
 import { commentBrains } from "./pickBrain";
 import { availableBrains } from "./models";
 
@@ -21,6 +21,12 @@ import { availableBrains } from "./models";
 // before they answer, and every one of them was being cut off mid-thought and never answering
 // at all, which is what "none of [kimi, claude] could write it" in the logs was.
 const THINK = { ms: 20_000 };
+
+// 🧠 Inventing someone new is the one thing here that has to come out right first time, and it is
+// what the Atlas brains keep failing at — a timeout or an empty answer and nobody arrives, with no
+// backup behind it on purpose. So a new face is Claude's unless you pick someone else yourself in
+// the retry. Her posts, captions and comments still go to the brain picked in Settings.
+const NEW_FACE_BRAIN = ["claude"];
 
 // 🧠 Who writes the posts, captions and comments here: whoever is picked for posts on Picagram,
 // and otherwise the brain picked in Settings. They are separate because a chat brain that stops
@@ -528,7 +534,7 @@ async function newFolk(userId: string, f: Folk, brain?: unknown): Promise<Record
     .concat((await sql()`select name from chat_characters where owner_id is null or owner_id = ${userId}`).map(r => ({ handle: "", name: String(r.name) })));
   const home = await homeOf(userId);
   const near = home ? ` ${localNote(homeText(home))} Put that town in "lives" as "Town, ST".` : "";
-  const raw = await writeText(brain ?? await picaBrain(userId), `Invent ONE woman who posts on Picagram (a social photo app like Instagram).
+  const raw = await writeText(brain ?? NEW_FACE_BRAIN, `Invent ONE woman who posts on Picagram (a social photo app like Instagram).
 ${folkNote(f, tied ? String(tied.name) : "", t.pica_folk)}
 ${t.pica_unique}${near} ${hobbyRule(Math.random())}
 JSON only: {"name":"First Last (a plain modern American name)","handle":"lowercase_handle from her name","bio":"short bio, the way a small ordinary account reads","look":"${t.pica_look} — no glamour","lives":"City, State"}`,
@@ -585,7 +591,7 @@ async function newAccount(userId: string, follow = false, brain?: unknown): Prom
   // Three goes at someone genuinely new, telling her what's already taken each time.
   let clash = "";
   for (let go = 0; go < 3; go++) {
-    const raw = await writeText(brain ?? await picaBrain(userId), `Invent ONE woman who posts on Picagram (a social photo app like Instagram).
+    const raw = await writeText(brain ?? NEW_FACE_BRAIN, `Invent ONE woman who posts on Picagram (a social photo app like Instagram).
 ${vibeNote()}
 ${intoWomen ? "⚢ SHE IS A LESBIAN — into women, not men. Let her bio say so the way a real profile would (a flag, \"she/her 🏳️‍🌈\", \"girls only\", a line about her girlfriend or ex-girlfriend) without making it the whole bio, and keep the rest of her exactly as the lane says.\n" : ""}${t.pica_unique}${where} ${hobbyRule(Math.random())}
 JSON only: {"name":"First Last (a plain modern American name, as described above)","handle":"lowercase_handle (from her name, like ava.miller or mia_russo — no made-up words)","bio":"short bio with emojis","look":"${t.pica_look}","lives":"City, State","followers":12000}`,
@@ -709,7 +715,7 @@ export async function putUpUploads(userId: string, a: Record<string, unknown>, m
 export async function newFaces(userId: string, n: number, pickBrain?: unknown): Promise<{ made: number; names: string[]; error?: string }> {
   // 🧠 One brain only: the one picked in Settings (or the one chosen for a retry). No backup
   // behind it — if it can't manage, the app offers the retry rather than quietly spending twice.
-  const brain = pickBrain ? [String(pickBrain)] : await pickedBrain(userId);
+  const brain = pickBrain ? [String(pickBrain)] : NEW_FACE_BRAIN;
   const want = Math.max(1, Math.min(5, n));
   const [{ all, following }] = await sql()`select count(*) filter (where character_id is null)::int as all,
     count(*) filter (where followed and character_id is null)::int as following
