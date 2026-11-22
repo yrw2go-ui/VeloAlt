@@ -144,7 +144,18 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   const [groupId, setGroupId] = useState<string | null>(() => (urlParam("chat") ? null : place.groupId || null));
   const [groupsLoaded, setGroupsLoaded] = useState(false);
   const [makingGroup, setMakingGroup] = useState(false);
-  useEffect(() => { if (userId) api<{ groups: Group[] }>("/api/groups", { action: "list" }).then(r => setGroups(r.groups)).catch(() => {}).finally(() => setGroupsLoaded(true)); }, [userId]);
+  // ⏱️ The group screen waits on this list, and the normal chat stands aside while it's coming —
+  // so a request that never answers (rather than failing) left the app on its loading screen for
+  // ever, with nothing on screen and nothing in the log. Fifteen seconds and we carry on without
+  // it: the chat comes back, and a group you had open says it couldn't be reached.
+  useEffect(() => {
+    if (!userId) return;
+    const give = setTimeout(() => setGroupsLoaded(true), 15_000);
+    api<{ groups: Group[] }>("/api/groups", { action: "list" })
+      .then(r => setGroups(r.groups)).catch(() => {})
+      .finally(() => { clearTimeout(give); setGroupsLoaded(true); });
+    return () => clearTimeout(give);
+  }, [userId]);
   // 📍 Remember where they are.
   useEffect(() => { savePlace(userId, { tab, withId, groupId }); }, [userId, tab, withId, groupId]);
   // …and how far down they'd scrolled (Today, Memory, Settings): put back once the page has loaded after a reload.
@@ -456,8 +467,17 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       <main ref={mainRef} onScroll={onMainScroll} style={{ flex: 1, width: "100%", minWidth: 0, maxWidth: "100%", minHeight: 0, overflowX: "hidden", overflowY: tab === "chat" ? "hidden" : "auto", display: "flex", flexDirection: "column" }}>
         {tab === "chat" && <CharacterStrip characters={chars} active={withChar?.id || null} admin={admin} onPick={pickChat} onNew={() => setNewChar(true)} onEdit={c => void openCard(c)} onGallery={() => setGallery(true)} unread={unread}
           groups={groups} activeGroup={inGroup?.id || null} onPickGroup={setGroupId} onNewGroup={() => setMakingGroup(true)} />}
+        {/* 🚪 The list never arrived, so the group you tapped can't be found: say so instead of
+            quietly dropping you into the normal chat as though you'd never opened it. */}
+        {tab === "chat" && groupId && groupsLoaded && !inGroup && (
+          <div data-testid="group-missing" className="muted" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10, alignItems: "flex-start" }}>
+            <b style={{ fontSize: 15 }}>⚠️ That group didn&apos;t open</b>
+            <div style={{ fontSize: 13 }}>Velo couldn&apos;t reach your groups just now. Nothing is lost — try again in a moment.</div>
+            <button className="ghost" onClick={() => setGroupId(null)} style={{ padding: "6px 14px" }}>Back to the chat</button>
+          </div>
+        )}
         {inGroup && <Boundary what="This group chat"><GroupChat key={inGroup.id} group={inGroup} chars={chars} name={name} brains={brains} onDeleted={id => { setGroups(gs => gs.filter(g => g.id !== id)); setGroupId(null); }} /></Boundary>}
-        {tab === "chat" && !inGroup && !(groupId && !groupsLoaded) && <Chat key={`${withChar?.id || "velo"}-${chatTick}`} calls={{ can: canCallVelo() && !calling && !inGroup, ringing, continuing, have: historyCount, need: CONTINUE_MIN, onCall: startCall, onContinue: continueCall }} startPlan={startingPlan} onPlanStarted={() => setStartPlan(null)} brains={brains} userId={userId} name={name} onChanged={bump} added={chatAdd} onAdded={() => setChatAdd(null)} character={withChar} adult={!!profile?.adultConfirmed} onAdult={() => setProfileTick(t => t + 1)} onHistory={h => { chatHistory.current = h; setHistoryCount(h.length); }}
+        {tab === "chat" && !inGroup && !groupId && <Chat key={`${withChar?.id || "velo"}-${chatTick}`} calls={{ can: canCallVelo() && !calling && !inGroup, ringing, continuing, have: historyCount, need: CONTINUE_MIN, onCall: startCall, onContinue: continueCall }} startPlan={startingPlan} onPlanStarted={() => setStartPlan(null)} brains={brains} userId={userId} name={name} onChanged={bump} added={chatAdd} onAdded={() => setChatAdd(null)} character={withChar} adult={!!profile?.adultConfirmed} onAdult={() => setProfileTick(t => t + 1)} onHistory={h => { chatHistory.current = h; setHistoryCount(h.length); }}
           onNewCharacter={() => api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => setChars(r.characters)).catch(() => {})}
           others={chars.map(c => ({ id: c.id, name: c.name, pica_handle: c.pica_handle || null }))} onSocial={id => { setPicaOpen(id); setTab("pica"); }} onGroup={g => { setGroups(gs => [g, ...gs.filter(x => x.id !== g.id)]); setGroupId(g.id); }} />}
         {tab === "pica" && <Picagram name={name} userId={userId} home={picaHome} openProfile={picaOpen} onProfileOpened={() => setPicaOpen(null)} openDm={picaDm} onDmOpened={() => setPicaDm(null)} onChat={id => api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => { setChars(r.characters); setTab("chat"); pickChat(id); }).catch(() => {})} />}
