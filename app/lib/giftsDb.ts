@@ -225,7 +225,7 @@ export async function closenessMap(userId: string): Promise<Map<string, number>>
 }
 
 /** 💝 Everyone you can send to: your characters, and the Picagram people you follow. */
-export async function peopleToGift(userId: string, listed?: Gift[], shop?: Gift[]) {
+export async function peopleToGift(userId: string, listed?: Gift[]) {
   // 🧍 Everyone you could send to in ONE query instead of two: the characters, then the people you
   // only follow on Picagram. The database is reached through a single connection (app/lib/db.ts),
   // so every separate query here is another wait with the whole screen empty behind it.
@@ -249,13 +249,12 @@ export async function peopleToGift(userId: string, listed?: Gift[], shop?: Gift[
   // 🎁 One read of what each of them has already been given, so a wishlist never offers
   // something that is already theirs — and the hints are handed all of it rather than re-reading.
   const got = await alreadyGiven(userId);
-  // ⏱️ The hints are the one thing here that writes as well as reads, and the whole screen was
-  // waiting on them: if they stall, nobody's money, people or shop ever arrive. They're worth a
-  // red dot, not the page — so after three seconds the screen goes on without them.
-  const hints = await Promise.race([
-    liveHints(userId, now, { listed: mine, close, got, shop }).catch(() => new Map()),
-    new Promise<Map<string, { kind: string; giftId: string; at: number }>>(ok => setTimeout(() => ok(new Map()), 3000)),
-  ]);
+  // ⏱️ The hints are NOT raised here any more. They are the one part of this screen that writes,
+  // they are the slowest thing in it, and the whole screen was waiting on them: if they stalled,
+  // nobody's money, people or shop ever arrived. A time limit can't help — this database has one
+  // connection (app/lib/db.ts), so a query that is still running still holds it, whatever we stop
+  // waiting for. They are worth a red dot, not the page, so the screen asks for them separately
+  // once it is up (action "hints"), and the dots appear a moment later.
   return [
     // 👔 A man has no wishlist and does no hinting — you still send him things, he just isn't
     // hoping for anything in particular.
@@ -264,7 +263,7 @@ export async function peopleToGift(userId: string, listed?: Gift[], shop?: Gift[
       return { id: String(r.id), kind: "character" as const, name: String(r.name), handle: null as string | null,
         face: r.face ? String(r.face) : null,
         wishlist: man ? [] : wishlistOf(String(r.id), now, mine, close.get(String(r.id)) || 0, got.get(String(r.id)) || new Set<string>()),
-        hinting: !man && hints.has(String(r.id)) };
+        hinting: false };
     }),
     // Someone you only follow on Picagram is never close enough for one of yours.
     ...accounts.map(r => ({ id: String(r.id), kind: "account" as const, name: String(r.name), handle: String(r.handle || ""),
