@@ -964,3 +964,6 @@ alter table users add column if not exists backup_brain text not null default ''
 -- the day Atlas Cloud has it, without a deploy.
 alter table users add column if not exists image_model text not null default '';
 alter table users add column if not exists image_models jsonb not null default '[]'::jsonb;
+
+-- 🧠 Who writes the posts on Picagram ('' = the brain picked in Settings).
+alter table users add column if not exists post_brain text not null default '';
