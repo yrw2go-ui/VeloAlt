@@ -869,6 +869,13 @@ export async function accountFor(userId: string, characterId: string): Promise<s
     await sql()`update pica_accounts set character_id = ${c.id}, followed = true where id = ${String(same.id)}`;
     await sql()`update pica_posts set account_id = ${String(same.id)} where user_id = ${userId} and author_id = ${c.id} and account_id is null`;
     await sql()`update pica_posts set author_id = ${c.id} where user_id = ${userId} and account_id = ${String(same.id)} and author_id is null`;
+    // 🖼️ Her face on Picagram becomes the headshot from her character card, so a linked account is
+    // recognisably her at a glance (and you can tell it took).
+    await sql()`update pica_accounts a set avatar_media_id = p.id
+      from chat_characters c, lateral (select m.id from velo_media m
+        where m.file_id = c.portrait_file_id and m.user_id = ${userId} and m.status = 'done'
+        order by m.created_at desc limit 1) p
+      where a.id = ${String(same.id)} and c.id = ${c.id} and c.portrait_file_id is not null`;
     return String(same.id);
   }
   // Her handle keeps her name's capitals (@RaeMori) — it's her name, not a label.
