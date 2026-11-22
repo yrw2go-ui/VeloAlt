@@ -41,6 +41,11 @@ async function members(g: Group): Promise<Character[]> {
   return (await Promise.all(g.member_ids.map(id => getCharacter(id)))).filter((c): c is Character => !!c);
 }
 
+/** 🧑‍🤝‍🧑 Who's in the group, for naming the bubbles: enough to show a name and a face. */
+export async function groupFaces(g: Group): Promise<{ id: string; name: string; portrait_url: string | null }[]> {
+  return (await members(g)).map(c => ({ id: c.id, name: c.name, portrait_url: c.portrait_url || null }));
+}
+
 /** A new group. Anyone in it who didn't know each other meets now (for this person). */
 export async function createGroup(userId: string, memberIds: string[], title: string, personName: string): Promise<Group> {
   const ids = [...new Set(memberIds.filter(x => /^[0-9a-f-]{36}$/i.test(x)))].slice(0, 6);
