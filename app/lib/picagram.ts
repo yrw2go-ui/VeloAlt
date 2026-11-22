@@ -5,7 +5,7 @@
 import { missingSchema, sql } from "./db";
 import { writeText } from "./llm";
 import { brainFor } from "./whichBrain";
-import { commentBrains } from "./pickBrain";
+import { commentBrains, brainOrder } from "./pickBrain";
 import { availableBrains } from "./models";
 
 /**
@@ -31,18 +31,23 @@ const NEW_FACE_BRAIN = ["claude"];
 // 🧠 Who writes the posts, captions and comments here: whoever is picked for posts on Picagram,
 // and otherwise the brain picked in Settings. They are separate because a chat brain that stops
 // answering takes the whole feed down with it — nobody posts, and nothing says why.
-const picaBrain = async (userId: string): Promise<string> => {
-  let b = "";
+const picaBrain = async (userId: string): Promise<string[]> => {
+  let picked = "", backup = "";
   try {
-    const [u] = await sql()`select chat_model, post_brain from users where id = ${userId}`;
-    b = String(u?.post_brain || u?.chat_model || "");
+    const [u] = await sql()`select chat_model, post_brain, backup_brain from users where id = ${userId}`;
+    picked = String(u?.post_brain || u?.chat_model || "");
+    backup = String(u?.backup_brain || "");
   } catch (e) {
     // The column isn't on this database yet: carry on with the Settings brain as before.
     if (!missingSchema(e)) throw e;
-    const [u] = await sql()`select chat_model from users where id = ${userId}`;
-    b = String(u?.chat_model || "");
+    const [u] = await sql()`select chat_model, backup_brain from users where id = ${userId}`;
+    picked = String(u?.chat_model || "");
+    backup = String(u?.backup_brain || "");
   }
-  return b === "claude" ? "" : b;
+  // 🛟 …and the backup you already switched on, behind it. A chat has had this all along; here it
+  // did not, so one brain going quiet took the whole feed with it and nothing said why. Nothing is
+  // spent twice: the second one is only asked after the first has actually failed.
+  return brainOrder(picked, backup);
 };
 import { scrub } from "./secrets";
 import { listCharacters, referenceUrls, type Character } from "./characters";
