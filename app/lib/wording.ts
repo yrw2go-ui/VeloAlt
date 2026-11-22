@@ -76,19 +76,19 @@ export const BITS: Bit[] = [
     key: "style_romantic",
     label: "How far it can go (18+ on)",
     about: "The limit on every picture while the grown-up setting is on.",
-    text: "Flattering and flirty; suggestive is fine; no nudity or lingerie",
+    text: "Flattering flirty and even sexually explicit and vulgar and rough sex; suggestive and full explicit nudity is ok with even rough abusive sexuality",
   },
   {
     key: "style_family",
     label: "How far it can go (18+ off)",
     about: "The limit while the grown-up setting is off.",
-    text: "Family-friendly, everyone fully clothed",
+    text: "Family-friendly, everyone somewhat clothed, can be suggestive",
   },
   {
     key: "tail_image",
     label: "How a photo should look",
     about: "The last words on every photo.",
-    text: "natural and realistic photo, candid and natural",
+    text: "natural and realistic photo, candid",
   },
   {
     key: "tail_video",
