@@ -225,16 +225,26 @@ export async function closenessMap(userId: string): Promise<Map<string, number>>
 }
 
 /** 💝 Everyone you can send to: your characters, and the Picagram people you follow. */
-export async function peopleToGift(userId: string) {
-  const chars = await sql()`select c.id, c.name, c.voice_kind, f.url as face from chat_characters c
-    left join velo_files f on f.id = c.portrait_file_id
-    where c.owner_id is null or c.owner_id = ${userId} order by c.name`;
-  const accounts = await sql()`select a.id, a.name, a.handle, f.url as face from pica_accounts a
-    left join velo_media m on m.id = a.avatar_media_id left join velo_files f on f.id = m.file_id
-    where a.user_id = ${userId} and a.followed and a.character_id is null and not a.mine order by a.name limit 40`;
+export async function peopleToGift(userId: string, listed?: Gift[]) {
+  // 🧍 Everyone you could send to in ONE query instead of two: the characters, then the people you
+  // only follow on Picagram. The database is reached through a single connection (app/lib/db.ts),
+  // so every separate query here is another wait with the whole screen empty behind it.
+  const rows = await sql()`
+    (select c.id, c.name, null as handle, c.voice_kind, f.url as face, 0 as rank from chat_characters c
+      left join velo_files f on f.id = c.portrait_file_id
+      where c.owner_id is null or c.owner_id = ${userId})
+    union all
+    (select a.id, a.name, a.handle, null as voice_kind, f.url as face, 1 as rank from pica_accounts a
+      left join velo_media m on m.id = a.avatar_media_id left join velo_files f on f.id = m.file_id
+      where a.user_id = ${userId} and a.followed and a.character_id is null and not a.mine
+      order by a.name limit 40)
+    order by rank, name`;
+  const chars = rows.filter(r => Number(r.rank) === 0);
+  const accounts = rows.filter(r => Number(r.rank) === 1);
   const now = Date.now();
   // What you listed yourself counts — but only for someone close enough to want one of yours.
-  const mine = await myGifts(userId);
+  // The caller usually has these already; fetching them twice was a wait for nothing.
+  const mine = listed || (await myGifts(userId));
   const close = await closenessMap(userId);
   const hints = await liveHints(userId, now).catch(() => new Map());
   // 🎁 One read of what each of them has already been given, so a wishlist never offers
