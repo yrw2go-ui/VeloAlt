@@ -354,14 +354,27 @@ export async function groupPhoto(userId: string, g: Group, ids: string[], withMe
   // in twice: her face took two of the four reference slots, the last person's references were
   // squeezed out altogether, and the note telling the model who is who read "Carol, Carol, Jen".
   const [first, ...rest] = chars;
+  // 🖼️ Four reference images go to the picture service, shared out evenly so nobody's face wins:
+  // one person gets all four, two get two each, three get one each.
+  const faces = chars.length + (withMe ? 1 : 0);
+  const each = faces >= 3 ? 1 : faces === 2 ? 2 : 4;
+  const subject = ((first ? await referenceUrls(first) : await myRefs(userId)) || []).slice(0, each);
   const others = [
-    ...(await Promise.all(rest.map(async c => ({ name: c.name, refs: await referenceUrls(c), appearance: c.appearance })))),
+    ...(await Promise.all(rest.map(async c => ({ name: c.name, refs: (await referenceUrls(c)).slice(0, each), appearance: c.appearance })))),
     // 🙋 You, when you're in it — unless you're the only one, and then you're the subject below.
-    ...(withMe && first ? [{ name: personName || "you", refs: await myRefs(userId), appearance: "" }] : []),
+    ...(withMe && first ? [{ name: personName || "you", refs: (await myRefs(userId)).slice(0, each), appearance: "" }] : []),
   ];
-  const media = await startMedia(userId, { kind: "image", with_me: withMe, they_asked: true, description: desc },
+  // 🧑 Just the one person in it: there is no cast note in that case, so the words alone would go
+  // to the picture service with four photographs attached and nothing saying whose face they are.
+  // With two or more, `startMedia` writes that note itself, naming each of them.
+  const whose = !others.length && subject.length
+    ? `Reference image${subject.length > 1 ? `s 1–${subject.length} show` : " 1 shows"} ${first?.name || personName || "you"}; keep that face and look the same. `
+    : "";
+  // 👤 with_me says the subject is in the picture — which is the whole point of this one. Without
+  // it, and with nobody else in the cast, not one reference photo was sent.
+  const media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: `${whose}${desc}` },
     { characterId: first?.id || null, who: first?.name || personName || "you", appearance: first?.appearance || "",
-      refs: first ? await referenceUrls(first) : await myRefs(userId),
+      refs: subject,
       romantic: chars.every(c => romanticFor(c, adult)), offer: false, other: null, raw: true, people: others.length ? others : undefined });
   const caption = `📸 ${[...chars.map(c => c.name), ...(withMe ? [personName || "me"] : [])].join(", ")}`;
   const [row] = await sql()`insert into chat_group_messages (group_id, user_id, content, media_id) values (${g.id}, ${userId}, ${caption}, ${media.id}) returning id, speaker_id, content, created_at`;
