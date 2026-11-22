@@ -292,17 +292,23 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
   const saving = useRef(false);
   const edited = JSON.stringify([gender, name, personality, backstory, relation, appearance, job, wear, hobbies, voice.id, traits, preset, zone, bday, romantic, arc, refIds, brain,
     attire, workDays, workStart, workEnd, partTime, school, classDays, classStart, classEnd, gf, secret, polyOk, sapphic, explicitOk, bigFollowing, liveIn, neighbor, local, livesIn, attached, partner, seesOthers, lesbian, lesbianWho]);
+  // 🔁 …and it only ever saves the same thing once. A field whose saved form doesn't come back
+  // looking identical (references in another order, a date, a tidied-up flag) leaves this screen
+  // "changed" for good: it saved every three seconds for ever and the button sat on "Saving…".
+  // So what went to the server last time is remembered, and nothing is sent again until it differs.
+  const [sent, setSent] = useState("");
   useEffect(() => {
-    if (!c || !dirty || busy || working || !name.trim()) return;
+    if (!c || !dirty || busy || working || !name.trim() || edited === sent) return;
     const t = setTimeout(async () => {
       if (saving.current) return;
       saving.current = true;
+      const snap = edited;
       const r = await save();
       saving.current = false;
-      if (r) { setSaved(true); setTimeout(() => setSaved(false), 2000); }
+      if (r) { setSent(snap); setSaved(true); setTimeout(() => setSaved(false), 2000); }
     }, 3000);
     return () => clearTimeout(t);
-  }, [edited, dirty, busy, working, c?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [edited, dirty, busy, working, sent, c?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 🛡️ Checked when you ask, never on save: a second opinion on the card, nothing more.
   const [scanning, setScanning] = useState("");
@@ -600,7 +606,7 @@ export function CharacterEditor({ initial, draft, portraits, brains = [], brainM
         {msg && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {msg}</div>}
         <div className="row" style={{ flexWrap: "wrap" }}>
           <button className="btn" disabled={busy || !name.trim() || (!dirty && !!c)} onClick={save} data-testid="character-save">{busy ? "…" : c ? "Save" : "Create"}</button>
-          {c && <span data-testid="autosave" className="muted" style={{ fontSize: 12, alignSelf: "center" }}>{busy ? "Saving…" : saved ? "✓ Saved" : dirty ? "Saves on its own…" : ""}</span>}
+          {c && <span data-testid="autosave" className="muted" style={{ fontSize: 12, alignSelf: "center" }}>{busy ? "Saving…" : saved ? "✓ Saved" : dirty && edited !== sent ? "Saves on its own…" : ""}</span>}
           {portraits && <button className="ghost" disabled={busy || working || !name.trim() || !appearance.trim()} onClick={portrait} data-testid="character-portrait">{c?.portrait_url ? "🎨 New portrait" : "🎨 Generate portrait"}</button>}
           {c && onDuplicated && <button className="ghost" disabled={busy || dirty} onClick={() => { setCopyName(`${c.name} 2`); setCopying(true); }} data-testid="duplicate-open" title={dirty ? "Save first" : "Make a copy under a new name"}>📄 Duplicate</button>}
           {c && <button className="ghost" disabled={busy} onClick={remove} style={{ marginLeft: "auto", color: "var(--bad)" }}>Delete</button>}
