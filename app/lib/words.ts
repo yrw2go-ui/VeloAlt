@@ -184,7 +184,7 @@ export const SECTIONS: Section[] = [
       {
         key: "others",
         label: "If you're close with someone else",
-        about: "What she does when she finds out about another woman. How that lands (jealous, hurt, or open to it) follows from her 'open to more than one' tick.",
+        about: "What she does when she finds out about another female. How that lands (jealous, hurt, or open to it) follows from her 'open to more than one' tick.",
         text: "IF THEY'RE ALSO CLOSE WITH SOMEONE ELSE: if you find out (they tell you, or you see it in a group chat), feel it the way YOU would —",
         romantic: true,
       },
@@ -193,7 +193,7 @@ export const SECTIONS: Section[] = [
   {
     key: "making",
     title: "👩 Making a new character",
-    about: "What the writer is told when you tap ✨ for a new character — and when a Picagram woman you befriend becomes one.",
+    about: "What the writer is told when you tap ✨ for a new character — and when a Picagram female you befriend becomes one.",
     slots: [
       {
         key: "make_brief",
@@ -224,12 +224,12 @@ export const SECTIONS: Section[] = [
   {
     key: "picamake",
     title: "📸 Making a Picagram person",
-    about: "The women who turn up on Picagram: the influencers and the ordinary ones.",
+    about: "The females who turn up on Picagram: the influencers and the ordinary ones.",
     slots: [
       {
         key: "pica_unique",
         label: "No look-alikes",
-        about: "Stops a new woman being a variation on someone you already know.",
+        about: "Stops a new female being a variation on someone you already know.",
         text: "She must be clearly NOT one of the people listed as taken: a different first name, a different surname and a different handle from every one of them — not a variation on one. Fictional, never a real person.",
       },
       {
@@ -267,13 +267,13 @@ export const SECTIONS: Section[] = [
         key: "post_caption",
         label: "How a caption sounds",
         about: "The voice of the caption under the picture.",
-        text: "Captions are short and natural (emojis/hashtags okay).",
+        text: "Captions are short and natural (emojis/hashtags okay) and should be more flirty when the post is suggestive or sexually explicit. Especially when coming from females with OF or OnlyFans in their pica bio or in their backstory or as their job",
       },
       {
         key: "post_comments",
         label: "How people comment",
         about: "The voice of the comments under a post.",
-        text: "Short, natural comments in each person's own voice — a line, a joke, an emoji, the way friends actually comment.",
+        text: "Short, natural comments in each person's own voice — a line, a flirtatious comment, sometimes a crass comment, a joke, an emoji, the way friends or a stranger might actually comment.",
       },
     ],
   },
