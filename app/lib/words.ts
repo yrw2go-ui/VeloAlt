@@ -359,7 +359,7 @@ export const SECTIONS: Section[] = [
       {
         key: "safe_pg",
         label: "How far anything goes",
-        about: "With the grown-up setting on, once romance is part of it. With it off, everything stays platonic.",
+        about: "With the grown-up setting on, once romance is part of it. With it off, everything stays somewhat platonic but can be suggestive.",
         text: SPICY,
       },
       {
@@ -390,9 +390,9 @@ export const SECTIONS: Section[] = [
     slots: [
       {
         key: "safe_real",
-        label: "No real people, and everyone's an adult",
+        label: "rules",
         about: "On every character and every Picagram person made in the app.",
-        text: "Never a real or famous person — everyone is fictional, and every one of them is an adult.",
+        text: "No rules added here yet.",
       },
       {
         key: "safe_harm",
