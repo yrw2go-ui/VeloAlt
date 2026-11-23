@@ -807,13 +807,16 @@ async function postFor(userId: string, a: Record<string, unknown>, u: U, at: num
 export async function picaNewPost(userId: string, want: { accountId?: string; setting?: string; caption?: string; photo?: string }): Promise<{ who: string; handle: string }> {
   const u = await userInfo(userId);
   const id = String(want.accountId || "");
-  // Whoever you picked, or one of them at random — the ones you follow first, and ones with
-  // pictures of their own before ones without, so the face in the post is really hers.
+  // At random: the ones you follow first, and ones with pictures of their own before ones
+  // without, so the face in the post is really hers.
+  // Whoever you picked — by her Picagram account, or by the character she is. Her @handle and her
+  // Picagram name are yours to change, and neither is how she's found: the account's own id, or
+  // the character she's linked to, is. Renaming her can't lose her.
   const [a] = id
-    ? await sql()`select * from pica_accounts where id = ${id} and user_id = ${userId} and not mine`
+    ? await sql()`select * from pica_accounts where user_id = ${userId} and not mine and (id = ${id} or character_id = ${id}) limit 1`
     : await sql()`select * from pica_accounts where user_id = ${userId} and not mine
         order by (avatar_media_id is not null) desc, followed desc, random() limit 1`;
-  if (!a) throw new PicaLimit(id ? "That account wasn't found." : "There's nobody on Picagram yet.");
+  if (!a) throw new PicaLimit(id ? "She isn't on Picagram — put her up from her own chat first." : "There's nobody on Picagram yet.");
   const photo = scrub(String(want.photo || "")).replace(/\s+/g, " ").trim().slice(0, 600);
   const caption = scrub(String(want.caption || "")).trim().slice(0, 600);
   const mine = !!photo;
@@ -1094,10 +1097,12 @@ export async function picaHide(userId: string, characterId: string, on: boolean)
 
 /** 👥 Who they follow (up to 70), to unfollow some. */
 export async function picaFollowing(userId: string) {
-  const rows = await sql()`select a.id, a.handle, a.name, a.character_id, ch.attached, f.url as avatar from pica_accounts a
+  const rows = await sql()`select a.id, a.handle, a.name, a.character_id, ch.attached, ch.name as real_name, f.url as avatar from pica_accounts a
     left join velo_media m on m.id = a.avatar_media_id left join velo_files f on f.id = m.file_id left join chat_characters ch on ch.id = a.character_id
     where a.user_id = ${userId} and a.followed order by a.name`;
-  return rows.map(r => ({ id: String(r.id), handle: String(r.handle), name: String(r.name), avatar: r.avatar ? String(r.avatar) : null, friend: !!r.character_id, character_id: r.character_id ? String(r.character_id) : null, married: r.attached === "married" }));
+  // 🪪 Her own name as well as her Picagram one: a @handle is hers to change whenever she likes,
+  // so anything that needs to say who she IS uses the name on her character card.
+  return rows.map(r => ({ id: String(r.id), handle: String(r.handle), name: String(r.name), real_name: r.real_name ? String(r.real_name) : null, avatar: r.avatar ? String(r.avatar) : null, friend: !!r.character_id, character_id: r.character_id ? String(r.character_id) : null, married: r.attached === "married" }));
 }
 
 /** 🤝 Befriend her: she becomes a character (filled in for them; her photos are her headshot and references). */
