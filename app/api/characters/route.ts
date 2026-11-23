@@ -7,6 +7,7 @@ import { listGallery, mediaByIds } from "../../lib/media";
 import { cleanTraits, PRESETS } from "../../lib/traits";
 import { isValidTimeZone, localDate } from "../../lib/localTime";
 import { availableBrains, brainList } from "../../lib/models";
+import { retryChoices } from "../../lib/pickBrain";
 import { brainFor } from "../../lib/whichBrain";
 import { makeCharacter, usedNames } from "../../lib/makeCharacter";
 import { listLinks, setLink, removeLink, writeStory, linkSuggestions, screenStory } from "../../lib/friends";
@@ -225,8 +226,15 @@ export async function POST(req: NextRequest) {
         if (!allow(`chargen:${me}`, [{ ms: 60_000, max: 6 }, { ms: 86_400_000, max: 100 }])) return bad("That's a lot of new characters — give it a minute.", 429);
         // 🙅 Not another one of the same name: everyone they already have is off the table.
         const taken = await usedNames(me).catch(() => []);
-        try { return NextResponse.json({ draft: { local: b.local === true, ...await makeCharacter({ userId: me, name: String(b.name || ""), vibe: String(b.vibe || ""), job: String(b.job || ""), romantic: b.romantic === true, male: b.male === true, liveIn: b.liveIn === true, local: b.local === true, avoidNames: taken, words: await wordsFor(me), lives: b.local === true ? localNote(await homeSaid(me)) : livesNote(await homeOf(me)) }) } }); }
-        catch (e) { return bad(e instanceof Error ? e.message : "Couldn't come up with one — try again.", 502); }
+        // 🧠 Whoever you picked in the popup, or the brain from Settings as before.
+        const picked = b.brain === "claude" || availableBrains().includes(b.brain) ? String(b.brain) : "";
+        try { return NextResponse.json({ draft: { local: b.local === true, ...await makeCharacter({ userId: me, name: String(b.name || ""), vibe: String(b.vibe || ""), job: String(b.job || ""), romantic: b.romantic === true, male: b.male === true, liveIn: b.liveIn === true, local: b.local === true, avoidNames: taken, words: await wordsFor(me), brain: picked || undefined, lives: b.local === true ? localNote(await homeSaid(me)) : livesNote(await homeOf(me)) }) } }); }
+        // 🧠 One brain couldn't manage her: say who, and offer the others to try instead — the same
+        // second chance a new face on Picagram gets, rather than a dead end saying "try again".
+        catch (e) {
+          const tried = picked || (await brainFor(me))[0] || "claude";
+          return NextResponse.json({ draft: null, why: e instanceof Error ? e.message : "Couldn't come up with one.", tried, retry: retryChoices(tried, availableBrains()) });
+        }
       }
       // Make one of her gallery pictures the main headshot.
       case "portrait.set": {

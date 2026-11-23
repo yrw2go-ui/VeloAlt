@@ -1074,10 +1074,19 @@ export function NewCharacterSheet({ onDraft, onBlank, onClose }: { onDraft: (d: 
   const [local, setLocal] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-  const make = async () => {
-    setBusy(true); setErr("");
-    try { onDraft((await api<{ draft: Partial<Character> }>("/api/characters", { action: "generate", name, vibe, job, romantic, male, local })).draft); }
-    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't come up with one — try again."); setBusy(false); }
+  // 🧠 If the brain that tried couldn't manage her, these are the others you could try instead —
+  // the same second chance a new face on Picagram gets, rather than a dead end saying "try again".
+  const [retry, setRetry] = useState<{ tried: string; list: { id: string; label: string; cost: string }[] } | null>(null);
+  const make = async (brain = "") => {
+    setBusy(true); setErr(""); setRetry(null);
+    try {
+      const r = await api<{ draft: Partial<Character> | null; why?: string; tried?: string; retry?: { id: string; label: string; cost: string }[] }>(
+        "/api/characters", { action: "generate", name, vibe, job, romantic, male, local, brain });
+      if (r.draft) { onDraft(r.draft); return; }
+      setErr(r.why || "Couldn't come up with one.");
+      if (r.retry?.length) setRetry({ tried: r.tried || "", list: r.retry });
+      setBusy(false);
+    } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't come up with one — try again."); setBusy(false); }
   };
   return (
     <div role="dialog" aria-modal="true" data-testid="new-character" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }} onClick={onClose}>
@@ -1095,8 +1104,23 @@ export function NewCharacterSheet({ onDraft, onBlank, onClose }: { onDraft: (d: 
           <label className="row" style={{ gap: 6 }}><input type="checkbox" checked={male} onChange={e => setMale(e.target.checked)} data-testid="gen-male" style={{ width: 18, height: 18 }} /> Male</label>
           <label className="row" style={{ gap: 6 }} title="A real town within about an hour of you"><input type="checkbox" checked={local} onChange={e => setLocal(e.target.checked)} data-testid="gen-local" style={{ width: 18, height: 18 }} /> 📍 Local</label>
         </div>
+        {retry && (
+          <div data-testid="new-character-retry" style={{ padding: 12, border: "1px solid var(--border)", borderRadius: 12, background: "var(--surface2)" }}>
+            <b style={{ fontSize: 14 }}>Couldn&apos;t come up with her</b>
+            <div className="muted" style={{ fontSize: 12, margin: "2px 0 10px" }}>{retry.tried ? `${retry.tried} didn't manage it.` : ""} Try again with another AI? Costs are rough estimates for the writing.</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {retry.list.map(o => (
+                <button key={o.id} type="button" className="ghost" disabled={busy} onClick={() => make(o.id)} data-testid={`new-character-retry-${o.id}`}
+                  style={{ textAlign: "left", padding: "10px 12px", borderRadius: 10, border: "1px solid var(--border)" }}>
+                  <b>{o.label}</b> <span className="muted" style={{ fontSize: 12 }}>· {o.cost}</span>
+                </button>
+              ))}
+              <button type="button" className="ghost" onClick={() => setRetry(null)} style={{ padding: "6px 10px", fontSize: 13 }}>Not now</button>
+            </div>
+          </div>
+        )}
         {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
-        <button className="btn" onClick={make} disabled={busy} data-testid="gen-make">{busy ? "Dreaming one up…" : "✨ Make one for me"}</button>
+        <button className="btn" onClick={() => make()} disabled={busy} data-testid="gen-make">{busy ? "Dreaming one up…" : "✨ Make one for me"}</button>
         <button className="ghost" onClick={onBlank} disabled={busy} data-testid="gen-blank">Start from scratch instead</button>
       </div>
     </div>
