@@ -494,9 +494,12 @@ export async function POST(req: NextRequest) {
       case "media.share": {
         const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
         if (b.characterId && !ch) return bad("That character wasn't found.");
-        const [m] = await db`select m.id, m.kind, m.status, m.description, m.subject, m.kept, f.url, t.url as thumb
+        // This database may not have the newer media columns (subject, kept) yet: read them only if they're there,
+        // otherwise sharing a gallery picture fails outright and nothing reaches the chat.
+        const mid = String(b.mediaId || "");
+        const [m] = await db`select m.id, m.kind, m.status, m.description, to_jsonb(m)->>'subject' as subject, coalesce((to_jsonb(m)->>'kept')::boolean, false) as kept, f.url, t.url as thumb
           from velo_media m join velo_files f on f.id = m.file_id left join velo_files t on t.id = m.thumb_file_id
-          where m.id = ${String(b.mediaId || "")} and m.user_id = ${me} and m.status = 'done'`;
+          where m.id = ${mid} and m.user_id = ${me} and m.status = 'done'`;
         if (!m) return bad("That picture wasn't found.");
         const media = { id: String(m.id), kind: String(m.kind) as "image" | "video", status: "done" as const, url: String(m.url),
           thumb: m.thumb ? String(m.thumb) : null, description: m.description ? String(m.description) : null, subject: m.subject ? String(m.subject) : null, kept: !!m.kept };
