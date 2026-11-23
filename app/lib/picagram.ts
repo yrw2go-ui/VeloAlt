@@ -807,13 +807,16 @@ async function postFor(userId: string, a: Record<string, unknown>, u: U, at: num
 export async function picaNewPost(userId: string, want: { accountId?: string; setting?: string; caption?: string; photo?: string }): Promise<{ who: string; handle: string }> {
   const u = await userInfo(userId);
   const id = String(want.accountId || "");
-  // Whoever you picked, or one of them at random — the ones you follow first, and ones with
-  // pictures of their own before ones without, so the face in the post is really hers.
+  // At random: the ones you follow first, and ones with pictures of their own before ones
+  // without, so the face in the post is really hers.
+  // Whoever you picked — by her Picagram account, or by the character she is. Her @handle and her
+  // Picagram name are yours to change, and neither is how she's found: the account's own id, or
+  // the character she's linked to, is. Renaming her can't lose her.
   const [a] = id
-    ? await sql()`select * from pica_accounts where id = ${id} and user_id = ${userId} and not mine`
+    ? await sql()`select * from pica_accounts where user_id = ${userId} and not mine and (id = ${id} or character_id = ${id}) limit 1`
     : await sql()`select * from pica_accounts where user_id = ${userId} and not mine
         order by (avatar_media_id is not null) desc, followed desc, random() limit 1`;
-  if (!a) throw new PicaLimit(id ? "That account wasn't found." : "There's nobody on Picagram yet.");
+  if (!a) throw new PicaLimit(id ? "She isn't on Picagram — put her up from her own chat first." : "There's nobody on Picagram yet.");
   const photo = scrub(String(want.photo || "")).replace(/\s+/g, " ").trim().slice(0, 600);
   const caption = scrub(String(want.caption || "")).trim().slice(0, 600);
   const mine = !!photo;
