@@ -1,5 +1,5 @@
 // 😮 The reactions (on messages, photos and videos; in chats and group chats). One list, used everywhere.
-export const REACTIONS = ["❤️", "😍", "☺️", "😘", "🔥", "🙌", "👍", "😮", "😂", "🥵", "🤤", "💦", "😈", "😏", "👀", "👌", "🤔", "🫣", "😅", "😴"] as const;
+export const REACTIONS = ["😏", "❤️", "😍", "☺️", "😘", "🔥", "🙌", "👍", "😮", "😂", "🥵", "🤤", "💦", "😈", "👀", "👌", "🤔", "🫣", "😅", "😴"] as const;
 
 // 👋 Signing off without words: what she leaves on your last message when you're both winding down.
 export const SIGN_OFF = ["❤️", "❤️", "❤️", "❤️", "😍", "☺️", "😘"] as const;

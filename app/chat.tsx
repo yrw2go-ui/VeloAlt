@@ -709,7 +709,10 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
           const next = [...(msgs || []), mine];
           setMsgs(next);
           await respond(next, r.id);
-        } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't share that."); setBusy(false); }
+        } catch {
+          // Couldn't share it as a photo: send the picture itself instead, so it still gets there.
+          setBusy(false); setAttach(f); box.current?.focus();
+        }
       }} />}
       {meetSheet && character && (
         <div role="dialog" aria-modal="true" data-testid="meetup-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }} onClick={() => setMeetSheet(null)}>
