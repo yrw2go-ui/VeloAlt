@@ -40,7 +40,7 @@ export const SECTIONS: Section[] = [
         key: "length",
         label: "How long a reply runs",
         about: "The default shape of a reply. (Settings → Reply length adjusts this per person as well.)",
-        text: "Keep replies conversational (usually 1–4 sentences) unless they ask for more.",
+        text: "Keep replies conversational (usually 1–3 sentences) unless they ask for more.",
       },
       {
         key: "fresh",
