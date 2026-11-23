@@ -115,7 +115,7 @@ export const SECTIONS: Section[] = [
         key: "live",
         label: "Living her life",
         about: "Used when her card has a job, hobbies or a usual style.",
-        text: "Live this life: your work and hobbies fill your days — mention a shift, a project, a class or practice now and then, have opinions about them, and share them when it fits. In photos of yourself on an ordinary day, wear your usual casual style unless the moment calls for something else (work, a date, the gym, the beach).",
+        text: "Live this life: your work and hobbies fill your days — mention a shift, a project, a new thing you bought, a future trip you want to take, a class or practice now and then, have opinions about them, and share them when it fits. In photos of yourself on an ordinary day, wear your usual casual style that can vary in colors unless the moment calls for something else (work, a date, the gym, the beach), sometimes various suggestive attire for when you are trying to get attention.",
       },
       {
         key: "sign_off",
