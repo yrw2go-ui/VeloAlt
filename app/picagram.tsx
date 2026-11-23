@@ -1506,7 +1506,7 @@ function DmText({ m, onEdit }: { m: { id: string; role: string; content: string 
  */
 function NewPostSheet({ onClose, onPosted }: { onClose: () => void; onPosted: () => void }) {
   useBack(true, onClose); // the phone's back button closes this, one step at a time
-  type Who = { id: string; name: string; handle: string };
+  type Who = { id: string; name: string; handle: string; real_name?: string | null };
   const [list, setList] = useState<Who[] | null>(null);
   const [who, setWho] = useState("");
   const [setting, setSetting] = useState("random");
@@ -1534,7 +1534,7 @@ function NewPostSheet({ onClose, onPosted }: { onClose: () => void; onPosted: ()
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           <button type="button" onClick={() => setWho("")} aria-pressed={!who} data-testid="newpost-who-random" style={chip(!who)}>🎲 Anyone</button>
           {(list || []).map(a => (
-            <button key={a.id} type="button" onClick={() => setWho(a.id)} aria-pressed={who === a.id} data-testid={`newpost-who-${a.handle || a.name}`} style={chip(who === a.id)}>{a.name}</button>
+            <button key={a.id} type="button" onClick={() => setWho(a.id)} aria-pressed={who === a.id} data-testid={`newpost-who-${a.handle || a.name}`} style={chip(who === a.id)}>{a.real_name || a.name}</button>
           ))}
         </div>
         <div className="muted" style={{ fontSize: 12 }}>What&apos;s it about? <span style={{ opacity: 0.7 }}>(ignored if you write the picture yourself)</span></div>
