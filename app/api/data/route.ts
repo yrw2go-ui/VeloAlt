@@ -37,7 +37,7 @@ import { myRefs, myPhotoDraft, myPhotoMake } from "../../lib/picagram";
 import { BITS, merge, keepEdits } from "../../lib/wording";
 import { SECTIONS as TALK_SECTIONS, merge as talkMerge, keepEdits as talkKeep } from "../../lib/words";
 import { imageModels, DEFAULT_IMAGE_MODEL, type ImageModel } from "../../lib/imageModels";
-import { acceptMedia, declineMedia, mediaNote, startMedia, checkMedia, sweepMedia, getMedia, listGallery, deleteMedia, VIDEO_MODELS, DEFAULT_VIDEO_MODEL, mediaReady, MediaError } from "../../lib/media";
+import { acceptMedia, declineMedia, mediaNote, startMedia, checkMedia, retryMedia, sweepMedia, getMedia, listGallery, deleteMedia, VIDEO_MODELS, DEFAULT_VIDEO_MODEL, mediaReady, MediaError } from "../../lib/media";
 
 // 📦 Everything the app reads and changes, for the signed-in person only.
 // POST { action, ...args } → { ... }. Every query is scoped to their user_id.
@@ -725,6 +725,10 @@ export async function POST(req: NextRequest) {
         const [who] = await db`select adult_confirmed_at from users where id = ${me}`;
         const romance = !!ch.romantic && !!who?.adult_confirmed_at;
         return NextResponse.json({ trust: await trustFor(me, ch), happy: await happyFor(me, ch), love: await loveFor(me, ch, romance) });
+      }
+      case "media.retry": {
+        const m = needId() ? await retryMedia(me, id) : null;
+        return m ? NextResponse.json({ media: m }) : bad("That one can't be sent again.");
       }
       case "media.check": {
         const m = needId() ? await checkMedia(me, id) : null;
