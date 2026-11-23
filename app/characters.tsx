@@ -791,7 +791,8 @@ export function TraitSliders({ value, romantic, onChange }: { value: Record<Trai
     <div data-testid="trait-sliders" style={{ fontSize: 13, fontWeight: 700 }}>
       <button type="button" className="ghost" onClick={() => setOpen(o => !o)} aria-expanded={open} data-testid="traits-toggle"
         style={{ textAlign: "left", fontWeight: 700, padding: 0, border: "none", background: "none", color: "var(--text)", cursor: "pointer", fontSize: 13 }}>
-        {open ? "▾" : "▸"} Temperament <span className="muted" style={{ fontWeight: 500 }}>· tendencies, not a script — the personality text still leads</span>
+        {/* 🎚️ Bigger and in a warm orange, so the sliders are easy to find on a long card. */}
+        <span style={{ fontSize: 17, color: "#fdba74" }}>{open ? "▾" : "▸"} Temperament</span> <span className="muted" style={{ fontWeight: 500 }}>· tendencies, not a script — the personality text still leads</span>
       </button>
       <div hidden={!open} style={{ display: open ? "flex" : "none", flexDirection: "column", gap: 8, marginTop: 8 }}>
         {TRAITS.map(t => {
