@@ -509,3 +509,13 @@ export async function recentMediaNote(userId: string, characterId: string | null
   return `PHOTOS/VIDEOS YOU SENT RECENTLY (this is a fact — trust it over the conversation): \n${lines.join("\n")}\nIf they ask where one is, tell them it's on its way (photos take about a minute). Only send another if they ask for a new or different one.
 If they ask for a nude or different version of someone from a previous pic (of_person), recreate that same person from the description — same look, different pose/location, nude if asked. If you don't have a previous nude of that specific person, say so and offer a nude of a different person instead.\nAnother photo from the same day and place as your last one (same class, same outing)? Set same_moment: true and keep the same outfit — only the pose and expression change.`;
 }
+
+/** ↻ A photo/video that didn't send, started again from the same prompt when they tap Try again
+ *  (e.g. after the picture service's credits are topped up). Only their own, only a failed one. */
+export async function retryMedia(userId: string, id: string): Promise<Media | null> {
+  const [r] = await sql()`update velo_media set status = 'working', retries = 0, retried = false, attempts = 0, job_id = null, claimed_at = null, created_at = now(), error = null, resend_at = null
+    where id = ${id} and user_id = ${userId} and status = 'failed'
+    returning id, kind, model, prompt, refs, description`;
+  if (!r) return null;
+  return await launch(String(r.id), r.kind, r.model, r.prompt, r.refs || [], r.description);
+}
