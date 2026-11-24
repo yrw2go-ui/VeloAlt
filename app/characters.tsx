@@ -45,7 +45,7 @@ const chip = (on: boolean, busy?: "work" | "class" | null, home?: boolean, toget
 
 /** The chips above the chat. Tap a chip to switch chats; admins tap the open one again to edit it. */
 /** 🔴 A small number on a chip: their unread messages there. */
-const Badge = ({ n }: { n?: number }) => (n ? <span data-testid="unread-badge" aria-label={`${n} unread`} style={{ position: "absolute", top: -6, right: -4, minWidth: 18, height: 18, padding: "0 5px", borderRadius: 999, background: "#ef4444", color: "#fff", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid var(--bg, #0b0d17)" }}>{n > 99 ? "99+" : n}</span> : null);
+const Badge = ({ n }: { n?: number }) => (n ? <span data-testid="unread-badge" aria-label={`${n} unread`} style={{ flexShrink: 0, minWidth: 18, height: 18, padding: "0 5px", borderRadius: 999, background: "#ef4444", color: "#fff", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{n > 99 ? "99+" : n}</span> : null);
 
 /** 🔴 They've dropped a hint lately: a red dot until you do something about it (or two days pass). */
 const Hinting = ({ c }: { c: Character }) =>
@@ -100,13 +100,25 @@ export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdi
   useBack(open, () => setOpen(false)); // the phone's back button closes the list first
   const inGroup = groups.find(g => g.id === activeGroup) || null;
   const here = characters.find(c => c.id === active) || null;
-  // 🔤 Alphabetical, always — except that whoever has something unread jumps to the top, newest
-  // first, and drops back into place the moment you've read it.
+  // 🔤 Alphabetical, always — except that anyone you're actually with right now (in person or on
+  // video) sits at the very top, then whoever has something unread; both newest first, and both
+  // drop back into place the moment it's over or you've read it.
+  const recent = (a: { id: string }, b: { id: string }) => (newest[b.id] || "").localeCompare(newest[a.id] || "");
   const order = [...characters].sort((a, b) => {
+    if (!!a.together !== !!b.together) return a.together ? -1 : 1;
+    if (a.together && b.together) return recent(a, b) || a.name.localeCompare(b.name);
     const ua = unread[a.id] || 0, ub = unread[b.id] || 0;
     if (!!ua !== !!ub) return ua ? -1 : 1;
-    if (ua && ub) return (newest[b.id] || "").localeCompare(newest[a.id] || "") || a.name.localeCompare(b.name);
+    if (ua && ub) return recent(a, b) || a.name.localeCompare(b.name);
     return a.name.localeCompare(b.name);
+  });
+  // 👥 Same for groups: the one you're in right now first, then unread, then by name.
+  const live = (g: Group) => !!g.scene_title || g.in_person_place != null;
+  const groupOrder = [...groups].sort((a, b) => {
+    if (live(a) !== live(b)) return live(a) ? -1 : 1;
+    const ua = unread[a.id] || 0, ub = unread[b.id] || 0;
+    if (!!ua !== !!ub) return ua ? -1 : 1;
+    return recent(a, b) || a.title.localeCompare(b.title);
   });
   const pick = (go: () => void) => { setOpen(false); go(); };
   const row = (on: boolean) => ({ display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left" as const, padding: "8px 10px", borderRadius: 12, cursor: "pointer",
@@ -151,7 +163,7 @@ export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdi
               </div>
             ))}
             {!!groups.length && <div className="muted" style={{ fontSize: 11, fontWeight: 700, padding: "8px 10px 2px" }}>Groups</div>}
-            {groups.map(g => (
+            {groupOrder.map(g => (
               <div key={g.id} className="row" style={{ gap: 6 }}>
                 <button style={{ ...row(activeGroup === g.id), flex: 1, minWidth: 0 }} data-testid={`who-group-${g.title}`} onClick={() => pick(() => onPickGroup?.(g.id))}
                   data-together={g.scene_title || g.in_person_place != null ? "yes" : undefined} title={g.scene_title || g.in_person_place != null ? `You're with ${g.title} right now` : undefined}>
