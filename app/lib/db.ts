@@ -10,7 +10,12 @@ export function sql() {
     client = postgres(process.env.DATABASE_URL, {
       // Supabase transaction pooler (port 6543) works best with these:
       ssl: "require",
-      max: 1,                    // one connection per serverless invocation
+      // 🔌 A few connections per invocation, not one. With one, a second request landing on the
+      // same instance waited for the first to finish — no statement running, so no statement
+      // timeout to save it, and it sat there until Vercel gave up at 300 seconds. One connection
+      // was right when this talked to Postgres directly, where connections are scarce; through the
+      // pooler they are cheap, which is what the pooler is for.
+      max: 5,
       idle_timeout: 20,
       connect_timeout: 10,
       prepare: false,            // required for transaction pooler
