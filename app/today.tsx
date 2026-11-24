@@ -1,12 +1,14 @@
 "use client";
 // ☀️ Today: upcoming reminders and the to-do list (Velo adds to both in chat; you can too).
 import { useEffect, useState } from "react";
-import { data } from "./lib/api";
+import { api, data } from "./lib/api";
 import { confirmAsk } from "./lib/dialog";
 
 type Reminder = { id: string; text: string; remind_at: string; status: string };
 type Ongoing = { characterId: string; kind: string; who: string; title: string; portrait: string | null };
 type Task = { id: string; text: string; due_date: string | null; done: boolean };
+// 🧭 Where everyone is right now, worked out from her shift and her classes in her own time zone.
+type Out = { id: string; name: string; portrait_url: string | null; where: string; place: string; placeId: string; emoji: string; until: string; local: boolean };
 const when = (iso: string) => new Date(iso).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 export default function Today({ refresh }: { refresh: number }) {
@@ -14,10 +16,12 @@ export default function Today({ refresh }: { refresh: number }) {
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [draft, setDraft] = useState("");
   const [tick, setTick] = useState(0);
+  const [out, setOut] = useState<Out[] | null>(null);
 
   useEffect(() => {
     data<{ reminders: Reminder[] }>("reminders.list").then(r => setRems(r.reminders)).catch(() => setRems([]));
     data<{ tasks: Task[] }>("tasks.list").then(r => setTasks(r.tasks)).catch(() => setTasks([]));
+    api<{ out: Out[] }>("/api/characters", { action: "whereabouts" }).then(r => setOut(r.out)).catch(() => setOut([]));
   }, [refresh, tick]);
 
   const addTask = async (e: React.FormEvent) => {
@@ -61,6 +65,29 @@ export default function Today({ refresh }: { refresh: number }) {
   const now = Date.now();
   return (
     <div style={{ width: "100%", minWidth: 0, maxWidth: "100%", padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* 🧭 Who's out right now: on shift, in class, or away. Nobody here is guessing — it comes
+          from her own hours in her own time zone, so it agrees with whatever she'd tell you. */}
+      {!!out?.length && (
+        <section className="card" data-testid="today-whereabouts">
+          <div style={{ fontWeight: 800, marginBottom: 10 }}>🧭 Out right now</div>
+          {out.map(o => (
+            <div key={o.id} className="row" style={{ gap: 10, padding: "9px 0", borderTop: "1px solid var(--border)", alignItems: "center" }}>
+              {o.portrait_url
+                // eslint-disable-next-line @next/next/no-img-element
+                ? <img src={o.portrait_url} alt="" style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
+                : <span style={{ fontSize: 22 }}>{o.emoji}</span>}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>{o.name}</div>
+                <div className="muted" style={{ fontSize: 12 }}>
+                  {o.emoji} {o.where === "work" ? (o.placeId ? `working at ${o.place}` : "at work") : o.where === "class" ? `in class${o.place && o.place !== "class" ? ` at ${o.place}` : ""}` : `away in ${o.place}`}
+                  {o.until ? ` · until ${o.until}` : ""}
+                </div>
+              </div>
+              {o.local && <span data-testid="out-local" className="muted" style={{ fontSize: 11, padding: "2px 8px", borderRadius: 999, border: "1px solid var(--border)" }}>nearby</span>}
+            </div>
+          ))}
+        </section>
+      )}
       {!!ongoing?.length && (
         <section className="card" data-testid="today-ongoing">
           <div style={{ fontWeight: 800, marginBottom: 10 }}>🟢 Going on right now</div>

@@ -1018,3 +1018,6 @@ where a.character_id = c.id and c.portrait_file_id is not null
 create index if not exists velo_media_resent_idx
   on velo_media (coalesce(claimed_at, created_at))
   where resent and status = 'working';
+-- 🗺️ Where she works, when it's one of the local spots (app/lib/places.ts). Her job can stay
+-- "server" — this says the place, so nothing has to guess it from the words.
+alter table chat_characters add column if not exists works_at text not null default '';
