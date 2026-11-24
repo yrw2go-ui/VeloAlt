@@ -38,7 +38,11 @@ export const DEFAULT_TRAITS: Record<TraitKey, number> = { love: 5, submissive: 4
 
 /** Only known sliders, as whole numbers 0–10. */
 export function cleanTraits(v: unknown): Record<TraitKey, number> {
-  const o = v && typeof v === "object" ? (v as Record<string, unknown>) : {};
+  // 🎚️ Her sliders, however they arrive. A database that hands these back as JSON text rather than
+  // a parsed object used to drop straight through to the defaults here — so every slider sprang
+  // back the moment her card was opened again, with nothing to say why.
+  const parsed = typeof v === "string" ? (() => { try { return JSON.parse(v); } catch { return null; } })() : v;
+  const o = parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
   const out = { ...DEFAULT_TRAITS };
   for (const t of TRAITS) { const n = Number(o[t.key]); if (Number.isFinite(n)) out[t.key] = Math.max(0, Math.min(10, Math.round(n))); }
   return out;
