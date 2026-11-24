@@ -618,6 +618,21 @@ JSON only: {"name":"First Last (a plain modern American name, as described above
 
 /** 🖼️ The pictures a new photo of her is built from: the ones you uploaded, else her first photo. */
 export async function refsOf(a: Record<string, unknown>): Promise<string[]> {
+  // 🪞 She's one of your characters: her face is the one on her card — her headshot and the
+  // reference pictures you gave her. The account's own pictures were all this ever looked at, so a
+  // linked account kept posting as whoever it was invented as, and looked nothing like her.
+  if (a.character_id) {
+    const [c] = await sql()`select portrait_file_id, reference_ids from chat_characters where id = ${String(a.character_id)}`;
+    if (c) {
+      const refIds = ((c.reference_ids || []) as string[]).filter(Boolean);
+      const shots = refIds.length
+        ? await sql()`select f.url from velo_media m join velo_files f on f.id = m.file_id where m.id = any(${refIds}::uuid[]) and m.status = 'done'`
+        : [];
+      const [face] = c.portrait_file_id ? await sql()`select url from velo_files where id = ${String(c.portrait_file_id)}` : [];
+      const hers = [...(face ? [String(face.url)] : []), ...shots.map(r => String(r.url))].filter(x => /^https?:\/\//.test(x));
+      if (hers.length) return hers.slice(0, 4);
+    }
+  }
   const ids = ((a.ref_media_ids || []) as string[]).filter(Boolean);
   if (ids.length) {
     const rows = await sql()`select f.url from velo_media m join velo_files f on f.id = m.file_id where m.id = any(${ids}::uuid[]) and m.status = 'done'`;
