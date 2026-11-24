@@ -135,6 +135,10 @@ export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdi
           <Badge n={Object.entries(unread).reduce((n, [id, x]) => n + (id === (active || "velo") ? 0 : x), 0)} />
           <span aria-hidden style={{ opacity: 0.7 }}>{open ? "▴" : "▾"}</span>
         </button>
+        {/* ✏️ The card of whoever you're talking to. A group has no card, so it greys out. */}
+        {admin && <button style={{ ...pic, opacity: here ? 1 : 0.4, cursor: here ? "pointer" : "default" }} disabled={!here}
+          onClick={() => here && onEdit(here)} data-testid="card-edit" aria-label={here ? `Edit ${here.name}'s card` : "No card to edit"}
+          title={here ? `${here.name}'s card` : inGroup ? "A group has no card" : "Pick someone to open their card"}>✏️</button>}
         {/* 🖼️ Everything you have, always one tap away. */}
         {onAllPictures && <button style={pic} onClick={onAllPictures} data-testid="gallery-all" aria-label="All pictures" title="All pictures">🖼️</button>}
       </div>
