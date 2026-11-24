@@ -28,17 +28,44 @@ export default function AboutCard({ profile, onChange }: { profile: Profile; onC
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState("");
   const input = useRef<HTMLInputElement>(null);
-  useEffect(() => { setText(bio.text); setBirthday(bio.birthday); setAge(bio.age ? String(bio.age) : ""); setTown(bio.town || ""); setState(bio.state); setMore(JSON.parse(moreJson)); }, [bio.text, bio.birthday, bio.age, bio.town, bio.state, moreJson]);
+  // ✍️ Whatever arrives from the server fills these boxes in — but never over something you've
+  // typed and not saved yet. The profile reloads for all sorts of reasons, and when it did so
+  // mid-sentence it put the old copy back and your words were simply gone.
+  const typing = useRef(false);
+  useEffect(() => {
+    if (typing.current) return;
+    setText(bio.text); setBirthday(bio.birthday); setAge(bio.age ? String(bio.age) : ""); setTown(bio.town || ""); setState(bio.state); setMore(JSON.parse(moreJson));
+  }, [bio.text, bio.birthday, bio.age, bio.town, bio.state, moreJson]);
   const clean = (m: BioMore) => JSON.stringify(Object.fromEntries(BIO_SECTIONS.map(s => [s.key, (m[s.key] || "").trim()]).filter(([, v]) => v)));
   const dirty = text !== bio.text || birthday !== bio.birthday || (birthday ? false : age !== (bio.age ? String(bio.age) : "")) || town !== (bio.town || "") || state !== bio.state || clean(more) !== clean(bio.more || {});
+  typing.current = dirty;
   const ageNum = Number(age);
   const ageBad = !birthday && age !== "" && !(Number.isInteger(ageNum) && ageNum >= 13 && ageNum <= 120);
 
+  // 💾 It saves itself three seconds after you stop typing, as the character cards do — the Save
+  // button stays for when you'd rather not wait. Whatever was last sent is remembered, so nothing
+  // is sent twice over.
+  const [sent, setSent] = useState("");
+  const mine = JSON.stringify([text, birthday, age, town, state, clean(more)]);
+  const saving = useRef(false);
+  useEffect(() => {
+    if (!dirty || busy || ageBad || mine === sent) return;
+    const t = setTimeout(async () => {
+      if (saving.current) return;
+      saving.current = true;
+      const snap = mine;
+      const ok = await save();
+      saving.current = false;
+      if (ok) setSent(snap);
+    }, 3000);
+    return () => clearTimeout(t);
+  }, [mine, dirty, busy, ageBad, sent]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const save = async () => {
-    if (ageBad) { setErr("Age should be a number between 13 and 120."); return; }
+    if (ageBad) { setErr("Age should be a number between 13 and 120."); return false; }
     setBusy(true); setErr("");
-    try { await data("profile.update", { bio: { text, birthday, age: birthday ? null : age ? ageNum : null, town, state, more } }); setSaved(true); setTimeout(() => setSaved(false), 1500); onChange(); }
-    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't save."); }
+    try { await data("profile.update", { bio: { text, birthday, age: birthday ? null : age ? ageNum : null, town, state, more } }); setSaved(true); setTimeout(() => setSaved(false), 1500); onChange(); return true; }
+    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't save."); return false; }
     finally { setBusy(false); }
   };
   const upload = async (f: File | undefined) => {
@@ -121,7 +148,10 @@ export default function AboutCard({ profile, onChange }: { profile: Profile; onC
         </label>
       ))}
       {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
-      <button className="btn" disabled={!dirty || busy} onClick={save} data-testid="about-save">{saved ? "Saved ✓" : busy ? "…" : "Save"}</button>
+      <div className="row" style={{ gap: 10, alignItems: "center" }}>
+        <button className="btn" disabled={!dirty || busy} onClick={() => void save()} data-testid="about-save">{saved ? "Saved ✓" : busy ? "…" : "Save"}</button>
+        <span data-testid="about-autosave" className="muted" style={{ fontSize: 12 }}>{busy ? "Saving…" : saved ? "✓ Saved" : dirty && mine !== sent ? "Saves on its own…" : ""}</span>
+      </div>
     </div>
   );
 }
