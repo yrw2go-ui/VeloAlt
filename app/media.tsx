@@ -242,7 +242,14 @@ export function Viewer({ m, onClose, onPrev, onNext, children }: { m: { kind: "i
   }, [onClose]);
   const style = { display: "block", maxWidth: "calc(100vw - 32px)", maxHeight: children ? "calc(100dvh - 150px)" : "calc(100dvh - 96px)", objectFit: "contain", borderRadius: 12 } as const;
   return (
-    <div role="dialog" aria-label="Photo" data-testid="media-viewer" {...bind} onClick={e => { e.stopPropagation(); if (tapped()) onClose(); }}
+    // 👆 A long press on the big picture is the phone's own save-and-share, not whatever the thing
+    // underneath would have done with it: expanded over a Picagram post, the press used to carry on
+    // down to the post and offer to delete it instead. Nothing is prevented here — only kept in.
+    <div role="dialog" aria-label="Photo" data-testid="media-viewer" {...bind}
+      onPointerDown={e => { e.stopPropagation(); bind.onPointerDown(e); }}
+      onPointerUp={e => { e.stopPropagation(); bind.onPointerUp(e); }}
+      onContextMenu={e => e.stopPropagation()}
+      onClick={e => { e.stopPropagation(); if (tapped()) onClose(); }}
       style={{ position: "fixed", inset: 0, zIndex: 4000, background: "rgba(0,0,0,.92)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, padding: 16 }}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       {m.kind === "image" ? <img src={m.url!} alt="Photo" data-testid="viewer-full" style={style} onClick={e => e.stopPropagation()} /> : <video src={m.url!} data-testid="viewer-video" style={style} controls playsInline autoPlay loop onClick={e => e.stopPropagation()} />}

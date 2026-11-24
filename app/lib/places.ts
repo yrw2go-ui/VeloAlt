@@ -22,6 +22,8 @@ export const PLACES: Place[] = [
   { id: "wingstop", name: "Wingstop", emoji: "🍖", open: "11:00", close: "00:00" },
   { id: "pool", name: "Public pool", emoji: "🏊", open: "08:00", close: "21:00", months: [6, 7, 8] },
   { id: "picagift", name: "PicaGift Shop", emoji: "🎁", open: "08:00", close: "20:00" },
+  { id: "petstore", name: "Noah's Ark Pet Store", emoji: "🐾", open: "09:00", close: "21:00" },
+  { id: "freshlooks", name: "Fresh Looks", emoji: "💈", open: "09:00", close: "19:00" },
   { id: "hotshots", name: "Hotshots Brewery", emoji: "🍺", open: "15:00", close: "02:00", adult: true },
   { id: "orchard", name: "Apple Orchard & Shops", emoji: "🍎", open: "07:00", close: "16:00", months: [9, 10, 11, 12] },
   { id: "parents", name: "Parents' house (Chicago)", emoji: "👪", open: "", close: "", away: true },
