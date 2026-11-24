@@ -1021,3 +1021,10 @@ create index if not exists velo_media_resent_idx
 -- 🗺️ Where she works, when it's one of the local spots (app/lib/places.ts). Her job can stay
 -- "server" — this says the place, so nothing has to guess it from the words.
 alter table chat_characters add column if not exists works_at text not null default '';
+-- 👥 When you last read a group, so its unread count means something. One row per group per person.
+create table if not exists chat_group_reads (
+  user_id uuid not null references users(id) on delete cascade,
+  group_id uuid not null references chat_groups(id) on delete cascade,
+  read_at timestamptz not null default now(),
+  primary key (user_id, group_id)
+);

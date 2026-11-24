@@ -37,7 +37,7 @@ import { myRefs, myPhotoDraft, myPhotoMake } from "../../lib/picagram";
 import { BITS, merge, keepEdits } from "../../lib/wording";
 import { SECTIONS as TALK_SECTIONS, merge as talkMerge, keepEdits as talkKeep } from "../../lib/words";
 import { imageModels, DEFAULT_IMAGE_MODEL, type ImageModel } from "../../lib/imageModels";
-import { acceptMedia, declineMedia, mediaNote, startMedia, checkMedia, retryMedia, sweepMedia, getMedia, listGallery, listMine, deleteMedia, VIDEO_MODELS, DEFAULT_VIDEO_MODEL, mediaReady, MediaError } from "../../lib/media";
+import { acceptMedia, declineMedia, mediaNote, startMedia, checkMedia, retryMedia, sweepMedia, getMedia, listGallery, listMine, listAll, listGroupGallery, deleteMedia, VIDEO_MODELS, DEFAULT_VIDEO_MODEL, mediaReady, MediaError } from "../../lib/media";
 
 // 📦 Everything the app reads and changes, for the signed-in person only.
 // POST { action, ...args } → { ... }. Every query is scoped to their user_id.
@@ -702,13 +702,27 @@ export async function POST(req: NextRequest) {
       case "chats.unread": {
         // 📸 A picture that lands after you've read the chat counts too: it's new to you even
         // though the message it came with is older.
-        const rows = await db`select m.character_id, count(*)::int as n from velo_messages m
+        const rows = await db`select m.character_id, count(*)::int as n, max(greatest(m.created_at, coalesce(md.done_at, m.created_at))) as at from velo_messages m
           left join chat_reads r on r.user_id = m.user_id and r.character_id is not distinct from m.character_id
           left join velo_media md on md.id = m.media_id and md.status = 'done'
           where m.user_id = ${me} and m.role = 'assistant'
             and greatest(m.created_at, coalesce(md.done_at, m.created_at)) > coalesce(r.read_at, '-infinity'::timestamptz)
           group by m.character_id`;
-        return NextResponse.json({ unread: Object.fromEntries(rows.map(r => [r.character_id ? String(r.character_id) : "velo", Number(r.n)])) });
+        // 👥 And the groups: anything they said in one since you last had it open.
+        const gs = await db`select g.group_id, count(*)::int as n, max(g.created_at) as at from chat_group_messages g
+          left join chat_group_reads r on r.user_id = g.user_id and r.group_id = g.group_id
+          where g.user_id = ${me} and g.speaker_id is not null and not g.peek
+            and g.created_at > coalesce(r.read_at, '-infinity'::timestamptz)
+          group by g.group_id`.catch(() => [] as Record<string, unknown>[]);
+        // 🕒 When the newest unread one landed, so whoever just spoke sits at the top of the list.
+        const newest: Record<string, string> = {};
+        for (const r of rows) if (r.at) newest[r.character_id ? String(r.character_id) : "velo"] = String(r.at);
+        for (const r of gs) if (r.at) newest[String(r.group_id)] = String(r.at);
+        return NextResponse.json({
+          unread: { ...Object.fromEntries(rows.map(r => [r.character_id ? String(r.character_id) : "velo", Number(r.n)])),
+            ...Object.fromEntries(gs.map(r => [String(r.group_id), Number(r.n)])) },
+          newest,
+        });
       }
       case "chats.read": {
         const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
@@ -736,6 +750,13 @@ export async function POST(req: NextRequest) {
       }
       // 🖼️ Gallery for one chat (Velo's or a character's): newest first, 30 at a time.
       // 🙋 Every picture of you: made in any chat, or uploaded yourself.
+      // 🖼️ Everything you have, and one group's pictures.
+      case "gallery.all":
+        return NextResponse.json({ items: await listAll(me, typeof b.before === "string" ? b.before : null) });
+      case "gallery.group":
+        return UUID.test(String(b.groupId || ""))
+          ? NextResponse.json({ items: await listGroupGallery(me, String(b.groupId), typeof b.before === "string" ? b.before : null) })
+          : bad("Which group?");
       case "gallery.me":
         return NextResponse.json({ items: await listMine(me, typeof b.before === "string" ? b.before : null) });
       case "gallery.list": {

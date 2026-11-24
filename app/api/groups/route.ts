@@ -59,7 +59,12 @@ export async function POST(req: NextRequest) {
       // 🧑‍🤝‍🧑 The messages come with who's in the group — their names and faces. The screen used to
       // look each speaker up in the characters list the app loads separately, so when that request
       // failed or hung, everyone in the group was called "Someone" and nothing said why.
-      case "messages": return NextResponse.json({ messages: await groupMessages(c.userId, g.id), members: await groupFaces(g) });
+      case "messages": {
+        // 👀 Opening it is reading it: the unread count on the list clears from here.
+        await sql()`insert into chat_group_reads (user_id, group_id, read_at) values (${c.userId}, ${g.id}, now())
+          on conflict (user_id, group_id) do update set read_at = now()`.catch(() => {});
+        return NextResponse.json({ messages: await groupMessages(c.userId, g.id), members: await groupFaces(g) });
+      }
       case "delete": return NextResponse.json({ ok: await deleteGroup(c.userId, g.id) });
       case "send": {
         if (!aiReady()) return bad("Velo isn't set up yet (missing AI settings).", 503);

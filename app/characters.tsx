@@ -79,29 +79,85 @@ const Standing = ({ c }: { c: Character }) => {
   return b ? <span data-testid={`standing-${c.standing}`} title={b.title} aria-label={b.title} style={{ fontSize: 11, marginLeft: 1 }}>{b.icon}</span> : null;
 };
 
-export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdit, onGallery, unread = {}, groups = [], activeGroup = null, onPickGroup, onNewGroup }: {
-  characters: Character[]; active: string | null; admin: boolean; onPick: (id: string | null) => void; onNew: () => void; onEdit: (c: Character) => void; onGallery: () => void; unread?: Record<string, number>;
+export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdit, onGallery, onTheirGallery, onAllPictures, unread = {}, newest = {}, groups = [], activeGroup = null, onPickGroup, onNewGroup, onGroupGallery }: {
+  characters: Character[]; active: string | null; admin: boolean; onPick: (id: string | null) => void; onNew: () => void; onEdit: (c: Character) => void; onGallery: () => void; unread?: Record<string, number>; newest?: Record<string, string>;
+  onTheirGallery?: (c: Character) => void; onAllPictures?: () => void; onGroupGallery?: (g: Group) => void;
   groups?: Group[]; activeGroup?: string | null; onPickGroup?: (id: string) => void; onNewGroup?: () => void;
 }) {
-  if (activeGroup) active = "__group";
+  // 📋 One line at the top: who you're talking to, and everything else behind a tap. A row of chips
+  // was fine with four of them and unreadable with twenty.
+  const [open, setOpen] = useState(false);
+  useBack(open, () => setOpen(false)); // the phone's back button closes the list first
+  const inGroup = groups.find(g => g.id === activeGroup) || null;
+  const here = characters.find(c => c.id === active) || null;
+  // 🔤 Alphabetical, always — except that whoever has something unread jumps to the top, newest
+  // first, and drops back into place the moment you've read it.
+  const order = [...characters].sort((a, b) => {
+    const ua = unread[a.id] || 0, ub = unread[b.id] || 0;
+    if (!!ua !== !!ub) return ua ? -1 : 1;
+    if (ua && ub) return (newest[b.id] || "").localeCompare(newest[a.id] || "") || a.name.localeCompare(b.name);
+    return a.name.localeCompare(b.name);
+  });
+  const pick = (go: () => void) => { setOpen(false); go(); };
+  const row = (on: boolean) => ({ display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left" as const, padding: "8px 10px", borderRadius: 12, cursor: "pointer",
+    border: `1px solid ${on ? "var(--accent)" : "transparent"}`, background: on ? "rgba(124,140,255,.15)" : "transparent", color: "var(--text)", fontSize: 14, fontWeight: 700 });
+  const pic = { flexShrink: 0, padding: "4px 8px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 13 } as const;
+
   return (
-    <div data-testid="character-strip" style={{ display: "flex", flexWrap: "wrap", alignContent: "flex-start", justifyContent: "space-between", gap: 8, width: "100%", minWidth: 0, maxWidth: "100%", flexShrink: 0, maxHeight: 136, overflowY: "auto", padding: "12px 12px 8px", borderBottom: "1px solid var(--border)" }}>
-      <button style={{ ...chip(active === null), position: "relative" }} onClick={() => onPick(null)} aria-pressed={active === null}><VeloAvatar size={26} /> Velo<Badge n={active === null ? 0 : unread.velo} /></button>
-      {characters.map(c => (
-        <button key={c.id} style={{ ...chip(active === c.id, c.busy, c.home, c.together), position: "relative" }} aria-pressed={active === c.id} data-busy={c.busy || undefined} data-ditched={c.ditched ? "yes" : undefined} data-home={c.home ? "yes" : undefined} data-together={c.together ? "yes" : undefined}
-          title={c.together ? `You're with ${c.name} right now` : c.ditched ? `${c.name} should be ${c.busy === "class" ? "in class" : "at work"} — ${c.voice_kind === "male" ? "he's" : "she's"} not` : c.busy === "work" ? `${c.name} is at work` : c.busy === "class" ? `${c.name} is in class` : undefined} onClick={() => (active !== c.id ? onPick(c.id) : admin ? onEdit(c) : undefined)}>
-          <CharacterFace c={c} size={26} /> <AtYours c={c} /><Hinting c={c} />{shortName(c.name)}<Ditched c={c} /><Attached c={c} /><Standing c={c} />{admin && active === c.id ? " ✎" : ""}<Badge n={active === c.id ? 0 : unread[c.id]} />
+    <div data-testid="character-strip" style={{ position: "relative", width: "100%", minWidth: 0, flexShrink: 0, padding: "10px 12px 8px", borderBottom: "1px solid var(--border)" }}>
+      <div className="row" style={{ gap: 8 }}>
+        <button data-testid="who-open" aria-expanded={open} onClick={() => setOpen(o => !o)}
+          style={{ ...chip(true, here?.busy, here?.home, here?.together), flex: 1, minWidth: 0, justifyContent: "flex-start", fontSize: 14, padding: "5px 12px 5px 5px" }}>
+          {inGroup ? <GroupFaces g={inGroup} chars={characters} size={26} /> : here ? <CharacterFace c={here} size={26} /> : <VeloAvatar size={26} />}
+          <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{inGroup ? inGroup.title : here ? here.name : "Velo"}</span>
+          <Badge n={Object.entries(unread).reduce((n, [id, x]) => n + (id === (active || "velo") ? 0 : x), 0)} />
+          <span aria-hidden style={{ opacity: 0.7 }}>{open ? "▴" : "▾"}</span>
         </button>
-      ))}
-      {groups.map(g => (
-        <button key={g.id} style={chip(activeGroup === g.id, null, false, !!g.scene_title || g.in_person_place != null)} aria-pressed={activeGroup === g.id} onClick={() => onPickGroup?.(g.id)}
-          data-together={g.scene_title || g.in_person_place != null ? "yes" : undefined} title={g.scene_title || g.in_person_place != null ? `You're with ${g.title} right now` : undefined} data-testid={`group-chip-${g.title}`}>
-          <GroupFaces g={g} chars={characters} size={22} /> {g.title.length > 18 ? g.title.slice(0, 17) + "…" : g.title}
-        </button>
-      ))}
-      {onNewGroup && characters.length >= 2 && <button style={{ ...chip(false), padding: "4px 12px" }} onClick={onNewGroup} data-testid="group-new">👥 Group</button>}
-      {admin && <button style={{ ...chip(false), padding: "4px 12px" }} onClick={onNew} data-testid="character-new">＋ New</button>}
-      <button style={{ ...chip(false), padding: "4px 12px", marginLeft: "auto" }} onClick={onGallery} data-testid="gallery-open" aria-label="Gallery">🖼️ Gallery</button>
+        {/* 🖼️ Everything you have, always one tap away. */}
+        {onAllPictures && <button style={pic} onClick={onAllPictures} data-testid="gallery-all" aria-label="All pictures" title="All pictures">🖼️</button>}
+      </div>
+
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+          <div data-testid="who-list" style={{ position: "absolute", left: 12, right: 12, top: "100%", zIndex: 41, maxHeight: "60dvh", overflowY: "auto", display: "flex", flexDirection: "column", gap: 4,
+            padding: 8, borderRadius: 14, background: "var(--surface)", border: "1px solid var(--border)", boxShadow: "0 10px 30px rgba(0,0,0,.45)" }}>
+            <button style={row(active === null && !activeGroup)} onClick={() => pick(() => onPick(null))} data-testid="who-velo">
+              <VeloAvatar size={26} /><span style={{ flex: 1 }}>Velo</span><Badge n={active === null ? 0 : unread.velo} />
+            </button>
+            {order.map(c => (
+              <div key={c.id} className="row" style={{ gap: 6 }}>
+                <button style={{ ...row(active === c.id), flex: 1, minWidth: 0 }} data-testid={`who-${c.name}`} data-busy={c.busy || undefined} data-ditched={c.ditched ? "yes" : undefined}
+                  data-home={c.home ? "yes" : undefined} data-together={c.together ? "yes" : undefined}
+                  title={c.together ? `You're with ${c.name} right now` : c.ditched ? `${c.name} should be ${c.busy === "class" ? "in class" : "at work"} — ${c.voice_kind === "male" ? "he's" : "she's"} not` : c.busy === "work" ? `${c.name} is at work` : c.busy === "class" ? `${c.name} is in class` : undefined}
+                  onClick={() => pick(() => (active !== c.id ? onPick(c.id) : admin ? onEdit(c) : undefined))}>
+                  <span style={{ ...chip(false, c.busy, c.home, c.together), padding: 0, border: "none", background: "none" }}><CharacterFace c={c} size={26} /></span>
+                  <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <AtYours c={c} /><Hinting c={c} />{c.name}<Ditched c={c} /><Attached c={c} /><Standing c={c} />
+                  </span>
+                  <Badge n={active === c.id ? 0 : unread[c.id]} />
+                </button>
+                {onTheirGallery && <button style={pic} onClick={() => pick(() => onTheirGallery(c))} data-testid={`who-gallery-${c.name}`} aria-label={`${c.name}'s pictures`} title={`${c.name}'s pictures`}>🖼️</button>}
+              </div>
+            ))}
+            {!!groups.length && <div className="muted" style={{ fontSize: 11, fontWeight: 700, padding: "8px 10px 2px" }}>Groups</div>}
+            {groups.map(g => (
+              <div key={g.id} className="row" style={{ gap: 6 }}>
+                <button style={{ ...row(activeGroup === g.id), flex: 1, minWidth: 0 }} data-testid={`who-group-${g.title}`} onClick={() => pick(() => onPickGroup?.(g.id))}
+                  data-together={g.scene_title || g.in_person_place != null ? "yes" : undefined} title={g.scene_title || g.in_person_place != null ? `You're with ${g.title} right now` : undefined}>
+                  <GroupFaces g={g} chars={characters} size={22} />
+                  <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.title}</span>
+                  <Badge n={activeGroup === g.id ? 0 : unread[g.id]} />
+                </button>
+                {onGroupGallery && <button style={pic} onClick={() => pick(() => onGroupGallery(g))} data-testid={`who-group-gallery-${g.title}`} aria-label={`${g.title} pictures`} title={`${g.title} pictures`}>🖼️</button>}
+              </div>
+            ))}
+            {onNewGroup && characters.length >= 2 && <button style={row(false)} onClick={() => pick(() => onNewGroup())} data-testid="group-new">👥 New group</button>}
+            {admin && <button style={row(false)} onClick={() => pick(() => onNew())} data-testid="character-new">＋ New character</button>}
+            <button style={row(false)} onClick={() => pick(() => onGallery())} data-testid="gallery-open">🖼️ This chat&apos;s pictures</button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
