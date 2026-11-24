@@ -84,6 +84,27 @@ export async function saveImageItem(userId: string, characterId: string | null, 
   return { mediaId: String(m.id), fileId: String(full.id), url: String(full.url) };
 }
 
+/** 🖼️ Everything, from everywhere: her chats, your own, Picagram, the headshots — the lot. */
+export async function listAll(userId: string, before: string | null, limit = 30) {
+  const rows = await sql()`select m.id, m.kind, m.kept, m.created_at::text, m.poster_url, f.url, t.url as thumb
+    from velo_media m join velo_files f on f.id = m.file_id left join velo_files t on t.id = m.thumb_file_id
+    where m.user_id = ${userId} and m.status = 'done'
+      and (${before}::timestamptz is null or m.created_at < ${before}::timestamptz)
+    order by m.created_at desc limit ${limit}`;
+  return rows.map(r => ({ id: String(r.id), kind: r.kind as "image" | "video", kept: !!r.kept, created_at: String(r.created_at), url: String(r.url), thumb: (r.thumb || r.poster_url || null) as string | null }));
+}
+
+/** 👥 A group's pictures: everything that turned up in that thread. */
+export async function listGroupGallery(userId: string, groupId: string, before: string | null, limit = 30) {
+  const rows = await sql()`select distinct m.id, m.kind, m.kept, m.created_at::text, m.poster_url, f.url, t.url as thumb
+    from chat_group_messages g join velo_media m on m.id = g.media_id
+      join velo_files f on f.id = m.file_id left join velo_files t on t.id = m.thumb_file_id
+    where g.group_id = ${groupId} and g.user_id = ${userId} and m.status = 'done'
+      and (${before}::timestamptz is null or m.created_at < ${before}::timestamptz)
+    order by m.created_at desc limit ${limit}`;
+  return rows.map(r => ({ id: String(r.id), kind: r.kind as "image" | "video", kept: !!r.kept, created_at: String(r.created_at), url: String(r.url), thumb: (r.thumb || r.poster_url || null) as string | null }));
+}
+
 /** 🙋 Every picture of YOU: the ones made in any chat, and the ones you uploaded yourself. */
 export async function listMine(userId: string, before: string | null, limit = 30) {
   const rows = await sql()`select m.id, m.kind, m.kept, m.created_at::text, m.poster_url, f.url, t.url as thumb

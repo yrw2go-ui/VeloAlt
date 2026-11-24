@@ -132,8 +132,10 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   // ✨ ＋ New first asks: make one for me (a filled-in draft), or start from scratch.
   const [newChar, setNewChar] = useState(false);
   const [draft, setDraft] = useState<Partial<Character> | null>(null);
-  // 🖼️ The gallery: this chat's pictures, or "me" for every picture of you.
-  const [gallery, setGallery] = useState<false | true | "me">(false);
+  // 🖼️ The gallery: this chat's pictures, "me" for every picture of you, "all" for the lot, or a
+  // group's own pictures.
+  type GalleryWant = false | true | "me" | "all" | { group: string; title: string };
+  const [gallery, setGallery] = useState<GalleryWant>(false);
   const [chatTick, setChatTick] = useState(0);
   useEffect(() => {
     api<{ characters: Character[]; portraits: boolean; admin: boolean; brains?: string[]; brainModels?: { id: string; model: string }[] }>("/api/characters", { action: "list" })
@@ -183,6 +185,8 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   const pickChat = (id: string | null) => { setGroupId(null); setWithId(id); };
   // 🔴 Unread counts per chat ("velo" or character id). The open chat is marked read as it updates.
   const [unread, setUnread] = useState<Record<string, number>>({});
+  // 🕒 When each chat's newest unread arrived, so the busiest one sits at the top of the list.
+  const [newest, setNewest] = useState<Record<string, string>>({});
   const [picaNew, setPicaNew] = useState(0);
   const [picaOpen, setPicaOpen] = useState<string | null>(null); // a Picagram profile to open
   // 👆 One tap on a tab is the tab. 👆👆 Two on Picagram, quickly, is "take me back to the top" —
@@ -210,11 +214,12 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       // 📸 New Picagram posts since they last looked (the tab clears it).
       if (tab !== "pica") api<{ n: number; dms?: number }>("/api/pica", { action: "new" }).then(x => setPicaNew(x.n + (x.dms || 0))).catch(() => {});
       else setPicaNew(0);
-      const r = await data<{ unread: Record<string, number> }>("chats.unread").catch(() => null);
+      const r = await data<{ unread: Record<string, number>; newest?: Record<string, string> }>("chats.unread").catch(() => null);
       if (!r) return;
       const u = { ...r.unread };
       if (tab === "chat") delete u[key];
       setUnread(u);
+      setNewest(r.newest || {});
       try { const total = Object.values(u).reduce((a, b) => a + b, 0); const n = navigator as Navigator & { setAppBadge?: (n: number) => Promise<void>; clearAppBadge?: () => Promise<void> }; if (total) n.setAppBadge?.(total); else n.clearAppBadge?.(); } catch { /* no app badge */ }
     };
     tick();
@@ -466,7 +471,8 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       )}
 
       <main ref={mainRef} onScroll={onMainScroll} style={{ flex: 1, width: "100%", minWidth: 0, maxWidth: "100%", minHeight: 0, overflowX: "hidden", overflowY: tab === "chat" ? "hidden" : "auto", display: "flex", flexDirection: "column" }}>
-        {tab === "chat" && <CharacterStrip characters={chars} active={withChar?.id || null} admin={admin} onPick={pickChat} onNew={() => setNewChar(true)} onEdit={c => void openCard(c)} onGallery={() => setGallery(true)} unread={unread}
+        {tab === "chat" && <CharacterStrip characters={chars} active={withChar?.id || null} admin={admin} onPick={pickChat} onNew={() => setNewChar(true)} onEdit={c => void openCard(c)} onGallery={() => setGallery(true)} unread={unread} newest={newest}
+          onTheirGallery={c => { pickChat(c.id); setGallery(true); }} onAllPictures={() => setGallery("all")} onGroupGallery={g => setGallery({ group: g.id, title: g.title })}
           groups={groups} activeGroup={inGroup?.id || null} onPickGroup={setGroupId} onNewGroup={() => setMakingGroup(true)} />}
         {/* 🚪 The list never arrived, so the group you tapped can't be found: say so instead of
             quietly dropping you into the normal chat as though you'd never opened it. */}
@@ -514,7 +520,12 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
           }} />
       )}
       {calling && <CallMedia items={callMedia} name={callWith?.name || "Velo"} />}
-      {gallery && <Gallery key={gallery === "me" ? "me" : withChar?.id || "velo"} mine={gallery === "me"} characterId={gallery === "me" ? null : withChar?.id || null} name={gallery === "me" ? "you" : withChar?.name || "Velo"} onClose={() => setGallery(false)} />}
+      {gallery && <Gallery
+        key={typeof gallery === "object" ? `group-${gallery.group}` : gallery === true ? withChar?.id || "velo" : gallery}
+        mine={gallery === "me"} all={gallery === "all"} groupId={typeof gallery === "object" ? gallery.group : null}
+        characterId={gallery === true ? withChar?.id || null : null}
+        name={gallery === "me" ? "you" : gallery === "all" ? "everything" : typeof gallery === "object" ? gallery.title : withChar?.name || "Velo"}
+        onClose={() => setGallery(false)} />}
       {editing && (
         <CharacterEditor key={editing === "new" ? `new-${draft?.name || ""}` : editing.id} initial={editing === "new" ? null : editing} draft={editing === "new" ? draft : null} portraits={portraits} brains={brains} brainModels={brainModels}
           onClose={() => setEditing(null)} onSaved={savedChar}

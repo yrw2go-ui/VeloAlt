@@ -77,10 +77,10 @@ export async function POST(req: NextRequest) {
       // ⭐ At YOUR place right now: round at yours, or someone who lives with you and is in.
       const atYours = new Set(await ids(() => sql()`select character_id from chat_in_person where user_id = ${me} and at_mine and ended_at is null`));
       // 🧍🎥 Together right now — in person somewhere, or on a video chat: a faint blue ring.
-      const with_ = new Set([
-        ...await ids(() => sql()`select character_id from chat_in_person where user_id = ${me} and place <> 'home' and ended_at is null`),
-        ...await ids(() => sql()`select character_id from chat_scenes where user_id = ${me} and status = 'active' and kind = 'live'`),
-      ]);
+      // 🎥 vs 🧍: the list shows which it is, so both are kept apart as well as together.
+      const onCall = new Set(await ids(() => sql()`select character_id from chat_scenes where user_id = ${me} and status = 'active' and kind = 'live'`));
+      const inPerson = new Set(await ids(() => sql()`select character_id from chat_in_person where user_id = ${me} and place <> 'home' and ended_at is null`));
+      const with_ = new Set([...inPerson, ...onCall]);
       const characters = list.map(c => {
         const zone = isValidTimeZone(c.time_zone) ? c.time_zone : "America/Chicago";
         // 🙈 Called off / skipped today: she should be there, and isn't. The ring stays and she gets a 😏.
@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
         const at = workNow(c, zone, Date.now(), skived, c.id);
         const due = skived ? workNow(c, zone, Date.now(), false, c.id) : at;
         const busy = due.atWork ? (due.kind || (inClass(c) ? "class" : "work")) : null;
-        return { ...c, busy, ditched: !!busy && skived, home: c.live_in && home.has(c.id), together: with_.has(c.id), at_yours: atYours.has(c.id), hinting: hinting.has(c.id) };
+        return { ...c, busy, ditched: !!busy && skived, home: c.live_in && home.has(c.id), together: with_.has(c.id), on_call: onCall.has(c.id), in_person: inPerson.has(c.id), at_yours: atYours.has(c.id), hinting: hinting.has(c.id) };
       });
       // 📋 The chips need a name, a face and a handful of flags. Her personality, backstory,
       // appearance and the rest of the long writing — thousands of characters each, for every
