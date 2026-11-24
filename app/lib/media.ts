@@ -69,13 +69,31 @@ export async function thumbOf(buf: Buffer): Promise<Buffer | null> {
   catch (e) { console.error("media: thumbnail", e instanceof Error ? e.message : e); return null; }
 }
 /** Saves a finished picture (and its thumbnail) as a done gallery item — used for portraits too. */
-export async function saveImageItem(userId: string, characterId: string | null, buf: Buffer, type: string, prompt: string, model: string): Promise<{ mediaId: string; fileId: string; url: string }> {
-  const full = await saveFile(userId, buf, type, type === "image/png" ? "photo.png" : "photo.jpg");
+export async function saveImageItem(userId: string, characterId: string | null, buf: Buffer, type: string, prompt: string, model: string,
+  extra: { subject?: string; pica?: boolean; fileId?: string } = {}): Promise<{ mediaId: string; fileId: string; url: string }> {
+  // 📎 An already-saved file can be lifted into the gallery as it is, rather than stored twice.
+  const full = extra.fileId
+    ? (await sql()`select id, url from velo_files where id = ${extra.fileId} and user_id = ${userId}`)[0]
+    : await saveFile(userId, buf, type, type === "image/png" ? "photo.png" : "photo.jpg");
+  if (!full) throw new MediaError("That picture wasn't found.");
   const t = await thumbOf(buf);
   const thumb = t ? await saveFile(userId, t, "image/webp", "thumb.webp") : null;
-  const [m] = await sql()`insert into velo_media (user_id, character_id, kind, prompt, model, status, file_id, thumb_file_id, done_at)
-    values (${userId}, ${characterId}, 'image', ${prompt.slice(0, 2000)}, ${model.slice(0, 200)}, 'done', ${full.id}, ${thumb?.id || null}, now()) returning id`;
-  return { mediaId: String(m.id), fileId: full.id, url: full.url };
+  const [m] = await sql()`insert into velo_media (user_id, character_id, kind, prompt, model, status, file_id, thumb_file_id, done_at, subject, pica)
+    values (${userId}, ${characterId}, 'image', ${prompt.slice(0, 2000)}, ${model.slice(0, 200)}, 'done', ${String(full.id)}, ${thumb?.id || null}, now(),
+      ${extra.subject || null}, ${extra.pica === true}) returning id`;
+  return { mediaId: String(m.id), fileId: String(full.id), url: String(full.url) };
+}
+
+/** 🙋 Every picture of YOU: the ones made in any chat, and the ones you uploaded yourself. */
+export async function listMine(userId: string, before: string | null, limit = 30) {
+  const rows = await sql()`select m.id, m.kind, m.kept, m.created_at::text, m.poster_url, f.url, t.url as thumb
+    from velo_media m join velo_files f on f.id = m.file_id left join velo_files t on t.id = m.thumb_file_id
+    where m.user_id = ${userId} and m.status = 'done'
+      and coalesce((to_jsonb(m)->>'pica')::boolean, false) = false
+      and (m.subject = 'me' or m.subject like 'me+%')
+      and (${before}::timestamptz is null or m.created_at < ${before}::timestamptz)
+    order by m.created_at desc limit ${limit}`;
+  return rows.map(r => ({ id: String(r.id), kind: r.kind as "image" | "video", kept: !!r.kept, created_at: String(r.created_at), url: String(r.url), thumb: (r.thumb || r.poster_url || null) as string | null }));
 }
 export class MediaError extends Error {}
 

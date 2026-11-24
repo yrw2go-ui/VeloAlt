@@ -132,7 +132,8 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   // ✨ ＋ New first asks: make one for me (a filled-in draft), or start from scratch.
   const [newChar, setNewChar] = useState(false);
   const [draft, setDraft] = useState<Partial<Character> | null>(null);
-  const [gallery, setGallery] = useState(false);
+  // 🖼️ The gallery: this chat's pictures, or "me" for every picture of you.
+  const [gallery, setGallery] = useState<false | true | "me">(false);
   const [chatTick, setChatTick] = useState(0);
   useEffect(() => {
     api<{ characters: Character[]; portraits: boolean; admin: boolean; brains?: string[]; brainModels?: { id: string; model: string }[] }>("/api/characters", { action: "list" })
@@ -484,7 +485,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
         {tab === "gifts" && <Gifts />}
         {tab === "today" && <Today refresh={refresh} />}
         {tab === "memory" && <Memory refresh={refresh} />}
-        {tab === "settings" && <Settings name={name} setName={setName} onOut={onOut} profile={profile} onProfile={() => setProfileTick(t => t + 1)}
+        {tab === "settings" && <Settings name={name} setName={setName} onOut={onOut} profile={profile} onProfile={() => setProfileTick(t => t + 1)} onMyPictures={() => setGallery("me")}
           chars={chars} admin={admin} brains={brains} brainModels={brainModels} onCharChange={c => setChars(cs => cs.map(x => (x.id === c.id ? { ...x, brain: c.brain } : x)))} />}
       </main>
 
@@ -513,7 +514,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
           }} />
       )}
       {calling && <CallMedia items={callMedia} name={callWith?.name || "Velo"} />}
-      {gallery && <Gallery key={withChar?.id || "velo"} characterId={withChar?.id || null} name={withChar?.name || "Velo"} onClose={() => setGallery(false)} />}
+      {gallery && <Gallery key={gallery === "me" ? "me" : withChar?.id || "velo"} mine={gallery === "me"} characterId={gallery === "me" ? null : withChar?.id || null} name={gallery === "me" ? "you" : withChar?.name || "Velo"} onClose={() => setGallery(false)} />}
       {editing && (
         <CharacterEditor key={editing === "new" ? `new-${draft?.name || ""}` : editing.id} initial={editing === "new" ? null : editing} draft={editing === "new" ? draft : null} portraits={portraits} brains={brains} brainModels={brainModels}
           onClose={() => setEditing(null)} onSaved={savedChar}
@@ -529,7 +530,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   );
 }
 
-function Settings({ name, setName, onOut, profile, onProfile, chars = [], admin = false, brains = [], brainModels = [], onCharChange }: { name: string; setName: (n: string) => void; onOut: () => void; profile: Profile | null; onProfile: () => void; chars?: Character[]; admin?: boolean; brains?: string[]; brainModels?: { id: string; model: string }[]; onCharChange?: (c: { id: string; brain?: string }) => void }) {
+function Settings({ name, setName, onOut, profile, onProfile, onMyPictures, chars = [], admin = false, brains = [], brainModels = [], onCharChange }: { name: string; setName: (n: string) => void; onOut: () => void; profile: Profile | null; onProfile: () => void; onMyPictures?: () => void; chars?: Character[]; admin?: boolean; brains?: string[]; brainModels?: { id: string; model: string }[]; onCharChange?: (c: { id: string; brain?: string }) => void }) {
   const [draft, setDraft] = useState(name);
   const [saved, setSaved] = useState(false);
   useEffect(() => setDraft(name), [name]);
@@ -553,7 +554,7 @@ function Settings({ name, setName, onOut, profile, onProfile, chars = [], admin 
         <div className="muted" style={{ fontSize: 13, margin: "2px 0 12px" }}>Each face has her own voice on calls. You can also upload your own picture (she keeps the default voice).</div>
         <VeloLookPicker />
       </div>
-      {profile && <AboutCard profile={profile} onChange={onProfile} />}
+      {profile && <AboutCard profile={profile} onChange={onProfile} onGallery={onMyPictures} />}
       {profile && <PauseCard profile={profile} onChange={onProfile} />}
       {profile && <CheckinsCard profile={profile} onChange={onProfile} />}
       {profile && <PersonalityCard profile={profile} onChange={onProfile} />}

@@ -22,7 +22,7 @@ function step<T extends { id: string }>(list: T[] | null, open: T, go: (x: T) =>
   };
 }
 
-export default function Gallery({ characterId, name, onClose }: { characterId: string | null; name: string; onClose: () => void }) {
+export default function Gallery({ characterId, name, mine = false, onClose }: { characterId: string | null; name: string; mine?: boolean; onClose: () => void }) {
   const [items, setItems] = useState<Item[] | null>(null);
   const [more, setMore] = useState(false);
   const [open, setOpen] = useState<Item | null>(null);
@@ -34,11 +34,12 @@ export default function Gallery({ characterId, name, onClose }: { characterId: s
   const thread = characterId ? { characterId } : {};
   const load = useCallback(async (before: string | null) => {
     try {
-      const r = await data<{ items: Item[] }>("gallery.list", { ...thread, before });
+      // 🙋 Yours: every picture of you, wherever it was made, and the ones you uploaded.
+      const r = await data<{ items: Item[] }>(mine ? "gallery.me" : "gallery.list", mine ? { before } : { ...thread, before });
       setItems(list => [...(before ? list || [] : []), ...r.items]);
       setMore(r.items.length === 30);
     } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't load the gallery."); setItems(list => list || []); }
-  }, [characterId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [characterId, mine]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { load(null); }, [load]);
 
   const keep = async (it: Item) => {

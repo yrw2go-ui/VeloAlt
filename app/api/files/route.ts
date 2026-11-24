@@ -55,7 +55,9 @@ export async function POST(req: NextRequest) {
       const seen = said.length > 120 ? null : await describePhoto(img, type).catch(e => { console.error("files: describe pica photo", e instanceof Error ? e.message : e); return null; });
       const look = seen && seen !== "NONE" ? seen : "";
       const note = [said, said && look ? `(also in the picture: ${look})` : look].filter(Boolean).join(" ") || "A photo of her";
-      const item = await saveImageItem(c.userId, null, img, type, note, "upload");
+      // 📸 Hers, not yours: marked as a Picagram picture so it sits with her rather than in your
+      // own gallery, and it's hers to post or keep as a reference from her page.
+      const item = await saveImageItem(c.userId, null, img, type, note, "upload", { pica: true });
       return NextResponse.json({ mediaId: item.mediaId, url: item.url, note });
     }
 
@@ -107,6 +109,9 @@ export async function POST(req: NextRequest) {
       // 👤 Their photos for "About you": each described once in words (visible features only). Up to 6 — the newest is the main one.
       const note = await describePhoto(body, type).catch(e => { console.error("files: describe photo", e instanceof Error ? e.message : e); return null; });
       await sql()`update users set bio_photo_file_id = ${row.id}, bio_photo_note = ${note}, bio_photo_notes = bio_photo_notes || ${JSON.stringify({ [String(row.id)]: note || "" })}::jsonb, updated_at = now() where id = ${c.userId}`;
+      // 🙋 And it goes in your own gallery, beside the pictures made of you in chats.
+      await saveImageItem(c.userId, null, body, type, note || "A photo of you", "upload", { subject: "me", fileId: String(row.id) })
+        .catch(e => console.error("files: bio gallery", e instanceof Error ? e.message : e));
       const extra = await sql()`select id from velo_files where user_id = ${c.userId} and kind = 'bio' order by created_at desc offset 6`;
       for (const o of extra) await deleteFile(c.userId, String(o.id));
       return NextResponse.json({ file: row, note });
