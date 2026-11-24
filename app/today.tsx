@@ -11,7 +11,7 @@ type Task = { id: string; text: string; due_date: string | null; done: boolean }
 type Out = { id: string; name: string; portrait_url: string | null; where: string; place: string; placeId: string; emoji: string; until: string; local: boolean };
 const when = (iso: string) => new Date(iso).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
-export default function Today({ refresh }: { refresh: number }) {
+export default function Today({ refresh, onChat }: { refresh: number; onChat?: (characterId: string) => void }) {
   const [rems, setRems] = useState<Reminder[] | null>(null);
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [draft, setDraft] = useState("");
@@ -62,6 +62,8 @@ export default function Today({ refresh }: { refresh: number }) {
     setTick(x => x + 1);
   };
 
+  // 💬 Tapping anyone here opens their text thread.
+  const go = (id: string) => onChat?.(id);
   const now = Date.now();
   return (
     <div style={{ width: "100%", minWidth: 0, maxWidth: "100%", padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
@@ -71,7 +73,8 @@ export default function Today({ refresh }: { refresh: number }) {
         <section className="card" data-testid="today-whereabouts">
           <div style={{ fontWeight: 800, marginBottom: 10 }}>🧭 Out right now</div>
           {out.map(o => (
-            <div key={o.id} className="row" style={{ gap: 10, padding: "9px 0", borderTop: "1px solid var(--border)", alignItems: "center" }}>
+            <button key={o.id} className="row" data-testid={`today-out-${o.id}`} onClick={() => go(o.id)}
+              style={{ gap: 10, padding: "9px 0", borderTop: "1px solid var(--border)", alignItems: "center", width: "100%", textAlign: "left", background: "none", border: "none", borderTopStyle: "solid", cursor: onChat ? "pointer" : "default", color: "inherit" }}>
               {o.portrait_url
                 // eslint-disable-next-line @next/next/no-img-element
                 ? <img src={o.portrait_url} alt="" style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
@@ -84,7 +87,7 @@ export default function Today({ refresh }: { refresh: number }) {
                 </div>
               </div>
               {o.local && <span data-testid="out-local" className="muted" style={{ fontSize: 11, padding: "2px 8px", borderRadius: 999, border: "1px solid var(--border)" }}>nearby</span>}
-            </div>
+            </button>
           ))}
         </section>
       )}
@@ -93,14 +96,17 @@ export default function Today({ refresh }: { refresh: number }) {
           <div style={{ fontWeight: 800, marginBottom: 10 }}>🟢 Going on right now</div>
           {ongoing.map(o => (
             <div key={`${o.kind}:${o.characterId}`} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderTop: "1px solid var(--border)" }}>
-              {o.portrait
-                ? <img src={o.portrait} alt="" width={34} height={34} style={{ width: 34, height: 34, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
-                : <span aria-hidden style={{ width: 34, height: 34, borderRadius: "50%", flexShrink: 0, background: "var(--surface2)", display: "grid", placeItems: "center", fontSize: 14, fontWeight: 700 }}>{o.who.slice(0, 1)}</span>}
-              <span style={{ flex: 1, minWidth: 0 }}>
-                <span style={{ fontWeight: 700, fontSize: 14 }}>{o.kind === "person" ? "🧍" : "🎥"} {o.who}</span>
-                <br />
-                <span className="muted" style={{ fontSize: 13 }}>{o.title || (o.kind === "person" ? "Together in person" : "On a video chat")}</span>
-              </span>
+              <button data-testid={`today-live-${o.characterId}`} onClick={() => go(o.characterId)}
+                style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0, textAlign: "left", background: "none", border: "none", padding: 0, cursor: onChat ? "pointer" : "default", color: "inherit" }}>
+                {o.portrait
+                  ? <img src={o.portrait} alt="" width={34} height={34} style={{ width: 34, height: 34, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
+                  : <span aria-hidden style={{ width: 34, height: 34, borderRadius: "50%", flexShrink: 0, background: "var(--surface2)", display: "grid", placeItems: "center", fontSize: 14, fontWeight: 700 }}>{o.who.slice(0, 1)}</span>}
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ fontWeight: 700, fontSize: 14 }}>{o.kind === "person" ? "🧍" : "🎥"} {o.who}</span>
+                  <br />
+                  <span className="muted" style={{ fontSize: 13 }}>{o.title || (o.kind === "person" ? "Together in person" : "On a video chat")}</span>
+                </span>
+              </button>
               <button className="ghost" data-testid={`today-end-${o.characterId}`} disabled={ending === o.characterId} onClick={() => void end(o)}
                 style={{ flexShrink: 0, padding: "4px 10px", fontSize: 12, whiteSpace: "nowrap", color: "var(--bad)" }}>
                 {ending === o.characterId ? "…" : o.kind === "person" ? "Leave" : "End call"}
