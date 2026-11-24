@@ -140,6 +140,10 @@ function Failed({ m, onRetried }: { m: Media; onRetried?: (m: Media) => void }) 
 function MediaShown({ media, onReady, onFailed, onRetried, big = false }: { media: Media; onReady?: (m: Media) => void; onFailed?: () => void; onRetried?: (m: Media) => void; big?: boolean }) {
   const m = useMedia(media, onReady, onFailed);
   const [full, setFull] = useState(false);
+  // 🖼️ The picture is there but didn't come down — a flaky moment on the way, not a failed photo.
+  // It used to leave a blank space under the message with no way to ask for it again.
+  const [broken, setBroken] = useState(false);
+  const [tries, setTries] = useState(0);
   if (m.status === "failed") return <Failed m={m} onRetried={onRetried} />;
   if (m.status !== "done" || !m.url) return (
     <div data-testid="media-working" style={{ width: big ? "min(80vw, 320px)" : 220, aspectRatio: "2 / 3", maxHeight: "min(50dvh, 420px)", borderRadius: 14, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, textAlign: "center", fontSize: 13, background: "linear-gradient(135deg, rgba(124,140,255,.18), rgba(236,72,153,.14))", animation: "mediaPulse 1.8s ease-in-out infinite" }}>
@@ -152,9 +156,16 @@ function MediaShown({ media, onReady, onFailed, onRetried, big = false }: { medi
   const st = big ? { ...fit, maxHeight: "min(58dvh, 620px)" } : fit;
   // Small screens show the thumbnail; the call pop-up shows the photo itself.
   const src = m.kind === "image" ? (big ? m.url : m.thumb || m.url) : null;
+  if (m.kind === "image" && broken) return (
+    <div className="muted" data-testid="media-broken" onClick={e => e.stopPropagation()} style={{ fontSize: 13, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+      <span>🖼️ That photo didn&apos;t load.</span>
+      <button type="button" className="ghost" data-testid="media-reload" onClick={() => { setBroken(false); setTries(n => n + 1); }}
+        style={{ padding: "4px 10px", fontSize: 13 }}>↻ Try again</button>
+    </div>
+  );
   const el = m.kind === "image"
     // eslint-disable-next-line @next/next/no-img-element
-    ? <img src={src!} alt="Photo" data-testid="media-image" style={st} />
+    ? <img src={tries ? `${src!}${src!.includes("?") ? "&" : "?"}r=${tries}` : src!} alt="Photo" data-testid="media-image" style={st} onError={() => setBroken(true)} />
     : big ? <video src={m.url} data-testid="media-video" style={st} controls playsInline loop autoPlay muted />
     : <VideoTile poster={m.thumb || null} />;
   return (
