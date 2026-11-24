@@ -90,6 +90,29 @@ async function sinceNo(userId: string, characterId: string): Promise<string> {
   return rows.reverse().map(r => `${r.role === "user" ? "THEM" : "YOU"}: ${String(r.content).slice(0, 300)}`).join("\n");
 }
 
+// 💌 Her own invitation, still live. Nothing reads worse than her saying "come over" and then
+// turning them down at the door, so when she's just asked for this herself, the gate stands aside.
+const INVITE_ANY = /\b(come (over|round|by|here|and see me|see me)|get (over|round) here|head (over|round)|pop (over|round)|swing by|let'?s (meet|hang|hang out|get together)|meet up|i'?m on my way|i'?ll be (right )?(over|there))\b/i;
+const INVITE_PERSON = /\b(my (place|house|flat|apartment|room)|in person|face to face|i want to see you)\b/i;
+const INVITE_SCENE = /\b(video ?(chat|call)|facetime|get on (video|camera)|camera on|let me see you|see your face)\b/i;
+const INVITE_LATER = /\b(tomorrow|next week|this weekend|next time|some ?time|later this week|another (day|night|time))\b/i;
+const INVITE_NOW = /\b(now|tonight|today|in a (bit|minute|sec)|already|on my way)\b/i;
+
+/**
+ * Did she ask for this herself in the last little while? Her own last few lines are read for an
+ * invitation — meant for now, not for next weekend.
+ */
+async function sheInvited(userId: string, characterId: string, ask: Ask): Promise<boolean> {
+  const rows = await sql()`select content from velo_messages where user_id = ${userId} and character_id = ${characterId}
+    and role = 'assistant' and media_id is null and created_at > now() - interval '90 minutes'
+    order by created_at desc limit 6`;
+  return rows.some(r => {
+    const t = String(r.content || "");
+    if (!INVITE_ANY.test(t) && !(ask === "person" ? INVITE_PERSON : INVITE_SCENE).test(t)) return false;
+    return INVITE_NOW.test(t) || !INVITE_LATER.test(t);
+  });
+}
+
 /** She said no; they're asking again. Does she let herself be talked into it? */
 async function persuaded(userId: string, ch: Character, ask: Ask, name: string, happy: number, love: number | null, luck?: "yes" | "no"): Promise<Answer> {
   if (luck) return luck === "yes"
@@ -145,6 +168,12 @@ async function decide(userId: string, ch: Character, ask: Ask, timeZone: unknown
   // 🎁 Still in the glow of a present or some money they sent her.
   const spoiled = (await boostFor(userId, { kind: "character", id: ch.id }).catch(() => null))?.eager || 0;
   const yes = roll() < chanceOfYes(happy, love, busy, sore?.level || 0, spoiled);
+  // 💌 She asked them over herself a moment ago: that invitation stands, and nothing below
+  // turns them away at the door.
+  if (ask !== "call" && luck !== "no" && await sheInvited(userId, ch.id, ask).catch(() => false)) {
+    await forgetTurnDown(userId, ch.id, ask).catch(() => {});
+    return { ok: true, note: `You asked them for this yourself a little while ago, so this is the two of you doing exactly what you just said — be pleased they're here, not surprised.` };
+  }
   // 💬 They're asking again after a no: sweet talk can change her mind.
   if (await askedBefore(userId, ch.id, ask).catch(() => false)) {
     const r = await persuaded(userId, ch, ask, String(name), happy, love, luck).catch(() => ({ ok: true as const }));
