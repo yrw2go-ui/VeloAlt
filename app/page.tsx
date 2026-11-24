@@ -489,7 +489,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
           others={chars.map(c => ({ id: c.id, name: c.name, pica_handle: c.pica_handle || null }))} onSocial={id => { setPicaOpen(id); setTab("pica"); }} onGroup={g => { setGroups(gs => [g, ...gs.filter(x => x.id !== g.id)]); setGroupId(g.id); }} />}
         {tab === "pica" && <Picagram name={name} userId={userId} home={picaHome} openProfile={picaOpen} onProfileOpened={() => setPicaOpen(null)} openDm={picaDm} onDmOpened={() => setPicaDm(null)} onChat={id => api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => { setChars(r.characters); setTab("chat"); pickChat(id); }).catch(() => {})} />}
         {tab === "gifts" && <Gifts />}
-        {tab === "today" && <Today refresh={refresh} />}
+        {tab === "today" && <Today refresh={refresh} onChat={id => { setTab("chat"); pickChat(id); setChatTick(t => t + 1); }} />}
         {tab === "memory" && <Memory refresh={refresh} />}
         {tab === "settings" && <Settings name={name} setName={setName} onOut={onOut} profile={profile} onProfile={() => setProfileTick(t => t + 1)} onMyPictures={() => setGallery("me")}
           chars={chars} admin={admin} brains={brains} brainModels={brainModels} onCharChange={c => setChars(cs => cs.map(x => (x.id === c.id ? { ...x, brain: c.brain } : x)))} />}
