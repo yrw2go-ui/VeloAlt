@@ -17,7 +17,7 @@ import { PLACES } from "./lib/places";
 
 type VoiceOption = { id: string; name: string; kind: "female" | "male"; about: string; preview: string; owner?: string };
 
-export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; brain?: string; standing?: string; work_attire?: string; works_at?: string; work_days?: number[]; work_start?: string; work_end?: string; part_time?: boolean; school?: string; class_days?: number[]; class_start?: string; class_end?: string; poly_ok?: boolean; sapphic?: boolean; explicit_ok?: boolean; live_in?: boolean; neighbor?: boolean; local?: boolean; lives_in?: string; attached?: "single" | "dating" | "married"; sees_others?: boolean; lesbian?: boolean; lesbian_personality?: string; partner?: string; speech?: string; speech_on?: boolean; big_following?: boolean; busy?: "work" | "class" | null; ditched?: boolean; home?: boolean; together?: boolean; at_yours?: boolean; hinting?: boolean; pica_handle?: string | null; portrait_url: string | null; portrait_job: string | null };
+export type Character = { id: string; name: string; personality: string; backstory: string; relation: string; appearance: string; job: string; casual_wear: string; hobbies: string; voice: string; voice_name: string; voice_kind: "female" | "male"; romantic: boolean; romance_arc: string; reference_ids: string[]; time_zone: string; traits: Record<string, number>; preset: string; birthday: string; brain?: string; standing?: string; work_attire?: string; works_at?: string; work_days?: number[]; work_start?: string; work_end?: string; part_time?: boolean; school?: string; class_days?: number[]; class_start?: string; class_end?: string; poly_ok?: boolean; sapphic?: boolean; explicit_ok?: boolean; live_in?: boolean; neighbor?: boolean; local?: boolean; lives_in?: string; attached?: "single" | "dating" | "married"; sees_others?: boolean; lesbian?: boolean; lesbian_personality?: string; partner?: string; speech?: string; speech_on?: boolean; big_following?: boolean; busy?: "work" | "class" | null; ditched?: boolean; home?: boolean; together?: boolean; on_call?: boolean; in_person?: boolean; at_yours?: boolean; hinting?: boolean; pica_handle?: string | null; portrait_url: string | null; portrait_job: string | null };
 
 /** A character's picture in a circle (their initial until a portrait exists). */
 export function CharacterFace({ c, size }: { c: Pick<Character, "name" | "portrait_url">; size: number }) {
@@ -53,10 +53,20 @@ const Hinting = ({ c }: { c: Character }) =>
     style={{ width: 8, height: 8, borderRadius: "50%", background: "#ef4444", display: "inline-block", flexShrink: 0 }} /> : null;
 
 /** ⭐ At your place right now — round at yours, or living with you and in. */
-const AtYours = ({ c }: { c: Character }) =>
-  c.at_yours ? <span data-testid="at-yours" title={`${c.name} is at your place right now`} aria-label="at your place" style={{ fontSize: 12 }}>⭐</span> : null;
-
 /** 😏 She should be in class or at work, and she's skipped it — for you. */
+/** 👀 Where she is, at a glance: on a call, with you, at yours, at work, in class, or home. */
+const Where = ({ c }: { c: Character }) => {
+  const bits: { icon: string; what: string }[] = [];
+  if (c.on_call) bits.push({ icon: "🎥", what: `On a video chat with ${c.name}` });
+  if (c.in_person) bits.push({ icon: "🧍", what: `You're with ${c.name} right now` });
+  if (c.at_yours) bits.push({ icon: "🏠", what: `${c.name} is at your place` });
+  if (!c.together && c.busy === "work") bits.push({ icon: "💼", what: `${c.name} is at work` });
+  if (!c.together && c.busy === "class") bits.push({ icon: "📚", what: `${c.name} is in class` });
+  if (!c.together && !c.busy && c.home) bits.push({ icon: "🛋️", what: `${c.name} is home` });
+  if (!bits.length) return null;
+  return <>{bits.map(b => <span key={b.icon} data-testid={`where-${b.icon}`} title={b.what} aria-label={b.what} style={{ fontSize: 11, marginLeft: 1 }}>{b.icon}</span>)}</>;
+};
+
 const Ditched = ({ c }: { c: Character }) =>
   c.ditched ? <span data-testid="ditched" title={`${c.voice_kind === "male" ? "He's" : "She's"} ${c.busy === "class" ? "skipped class" : "called off work"} today`} aria-label="skipped it today" style={{ fontSize: 11, marginLeft: 1 }}>😏</span> : null;
 
@@ -133,7 +143,7 @@ export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdi
                   onClick={() => pick(() => (active !== c.id ? onPick(c.id) : admin ? onEdit(c) : undefined))}>
                   <span style={{ ...chip(false, c.busy, c.home, c.together), padding: 0, border: "none", background: "none" }}><CharacterFace c={c} size={26} /></span>
                   <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    <AtYours c={c} /><Hinting c={c} />{c.name}<Ditched c={c} /><Attached c={c} /><Standing c={c} />
+                    <Hinting c={c} />{c.name}<Where c={c} /><Ditched c={c} /><Attached c={c} /><Standing c={c} />
                   </span>
                   <Badge n={active === c.id ? 0 : unread[c.id]} />
                 </button>
