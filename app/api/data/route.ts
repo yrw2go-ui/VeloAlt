@@ -37,7 +37,7 @@ import { myRefs, myPhotoDraft, myPhotoMake } from "../../lib/picagram";
 import { BITS, merge, keepEdits } from "../../lib/wording";
 import { SECTIONS as TALK_SECTIONS, merge as talkMerge, keepEdits as talkKeep } from "../../lib/words";
 import { imageModels, DEFAULT_IMAGE_MODEL, type ImageModel } from "../../lib/imageModels";
-import { acceptMedia, declineMedia, mediaNote, startMedia, checkMedia, retryMedia, sweepMedia, getMedia, listGallery, deleteMedia, VIDEO_MODELS, DEFAULT_VIDEO_MODEL, mediaReady, MediaError } from "../../lib/media";
+import { acceptMedia, declineMedia, mediaNote, startMedia, checkMedia, retryMedia, sweepMedia, getMedia, listGallery, listMine, deleteMedia, VIDEO_MODELS, DEFAULT_VIDEO_MODEL, mediaReady, MediaError } from "../../lib/media";
 
 // 📦 Everything the app reads and changes, for the signed-in person only.
 // POST { action, ...args } → { ... }. Every query is scoped to their user_id.
@@ -735,6 +735,9 @@ export async function POST(req: NextRequest) {
         return m ? NextResponse.json({ media: m }) : bad("Unknown media.");
       }
       // 🖼️ Gallery for one chat (Velo's or a character's): newest first, 30 at a time.
+      // 🙋 Every picture of you: made in any chat, or uploaded yourself.
+      case "gallery.me":
+        return NextResponse.json({ items: await listMine(me, typeof b.before === "string" ? b.before : null) });
       case "gallery.list": {
         const ch = b.characterId ? await getCharacterFor(me, String(b.characterId)) : null;
         if (b.characterId && !ch) return bad("That character wasn't found.");

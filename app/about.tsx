@@ -13,7 +13,7 @@ import { BIO_SECTIONS, BIO_MAX, type BioMore } from "./lib/bioSections";
 export type MyPhoto = { id: string; url: string; note: string; main: boolean };
 export type Bio = { text: string; birthday: string; age: number | null; town?: string; state: string; photo: string; photoNote: string; photos?: MyPhoto[]; more?: BioMore };
 
-export default function AboutCard({ profile, onChange }: { profile: Profile; onChange: () => void }) {
+export default function AboutCard({ profile, onChange, onGallery }: { profile: Profile; onChange: () => void; onGallery?: () => void }) {
   const bio: Bio = profile.bio || { text: "", birthday: "", age: null, town: "", state: "", photo: "", photoNote: "" };
   const [text, setText] = useState(bio.text);
   const [birthday, setBirthday] = useState(bio.birthday);
@@ -148,6 +148,8 @@ export default function AboutCard({ profile, onChange }: { profile: Profile; onC
         </label>
       ))}
       {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
+      {/* 🙋 Every picture of you in one place: the ones made in chats and the ones you uploaded. */}
+      {onGallery && <button type="button" className="ghost" onClick={onGallery} data-testid="about-gallery" style={{ alignSelf: "flex-start", padding: "6px 12px", fontSize: 13 }}>🖼️ Pictures of you</button>}
       <div className="row" style={{ gap: 10, alignItems: "center" }}>
         <button className="btn" disabled={!dirty || busy} onClick={() => void save()} data-testid="about-save">{saved ? "Saved ✓" : busy ? "…" : "Save"}</button>
         <span data-testid="about-autosave" className="muted" style={{ fontSize: 12 }}>{busy ? "Saving…" : saved ? "✓ Saved" : dirty && mine !== sent ? "Saves on its own…" : ""}</span>
