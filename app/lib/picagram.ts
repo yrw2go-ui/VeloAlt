@@ -812,9 +812,12 @@ export async function picaNewPost(userId: string, want: { accountId?: string; se
   // Whoever you picked — by her Picagram account, or by the character she is. Her @handle and her
   // Picagram name are yours to change, and neither is how she's found: the account's own id, or
   // the character she's linked to, is. Renaming her can't lose her.
+  // 🙋 "mine" marks someone you made yourself (👩 Make someone), not your own profile — that lives
+  // on your user row. They were being left out of this entirely, which is backwards: the women you
+  // made are exactly the ones you want posting.
   const [a] = id
-    ? await sql()`select * from pica_accounts where user_id = ${userId} and not mine and (id = ${id} or character_id = ${id}) limit 1`
-    : await sql()`select * from pica_accounts where user_id = ${userId} and not mine
+    ? await sql()`select * from pica_accounts where user_id = ${userId} and (id = ${id} or character_id = ${id}) limit 1`
+    : await sql()`select * from pica_accounts where user_id = ${userId}
         order by (avatar_media_id is not null) desc, followed desc, random() limit 1`;
   if (!a) throw new PicaLimit(id ? "She isn't on Picagram — put her up from her own chat first." : "There's nobody on Picagram yet.");
   const photo = scrub(String(want.photo || "")).replace(/\s+/g, " ").trim().slice(0, 600);
