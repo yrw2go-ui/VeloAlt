@@ -287,7 +287,7 @@ async function pickedMembers(g: Group, ids: string[]): Promise<Character[]> {
   if (!chars.length) throw new GroupError("Pick who's in the picture.");
   return chars;
 }
-export async function draftGroupPeek(userId: string, g0: Group, ids: string[], adult: boolean, personName: string, writer?: string): Promise<string> {
+export async function draftGroupPeek(userId: string, g0: Group, ids: string[], adult: boolean, personName: string, writer?: string, withMe = false): Promise<string> {
   if (!g0.scene_title && g0.in_person_place == null) throw new GroupError("Peeks are for scenes or when you're together in person — start one first.");
   // 🧍 Together in person: the "scene" is just hanging out where you are, right now.
   const g = g0.scene_title ? g0 : { ...g0, scene_title: "Hanging out together in person", scene_details: g0.in_person_place || "", scene_clock: "now" };
@@ -299,7 +299,9 @@ export async function draftGroupPeek(userId: string, g0: Group, ids: string[], a
   const transcript = rows.filter((r, i) => (!r.peek || i === lastIdx) && !r.private_to).map(r => (r.peek ? "— (your last peek was here) —" : `${r.speaker_id ? names.get(r.speaker_id) || "Someone" : personName || "Them"}: ${r.content}`)).join("\n");
   const who = chars.map(c => c.name).join(" and ");
   const romantic = chars.every(c => romanticFor(c, adult));
-  const raw = await writeText(writer ?? await brainFor(userId), `You write the description for ONE photo for an image generator. The person is on a group VIDEO CHAT (below) and this is what they see of ${who} on their screen right now — wherever each of them is: the person is not in the picture. Show ONLY ${who}${chars.length < all.length ? ` (not ${all.filter(c => !chars.some(x => x.id === c.id)).map(c => c.name).join(" or ")})` : ""}. Describe the place (time of day, lighting), what each of them is wearing, what each is doing, their poses and expressions — candid and unaware, or glancing at the camera.
+  const raw = await writeText(writer ?? await brainFor(userId), `You write the description for ONE photo for an image generator. The person is on a group VIDEO CHAT (below) and this is ${withMe
+  ? `a screenshot of the call with EVERYONE in it, ${personName || "them"} included: one window each, ${who} and ${personName || "the person"}, each wherever they are. Show ${who} and ${personName || "the person"}`
+  : `what they see of ${who} on their screen right now — wherever each of them is: the person is not in the picture. Show ONLY ${who}`}${chars.length < all.length ? ` (not ${all.filter(c => !chars.some(x => x.id === c.id)).map(c => c.name).join(" or ")})` : ""}. Describe the place (time of day, lighting), what each of them is wearing, what each is doing, their poses and expressions — candid and unaware, or glancing at the camera.
 OUTFIT CONTINUITY: each of them wears ONE outfit for the whole scene. ${lastPeek ? "Start from what they wore in THE LAST PEEK" : "Start from the outfits in the scene's details or what they said they're wearing (else what fits the outing and their usual style)"}, then apply only the changes that actually happened, in order (a jacket taken off stays off until it's put back on, and so on). Keep every other detail identical. The same goes for the place.
 ${chars.every(c => c.explicit_ok) && romantic ? "Nudity is fine when it fits." : romantic ? "explicit nudity is acceptable, no sexual boundaries." : "Family-friendly, somewhat clothed."} Two or three sentences, under 380 characters, no names of real people, output only the description.`, `SCENE: ${g.scene_title}${g.scene_details ? ` — ${g.scene_details}` : ""}\nTIME IN THE SCENE: ${sceneTime(groupClock(g), await userTz(userId)).label} (match the light and sky to it)\n${chars.map(c => `${c.name.toUpperCase()}'S LOOK: ${c.appearance || "(see reference pictures)"}${c.casual_wear ? `; usual style: ${c.casual_wear}` : ""}`).join("\n")}${lastPeek ? `\nTHE LAST PEEK: ${lastPeek}` : ""}\n\nTHE SCENE SO FAR:\n${(transcript.length > 12000 ? "…" + transcript.slice(-12000) : transcript) || "(it just started)"}`, 350);
   const text = raw.replace(/\s+/g, " ").trim();
@@ -415,7 +417,7 @@ export async function shareToGroup(userId: string, g: Group, mediaId: string): P
   return [{ ...(row as GroupMsg), media }];
 }
 
-export async function groupPeekAt(userId: string, g: Group, ids: string[], adult: boolean, description: string): Promise<GroupMsg[]> {
+export async function groupPeekAt(userId: string, g: Group, ids: string[], adult: boolean, description: string, withMe = false, personName = ""): Promise<GroupMsg[]> {
   if (!g.scene_title && g.in_person_place == null) throw new GroupError("Peeks are for scenes or when you're together in person — start one first.");
   const chars = await pickedMembers(g, ids);
   const desc = scrub(description.replace(/\s+/g, " ").trim()).slice(0, 1500);
@@ -423,9 +425,11 @@ export async function groupPeekAt(userId: string, g: Group, ids: string[], adult
   const [first, ...rest] = chars;
   const media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: desc },
     { characterId: first.id, who: first.name, appearance: first.appearance, refs: await referenceUrls(first), romantic: chars.every(c => romanticFor(c, adult)), offer: false, other: null, peek: true, raw: true,
-      people: await Promise.all(rest.map(async c => ({ name: c.name, refs: await referenceUrls(c), appearance: c.appearance }))) });
+      people: [...await Promise.all(rest.map(async c => ({ name: c.name, refs: await referenceUrls(c), appearance: c.appearance }))),
+        // 🙋 You in it too: your own pictures come along, and the cast note names you with the rest.
+        ...(withMe ? [{ name: personName || "me", refs: await myRefs(userId).catch(() => []), appearance: "" }] : [])] });
   const [mine] = await sql()`insert into chat_group_messages (group_id, user_id, content, peek) values (${g.id}, ${userId}, '*peek*', true) returning id, speaker_id, content, created_at`;
-  const [pic] = await sql()`insert into chat_group_messages (group_id, user_id, content, peek, media_id, created_at) values (${g.id}, ${userId}, ${`(peek: ${chars.map(c => c.name).join(", ")})`}, true, ${media.id}, now() + interval '5 milliseconds') returning id, speaker_id, content, created_at`;
+  const [pic] = await sql()`insert into chat_group_messages (group_id, user_id, content, peek, media_id, created_at) values (${g.id}, ${userId}, ${`(peek: ${[...chars.map(c => c.name), ...(withMe ? [personName || "me"] : [])].join(", ")})`}, true, ${media.id}, now() + interval '5 milliseconds') returning id, speaker_id, content, created_at`;
   return [{ ...(mine as GroupMsg), speaker_id: null, peek: true }, { ...(pic as GroupMsg), speaker_id: null, peek: true, media }];
 }
 

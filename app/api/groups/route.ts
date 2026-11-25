@@ -120,8 +120,8 @@ export async function POST(req: NextRequest) {
         if (!allow(`peek:${c.userId}`, [{ ms: 60_000, max: 6 }])) return bad("That's a lot of peeks — give it a minute.", 429);
         const [u] = await sql()`select adult_confirmed_at from users where id = ${c.userId}`;
         const ids = Array.isArray(b.ids) ? b.ids.map(String) : [];
-        if (action === "peek.draft") return NextResponse.json({ description: await draftGroupPeek(c.userId, g, ids, !!u?.adult_confirmed_at, name, writerBrain(b.writer)) });
-        return NextResponse.json({ added: await groupPeekAt(c.userId, g, ids, !!u?.adult_confirmed_at, String(b.description || "")) });
+        if (action === "peek.draft") return NextResponse.json({ description: await draftGroupPeek(c.userId, g, ids, !!u?.adult_confirmed_at, name, writerBrain(b.writer), b.withMe === true) });
+        return NextResponse.json({ added: await groupPeekAt(c.userId, g, ids, !!u?.adult_confirmed_at, String(b.description || ""), b.withMe === true, name) });
       }
       case "memo": {
         if (!aiReady()) return NextResponse.json({ saved: 0 });
