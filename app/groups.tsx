@@ -454,6 +454,8 @@ export function GroupMaker({ chars, name, onClose, onMade }: { chars: Character[
 function GroupPeekSheet({ group, members, name, brains, onClose, onMade }: { group: Group; members: Character[]; name: string; brains: string[]; onClose: () => void; onMade: (added: Msg[]) => void }) {
   useBack(true, onClose); // the phone's back button closes this, one step at a time
   const [ids, setIds] = useState<string[]>(members.map(c => c.id));
+  // 🙋 You in the picture as well, for when it's a photo of all of you rather than a look at them.
+  const [withMe, setWithMe] = useState(false);
   const [desc, setDesc] = useState("");
   const [forIds, setForIds] = useState("");
   const [loading, setLoading] = useState(false);
@@ -463,16 +465,16 @@ function GroupPeekSheet({ group, members, name, brains, onClose, onMade }: { gro
   const draft = async (pick: string[]) => {
     if (!pick.length) return;
     setLoading(true); setErr("");
-    try { setDesc((await api<{ description: string }>("/api/groups", { action: "peek.draft", id: group.id, ids: pick, name, writer })).description); setForIds(pick.join()); }
+    try { setDesc((await api<{ description: string }>("/api/groups", { action: "peek.draft", id: group.id, ids: pick, name, writer, withMe })).description); setForIds(`${pick.join()}|${withMe}`); }
     catch (e) { setErr(e instanceof Error ? e.message : "Couldn't peek right now."); }
     setLoading(false);
   };
   // Nothing is written until they tap ✍️ Write (and again to redo it).
   const toggle = (id: string) => setIds(p => (p.includes(id) ? p.filter(x => x !== id) : [...p, id]));
-  const stale = !!desc && forIds !== ids.join();
+  const stale = !!desc && forIds !== `${ids.join()}|${withMe}`;
   const go = async () => {
     setLoading(true); setErr("");
-    try { onMade((await api<{ added: Msg[] }>("/api/groups", { action: "peek", id: group.id, ids, description: desc })).added); }
+    try { onMade((await api<{ added: Msg[] }>("/api/groups", { action: "peek", id: group.id, ids, description: desc, withMe, name })).added); }
     catch (e) { setErr(e instanceof Error ? e.message : "Couldn't make it."); setLoading(false); }
   };
   return (
@@ -482,7 +484,7 @@ function GroupPeekSheet({ group, members, name, brains, onClose, onMade }: { gro
           <div style={{ fontWeight: 800, fontSize: 17 }}>👀 Peek</div>
           <button className="ghost" onClick={onClose} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
         </div>
-        <div className="muted" style={{ fontSize: 12 }}>Who&apos;s in the picture? Then fix anything that&apos;s off in the description. Nobody knows you peeked.</div>
+        <div className="muted" style={{ fontSize: 12 }}>Who&apos;s in the picture? Add 🙋 Me for a photo of all of you together. Then fix anything that&apos;s off in the description. Nobody knows you peeked.</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           {members.map(c => (
             <button key={c.id} type="button" onClick={() => toggle(c.id)} aria-pressed={ids.includes(c.id)} data-testid={`peek-who-${c.name}`}
@@ -491,6 +493,11 @@ function GroupPeekSheet({ group, members, name, brains, onClose, onMade }: { gro
               <CharacterFace c={c} size={24} /> {c.name}{ids.includes(c.id) ? " ✓" : ""}
             </button>
           ))}
+          <button type="button" onClick={() => setWithMe(v => !v)} aria-pressed={withMe} data-testid="peek-who-me"
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 999, cursor: "pointer", fontSize: 13, fontWeight: 700, color: "var(--text)",
+              border: `1px solid ${withMe ? "var(--accent)" : "var(--border)"}`, background: withMe ? "rgba(124,140,255,0.15)" : "var(--surface2)" }}>
+            🙋 Me{withMe ? " ✓" : ""}
+          </button>
         </div>
         <textarea value={desc} onChange={e => setDesc(e.target.value)} maxLength={1500} rows={5} aria-label="Peek description" disabled={loading && !desc}
           placeholder={loading ? "Writing what you'd see…" : "What you see right now"} style={{ resize: "vertical" }} />
