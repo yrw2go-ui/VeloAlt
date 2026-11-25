@@ -107,11 +107,18 @@ export async function listGroupGallery(userId: string, groupId: string, before: 
 
 /** 🙋 Every picture of YOU: the ones made in any chat, and the ones you uploaded yourself. */
 export async function listMine(userId: string, before: string | null, limit = 30) {
+  // 🙋 A picture she took OF you alone is filed under your own name, so that is wanted here too.
+  const [u] = await sql()`select name from users where id = ${userId}`;
+  const myName = String(u?.name || "").trim();
   const rows = await sql()`select m.id, m.kind, m.kept, m.created_at::text, m.poster_url, f.url, t.url as thumb
     from velo_media m join velo_files f on f.id = m.file_id left join velo_files t on t.id = m.thumb_file_id
     where m.user_id = ${userId} and m.status = 'done'
       and coalesce((to_jsonb(m)->>'pica')::boolean, false) = false
-      and (m.subject = 'me' or m.subject like 'me+%')
+      -- 🙋 Only pictures you are actually in: you with someone ("me+…"), or your own ones, which
+      -- are the ones that belong to no character. A character's own photos say "me" too — they
+      -- mean her, not you — so they are left to her gallery.
+      and (m.subject like 'me+%' or (m.subject = 'me' and m.character_id is null)
+           or (${myName} <> '' and lower(m.subject) = lower(${myName})))
       and (${before}::timestamptz is null or m.created_at < ${before}::timestamptz)
     order by m.created_at desc limit ${limit}`;
   return rows.map(r => ({ id: String(r.id), kind: r.kind as "image" | "video", kept: !!r.kept, created_at: String(r.created_at), url: String(r.url), thumb: (r.thumb || r.poster_url || null) as string | null }));
@@ -202,7 +209,7 @@ export function cut(s: string, n: number): string {
 }
 
 /** Starts a photo or video (from the send_media tool) — or, with `offer`, only offers it: nothing is made until they accept. */
-export async function startMedia(userId: string, input: unknown, ctx: { characterId: string | null; who: string; appearance: string; refs: string[]; romantic: boolean; explicitOk?: boolean; mood?: string; offer?: boolean; other?: { name: string; refs: string[]; appearance: string } | null; peek?: boolean; people?: { name: string; refs: string[]; appearance: string }[]; raw?: boolean; pica?: boolean }): Promise<Media> {
+export async function startMedia(userId: string, input: unknown, ctx: { characterId: string | null; who: string; appearance: string; refs: string[]; romantic: boolean; explicitOk?: boolean; mood?: string; offer?: boolean; other?: { name: string; refs: string[]; appearance: string } | null; peek?: boolean; people?: { name: string; refs: string[]; appearance: string }[]; raw?: boolean; pica?: boolean; mine?: boolean }): Promise<Media> {
   const a = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
   const kind = a.kind === "video" ? "video" : "image";
   // ✏️ raw (their own peek edits): their words go to Atlas exactly as written — no rewording, no extra instructions, no word filter here (Atlas still checks it).
@@ -276,7 +283,9 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
     ? imageModelFor(u?.image_model, u?.image_models, !!ref).model
     : videoModel(String(u?.video_model || DEFAULT_VIDEO_MODEL), !!ref);
   const sendRefs = kind === "image" ? refs : ref ? [ref] : [];
-  const who = people ? null : o ? (withMe ? `me+${o.name}` : o.name) : withMe ? "me" : "none";
+  // 🙋 Who is in it, for the galleries: "me" is this picture's subject, "me+…" means you are in it
+  // as well, and `mine` is how the ones built from your own photos say so.
+  const who = ctx.mine ? (people || o ? "me+them" : "me") : people ? null : o ? (withMe ? `me+${o.name}` : o.name) : withMe ? "me" : "none";
   // 💬 Her line when it arrives — but only for one she offered. A picture they ASKED for speaks for
   // itself: "just for you 😘" under something they requested is a line too many. Also none for a
   // picture of someone else ("miss me yet?" would make no sense), a peek, or a Picagram post.

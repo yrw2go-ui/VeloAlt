@@ -386,7 +386,7 @@ export async function groupPhoto(userId: string, g: Group, ids: string[], withMe
   const media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: `${whose}${desc}` },
     { characterId: first?.id || null, who: first?.name || personName || "you", appearance: first?.appearance || "",
       refs: subject,
-      romantic: chars.length ? chars.every(c => romanticFor(c, adult)) : adult, offer: false, other: null, raw: true, people: others.length ? others : undefined });
+      romantic: chars.length ? chars.every(c => romanticFor(c, adult)) : adult, offer: false, other: null, raw: true, ...(withMe ? { mine: true } : {}), people: others.length ? others : undefined });
   // 📨 Whose photo it is. It lands in the thread under her name, so the others answer her about
   // it rather than a picture that arrived from nowhere — and the words you wrote are the caption,
   // which is the only way any of them learns what is actually in it.
@@ -424,7 +424,7 @@ export async function groupPeekAt(userId: string, g: Group, ids: string[], adult
   if (desc.length < 10) throw new GroupError("Describe the picture a little more.");
   const [first, ...rest] = chars;
   const media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: desc },
-    { characterId: first.id, who: first.name, appearance: first.appearance, refs: await referenceUrls(first), romantic: chars.every(c => romanticFor(c, adult)), offer: false, other: null, peek: true, raw: true,
+    { characterId: first.id, who: first.name, appearance: first.appearance, refs: await referenceUrls(first), romantic: chars.every(c => romanticFor(c, adult)), offer: false, other: null, peek: true, raw: true, ...(withMe ? { mine: true } : {}),
       people: [...await Promise.all(rest.map(async c => ({ name: c.name, refs: await referenceUrls(c), appearance: c.appearance }))),
         // 🙋 You in it too: your own pictures come along, and the cast note names you with the rest.
         ...(withMe ? [{ name: personName || "me", refs: await myRefs(userId).catch(() => []), appearance: "" }] : [])] });
