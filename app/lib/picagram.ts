@@ -401,8 +401,11 @@ export async function picaPost(userId: string, caption: string, photo: string, u
   let media: Media | null = null;
   if (desc) {
     const refs = useMyPhotos ? await myRefs(userId) : [];
+    // 👥 Someone in it with you goes the way a group photo does: the one line saying which
+    // reference picture is who, and then your words, straight through to the picture service.
     media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: desc },
-      { characterId: null, who: u.name, appearance: u.look, refs, romantic: u.adult, offer: false, other, pica: true, ...(refs.length && !other ? { raw: true } : {}) });
+      { characterId: null, who: u.name, appearance: u.look, refs, romantic: u.adult, offer: false, other: null,
+        ...(other ? { people: [other] } : {}), pica: true, ...(other || refs.length ? { raw: true } : {}) });
   }
   const now = Date.now();
   const [post] = await sql()`insert into pica_posts (user_id, author_id, kind, caption, photo, media_id, likes_target, seen_at) values (${userId}, null, ${media ? "image" : "text"}, ${cap}, ${media ? desc : ""}, ${media?.id || null}, ${rand(10, 300)}, now()) returning id`;
