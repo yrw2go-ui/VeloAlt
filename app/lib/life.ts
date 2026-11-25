@@ -92,24 +92,30 @@ async function sinceNo(userId: string, characterId: string): Promise<string> {
 
 // 💌 Her own invitation, still live. Nothing reads worse than her saying "come over" and then
 // turning them down at the door, so when she's just asked for this herself, the gate stands aside.
-const INVITE_ANY = /\b(come (over|round|by|here|and see me|see me)|get (over|round) here|head (over|round)|pop (over|round)|swing by|let'?s (meet|hang|hang out|get together)|meet up|i'?m on my way|i'?ll be (right )?(over|there))\b/i;
-const INVITE_PERSON = /\b(my (place|house|flat|apartment|room)|in person|face to face|i want to see you)\b/i;
+const INVITE_ANY = /\b(come (over|round|by|here|and see me|see me|get me|pick me up)|get (over|round) here|head (over|round)|pop (over|round)|swing by|let'?s (meet|hang|hang out|get together|go out|do it|do this)|meet up|go(ing)? out (with you|tonight|together)|i'?m on my way|i'?ll be (right )?(over|there)|pick me up|what time (are you|do you|should i|works|shall)|see you (tonight|soon|in a bit|in a few|then|at)|i'?m (ready|free|all yours|in|down|up for it)|ready (to go|when you are|whenever)|can'?t wait to see you|i want to see you|say the word)\b/i;
+const INVITE_PERSON = /\b(my (place|house|flat|apartment|room)|in person|face to face|i want to see you|out with you|a date)\b/i;
 const INVITE_SCENE = /\b(video ?(chat|call)|facetime|get on (video|camera)|camera on|let me see you|see your face)\b/i;
 const INVITE_LATER = /\b(tomorrow|next week|this weekend|next time|some ?time|later this week|another (day|night|time))\b/i;
 const INVITE_NOW = /\b(now|tonight|today|in a (bit|minute|sec)|already|on my way)\b/i;
+// 🌙 Said about tonight: it holds for the evening, not just the next hour and a half.
+const INVITE_TONIGHT = /\b(tonight|this (evening|afternoon)|later( on)?|after (work|my shift|class)|today)\b/i;
 
 /**
  * Did she ask for this herself in the last little while? Her own last few lines are read for an
  * invitation — meant for now, not for next weekend.
  */
 async function sheInvited(userId: string, characterId: string, ask: Ask): Promise<boolean> {
-  const rows = await sql()`select content from velo_messages where user_id = ${userId} and character_id = ${characterId}
-    and role = 'assistant' and media_id is null and created_at > now() - interval '90 minutes'
-    order by created_at desc limit 6`;
+  // 🕯️ "Tonight" holds all evening: an invitation meant for tonight stands for hours, while a plain
+  // "come over" is about this minute and fades. Both are read from what she actually said.
+  const rows = await sql()`select content, extract(epoch from (now() - created_at)) / 60 as mins
+    from velo_messages where user_id = ${userId} and character_id = ${characterId}
+    and role = 'assistant' and media_id is null and created_at > now() - interval '8 hours'
+    order by created_at desc limit 20`;
   return rows.some(r => {
     const t = String(r.content || "");
     if (!INVITE_ANY.test(t) && !(ask === "person" ? INVITE_PERSON : INVITE_SCENE).test(t)) return false;
-    return INVITE_NOW.test(t) || !INVITE_LATER.test(t);
+    if (INVITE_LATER.test(t) && !INVITE_NOW.test(t)) return false;
+    return Number(r.mins) <= 90 || INVITE_TONIGHT.test(t);
   });
 }
 
