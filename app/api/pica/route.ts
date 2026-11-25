@@ -278,7 +278,7 @@ export async function POST(req: NextRequest) {
       case "post": {
         if (!allow(`pica-p:${me}`, [{ ms: 60_000, max: 3 }, { ms: 86_400_000, max: 30 }])) return bad("That's a lot of posts — try again in a bit.", 429);
         if (String(b.photo || "").trim() && !mediaReady()) return bad("Photos aren't set up yet.");
-        return NextResponse.json({ id: await picaPost(me, String(b.caption || ""), String(b.photo || ""), b.useMyPhotos === true, b.drafted === true, String(b.withId || "")) });
+        return NextResponse.json({ id: await picaPost(me, String(b.caption || ""), String(b.photo || ""), b.useMyPhotos === true, String(b.withId || "")) });
       }
       default: return bad("Unknown action.");
     }
