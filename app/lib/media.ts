@@ -142,7 +142,7 @@ function videoModel(id: string, withImage: boolean): string {
 
 // Never: nudity or anything explicit. Outside a romantic setting, nothing suggestive either.
 const NEVER = /\b()\b/i;
-const SUGGESTIVE = /\b(sexy|nudity|erotic|sex|xxx|porn|seductive|sultry|bikini|swimsuit|cleavage|lingerie|bedroom|in bed|flirty|kiss(ing)?)\b/i;
+const SUGGESTIVE = /\b(sexy|incest|beastiality|nudity|erotic|sex|xxx|porn|seductive|sultry|bikini|swimsuit|cleavage|lingerie|bedroom|in bed|flirty|kiss(ing)?)\b/i;
 
 export const SEND_MEDIA_TOOL = (who: string, romantic = false, explicitOk = false): Anthropic.Tool => ({
   name: "send_media",
