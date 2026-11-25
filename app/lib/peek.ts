@@ -65,7 +65,7 @@ export async function peekAt(userId: string, ch: Character, scene: Scene | null,
   const hers = await referenceUrls(ch);
   const media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: desc },
     { characterId: ch.id, who: ch.name, appearance: ch.appearance, refs: us ? hers.slice(0, 2) : hers, romantic, mood: mediaMood(ch.traits), offer: false, other: null, peek: true, raw: true,
-      ...(us ? { people: [{ name: String(u?.name || "me"), refs: mineRefs.slice(0, 2), appearance: "" }] } : {}) });
+      ...(us ? { mine: true, people: [{ name: String(u?.name || "me"), refs: mineRefs.slice(0, 2), appearance: "" }] } : {}) });
   const [mine] = await sql()`insert into velo_messages (user_id, role, content, character_id, scene_id, peek) values (${userId}, 'user', ${us ? "*us*" : scene ? "*peek*" : "*ICU*"}, ${ch.id}, ${scene?.id || null}, true) returning id`;
   const [pic] = await sql()`insert into velo_messages (user_id, role, content, media_id, character_id, scene_id, peek, created_at)
     values (${userId}, 'assistant', '(peek)', ${media.id}, ${ch.id}, ${scene?.id || null}, true, now() + interval '5 milliseconds') returning id`;
