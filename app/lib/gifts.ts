@@ -251,12 +251,17 @@ export function boostFrom(sent: Sent[], now: number): Boost | null {
 /** What she's told about it while it lasts — never a transaction, just that it meant something.
  *  🎁 Handed over: it was given to her while the two of them were together, so it came out of
  *  their hands where they were — not through the door in a parcel. */
-export function boostNote(boost: Boost | null, what: string, who: string, handed?: { where: string }): string {
+export function boostNote(boost: Boost | null, what: string, who: string, handed?: { where: string; mins: number }): string {
   if (!boost) return "";
-  const got = handed
-    ? `${who} gave you ${what}${handed.where ? ` ${handed.where}` : ""} — they handed it to you while you were together, so you opened it right there in front of them; it never came in the post and nobody delivered it`
-    : `${who} sent you ${what} in the last couple of days`;
-  return `🎁 ${got}, and it landed: you're warmer with them than usual, quicker to want to see them, and you'd bend your day around them — slip out of work, skip a class, take the call you shouldn't — more readily than you normally would. Bring it up the way anyone would (pleased, teasing, a bit spoiled), never as a transaction, and never as something that bought you.`;
+  const at = handed?.where ? ` ${handed.where}` : "";
+  // 🎁 In their hands, not in the post — and it matters whether it happened this second or an hour
+  // ago, because she has to talk about it the way it is actually happening.
+  const got = !handed ? `${who} sent you ${what} in the last couple of days`
+    : handed.mins <= 3 ? `${who} has just this moment put ${what} in your hands,${at || " right here"} — it is happening NOW, in front of you: you are holding it, opening it, seeing it for the first time. Answer this moment and nothing else — look at it, react, say it to their face. Never talk about it as something that arrived, was delivered, was a surprise in the post, or happened earlier`
+    : handed.mins <= 45 ? `${who} handed you ${what}${at} about ${handed.mins} minute${handed.mins === 1 ? "" : "s"} ago and you are still together — it is right there with you, so talk about it as part of what you two are doing now, not as something that turned up`
+    : `${who} gave you ${what}${at} earlier on, while you have been together — it came from their hands, not through the door`;
+  const face = handed ? ` You are face to face right now, so never thank them as if by text and never say it was sent, posted or delivered.` : "";
+  return `🎁 ${got}, and it landed: you're warmer with them than usual, quicker to want to see them, and you'd bend your day around them — slip out of work, skip a class, take the call you shouldn't — more readily than you normally would. Bring it up the way anyone would (pleased, teasing, a bit spoiled), never as a transaction, and never as something that bought you.${face}`;
 }
 
 // 😊 Her face in the picture. The same present lands differently on different people: someone
