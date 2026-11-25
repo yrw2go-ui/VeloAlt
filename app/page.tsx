@@ -508,6 +508,13 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
 
       {calling && (
         <VeloCall key={look + (callWith?.id || "")} name={name} firstCall={!callWith && firstCall} request={callRequest} fetchVoice={fetchVoice} brainBadge={callBrain}
+          brainPick={callWith && admin ? { value: callWith.brain || "", available: brains, onPick: (v: string) => {
+            const id = callWith.id;
+            setCallBrain(null);
+            setCallWith(c => (c ? { ...c, brain: v } : c));
+            setChars(cs => cs.map(x => (x.id === id ? { ...x, brain: v } : x)));
+            void api("/api/characters", { action: "brain.set", id, brain: v }).catch(() => {});
+          } } : undefined}
           voice={callWith ? callWith.voice_kind : undefined}
           opener={callOpener || (callWith ? `Hey${name ? ` ${name.split(" ")[0]}` : ""}, it's ${callWith.name}! What's going on?` : undefined)}
           who={callWith ? { name: callWith.name, face: (size: number) => <CharacterFace c={callWith} size={size} /> } : undefined}

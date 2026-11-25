@@ -13,6 +13,7 @@
 // 🔊 Volume slider: Web Audio gain, remembered on the device (iPhone/iPad: volume buttons instead).
 // Only text goes to Velo — never the recording. When the call ends, "Save
 // recap" asks Velo for a short written plan and drops it into the chat.
+import { BRAIN_OPTIONS } from "./lib/brainOptions";
 import { useEffect, useRef, useState, type SyntheticEvent } from "react";
 import { VeloAvatar, useVeloLook } from "./avatar";
 
@@ -141,9 +142,11 @@ const greetingFor = (name?: string, first = false) => {
   return options[Math.floor(Math.random() * options.length)];
 };
 
-export default function VeloCall({ request, onEnd, voice = "female", name, firstCall = false, fetchVoice, opener, startPrivate = false, who, mini = false, onMinimize, onExpand, brainBadge = null }: {
+export default function VeloCall({ request, onEnd, voice = "female", name, firstCall = false, fetchVoice, opener, startPrivate = false, who, mini = false, onMinimize, onExpand, brainBadge = null, brainPick }: {
   /** 👍 her own brain (Qwen / DeepSeek) is answering; ⏰ Claude stepped in. A tiny badge in the corner. */
   brainBadge?: "👍" | "⏰" | null;
+  /** 🧠 Swap who's answering without hanging up — the next thing she says comes from the new one. */
+  brainPick?: { value: string; available: string[]; onPick: (v: string) => void };
   /** ⤡ Shrunk to a bar so they can use the app while they talk; the call carries on. */
   mini?: boolean;
   onMinimize?: () => void;
@@ -471,6 +474,18 @@ export default function VeloCall({ request, onEnd, voice = "female", name, first
   return (
     <div role="dialog" aria-label={`Call with ${who?.name || "Velo"}`} data-testid="velo-call" onClick={interrupt} onPointerDownCapture={touched}
       style={{ position: "fixed", inset: 0, zIndex: 2000, background: "radial-gradient(circle at 50% 30%, #1e2a4a 0%, #0a0a0f 70%)", color: "#f1f1f3", display: "flex", flexDirection: "column", alignItems: "center", padding: "max(40px, env(safe-area-inset-top)) 20px max(28px, env(safe-area-inset-bottom))", fontFamily: "'Inter', -apple-system, sans-serif" }}>
+      {/* 🧠 Mid-call brain swap: it takes effect on her next line. */}
+      {brainPick && phase !== "ended" && (
+        <select data-testid="call-brain-pick" aria-label="Which brain answers" value={brainPick.value}
+          onClick={e => e.stopPropagation()} onPointerDownCapture={e => e.stopPropagation()}
+          onChange={e => brainPick.onPick(e.target.value)}
+          style={{ position: "absolute", top: "max(10px, env(safe-area-inset-top))", left: 12, maxWidth: 170, fontSize: 12, padding: "3px 6px", borderRadius: 8, background: "#1f2937", color: "#e5e7eb", border: "1px solid #374151" }}>
+          <option value="">🧠 Same as Velo</option>
+          {BRAIN_OPTIONS.map(o => (
+            <option key={o.id} value={o.id} disabled={o.atlas && !brainPick.available.includes(o.id) && brainPick.value !== o.id}>{o.label}</option>
+          ))}
+        </select>
+      )}
       {brainBadge && <span data-testid="call-brain" aria-label={brainBadge === "👍" ? "Her own brain is answering" : "Claude is answering"} title={brainBadge === "👍" ? "Her own brain is answering" : "Claude is answering"}
         style={{ position: "absolute", top: "max(10px, env(safe-area-inset-top))", right: 12, fontSize: 13, opacity: 0.4, pointerEvents: "none" }}>{brainBadge}</span>}
       <style>{`@keyframes vcRing { 0% { box-shadow: 0 0 0 0 ${ring}88 } 70% { box-shadow: 0 0 0 26px ${ring}00 } 100% { box-shadow: 0 0 0 0 ${ring}00 } }
