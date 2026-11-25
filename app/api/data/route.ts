@@ -187,7 +187,14 @@ export async function POST(req: NextRequest) {
           const raw = x.more && typeof x.more === "object" ? (x.more as Record<string, unknown>) : {};
           const more: Record<string, string> = {};
           for (const sct of BIO_SECTIONS) { const v = scrub(String(raw[sct.key] ?? "").replace(/[ \t]+/g, " ").trim().slice(0, BIO_MAX)); if (v) more[sct.key] = v; }
-          await db`update users set bio = ${text}, birthday = ${bday}, age = ${age}, home_town = ${town}, home_state = ${st}, bio_more = ${JSON.stringify(more)}::jsonb, updated_at = now() where id = ${me}`;
+          // 🏠 This database may not have the town column yet (the profile already reads around it).
+          // Without this, one missing column threw away the whole of About you and nothing saved.
+          try {
+            await db`update users set bio = ${text}, birthday = ${bday}, age = ${age}, home_town = ${town}, home_state = ${st}, bio_more = ${JSON.stringify(more)}::jsonb, updated_at = now() where id = ${me}`;
+          } catch (e) {
+            if (!missingSchema(e)) throw e;
+            await db`update users set bio = ${text}, birthday = ${bday}, age = ${age}, home_state = ${st}, bio_more = ${JSON.stringify(more)}::jsonb, updated_at = now() where id = ${me}`;
+          }
         }
         if (["off", "sometimes", "often"].includes(b.checkins)) await db`update users set checkins = ${b.checkins}, updated_at = now() where id = ${me}`;
         // ⏸️ Paused: the world stops where it is until it is turned back on.
