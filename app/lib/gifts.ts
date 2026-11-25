@@ -248,10 +248,15 @@ export function boostFrom(sent: Sent[], now: number): Boost | null {
   return { flirty, eager, until: Math.max(...live.map(s => s.at)) + BOOST_MS };
 }
 
-/** What she's told about it while it lasts — never a transaction, just that it meant something. */
-export function boostNote(boost: Boost | null, what: string, who: string): string {
+/** What she's told about it while it lasts — never a transaction, just that it meant something.
+ *  🎁 Handed over: it was given to her while the two of them were together, so it came out of
+ *  their hands where they were — not through the door in a parcel. */
+export function boostNote(boost: Boost | null, what: string, who: string, handed?: { where: string }): string {
   if (!boost) return "";
-  return `🎁 ${who} sent you ${what} in the last couple of days, and it landed: you're warmer with them than usual, quicker to want to see them, and you'd bend your day around them — slip out of work, skip a class, take the call you shouldn't — more readily than you normally would. Bring it up the way anyone would (pleased, teasing, a bit spoiled), never as a transaction, and never as something that bought you.`;
+  const got = handed
+    ? `${who} gave you ${what}${handed.where ? ` ${handed.where}` : ""} — they handed it to you while you were together, so you opened it right there in front of them; it never came in the post and nobody delivered it`
+    : `${who} sent you ${what} in the last couple of days`;
+  return `🎁 ${got}, and it landed: you're warmer with them than usual, quicker to want to see them, and you'd bend your day around them — slip out of work, skip a class, take the call you shouldn't — more readily than you normally would. Bring it up the way anyone would (pleased, teasing, a bit spoiled), never as a transaction, and never as something that bought you.`;
 }
 
 // 😊 Her face in the picture. The same present lands differently on different people: someone

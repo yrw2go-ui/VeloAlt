@@ -43,7 +43,7 @@ import { partnerLook, partnerPicNote } from "./partner";
 import { TOGETHER_TIME } from "./together";
 import { onlyAction, answerTo, actionNote } from "./actions";
 import { afterSceneNote, nightsBetween, stayedUpAllNight } from "./afterScene";
-import { boostFor, lastGiftWords, liveHints, lavishFor } from "./giftsDb";
+import { boostFor, lastGiftWords, liveHints, lavishFor, handedSince } from "./giftsDb";
 import { lavishNote } from "./hints";
 import { giftById } from "./gifts";
 import { wealthNote, hintsNow } from "./money";
@@ -234,6 +234,13 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
   // see them, and readier to take a chance she wouldn't normally take.
   const spoil = ch && !errand ? await boostFor(caller.userId, { kind: "character", id: ch.id }).catch(() => null) : null;
   const giftWords = spoil && ch ? await lastGiftWords(caller.userId, ch.id).catch(() => "") : "";
+  // 🎁 Given while the two of them were together: she didn't get it in the post, it went straight
+  // from their hands to hers, wherever they were.
+  const handedGift = spoil && ch && together
+    ? await handedSince(caller.userId, ch.id, together.started_at).catch(() => false) : false;
+  const handedWhere = !handedGift || !together ? null
+    : together.place && together.place !== HOME ? `at ${together.place}`
+    : together.at_mine ? "at your place" : "at theirs";
   // 💭 Someone close works out that they're comfortable — never a number, just the shape of it —
   // and now and then lets slip something she wants.
   const closeness = Math.max(love ?? 0, trust ?? 0, ch && (happy ?? 0) > 80 ? 56 : 0);
@@ -278,7 +285,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
         occasion ? `Right now it is ${timeOfDay(today.label)}.` : `Right now it is ${today.label}${errand ? "" : " where they are"}.`,
         occasion ? TOGETHER_TIME : "",
         afterNote,
-        spoil ? boostNote(spoil, giftWords || "a present", name || "they") : "",
+        spoil ? boostNote(spoil, giftWords || "a present", name || "they", handedGift ? { where: handedWhere || "" } : undefined) : "",
         wealth,
         lavish ? lavishNote(name || "they", lavish) : "",
         errand || occasion ? "" : "The evening runs late: people here are up and talking until around 1am, so don't start winding the conversation down, saying goodnight or telling them to get some sleep just because it's gone eleven — only once it's properly the small hours, and even then only if it fits.",
