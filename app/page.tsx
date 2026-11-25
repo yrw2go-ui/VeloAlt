@@ -405,6 +405,11 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
     } catch { return null; }
   };
 
+  // 🔴 The red number on the bottom bar: everything unread, bar the thread you're reading now.
+  const here = groupId || withChar?.id || "velo";
+  const chatNew = Object.entries(unread).reduce((n, [id, x]) => n + (tab === "chat" && id === here ? 0 : x), 0);
+  const tabBadge = { position: "absolute" as const, top: -6, right: -13, minWidth: 18, height: 18, padding: "0 5px", borderRadius: 999, background: "#ef4444", color: "#fff", fontSize: 11, fontWeight: 800, lineHeight: "18px", textAlign: "center" as const };
+
   return (
     <div style={{ height: "100dvh", display: "flex", flexDirection: "column", width: "100%", minWidth: 0, maxWidth: "min(720px, 100%)", margin: "0 auto" }}>
       {calling && callMini && <div aria-hidden style={{ height: "calc(max(8px, env(safe-area-inset-top)) + 50px)", flexShrink: 0 }} />}
@@ -500,7 +505,9 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
           <button key={t.id} onClick={() => tapTab(t.id)} aria-current={tab === t.id ? "page" : undefined}
             style={{ flex: "1 1 0", minWidth: 0, maxWidth: "100%", overflow: "hidden", background: "none", border: "none", padding: "10px 0 12px", color: tab === t.id ? "var(--nav-active)" : "var(--nav-muted)", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, fontSize: 12, fontWeight: 700 }}>
             <span style={{ fontSize: 20, position: "relative" }}>{t.icon}
-              {t.id === "pica" && picaNew > 0 && tab !== "pica" && <span data-testid="pica-badge" aria-label={`${picaNew} new posts`} style={{ position: "absolute", top: -6, right: -14, minWidth: 18, height: 18, padding: "0 5px", borderRadius: 999, background: "#ef4444", color: "#fff", fontSize: 11, fontWeight: 800, lineHeight: "18px", textAlign: "center" }}>{picaNew > 99 ? "99+" : picaNew}</span>}
+              {/* 🔴 What's waiting behind each tab: unread texts, and new Picagram posts and DMs. */}
+              {t.id === "pica" && picaNew > 0 && tab !== "pica" && <span data-testid="pica-badge" aria-label={`${picaNew} new on Picagram`} style={tabBadge}>{picaNew > 99 ? "99+" : picaNew}</span>}
+              {t.id === "chat" && chatNew > 0 && <span data-testid="chat-badge" aria-label={`${chatNew} unread`} style={tabBadge}>{chatNew > 99 ? "99+" : chatNew}</span>}
             </span>{t.label}
           </button>
         ))}
