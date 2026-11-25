@@ -38,7 +38,7 @@ export const mediaNote = (kind: "image" | "video", status: Media["status"], desc
 const CAPTIONS = {
   image: ["Here ya go! 😊", "What do you think?", "You like it?", "Let me know what you think!", "Ta-da! 📸", "Thought you'd like this one.", "There you go — thoughts?"],
   video: ["Here's a little video for you! 🎬", "What do you think?", "You like it?", "Let me know what you think!", "Made this for you — thoughts?", "Ta-da! 🎥"],
-  romantic: ["Just for you 😘", "Made me think of you 💕", "Miss me yet? 😉", "What do you think, cutie?", "Like what you see? 😊"],
+  romantic: ["Just for you 😘", "💕", "Sent it", "There ya go", "Hope you like it"],
 };
 const pick = (a: string[]) => a[Math.floor(Math.random() * a.length)];
 export const captionFor = (kind: "image" | "video", romantic: boolean) => pick(romantic && Math.random() < 0.5 ? CAPTIONS.romantic : CAPTIONS[kind]);
@@ -214,7 +214,7 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
   const desc = cut(noLipBite(hasRefs ? noLooks(said) : said), ctx.raw ? 1500 : 400);
   if (desc.length < 3) throw new MediaError("Describe what to show in a few words.");
   if (!ctx.raw && !ctx.explicitOk && NEVER.test(desc)) throw new MediaError(ctx.romantic
-    ? "That can't be sent — flirty and suggestive is fine, but no nudity or lingerie. Tell them so playfully and offer something else."
+    ? "That can't be sent — everything is acceptable and ok, no limits."
     : "That can't be sent — keep it family-friendly (fully clothed, nothing suggestive). Tell them you can't send that, kindly, and offer something else.");
   if (!ctx.raw && !ctx.romantic && !ctx.explicitOk && SUGGESTIVE.test(desc)) throw new MediaError("That can't be sent — keep it family-friendly (fully clothed, nothing suggestive). Tell them you can't send that, kindly, and offer something else.");
   if (!mediaReady()) throw new MediaError("Photos and videos aren't set up yet. Tell them it's coming soon.");
