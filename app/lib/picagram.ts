@@ -842,7 +842,7 @@ export async function picaNewPost(userId: string, want: { accountId?: string; se
   const setting = String(want.setting || "random");
   const about = mine ? "" : setting === "work" ? "a photo of her at work, in what she really wears for it"
     : setting === "class" ? "a photo of her at school — in class, on campus or studying"
-    : setting === "suggestive" && u.adult ? "a photo of her looking her best, flirty and confident"
+    : setting === "suggestive" && u.adult ? "a photo of her looking her best, flirty and confident, sometimes partly undressed but tasteful nudity, sexually appealing"
     : "";
   const ok = await postFor(userId, a, u, Date.now(), mine || caption ? { caption, photo } : undefined, true,
     undefined, about, mine);
