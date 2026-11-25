@@ -484,10 +484,10 @@ export async function POST(req: NextRequest) {
         if (!allow(`peek:${me}`, [{ ms: 60_000, max: 10 }, { ms: 86_400_000, max: 300 }])) return NextResponse.json({ error: "That's a lot of peeks — try again in a bit." }, { status: 429 });
         const [u] = await db`select adult_confirmed_at from users where id = ${me}`;
         try {
-          if (b.action === "scene.peek.draft") return NextResponse.json({ description: await draftPeek(me, ch, cur, !!u?.adult_confirmed_at, writerBrain(b.writer, ch.brain)) });
+          if (b.action === "scene.peek.draft") return NextResponse.json({ description: await draftPeek(me, ch, cur, !!u?.adult_confirmed_at, writerBrain(b.writer, ch.brain), b.us === true) });
           const description = String(b.description || "").trim();
           if (description.length < 10) return bad("Describe the moment in a few words first.");
-          const p = await peekAt(me, ch, cur, !!u?.adult_confirmed_at, description);
+          const p = await peekAt(me, ch, cur, !!u?.adult_confirmed_at, description, b.us === true);
           if (p.media.status === "failed") return bad("The picture service wouldn't make that one — try changing the description.");
           return NextResponse.json(p);
         } catch (e) {

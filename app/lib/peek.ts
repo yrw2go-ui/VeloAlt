@@ -25,10 +25,12 @@ export const ICU = /^\s*\*?\s*icu\s*\*?\s*[.!]?\s*$/i;
 
 /** What the camera would see right now, written from the whole scene so far. Her outfit stays the
  *  same all scene (starting from the last peek), with only the changes that happened since. */
-async function describeMoment(ch: Character, scene: Scene, lines: { role: string; content: string; peek?: boolean }[], romantic: boolean, lastPeek: string, time: string, writer: string): Promise<string> {
+async function describeMoment(ch: Character, scene: Scene, lines: { role: string; content: string; peek?: boolean }[], romantic: boolean, lastPeek: string, time: string, writer: string, us = false): Promise<string> {
   const all = lines.map(l => (l.peek ? "— (your last peek was here) —" : `${l.role === "assistant" ? ch.name : "Them"}: ${l.content}`)).join("\n");
   const transcript = all.length > 12000 ? "…" + all.slice(-12000) : all;
-  const raw = await writeText(writer, `You write the description for ONE photo for an image generator. ${ch.name} and the person are on a VIDEO CHAT together right now (below). The photo is what the person sees of her on their screen this moment — her camera's view of her, wherever she is: they are not in the picture, and nothing of their place is either. Describe ${ch.name} in this exact moment: where they are (the place, time of day, lighting), what she is wearing, what she is doing, her pose and expression — either candid and unaware, or glancing at them.
+  const raw = await writeText(writer, `You write the description for ONE photo for an image generator. ${ch.name} and the person are on a VIDEO CHAT together right now (below). ${us
+  ? `The photo is a screenshot of the call with BOTH of them in it — two windows side by side, each in their own place: ${ch.name} on her camera wherever she is, and the person on theirs wherever they are. Describe both: each one's place, time of day and lighting, what each is wearing, what each is doing, and both their expressions as they look at each other on screen.`
+  : `The photo is what the person sees of her on their screen this moment — her camera's view of her, wherever she is: they are not in the picture, and nothing of their place is either. Describe ${ch.name} in this exact moment: where they are (the place, time of day, lighting), what she is wearing, what she is doing, her pose and expression — either candid and unaware, or glancing at them.`}
 OUTFIT CONTINUITY: she wears ONE outfit for the whole video chat. ${lastPeek ? "Start from exactly what she wore in THE LAST PEEK" : `Start from the outfit in the scene's details or what she said she's wearing (else what fits the outing and her usual style${ch.casual_wear ? `: ${ch.casual_wear}` : ""})`}, then apply only the changes that actually happened during the video chat, in order${lastPeek ? " (especially after the last peek)" : ""}: took off a jacket → no jacket from then on, until she puts it back on; same for shoes, a hat, glasses, hair up or down, a spill, getting wet. Keep every other detail identical — the same colors, items and accessories. Nothing changes just because time passed. The same goes for the place: stay wherever she is on her end, as the chat says.
 ${ch.explicit_ok && romantic ? "Nudity is fine when it fits." : romantic ? "Flattering and flirty is fine; swimwear at the beach or pool is okay; no nudity or lingerie." : "Family-friendly, fully clothed."} One or two sentences, under 300 characters, no names of real people, output only the description.`, `VIDEO CHAT: ${scene.title}${scene.details ? ` — ${scene.details}` : ""}\nTIME RIGHT NOW: ${time} (match the light and sky to it)\nHER LOOK: ${ch.appearance || "(see reference pictures)"}${lastPeek ? `\nTHE LAST PEEK: ${lastPeek}` : ""}\n\nTHE VIDEO CHAT SO FAR:\n${transcript || "(it just started)"}`, 300, DRAFT_BUDGET);
   const text = raw.replace(/\s+/g, " ").trim();
@@ -37,7 +39,7 @@ ${ch.explicit_ok && romantic ? "Nudity is fine when it fits." : romantic ? "Flat
 }
 
 /** Step 1: the description of the moment, for them to check (and tweak) before anything is made. */
-export async function draftPeek(userId: string, ch: Character, scene: Scene, adult: boolean, writer?: string): Promise<string> {
+export async function draftPeek(userId: string, ch: Character, scene: Scene, adult: boolean, writer?: string, us = false): Promise<string> {
   const rows = (await sql()`select msg.role, msg.content, msg.peek, m.description from velo_messages msg left join velo_media m on m.id = msg.media_id
     where msg.user_id = ${userId} and msg.character_id = ${ch.id} and msg.scene_id = ${scene.id} and (not msg.peek or (msg.media_id is not null and m.status = 'done'))
     order by msg.created_at desc limit 120`).reverse();
@@ -47,7 +49,7 @@ export async function draftPeek(userId: string, ch: Character, scene: Scene, adu
   const lines = rows.filter((r, i) => !r.peek || i === lastIdx).map(r => ({ role: String(r.role), content: String(r.content), peek: !!r.peek }));
   const [u] = await sql()`select time_zone from users where id = ${userId}`;
   const time = sceneTime(scene, isValidTimeZone(u?.time_zone) ? u.time_zone : "America/Chicago").label;
-  return describeMoment(ch, scene, lines, romanticFor(ch, adult), lastPeek, time, writer ?? ch.brain);
+  return describeMoment(ch, scene, lines, romanticFor(ch, adult), lastPeek, time, writer ?? ch.brain, us);
 }
 
 const romanticFor = (ch: Character, adult: boolean) => adult && !!ch.romantic && allowsSuggestive(ch.traits);
