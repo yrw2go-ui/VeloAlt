@@ -380,7 +380,7 @@ export async function picaWithMe(userId: string) {
   return rows.map(r => ({ id: String(r.id), name: String(r.name), portrait: r.portrait ? String(r.portrait) : null, pictures: Number(r.shots) + (r.portrait ? 1 : 0) }));
 }
 
-export async function picaPost(userId: string, caption: string, photo: string, useMyPhotos: boolean, raw = false, withId = ""): Promise<string> {
+export async function picaPost(userId: string, caption: string, photo: string, useMyPhotos: boolean, withId = ""): Promise<string> {
   const t = await wordsFor(userId); // 🛠️ Admin → Messaging & wording
   const u = await userInfo(userId);
   const cap = scrub(caption).trim().slice(0, 2000), desc = scrub(photo).replace(/\s+/g, " ").trim().slice(0, 600);
@@ -402,7 +402,7 @@ export async function picaPost(userId: string, caption: string, photo: string, u
   if (desc) {
     const refs = useMyPhotos ? await myRefs(userId) : [];
     media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: desc },
-      { characterId: null, who: u.name, appearance: u.look, refs, romantic: u.adult, offer: false, other, pica: true, ...(raw && refs.length && !other ? { raw: true } : {}) });
+      { characterId: null, who: u.name, appearance: u.look, refs, romantic: u.adult, offer: false, other, pica: true, ...(refs.length && !other ? { raw: true } : {}) });
   }
   const now = Date.now();
   const [post] = await sql()`insert into pica_posts (user_id, author_id, kind, caption, photo, media_id, likes_target, seen_at) values (${userId}, null, ${media ? "image" : "text"}, ${cap}, ${media ? desc : ""}, ${media?.id || null}, ${rand(10, 300)}, now()) returning id`;
@@ -777,7 +777,7 @@ export async function newFaces(userId: string, n: number, pickBrain?: unknown): 
 }
 
 /** One post from one account, with its photo, at the given moment. */
-async function postFor(userId: string, a: Record<string, unknown>, u: U, at: number, plan?: { caption?: string; photo?: string }, strict = false, brain?: unknown, about = "", raw = false): Promise<boolean> {
+async function postFor(userId: string, a: Record<string, unknown>, u: U, at: number, plan?: { caption?: string; photo?: string }, strict = false, brain?: unknown, about = ""): Promise<boolean> {
   const t = await wordsFor(userId); // 🛠️ Admin → Messaging & wording
   const when = new Date(at).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: u.tz });
   let caption = scrub(String(plan?.caption || "")).slice(0, 600), photo = scrub(String(plan?.photo || "")).slice(0, 600);
@@ -790,10 +790,10 @@ async function postFor(userId: string, a: Record<string, unknown>, u: U, at: num
   }
   if (!photo) photo = plainFacePhoto(String(a.name));
   const refs = await refsOf(a);
-  // ✍️ A photo you described yourself goes to the picture service word for word, the way the
-  // popup prompts and group photos do — her own pictures still carry her face.
+  // ✍️ Every post's photo goes to the picture service word for word, the way peek, ICU and
+  // group photos do — her own pictures still carry her face, so nothing has to describe it.
   const shoot = (description: string) => startMedia(userId, { kind: "image", with_me: true, they_asked: true, description },
-    { characterId: null, who: String(a.name), appearance: String(a.look), refs, romantic: u.adult, offer: false, other: null, pica: true, ...(raw && refs.length ? { raw: true } : {}) });
+    { characterId: null, who: String(a.name), appearance: String(a.look), refs, romantic: u.adult, offer: false, other: null, pica: true, ...(refs.length ? { raw: true } : {}) });
   let media = await shoot(photo).catch((e: unknown) => e);
   // A description that mentions lingerie (even to forbid it) is refused. One plain retry still makes her face.
   if (media instanceof Error) {
@@ -845,7 +845,7 @@ export async function picaNewPost(userId: string, want: { accountId?: string; se
     : setting === "suggestive" && u.adult ? "a photo of her looking her best, flirty and confident, sometimes partly undressed but tasteful nudity, sexually appealing"
     : "";
   const ok = await postFor(userId, a, u, Date.now(), mine || caption ? { caption, photo } : undefined, true,
-    undefined, about, mine);
+    undefined, about);
   if (!ok) throw new PicaLimit("Her photo didn't start.");
   return { who: String(a.name), handle: String(a.handle || "") };
 }
