@@ -338,6 +338,13 @@ export async function lavishFor(userId: string, characterId: string): Promise<st
   return r ? `$${Number(r.amount).toLocaleString()}` : null;
 }
 
+/** 🎁 Something given while the two of them were together: handed over, not posted. */
+export async function handedSince(userId: string, characterId: string, since: string): Promise<boolean> {
+  const [r] = await sql()`select 1 from pica_gift_sent where user_id = ${userId} and character_id = ${characterId}
+    and created_at >= ${since}::timestamptz and created_at > now() - interval '48 hours' limit 1`;
+  return !!r;
+}
+
 /** What she was actually sent, in words, for the line she reads. */
 export async function lastGiftWords(userId: string, characterId: string): Promise<string> {
   const [r] = await sql()`select kind, gift_id, amount from pica_gift_sent
