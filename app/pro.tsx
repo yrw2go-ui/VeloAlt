@@ -483,7 +483,7 @@ export function WordingCard() {
               <div key={b.key}>
                 <div style={{ fontWeight: 600, fontSize: 14 }}>{b.label}{changed ? " ·  edited" : ""}</div>
                 <div className="muted" style={{ fontSize: 12, margin: "2px 0 6px" }}>{b.about}</div>
-                <textarea value={draft[b.key] ?? ""} aria-label={b.label} rows={3} maxLength={700}
+                <textarea value={draft[b.key] ?? ""} aria-label={b.label} rows={4} maxLength={2000}
                   onChange={e => setDraft(d => ({ ...d, [b.key]: e.target.value }))}
                   style={{ width: "100%", background: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 10, padding: 8, fontSize: 13, fontFamily: "inherit" }} />
                 {changed && <button className="ghost" style={{ marginTop: 4, fontSize: 12, padding: "4px 10px" }}

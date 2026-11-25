@@ -106,7 +106,13 @@ export const BITS: Bit[] = [
 
 export type Words = Record<string, string>;
 
+/** How long one line may be. The old 700 left almost no room on top of the longest defaults. */
+export const LIMIT = 2000;
+
 const byKey = new Map(BITS.map(b => [b.key, b]));
+
+/** 🧹 Tidy without flattening: runs of spaces go, line breaks stay (they were being eaten). */
+const tidy = (v: unknown) => String(v ?? "").replace(/\r\n?/g, "\n").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim().slice(0, LIMIT);
 
 /** The defaults, every one of them. */
 export const defaults = (): Words => Object.fromEntries(BITS.map(b => [b.key, b.text]));
@@ -116,7 +122,7 @@ export function merge(saved: unknown): Words {
   const out = defaults();
   const s = saved && typeof saved === "object" ? (saved as Record<string, unknown>) : {};
   for (const [k, v] of Object.entries(s)) {
-    const t = String(v ?? "").replace(/\s+/g, " ").trim().slice(0, 700);
+    const t = tidy(v);
     if (byKey.has(k) && t) out[k] = t;
   }
   return out;
@@ -127,7 +133,7 @@ export function keepEdits(input: unknown): Words {
   const d = defaults(), out: Words = {};
   const s = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
   for (const [k, v] of Object.entries(s)) {
-    const t = String(v ?? "").replace(/\s+/g, " ").trim().slice(0, 700);
+    const t = tidy(v);
     if (byKey.has(k) && t && t !== d[k]) out[k] = t;
   }
   return out;
