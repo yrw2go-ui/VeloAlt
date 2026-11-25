@@ -237,8 +237,8 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
   // 🎁 Given while the two of them were together: she didn't get it in the post, it went straight
   // from their hands to hers, wherever they were.
   const handedGift = spoil && ch && together
-    ? await handedSince(caller.userId, ch.id, together.started_at).catch(() => false) : false;
-  const handedWhere = !handedGift || !together ? null
+    ? await handedSince(caller.userId, ch.id, together.started_at).catch(() => null) : null;
+  const handedWhere = handedGift === null || !together ? null
     : together.place && together.place !== HOME ? `at ${together.place}`
     : together.at_mine ? "at your place" : "at theirs";
   // 💭 Someone close works out that they're comfortable — never a number, just the shape of it —
@@ -285,7 +285,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
         occasion ? `Right now it is ${timeOfDay(today.label)}.` : `Right now it is ${today.label}${errand ? "" : " where they are"}.`,
         occasion ? TOGETHER_TIME : "",
         afterNote,
-        spoil ? boostNote(spoil, giftWords || "a present", name || "they", handedGift ? { where: handedWhere || "" } : undefined) : "",
+        spoil ? boostNote(spoil, giftWords || "a present", name || "they", handedGift === null ? undefined : { where: handedWhere || "", mins: handedGift }) : "",
         wealth,
         lavish ? lavishNote(name || "they", lavish) : "",
         errand || occasion ? "" : "The evening runs late: people here are up and talking until around 1am, so don't start winding the conversation down, saying goodnight or telling them to get some sleep just because it's gone eleven — only once it's properly the small hours, and even then only if it fits.",

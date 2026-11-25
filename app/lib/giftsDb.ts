@@ -339,10 +339,12 @@ export async function lavishFor(userId: string, characterId: string): Promise<st
 }
 
 /** 🎁 Something given while the two of them were together: handed over, not posted. */
-export async function handedSince(userId: string, characterId: string, since: string): Promise<boolean> {
-  const [r] = await sql()`select 1 from pica_gift_sent where user_id = ${userId} and character_id = ${characterId}
-    and created_at >= ${since}::timestamptz and created_at > now() - interval '48 hours' limit 1`;
-  return !!r;
+export async function handedSince(userId: string, characterId: string, since: string): Promise<number | null> {
+  const [r] = await sql()`select extract(epoch from (now() - created_at)) / 60 as mins from pica_gift_sent
+    where user_id = ${userId} and character_id = ${characterId}
+    and created_at >= ${since}::timestamptz and created_at > now() - interval '48 hours'
+    order by created_at desc limit 1`;
+  return r ? Math.max(0, Math.round(Number(r.mins))) : null;
 }
 
 /** What she was actually sent, in words, for the line she reads. */
