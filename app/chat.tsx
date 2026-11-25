@@ -336,24 +336,24 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     } catch (e) { setErr(e instanceof Error ? e.message : "Try again."); }
   };
   // 👀 The peek being set up: its description (editable) before the picture is made.
-  const [peekSheet, setPeekSheet] = useState<{ description: string; loading: boolean; error?: string; icu?: boolean; writer: string } | null>(null);
+  const [peekSheet, setPeekSheet] = useState<{ description: string; loading: boolean; error?: string; icu?: boolean; us?: boolean; writer: string } | null>(null);
   // It opens empty: nothing is written until they tap ↻ Write (and ↻ again to redo it).
-  const openPeek = (icu: boolean) => {
-    setErr(""); setPeekSheet({ description: "", loading: false, icu, writer: character?.brain === "claude" ? "" : character?.brain || "" });
+  const openPeek = (icu: boolean, us = false) => {
+    setErr(""); setPeekSheet({ description: "", loading: false, icu, us, writer: character?.brain === "claude" ? "" : character?.brain || "" });
   };
   const rewritePeek = async () => {
-    const icu = !!peekSheet?.icu, writer = peekSheet?.writer || "";
+    const icu = !!peekSheet?.icu, us = !!peekSheet?.us, writer = peekSheet?.writer || "";
     setPeekSheet(p => (p ? { ...p, loading: true, error: undefined } : p));
-    try { const r = await data<{ description: string }>(icu ? "icu.draft" : "scene.peek.draft", { characterId: cid, writer }); setPeekSheet({ description: r.description, loading: false, icu, writer }); }
+    try { const r = await data<{ description: string }>(icu ? "icu.draft" : "scene.peek.draft", { characterId: cid, writer, ...(us ? { us: true } : {}) }); setPeekSheet({ description: r.description, loading: false, icu, us, writer }); }
     catch (e) { setPeekSheet(p => (p ? { ...p, loading: false, error: e instanceof Error ? e.message : "Couldn't write it." } : p)); }
   };
   const sendPeek = async (description: string) => {
     setPeekSheet(p => (p ? { ...p, loading: true, error: undefined } : p));
     try {
-      const icu = !!peekSheet?.icu;
-      const r = await data<{ media: Media; userMsgId: string; mediaMsgId: string }>(icu ? "icu" : "scene.peek", { characterId: cid, description });
+      const icu = !!peekSheet?.icu, us = !!peekSheet?.us;
+      const r = await data<{ media: Media; userMsgId: string; mediaMsgId: string }>(icu ? "icu" : "scene.peek", { characterId: cid, description, ...(us ? { us: true } : {}) });
       setPeekSheet(null);
-      setMsgs(list => [...(list || []), { id: r.userMsgId, at: new Date().toISOString(), role: "user", content: icu ? "*ICU*" : "*peek*", peek: true }, { id: r.mediaMsgId, at: new Date().toISOString(), role: "assistant", content: "(peek)", media: r.media, peek: true }]);
+      setMsgs(list => [...(list || []), { id: r.userMsgId, at: new Date().toISOString(), role: "user", content: us ? "*us*" : icu ? "*ICU*" : "*peek*", peek: true }, { id: r.mediaMsgId, at: new Date().toISOString(), role: "assistant", content: "(peek)", media: r.media, peek: true }]);
     } catch (e) { setPeekSheet(p => (p ? { ...p, loading: false, error: e instanceof Error ? e.message : "Couldn't peek right now." } : p)); }
   };
   // 📅 A hangout/date you two planned for today: set the scene for it.
@@ -843,6 +843,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
                 {cid && !scene && <button type="button" role="menuitem" data-testid="scene-open" onClick={() => { setMoreOpen(false); setSceneSheet(true); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", fontSize: 15, cursor: "pointer" }}><span style={{ fontSize: 19 }}>🎥</span> Start a video chat</button>}
                 {cid && !scene && !inPerson && !character?.live_in && <button type="button" role="menuitem" data-testid="inperson-open" onClick={() => { setMoreOpen(false); setTogetherSheet({ place: "", busy: false }); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", fontSize: 15, cursor: "pointer" }}><span style={{ fontSize: 19 }}>🧍</span> Together in person</button>}
                 {cid && !scene && inPerson && <button type="button" role="menuitem" data-testid="icu-open" disabled={!!peekSheet} onClick={() => { setMoreOpen(false); openPeek(true); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", fontSize: 15, cursor: "pointer" }}><span style={{ fontSize: 19 }}>👁️</span> ICU — see {who} right now</button>}
+                {cid && !scene && inPerson && <button type="button" role="menuitem" data-testid="us-open" disabled={!!peekSheet} onClick={() => { setMoreOpen(false); openPeek(true, true); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", fontSize: 15, cursor: "pointer" }}><span style={{ fontSize: 19 }}>📸</span> Us — a photo of you and {who}</button>}
                 <button type="button" role="menuitem" data-testid="chat-from-gallery" onClick={() => { setMoreOpen(false); setPickGallery(true); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", fontSize: 15, cursor: "pointer" }}><span style={{ fontSize: 19 }}>🖼️</span> From my gallery</button>
                 {/* 📸 One of you, made to order — the same thing a DM can do. */}
                 <button type="button" role="menuitem" data-testid="chat-my-photo" onClick={() => { setMoreOpen(false); setMySheet(true); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", fontSize: 15, cursor: "pointer" }}><span style={{ fontSize: 19 }}>📸</span> A photo of you</button>
@@ -1026,7 +1027,7 @@ function AskSheet({ who, ask, busy, onChange, onSend, onClose, onHide }: {
   );
 }
 
-function PeekSheet({ who, sheet, brains, theirs, onChange, onWriter, onRewrite, onSend, onClose }: { who: string; sheet: { description: string; loading: boolean; error?: string; icu?: boolean; writer: string }; brains: string[]; theirs: string; onChange: (d: string) => void; onWriter: (w: string) => void; onRewrite: () => void; onSend: (d: string) => void; onClose: () => void }) {
+function PeekSheet({ who, sheet, brains, theirs, onChange, onWriter, onRewrite, onSend, onClose }: { who: string; sheet: { description: string; loading: boolean; error?: string; icu?: boolean; us?: boolean; writer: string }; brains: string[]; theirs: string; onChange: (d: string) => void; onWriter: (w: string) => void; onRewrite: () => void; onSend: (d: string) => void; onClose: () => void }) {
   useBack(true, onClose); // the phone's back button closes this, one step at a time
   // Who can write it: Claude, plus the Atlas brains this server has set up. Hers is the default.
   const options = [{ id: "", label: "Claude (same as Velo)" }, ...BRAIN_OPTIONS.filter(o => o.atlas && (brains.includes(o.id) || o.id === theirs)).map(o => ({ id: o.id as string, label: o.label as string }))];
@@ -1034,10 +1035,12 @@ function PeekSheet({ who, sheet, brains, theirs, onChange, onWriter, onRewrite, 
     <div role="dialog" aria-modal="true" data-testid="peek-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 2500 }} onClick={onClose}>
       <div className="card" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, display: "flex", flexDirection: "column", gap: 10 }}>
         <div className="row" style={{ justifyContent: "space-between" }}>
-          <div style={{ fontWeight: 800, fontSize: 17 }}>{sheet.icu ? `👁️ I see you, ${who}` : `👀 Peek at ${who}`}</div>
+          <div style={{ fontWeight: 800, fontSize: 17 }}>{sheet.us ? `📸 Me and ${who}` : sheet.icu ? `👁️ I see you, ${who}` : `👀 Peek at ${who}`}</div>
           <button className="ghost" onClick={onClose} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
         </div>
-        <div className="muted" style={{ fontSize: 12 }}>This is the picture that will be made, using her reference pictures. Write it yourself, or tap ↻ to have it written — then fix anything that&apos;s off. She won&apos;t know.</div>
+        <div className="muted" style={{ fontSize: 12 }}>{sheet.us
+          ? "This is the picture that will be made, from her pictures and yours — say what you're both doing in it. Write it yourself, or tap ↻ to have it written."
+          : "This is the picture that will be made, using her reference pictures. Write it yourself, or tap ↻ to have it written — then fix anything that's off. She won't know."}</div>
         <textarea value={sheet.description} onChange={e => onChange(e.target.value)} maxLength={1500} rows={5} aria-label="Peek description" disabled={sheet.loading}
           placeholder={sheet.loading ? "Writing what you'd see…" : "e.g. Her at a candlelit corner table in an emerald dress, laughing and glancing up at me"} style={{ resize: "vertical" }} />
         <div className="row" style={{ justifyContent: "space-between", gap: 8 }}>

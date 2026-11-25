@@ -13,6 +13,7 @@ import { sceneTime } from "./sceneClock";
 import { isValidTimeZone, formatClock, zonedParts } from "./localTime";
 import { partOfDay } from "./calendar";
 import { inPersonFor } from "./inPerson";
+import { myRefs } from "./picagram";
 
 // ⏱️ They're watching a spinner for this one: if a brain drags its feet, the plain description
 // (the scene's own details and her usual clothes) goes in the box for them to edit instead.
@@ -52,12 +53,18 @@ export async function draftPeek(userId: string, ch: Character, scene: Scene, adu
 const romanticFor = (ch: Character, adult: boolean) => adult && !!ch.romantic && allowsSuggestive(ch.traits);
 
 /** Step 2: make the picture from their (possibly edited) description, with her chosen reference pictures. */
-export async function peekAt(userId: string, ch: Character, scene: Scene | null, adult: boolean, description: string): Promise<{ media: Media; userMsgId: string; mediaMsgId: string }> {
+export async function peekAt(userId: string, ch: Character, scene: Scene | null, adult: boolean, description: string, us = false): Promise<{ media: Media; userMsgId: string; mediaMsgId: string }> {
   const romantic = romanticFor(ch, adult);
   const desc = scrub(description.replace(/\s+/g, " ").trim()).slice(0, 1500);
+  // 📸 The two of you in it: your own photos come along as well, and the picture service is told
+  // which reference is whose — the same way a group photo works. Your words still go through as written.
+  const [u] = us ? await sql()`select name from users where id = ${userId}` : [];
+  const mineRefs = us ? await myRefs(userId).catch(() => []) : [];
+  const hers = await referenceUrls(ch);
   const media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: desc },
-    { characterId: ch.id, who: ch.name, appearance: ch.appearance, refs: await referenceUrls(ch), romantic, mood: mediaMood(ch.traits), offer: false, other: null, peek: true, raw: true });
-  const [mine] = await sql()`insert into velo_messages (user_id, role, content, character_id, scene_id, peek) values (${userId}, 'user', ${scene ? "*peek*" : "*ICU*"}, ${ch.id}, ${scene?.id || null}, true) returning id`;
+    { characterId: ch.id, who: ch.name, appearance: ch.appearance, refs: us ? hers.slice(0, 2) : hers, romantic, mood: mediaMood(ch.traits), offer: false, other: null, peek: true, raw: true,
+      ...(us ? { people: [{ name: String(u?.name || "me"), refs: mineRefs.slice(0, 2), appearance: "" }] } : {}) });
+  const [mine] = await sql()`insert into velo_messages (user_id, role, content, character_id, scene_id, peek) values (${userId}, 'user', ${us ? "*us*" : scene ? "*peek*" : "*ICU*"}, ${ch.id}, ${scene?.id || null}, true) returning id`;
   const [pic] = await sql()`insert into velo_messages (user_id, role, content, media_id, character_id, scene_id, peek, created_at)
     values (${userId}, 'assistant', '(peek)', ${media.id}, ${ch.id}, ${scene?.id || null}, true, now() + interval '5 milliseconds') returning id`;
   return { media, userMsgId: String(mine.id), mediaMsgId: String(pic.id) };
@@ -71,7 +78,7 @@ export function sceneFallback(who: string, title: string, details: string, time:
 
 /** 👁️ ICU, step 1: you're with her in person (not in a scene) — what you'd see right now, from the chat so far,
  *  the real time of day and what she'd be wearing (her last ICU look from the last few hours, else work or casual clothes). */
-export async function draftIcu(userId: string, ch: Character, adult: boolean, writer?: string): Promise<string> {
+export async function draftIcu(userId: string, ch: Character, adult: boolean, writer?: string, us = false): Promise<string> {
   const together = await inPersonFor(userId, ch.id);
   const rows = (await sql()`select msg.role, msg.content from velo_messages msg
     where msg.user_id = ${userId} and msg.character_id = ${ch.id} and not msg.peek and msg.media_id is null and msg.scene_id is null
@@ -89,7 +96,9 @@ export async function draftIcu(userId: string, ch: Character, adult: boolean, wr
   const atWork = !!(ch.work_attire && ch.work_start && ch.work_end && (ch.work_days || []).includes(dow) && hm >= ch.work_start && hm < ch.work_end);
   const romantic = romanticFor(ch, adult);
   const transcript = rows.map(r => `${r.role === "assistant" ? ch.name : "Them"}: ${r.content}`).join("\n");
-  const raw = await writeText(writer ?? await brainFor(userId), `You write the description for ONE photo for an image generator. The person is with ${ch.name} in person right now (not a planned outing — just together, wherever the chat says they are) and is looking at her: the photo is exactly what they see from where they are; they are behind the camera and NOT in the picture. Describe ${ch.name} in this exact moment: where they are (the place, time of day, lighting), what she is wearing, what she is doing, her pose and expression — candid and unaware, or glancing at them.
+  const raw = await writeText(writer ?? await brainFor(userId), `You write the description for ONE photo for an image generator. ${us
+  ? `The person is with ${ch.name} in person right now (not a planned outing — just together, wherever the chat says they are) and the two of them are having a photo taken OF THEM BOTH: both are in the picture, together — side by side, an arm round each other, leaning in, or a selfie held out at arm's length. Describe the two of them in this exact moment: where they are (the place, time of day, lighting), what each of them is wearing, what they are doing and how they are standing or sitting together, and both their expressions.`
+  : `The person is with ${ch.name} in person right now (not a planned outing — just together, wherever the chat says they are) and is looking at her: the photo is exactly what they see from where they are; they are behind the camera and NOT in the picture. Describe ${ch.name} in this exact moment: where they are (the place, time of day, lighting), what she is wearing, what she is doing, her pose and expression — candid and unaware, or glancing at them.`}
 WHERE: what the recent chat says (her place, his place, the car, a store…); if it doesn't say, somewhere that fits the time of day and her life.
 OUTFIT: ${lastLook ? "exactly what she wore in THE LAST LOOK (same colors and items), plus only changes the chat mentions since" : `what she said she's wearing, else ${atWork ? `her work clothes (${ch.work_attire})` : `what fits the time and place in her usual style${ch.casual_wear ? ` (${ch.casual_wear})` : ""}`}`}.
 ${ch.explicit_ok && romantic ? "Nudity is fine when it fits." : romantic ? "Flattering and flirty is fine; swimwear at the beach or pool is okay; no nudity or lingerie." : "Family-friendly, fully clothed."} One or two sentences, under 300 characters, no names of real people, output only the description.`,
@@ -98,5 +107,6 @@ ${ch.explicit_ok && romantic ? "Nudity is fine when it fits." : romantic ? "Flat
   if (text) return text.slice(0, 380);
   // No AI answer: still something real to edit.
   const outfit = lastLook ? "" : atWork ? `, in her work clothes (${ch.work_attire})` : ch.casual_wear ? `, wearing ${ch.casual_wear}` : "";
+  if (us) return `${ch.name} and me together${outfit}, close in beside each other, both looking at the camera. ${partOfDay(p.hour)} light`;
   return lastLook ? `${lastLook.replace(/\.$/, "")} — ${partOfDay(p.hour)}, candid, glancing at the camera` : `${ch.name} right here with me${outfit}. ${partOfDay(p.hour)} light, candid, glancing at the camera`;
 }
