@@ -144,11 +144,19 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
     const mine: Msg = { id: `tmp-${Date.now()}`, speaker_id: null, content: to ? at![2].trim() : t, created_at: new Date().toISOString(), pending: true, ...(to ? { private_to: to.id } : {}) };
     setMsgs(m => [...(m || []), mine]); setText(""); setBusy(true); setErr("");
     try {
-      const r = await api<{ replies: Msg[]; banter?: boolean; mine?: { id: string; their_reactions: Record<string, string>; private_to?: string } }>("/api/groups", { action: "send", id: group.id, text: t, timeZone: timeZone(), name });
+      const r = await api<{ replies: Msg[]; banter?: boolean; mine?: { id: string; their_reactions: Record<string, string>; private_to?: string } }>("/api/groups", { action: "send", id: group.id, text: t, timeZone: timeZone(), name }, { retry: false });
       setMsgs(m => [...(m || []).map(x => (x === mine ? { ...x, pending: false, ...(r.mine ? { id: r.mine.id, their_reactions: r.mine.their_reactions } : {}) } : x)), ...r.replies]);
       unsaved.current++;
       if (r.banter) banter();
-    } catch (e) { setErr(e instanceof Error ? e.message : "No one answered."); }
+    } catch (e) {
+      // 📵 The connection died — but they may have answered anyway, so look at what's really in the
+      // group rather than sending again, which would have everyone answer the same message twice.
+      if (e instanceof TypeError || /fetch|network|load failed/i.test(String((e as Error)?.message))) {
+        const back = await api<{ messages: Msg[] }>("/api/groups", { action: "messages", id: group.id }).catch(() => null);
+        if (back?.messages?.length) { setMsgs(back.messages); unsaved.current++; }
+        else { setMsgs(m => (m || []).filter(x => x !== mine)); setText(t); setErr("That didn't go — send it again."); }
+      } else setErr(e instanceof Error ? e.message : "No one answered.");
+    }
     setBusy(false);
   };
   const startScene = async (kind: "live" | "past", title: string, details: string, clock?: SceneClockChoice) => {

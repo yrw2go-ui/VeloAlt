@@ -241,7 +241,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
     const me = retry ? turn.current : ++turn.current;
     if (!retry || retry === 1) { setBusy(true); setErr(""); }
     try {
-      const r = await api<{ reply: string; replyId?: string; changed?: boolean; drafts?: Draft[]; media?: Media[]; react?: string; ask?: { kind: "image" | "video"; description: string; with_me: boolean; with_them: boolean; of_person: string; same_moment: boolean }; brainDown?: boolean; by?: "claude" | "alt" }>("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name, ...thread, saveReply: true, asks: true, ...(myId ? { replyTo: myId } : {}), ...(retry ? { retry: true } : {}) });
+      const r = await api<{ reply: string; replyId?: string; changed?: boolean; drafts?: Draft[]; media?: Media[]; react?: string; ask?: { kind: "image" | "video"; description: string; with_me: boolean; with_them: boolean; of_person: string; same_moment: boolean }; brainDown?: boolean; by?: "claude" | "alt" }>("/api/velo", { mode: "chat", messages: realMsgs(next), timeZone: timeZone(), name, ...thread, saveReply: true, asks: true, ...(myId ? { replyTo: myId } : {}), ...(retry ? { retry: true } : {}) }, { retry: false });
       if (turn.current !== me) return;
       if (r.brainDown) {
         setBusy(false);

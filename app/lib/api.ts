@@ -13,10 +13,13 @@ const backOnScreen = () => (typeof document === "undefined" || document.visibili
       document.addEventListener("visibilitychange", look);
     }));
 
-export async function api<T = unknown>(path: string, body: unknown): Promise<T> {
+export async function api<T = unknown>(path: string, body: unknown, opts: { retry?: boolean } = {}): Promise<T> {
   try { return await once<T>(path, body); }
   catch (e) {
-    if (!dropped(e)) throw e;
+    // 👯 Some calls must never go twice: asking her for a reply is one, because the first one may
+    // have been written and saved while the connection died, and sending again writes a second
+    // one just like it. Those callers look for the answer that's already there instead.
+    if (!dropped(e) || opts.retry === false) throw e;
     await backOnScreen();
     return await once<T>(path, body);
   }
