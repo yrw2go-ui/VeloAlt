@@ -45,6 +45,13 @@ import { REACTIONS as REACTION_LIST } from "../../lib/reactions";
 import { sceneTime, HHMM } from "../../lib/sceneClock";
 const REACTIONS: string[] = [...REACTION_LIST];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// 🧩 jsonb comes back as an object from one driver and as a string from another, so a perfectly
+// saved value was being read as nothing at all. Either shape is accepted here.
+const asObject = (v: unknown): Record<string, string> => {
+  const o = typeof v === "string" ? (() => { try { return JSON.parse(v); } catch { return null; } })() : v;
+  return o && typeof o === "object" && !Array.isArray(o) ? (o as Record<string, string>) : {};
+};
+
 const clean = (v: unknown, n: number) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, n);
 const bad = (error: string) => NextResponse.json({ error }, { status: 400 });
 
@@ -116,7 +123,7 @@ export async function POST(req: NextRequest) {
           // 🛟 The backup brain: "" is off (the default), and only brains this server can actually reach are offered.
           backupBrain: BACKUP_OPTIONS.some(o => o.id === u?.backup_brain) ? String(u.backup_brain) : "",
           backups: BACKUP_OPTIONS.filter(o => o.id === "claude" || availableBrains().includes(o.id)).map(o => ({ id: o.id as string, label: o.label as string, about: o.about as string })),
-          bio: { text: u?.bio || "", birthday: u?.birthday || "", age: u?.age || null, town: u?.home_town || "", state: u?.home_state || "", photo: u?.bio_thumb || u?.bio_photo || "", photoNote: u?.bio_photo_note || "", photos: await myPhotos(me), more: u?.bio_more && typeof u.bio_more === "object" ? u.bio_more : {} },
+          bio: { text: u?.bio || "", birthday: u?.birthday || "", age: u?.age || null, town: u?.home_town || "", state: u?.home_state || "", photo: u?.bio_thumb || u?.bio_photo || "", photoNote: u?.bio_photo_note || "", photos: await myPhotos(me), more: asObject(u?.bio_more) },
           checkins: u?.checkins || "sometimes",
           paused: !!u?.paused,
           videoModel: VIDEO_MODELS.some(m => m.id === u?.video_model) ? u?.video_model : DEFAULT_VIDEO_MODEL,
