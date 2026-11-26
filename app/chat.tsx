@@ -22,6 +22,7 @@ import { MyPhotoSheet } from "./myphoto";
 import { isHot } from "./lib/reactions";
 import { dropThoughts, noJargon, dropSentNote } from "./lib/text";
 import { claimsMedia } from "./lib/mediaWords";
+import { useSwipe } from "./lib/swipe";
 
 /** Who this chat is with: Velo (no character) or one of their characters. */
 export type ChatWith = { id: string; name: string; portrait_url: string | null; romantic?: boolean; brain?: string; live_in?: boolean; neighbor?: boolean; home?: boolean };
@@ -50,8 +51,10 @@ const SUGGESTIONS = ["Plan my day", "Remind me to call Mom tomorrow at 6pm", "I 
 /** A message to drop into one chat (a call recap): cid null = Velo's chat. */
 export type ChatAdd = { msg: ChatMsg; cid: string | null };
 
-export default function Chat({ userId, name, onChanged, added, onAdded, character, adult = false, onAdult, onHistory, onNewCharacter, others = [], onGroup, onSocial, brains = [], startPlan, onPlanStarted, calls }: { calls?: { can: boolean; ringing: boolean; continuing: boolean; have: number; need: number; onCall: () => void; onContinue: () => void }; startPlan?: { id: string; kind: "video" | "person"; title: string; details: string } | null; onPlanStarted?: () => void; brains?: string[]; onSocial?: (accountId: string) => void; others?: { id: string; name: string; pica_handle?: string | null }[]; onGroup?: (g: { id: string; title: string; member_ids: string[]; updated_at: string; in_person_place?: string | null }) => void; userId: string; name: string; onChanged: () => void; added: ChatAdd | null; onAdded?: () => void; character?: ChatWith | null; adult?: boolean; onAdult?: () => void; onHistory?: (m: { role: "user" | "assistant"; content: string }[]) => void; onNewCharacter?: (c: { id: string; name: string; portrait_url: string | null }) => void }) {
+export default function Chat({ userId, name, onChanged, added, onAdded, character, adult = false, onAdult, onHistory, onNewCharacter, others = [], onGroup, onSocial, brains = [], startPlan, onPlanStarted, calls, onSwipe }: { onSwipe?: (dir: 1 | -1) => void; calls?: { can: boolean; ringing: boolean; continuing: boolean; have: number; need: number; onCall: () => void; onContinue: () => void }; startPlan?: { id: string; kind: "video" | "person"; title: string; details: string } | null; onPlanStarted?: () => void; brains?: string[]; onSocial?: (accountId: string) => void; others?: { id: string; name: string; pica_handle?: string | null }[]; onGroup?: (g: { id: string; title: string; member_ids: string[]; updated_at: string; in_person_place?: string | null }) => void; userId: string; name: string; onChanged: () => void; added: ChatAdd | null; onAdded?: () => void; character?: ChatWith | null; adult?: boolean; onAdult?: () => void; onHistory?: (m: { role: "user" | "assistant"; content: string }[]) => void; onNewCharacter?: (c: { id: string; name: string; portrait_url: string | null }) => void }) {
   const cid = character?.id || null;
+  // 👈👉 Flick across the messages to go to the thread before or after this one.
+  const swipe = useSwipe(onSwipe);
   const thread = cid ? { characterId: cid } : {};
   const who = character?.name || "Velo";
   const key = cid || "velo";
@@ -762,7 +765,7 @@ export default function Chat({ userId, name, onChanged, added, onAdded, characte
       )}
       {peekSheet && character && <PeekSheet who={character.name} sheet={peekSheet} brains={brains} theirs={character.brain === "claude" ? "" : character.brain || ""} onChange={d => setPeekSheet(p => (p ? { ...p, description: d } : p))} onWriter={w => setPeekSheet(p => (p ? { ...p, writer: w } : p))} onRewrite={rewritePeek} onSend={sendPeek} onClose={() => setPeekSheet(null)} />}
       {sceneSheet && character && <SceneSheet key={fromPlan?.id || "new"} who={character.name} plan={fromPlan} onClose={() => { setSceneSheet(false); setFromPlan(null); }} onStart={startScene} />}
-      <div data-testid="chat-log" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+      <div data-testid="chat-log" {...swipe} style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
         {shown.map((m, i) => m.draft ? <DraftCard key={m.draft.id} d={m.draft} onReport={reload} /> : (
           <Selectable key={m.media?.id || m.id || i} id={m.id} selecting={selected} onStart={id => setSelected(new Set([id]))} onToggle={toggleSelect}>
             <Bubble m={m} onEdit={editMsg} social={character && onSocial && socialOk(m.media) ? createSocial : undefined} openHandle={already(m.media)} onReactMsg={reactMsg} face={face(28)} onMedia={mediaArrived} onFailed={reload} onReact={react} who={who} onAnswer={x => setMsgs(list => (list || []).map(y => (y.media?.id === x.id ? { ...y, content: mediaNote({ ...y.media!, ...x }), media: { ...y.media!, ...x } } : y)))} />

@@ -18,6 +18,7 @@ import { Selectable } from "./chat";
 import { cleanTraits, DEFAULT_TRAITS, type TraitKey } from "./lib/traits";
 import { stamp } from "./lib/when";
 import { confirmAsk } from "./lib/dialog";
+import { useSwipe } from "./lib/swipe";
 
 type Comment = { id: string; who: string; me: boolean; known: boolean; text: string; created_at: string };
 type Post = { id: string; saved: boolean; author: { id: string | null; name: string; portrait: string | null; away: string | null; account?: { id: string; handle: string; followed: boolean } }; kind: "image" | "text"; caption: string; media: Media | null; likes: number; liked: boolean; liked_by: string[]; comments: number; preview: Comment[]; created_at: string; all?: Comment[] };
@@ -61,6 +62,14 @@ export default function Picagram({ name, userId, onChat, openProfile, onProfileO
   const [thread, setThread] = useState<string | null>(openDm || place.thread || null);
   // ✉️ Sent here by a notification about a DM: her thread, not wherever you last were.
   useEffect(() => { if (openDm) { setThread(openDm); setInbox(false); setProfile(null); onDmOpened?.(); } }, [openDm]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 👈👉 Swiping across a DM goes to the one before or after it, in the order the inbox lists them.
+  const hopDm = async (dir: 1 | -1) => {
+    const r = await api<{ threads: { account: { id: string } }[] }>("/api/pica", { action: "dm.threads" }).catch(() => null);
+    const ids = (r?.threads || []).map(t => t.account.id);
+    const i = ids.indexOf(thread || "");
+    const next = i < 0 ? null : ids[i + dir];
+    if (next) setThread(next);
+  };
   const [dmUnread, setDmUnread] = useState(0);
   // 👆👆 Two taps on Picagram: out of whatever is open, back to the feed.
   // Watching the number change rather than counting runs on purpose: React runs an effect twice on
@@ -166,7 +175,7 @@ export default function Picagram({ name, userId, onChat, openProfile, onProfileO
         // it is a full-screen overlay, and leaving it up made the button look like it did nothing.
         onChat={id => { setProfile(null); onChat?.(id); }} onMessage={id => { setProfile(null); setThread(id); }} onDeleted={id => setPosts(ps => (ps || []).filter(p => p.author.account?.id !== id))} />}
       {inbox && <Inbox onClose={() => setInbox(false)} onOpen={id => setThread(id)} />}
-      {thread && <Thread id={thread} onClose={() => setThread(null)} onProfile={id => { setThread(null); setInbox(false); setProfile(id); }} />}
+      {thread && <Thread id={thread} onClose={() => setThread(null)} onHop={hopDm} onProfile={id => { setThread(null); setInbox(false); setProfile(id); }} />}
       {newPost && <NewPostSheet onClose={() => setNewPost(false)} onPosted={() => { setNewPost(false); load(true); }} />}
       {followingOpen && <Following onClose={() => setFollowingOpen(false)} onUnfollow={acc => setFollowed(acc, false)} onOpen={id => { setFollowingOpen(false); setProfile(id); }}
         onNewFaces={(names, error) => { setFollowingOpen(false); setNote(error ? `✨ ${names.join(", ")} just posted. ${error}` : `✨ ${names.join(", ")} just posted — have a look.`); load(true); }} />}
@@ -986,8 +995,9 @@ function Inbox({ onClose, onOpen }: { onClose: () => void; onOpen: (id: string) 
 }
 
 /** 💬 A DM thread with one account: she answers in her own voice and can send photos (📸 if one didn't come through). */
-function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; onProfile: (id: string) => void }) {
+function Thread({ id, onClose, onProfile, onHop }: { id: string; onClose: () => void; onProfile: (id: string) => void; onHop?: (dir: 1 | -1) => void }) {
   useBack(true, onClose); // the phone's back button closes this, one step at a time
+  const swipe = useSwipe(onHop);
   const [acc, setAcc] = useState<DmAccount | null>(null);
   const [brains, setBrains] = useState<{ id: string; label: string }[]>([]);
   const [msgs, setMsgs] = useState<DmMsg[] | null>(null);
@@ -1122,7 +1132,7 @@ function Thread({ id, onClose, onProfile }: { id: string; onClose: () => void; o
           </label>
         )}
       </div>
-      <div style={{ flex: 1, overflowY: "auto", padding: 14, display: "flex", flexDirection: "column", gap: 8, maxWidth: 560, width: "100%", margin: "0 auto" }}>
+      <div {...swipe} style={{ flex: 1, overflowY: "auto", padding: 14, display: "flex", flexDirection: "column", gap: 8, maxWidth: 560, width: "100%", margin: "0 auto" }}>
         {msgs && !msgs.length && <div className="muted" style={{ textAlign: "center", marginTop: 24, fontSize: 14 }}>Say hi to {acc?.name || "her"} 👋</div>}
         {(msgs || []).map(m => {
           const bubble = (
