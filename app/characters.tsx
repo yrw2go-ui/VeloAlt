@@ -89,6 +89,25 @@ const Standing = ({ c }: { c: Character }) => {
   return b ? <span data-testid={`standing-${c.standing}`} title={b.title} aria-label={b.title} style={{ fontSize: 11, marginLeft: 1 }}>{b.icon}</span> : null;
 };
 
+/**
+ * 🎂 Her birthday, in her own time zone: a cake on the day itself, and a faded one the day before
+ * so you have a moment's warning.
+ */
+function Cake({ c }: { c: Pick<Character, "name" | "birthday" | "time_zone"> }) {
+  if (!c.birthday || !/^\d{4}-\d{2}-\d{2}$/.test(c.birthday)) return null;
+  const when = (ms: number) => {
+    try { return new Intl.DateTimeFormat("en-CA", { timeZone: c.time_zone || undefined, month: "2-digit", day: "2-digit" }).format(new Date(ms)); }
+    catch { return new Intl.DateTimeFormat("en-CA", { month: "2-digit", day: "2-digit" }).format(new Date(ms)); }
+  };
+  const hers = c.birthday.slice(5, 10);
+  const now = Date.now();
+  const today = when(now) === hers, eve = !today && when(now + 86_400_000) === hers;
+  if (!today && !eve) return null;
+  return <span data-testid={`cake-${c.name}`} aria-label={today ? `${c.name}'s birthday is today` : `${c.name}'s birthday is tomorrow`}
+    title={today ? `It's ${c.name}'s birthday today` : `${c.name}'s birthday is tomorrow`}
+    style={{ opacity: today ? 1 : 0.35, marginRight: 4 }}>🎂</span>;
+}
+
 export function CharacterStrip({ characters, active, admin, openTick = 0, onPick, onNew, onEdit, onGallery, onTheirGallery, onAllPictures, unread = {}, newest = {}, groups = [], activeGroup = null, onPickGroup, onNewGroup, onGroupGallery }: {
   characters: Character[]; active: string | null; admin: boolean; openTick?: number; onPick: (id: string | null) => void; onNew: () => void; onEdit: (c: Character) => void; onGallery: () => void; unread?: Record<string, number>; newest?: Record<string, string>;
   onTheirGallery?: (c: Character) => void; onAllPictures?: () => void; onGroupGallery?: (g: Group) => void;
@@ -161,7 +180,7 @@ export function CharacterStrip({ characters, active, admin, openTick = 0, onPick
                   onClick={() => pick(() => (active !== c.id ? onPick(c.id) : admin ? onEdit(c) : undefined))}>
                   <span style={{ ...chip(false, c.busy, c.home, c.together), padding: 0, border: "none", background: "none" }}><CharacterFace c={c} size={26} /></span>
                   <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    <Hinting c={c} />{c.name}<Where c={c} /><Ditched c={c} /><Attached c={c} /><Standing c={c} />
+                    <Cake c={c} /><Hinting c={c} />{c.name}<Where c={c} /><Ditched c={c} /><Attached c={c} /><Standing c={c} />
                   </span>
                   <Badge n={active === c.id ? 0 : unread[c.id]} />
                 </button>
