@@ -183,6 +183,16 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const inGroup = tab === "chat" && groups.find(g => g.id === groupId) || null;
   const pickChat = (id: string | null) => { setGroupId(null); setWithId(id); };
+  // 👈👉 Swiping across a chat moves along the same list the dropdown shows: Velo, then everyone by
+  // name, then the groups. It stops at either end rather than looping round.
+  const hopChat = (dir: 1 | -1) => {
+    const ids = ["velo", ...[...chars].sort((a, b) => a.name.localeCompare(b.name)).map(c => c.id), ...groups.map(g => g.id)];
+    const i = ids.indexOf(groupId || withId || "velo");
+    const next = i < 0 ? null : ids[i + dir];
+    if (!next) return;
+    if (groups.some(g => g.id === next)) { setWithId(null); setGroupId(next); }
+    else pickChat(next === "velo" ? null : next);
+  };
   // 🔴 Unread counts per chat ("velo" or character id). The open chat is marked read as it updates.
   const [unread, setUnread] = useState<Record<string, number>>({});
   // 🕒 When each chat's newest unread arrived, so the busiest one sits at the top of the list.
@@ -494,7 +504,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
           </div>
         )}
         {inGroup && <Boundary what="This group chat"><GroupChat key={inGroup.id} group={inGroup} chars={chars} name={name} brains={brains} onDeleted={id => { setGroups(gs => gs.filter(g => g.id !== id)); setGroupId(null); }} /></Boundary>}
-        {tab === "chat" && !inGroup && !groupId && <Chat key={`${withChar?.id || "velo"}-${chatTick}`} calls={{ can: canCallVelo() && !calling && !inGroup, ringing, continuing, have: historyCount, need: CONTINUE_MIN, onCall: startCall, onContinue: continueCall }} startPlan={startingPlan} onPlanStarted={() => setStartPlan(null)} brains={brains} userId={userId} name={name} onChanged={bump} added={chatAdd} onAdded={() => setChatAdd(null)} character={withChar} adult={!!profile?.adultConfirmed} onAdult={() => setProfileTick(t => t + 1)} onHistory={h => { chatHistory.current = h; setHistoryCount(h.length); }}
+        {tab === "chat" && !inGroup && !groupId && <Chat key={`${withChar?.id || "velo"}-${chatTick}`} calls={{ can: canCallVelo() && !calling && !inGroup, ringing, continuing, have: historyCount, need: CONTINUE_MIN, onCall: startCall, onContinue: continueCall }} startPlan={startingPlan} onPlanStarted={() => setStartPlan(null)} onSwipe={hopChat} brains={brains} userId={userId} name={name} onChanged={bump} added={chatAdd} onAdded={() => setChatAdd(null)} character={withChar} adult={!!profile?.adultConfirmed} onAdult={() => setProfileTick(t => t + 1)} onHistory={h => { chatHistory.current = h; setHistoryCount(h.length); }}
           onNewCharacter={() => api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => setChars(r.characters)).catch(() => {})}
           others={chars.map(c => ({ id: c.id, name: c.name, pica_handle: c.pica_handle || null }))} onSocial={id => { setPicaOpen(id); setTab("pica"); }} onGroup={g => { setGroups(gs => [g, ...gs.filter(x => x.id !== g.id)]); setGroupId(g.id); }} />}
         {tab === "pica" && <Picagram name={name} userId={userId} home={picaHome} openProfile={picaOpen} onProfileOpened={() => setPicaOpen(null)} openDm={picaDm} onDmOpened={() => setPicaDm(null)} onChat={id => api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => { setChars(r.characters); setTab("chat"); pickChat(id); }).catch(() => {})} />}
