@@ -113,12 +113,16 @@ export async function listMine(userId: string, before: string | null, limit = 30
   const rows = await sql()`select m.id, m.kind, m.kept, m.created_at::text, m.poster_url, f.url, t.url as thumb
     from velo_media m join velo_files f on f.id = m.file_id left join velo_files t on t.id = m.thumb_file_id
     where m.user_id = ${userId} and m.status = 'done'
-      and coalesce((to_jsonb(m)->>'pica')::boolean, false) = false
-      -- 🙋 Only pictures you are actually in: you with someone ("me+…"), or your own ones, which
-      -- are the ones that belong to no character. A character's own photos say "me" too — they
-      -- mean her, not you — so they are left to her gallery.
-      and (m.subject like 'me+%' or (m.subject = 'me' and m.character_id is null)
-           or (${myName} <> '' and lower(m.subject) = lower(${myName})))
+      -- 🙋 Only pictures you are actually in:
+      --   • you with someone ("me+…"), wherever it was made;
+      --   • your own ones, which belong to no character (a character's own photos say "me" too —
+      --     they mean her, not you, so they stay in her gallery);
+      --   • the ones she took of you alone, which are filed under your name;
+      --   • and your own Picagram posts, which are the posts with no author but you.
+      and (m.subject like 'me+%'
+           or (m.subject = 'me' and m.character_id is null and coalesce((to_jsonb(m)->>'pica')::boolean, false) = false)
+           or (${myName} <> '' and lower(m.subject) = lower(${myName}))
+           or exists (select 1 from pica_posts p where p.media_id = m.id and p.user_id = m.user_id and p.author_id is null))
       and (${before}::timestamptz is null or m.created_at < ${before}::timestamptz)
     order by m.created_at desc limit ${limit}`;
   return rows.map(r => ({ id: String(r.id), kind: r.kind as "image" | "video", kept: !!r.kept, created_at: String(r.created_at), url: String(r.url), thumb: (r.thumb || r.poster_url || null) as string | null }));
