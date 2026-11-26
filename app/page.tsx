@@ -194,11 +194,16 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
   // backing out of each one. Anything you'd opened is closed and the feed is reloaded.
   const lastTap = useRef<{ id: Tab; at: number } | null>(null);
   const [picaHome, setPicaHome] = useState(0);
+  // 📋 Bumped to drop the who-list open from here (two taps on the Chat tab).
+  const [whoOpen, setWhoOpen] = useState(0);
   const tapTab = (id: Tab) => {
     const now = Date.now(), prev = lastTap.current;
     const twice = !!prev && prev.id === id && now - prev.at < 500;
     lastTap.current = { id, at: now };
     setTab(id);
+    // 👆👆 Two taps on Chat: the list of who you can talk to drops down, the same as tapping the
+    // name at the top. One tap is still just the tab.
+    if (twice && id === "chat") setWhoOpen(n => n + 1);
     if (twice && id === "pica") {
       setPicaOpen(null); setPicaHome(n => n + 1);
       // Back to the top, and forget how far down you'd got, so it stays there.
@@ -476,7 +481,7 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
       )}
 
       <main ref={mainRef} onScroll={onMainScroll} style={{ flex: 1, width: "100%", minWidth: 0, maxWidth: "100%", minHeight: 0, overflowX: "hidden", overflowY: tab === "chat" ? "hidden" : "auto", display: "flex", flexDirection: "column" }}>
-        {tab === "chat" && <CharacterStrip characters={chars} active={withChar?.id || null} admin={admin} onPick={pickChat} onNew={() => setNewChar(true)} onEdit={c => void openCard(c)} onGallery={() => setGallery(true)} unread={unread} newest={newest}
+        {tab === "chat" && <CharacterStrip characters={chars} active={withChar?.id || null} admin={admin} openTick={whoOpen} onPick={pickChat} onNew={() => setNewChar(true)} onEdit={c => void openCard(c)} onGallery={() => setGallery(true)} unread={unread} newest={newest}
           onTheirGallery={c => { pickChat(c.id); setGallery(true); }} onAllPictures={() => setGallery("all")} onGroupGallery={g => setGallery({ group: g.id, title: g.title })}
           groups={groups} activeGroup={inGroup?.id || null} onPickGroup={setGroupId} onNewGroup={() => setMakingGroup(true)} />}
         {/* 🚪 The list never arrived, so the group you tapped can't be found: say so instead of

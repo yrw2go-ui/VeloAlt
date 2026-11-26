@@ -89,8 +89,8 @@ const Standing = ({ c }: { c: Character }) => {
   return b ? <span data-testid={`standing-${c.standing}`} title={b.title} aria-label={b.title} style={{ fontSize: 11, marginLeft: 1 }}>{b.icon}</span> : null;
 };
 
-export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdit, onGallery, onTheirGallery, onAllPictures, unread = {}, newest = {}, groups = [], activeGroup = null, onPickGroup, onNewGroup, onGroupGallery }: {
-  characters: Character[]; active: string | null; admin: boolean; onPick: (id: string | null) => void; onNew: () => void; onEdit: (c: Character) => void; onGallery: () => void; unread?: Record<string, number>; newest?: Record<string, string>;
+export function CharacterStrip({ characters, active, admin, openTick = 0, onPick, onNew, onEdit, onGallery, onTheirGallery, onAllPictures, unread = {}, newest = {}, groups = [], activeGroup = null, onPickGroup, onNewGroup, onGroupGallery }: {
+  characters: Character[]; active: string | null; admin: boolean; openTick?: number; onPick: (id: string | null) => void; onNew: () => void; onEdit: (c: Character) => void; onGallery: () => void; unread?: Record<string, number>; newest?: Record<string, string>;
   onTheirGallery?: (c: Character) => void; onAllPictures?: () => void; onGroupGallery?: (g: Group) => void;
   groups?: Group[]; activeGroup?: string | null; onPickGroup?: (id: string) => void; onNewGroup?: () => void;
 }) {
@@ -98,6 +98,8 @@ export function CharacterStrip({ characters, active, admin, onPick, onNew, onEdi
   // was fine with four of them and unreadable with twenty.
   const [open, setOpen] = useState(false);
   useBack(open, () => setOpen(false)); // the phone's back button closes the list first
+  // 👆👆 Opened from outside (two taps on the Chat tab), not only by the bar itself.
+  useEffect(() => { if (openTick) setOpen(true); }, [openTick]);
   const inGroup = groups.find(g => g.id === activeGroup) || null;
   const here = characters.find(c => c.id === active) || null;
   // 🔤 Alphabetical, always — except that anyone you're actually with right now (in person or on
