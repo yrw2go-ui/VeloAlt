@@ -47,6 +47,9 @@ const When = ({ at, align }: { at?: string; align?: "left" | "right" | "center" 
 export function GroupChat({ group: initial, chars, name, brains = [], onDeleted, onSwitch }: { group: Group; chars: Character[]; name: string; brains?: string[]; onDeleted: (id: string) => void; onSwitch?: (g: Group) => void }) {
   const [group, setGroup] = useState(initial);
   const [sceneSheet, setSceneSheet] = useState(false);
+  // 🔒 A message meant for one of them only, and the row for choosing who.
+  const [privateTo, setPrivateTo] = useState<Character | null>(null);
+  const [pickingPrivate, setPickingPrivate] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false); // ➕ the composer's menu
   const [photoSheet, setPhotoSheet] = useState(false); // 📸 a photo in the group
   const [pickGallery, setPickGallery] = useState(false); // 🖼️ a picture out of your gallery
@@ -156,17 +159,16 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted,
       setText(""); setPeek(true); return;
     }
     run.current++; setChatting(false);
-    // 🔒 "@Hailey …": a private text to her (only she sees it, and only you see her answer).
-    const at = t.match(/^\s*@([\p{L}\p{N}'’._-]+)[\s,:]+([\s\S]+)$/u);
-    const tag = at?.[1].toLowerCase().replace(/[._-]+$/, "");
-    const to = tag ? members.find(c => c.name.toLowerCase() === tag || c.name.toLowerCase().split(/\s+/)[0] === tag || c.name.toLowerCase().replace(/\s+/g, "") === tag) : undefined;
-    if (at && !to) { setErr(`No one called @${at[1]} is in this group.`); return; }
-    const mine: Msg = { id: `tmp-${Date.now()}`, speaker_id: null, content: to ? at![2].trim() : t, created_at: new Date().toISOString(), pending: true, ...(to ? { private_to: to.id } : {}) };
+    // 🔒 Just for one of them: whoever is on the chip above the box. Typing @ never does this —
+    // it only names someone.
+    const to = privateTo;
+    const mine: Msg = { id: `tmp-${Date.now()}`, speaker_id: null, content: t, created_at: new Date().toISOString(), pending: true, ...(to ? { private_to: to.id } : {}) };
     setMsgs(m => [...(m || []), mine]); setText(""); setBusy(true); setErr("");
     try {
-      const r = await api<{ replies: Msg[]; banter?: boolean; mine?: { id: string; their_reactions: Record<string, string>; private_to?: string } }>("/api/groups", { action: "send", id: group.id, text: t, timeZone: timeZone(), name }, { retry: false });
+      const r = await api<{ replies: Msg[]; banter?: boolean; mine?: { id: string; their_reactions: Record<string, string>; private_to?: string } }>("/api/groups", { action: "send", id: group.id, text: t, timeZone: timeZone(), name, ...(to ? { privateTo: to.id } : {}) }, { retry: false });
       setMsgs(m => [...(m || []).map(x => (x === mine ? { ...x, pending: false, ...(r.mine ? { id: r.mine.id, their_reactions: r.mine.their_reactions } : {}) } : x)), ...r.replies]);
       unsaved.current++;
+      setPrivateTo(null); // 🔒 one message at a time: the next one goes to everybody again
       if (r.banter) banter();
     } catch (e) {
       // 📵 The connection died — but they may have answered anyway, so look at what's really in the
@@ -336,12 +338,22 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted,
         {(busy || chatting) && <div className="muted" style={{ fontSize: 14 }} data-testid={chatting && !busy ? "group-banter-typing" : undefined}>💬 typing…{chatting && !busy ? <span style={{ fontSize: 12 }}> (they&apos;re chatting — jump in anytime)</span> : null}</div>}
         {err && <div style={{ color: "var(--bad)", fontSize: 14 }}>⚠️ {err}</div>}
       </div>
-      {/^@[\p{L}\p{N}'’._-]*$/u.test(text.trim()) && (
-        <div data-testid="group-at-picks" className="row" style={{ gap: 6, padding: "8px 12px 0", flexWrap: "wrap" }}>
+      {/* 🔒 Who the next message is just for: picked here, never guessed from an @ in the words. */}
+      {pickingPrivate && (
+        <div data-testid="group-private-picks" className="row" style={{ gap: 6, padding: "8px 12px 0", flexWrap: "wrap" }}>
           <span className="muted" style={{ fontSize: 12 }}>🔒 Private to:</span>
-          {members.filter(c => c.name.toLowerCase().startsWith(text.trim().slice(1).toLowerCase())).map(c => (
-            <button type="button" key={c.id} className="ghost" data-testid="group-at-pick" onClick={() => setText(`@${c.name.split(/\s+/)[0]} `)} style={{ padding: "4px 10px", fontSize: 13 }}>@{c.name.split(/\s+/)[0]}</button>
+          {members.map(c => (
+            <button type="button" key={c.id} className="ghost" data-testid="group-private-pick" onClick={() => { setPrivateTo(c); setPickingPrivate(false); }} style={{ padding: "4px 10px", fontSize: 13 }}>{c.name.split(/\s+/)[0]}</button>
           ))}
+          <button type="button" className="ghost" onClick={() => setPickingPrivate(false)} style={{ padding: "4px 10px", fontSize: 13 }}>✕</button>
+        </div>
+      )}
+      {privateTo && !pickingPrivate && (
+        <div data-testid="group-private-chip" className="row" style={{ gap: 6, padding: "8px 12px 0" }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 999, fontSize: 13, fontWeight: 700, color: "var(--text)", border: "1px solid var(--accent)", background: "rgba(124,140,255,0.15)" }}>
+            🔒 Only {privateTo.name.split(/\s+/)[0]} sees this
+            <button type="button" aria-label="Send to everyone instead" onClick={() => setPrivateTo(null)} style={{ background: "none", border: "none", color: "var(--text)", cursor: "pointer", fontSize: 13, padding: 0 }}>✕</button>
+          </span>
         </div>
       )}
       {editing && <EditSheet testid="group-edit" who={editing.who} value={editing.text} busy={savingEdit}
@@ -379,6 +391,9 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted,
                 {!group.scene_title && chars.some(c => !members.some(m => m.id === c.id)) && <button type="button" role="menuitem" data-testid="group-bring-open"
                   onClick={() => { setMoreOpen(false); setBringSheet({ ids: [], place: group.in_person_place || "", busy: false }); }}
                   style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", cursor: "pointer", fontSize: 14 }}>👥 Bring someone along</button>}
+                {/* 🔒 A line only one of them sees — and only you see her answer. */}
+                <button type="button" role="menuitem" data-testid="group-private-open" onClick={() => { setMoreOpen(false); setPickingPrivate(true); }}
+                  style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", cursor: "pointer", fontSize: 14 }}>🔒 Private message…</button>
                 {/* 📸 A photo of some of them, or of them and you. */}
                 <button type="button" role="menuitem" data-testid="group-photo-open" onClick={() => { setMoreOpen(false); setPhotoSheet(true); }}
                   style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", cursor: "pointer", fontSize: 14 }}>📸 A photo</button>

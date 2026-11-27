@@ -163,14 +163,17 @@ async function sendPrivate(caller: Caller, g: Group, chars: Character[], c: Char
   return { replies: out, banter: false, mine: { id: String(mineRow.id), their_reactions: mine?.their_reactions || {}, private_to: c.id } };
 }
 
-export async function sendToGroup(caller: Caller, g: Group, text: string, timeZone: unknown, personName: string): Promise<{ replies: GroupMsg[]; banter: boolean; mine: { id: string; their_reactions: Record<string, string> } }> {
+export async function sendToGroup(caller: Caller, g: Group, text: string, timeZone: unknown, personName: string, privateToId = ""): Promise<{ replies: GroupMsg[]; banter: boolean; mine: { id: string; their_reactions: Record<string, string> } }> {
   const clean = scrub(text).trim().slice(0, 4000);
   if (!clean) throw new GroupError("Say something first.");
   const chars = await members(g);
   if (chars.length < 2) throw new GroupError("This group needs at least 2 characters.");
-  // 🔒 "@Hailey …": a private text to her. Only she answers (privately), and nobody else ever sees either line.
-  const pt = privateTarget(clean, chars);
-  if (pt) return await sendPrivate(caller, g, chars, pt.c, pt.body, timeZone, personName);
+  // 🔒 A private text to one of them: only she answers, privately, and nobody else ever sees either
+  // line. Who it is for is said outright by the box above the keyboard — never guessed from an @,
+  // which only ever names someone now.
+  const pt = privateToId ? chars.find(c => c.id === privateToId) : null;
+  if (privateToId && !pt) throw new GroupError("That person isn't in this group.");
+  if (pt) return await sendPrivate(caller, g, chars, pt, clean, timeZone, personName);
   const [mineRow] = await sql()`insert into chat_group_messages (group_id, user_id, content) values (${g.id}, ${caller.userId}, ${clean}) returning id`;
   // They spoke: any back-and-forth between the characters stops right here.
   await sql()`update chat_groups set updated_at = now(), banter_left = 0, since_banter = since_banter + 1 where id = ${g.id}`;

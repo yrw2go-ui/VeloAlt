@@ -26,7 +26,9 @@ export function MentionPicker({ text, caret, onPick, testid = "mention" }: {
   return (
     <div data-testid={testid} role="listbox" aria-label="People you can name"
       style={{ position: "absolute", bottom: "100%", left: 8, right: 8, marginBottom: 6, zIndex: 40, maxHeight: 220, overflowY: "auto",
-        background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, boxShadow: "0 8px 30px rgba(0,0,0,.45)" }}>
+        // 🪟 Solid, not see-through: --card was never defined, so this list had no background at
+        // all and the chat showed straight through it.
+        background: "var(--surface, #141828)", border: "1px solid var(--border)", borderRadius: 14, boxShadow: "0 8px 30px rgba(0,0,0,.45)" }}>
       {people.map(p => (
         <button key={`${p.what}:${p.name}:${p.handle}`} type="button" data-testid={`${testid}-item`} onClick={() => onPick(p.name, spot!.at)}
           style={{ display: "flex", gap: 8, alignItems: "center", width: "100%", textAlign: "left", padding: "9px 12px", background: "none",

@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
       case "send": {
         if (!aiReady()) return bad("Velo isn't set up yet (missing AI settings).", 503);
         if (!allow(c.userId)) return bad("That's a lot of messages — give it a minute and try again.", 429);
-        return NextResponse.json(await sendToGroup(c, g, String(b.text || ""), b.timeZone, name));
+        return NextResponse.json(await sendToGroup(c, g, String(b.text || ""), b.timeZone, name, String(b.privateTo || "")));
       }
       // 💬 The next line of the characters talking among themselves → { message, more }.
       case "banter": {
