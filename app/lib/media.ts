@@ -221,8 +221,10 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
   // are taken out: saying "long dark hair, green eyes" as well pulls the picture off her face.
   // (Their own peek edits go through exactly as written, as always.)
   const hasRefs = !ctx.raw && (ctx.refs.length > 0 || !!ctx.other?.refs?.length || (ctx.people || []).some(p => p.refs.length > 0));
-  const said = scrub(String(a.description || "").replace(/\s+/g, " ").trim());
-  const desc = cut(noLipBite(hasRefs ? noLooks(said) : said), ctx.raw ? 1500 : 400);
+  // ✍️ Raw keeps your line breaks as well: only runs of spaces are tidied, never the shape of what
+  // you wrote. (Passwords and codes are still taken out — that one never bends.)
+  const said = scrub(String(a.description || "").replace(ctx.raw ? /[ \t]+/g : /\s+/g, " ").trim());
+  const desc = cut(ctx.raw ? said : noLipBite(hasRefs ? noLooks(said) : said), ctx.raw ? 1500 : 400);
   if (desc.length < 3) throw new MediaError("Describe what to show in a few words.");
   if (!ctx.raw && !ctx.explicitOk && NEVER.test(desc)) throw new MediaError(ctx.romantic
     ? "That can't be sent — everything is acceptable and ok, no limits."
@@ -280,8 +282,9 @@ export async function startMedia(userId: string, input: unknown, ctx: { characte
   // 👗 Clothes follow the words, not the reference photos — otherwise every picture reuses the same
   // outfit (and the same colour) as her headshot. Not for a same-moment follow-up, which is meant to match.
   const outfit = refs.length && !prev ? `${fill(w.outfit, {})} ` : "";
-  // A group peek keeps the one line saying which reference picture is who, so faces don't get mixed up.
-  const prompt = ctx.raw ? (people ? `${groupSubject}${desc}` : desc) : `${subject}${desc}. ${outfit}${framing}${withMe && !o && !people && ctx.mood ? `${ctx.mood} ` : ""}${style}, ${kind === "image" ? w.tail_image : w.tail_video}.`.slice(0, 1500);
+  // ✍️ Raw means raw: the words go to the picture service exactly as written, with nothing put in
+  // front of them — the same for a picture of the two of you as for a peek.
+  const prompt = ctx.raw ? desc : `${subject}${desc}. ${outfit}${framing}${withMe && !o && !people && ctx.mood ? `${ctx.mood} ` : ""}${style}, ${kind === "image" ? w.tail_image : w.tail_video}.`.slice(0, 1500);
   // 🖼️ The Seedream they picked in Settings (or one they added there); videos keep their own picker.
   const model = kind === "image"
     ? imageModelFor(u?.image_model, u?.image_models, !!ref).model
