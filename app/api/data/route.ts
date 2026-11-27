@@ -41,6 +41,7 @@ import { acceptMedia, declineMedia, mediaNote, startMedia, checkMedia, retryMedi
 
 // 📦 Everything the app reads and changes, for the signed-in person only.
 // POST { action, ...args } → { ... }. Every query is scoped to their user_id.
+import { COMMENT_CATS } from "../../lib/picaComments";
 import { REACTIONS as REACTION_LIST } from "../../lib/reactions";
 import { sceneTime, HHMM } from "../../lib/sceneClock";
 const REACTIONS: string[] = [...REACTION_LIST];
@@ -108,6 +109,26 @@ export async function POST(req: NextRequest) {
         await db`update users set prompt_words = ${JSON.stringify(keepEdits(b.words))}::jsonb, updated_at = now() where id = ${me}`;
         const [u] = await db`select prompt_words from users where id = ${me}`;
         return NextResponse.json({ bits: withDefaults(merge(u?.prompt_words)) });
+      }
+      // 💬 Picagram comment lines: every built-in one by group, plus the ones you added.
+      case "comments.get": {
+        const [u] = await db`select (to_jsonb(users)->>'pica_comments') as c from users where id = ${me}`;
+        return NextResponse.json({ groups: COMMENT_CATS.map(g => ({ key: g.key, label: g.label, about: g.about, lines: g.lines })), mine: asObject(u?.c) });
+      }
+      case "comments.add":
+      case "comments.remove": {
+        const key = COMMENT_CATS.find(g => g.key === b.group)?.key;
+        if (!key) return bad("That group wasn't found.");
+        const line = clean(b.line, 200);
+        if (!line) return bad("Write the line first.");
+        const [u] = await db`select (to_jsonb(users)->>'pica_comments') as c from users where id = ${me}`;
+        const all = asObject(u?.c) as unknown as Record<string, string[]>;
+        const was = Array.isArray(all[key]) ? all[key].map(String) : [];
+        const now = b.action === "comments.add"
+          ? (was.includes(line) ? was : [...was, line]).slice(0, 300)
+          : was.filter(x => x !== line);
+        await db`update users set pica_comments = ${JSON.stringify({ ...all, [key]: now })}::jsonb, updated_at = now() where id = ${me}`;
+        return NextResponse.json({ mine: { ...all, [key]: now } });
       }
       case "profile.get": {
         const [u] = await db`select paused, name, look, time_zone, plan, phone, phone_verified_at, chat_model, backup_brain, personality, adult_confirmed_at, video_model, image_model, image_models, reply_length, checkins, bio, birthday::text, age, (to_jsonb(users)->>'home_town') as home_town, home_state, (select url from velo_files where id = users.bio_photo_file_id) as bio_photo, (select thumb_url from velo_files where id = users.bio_photo_file_id) as bio_thumb, bio_photo_note, bio_more from users where id = ${me}`;

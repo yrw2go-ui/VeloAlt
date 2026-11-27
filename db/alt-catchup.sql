@@ -18,3 +18,6 @@ create table if not exists chat_group_reads (
   read_at timestamptz not null default now(),
   primary key (user_id, group_id)
 );
+
+-- 💬 111: the comment lines you add yourself in Settings → Admin.
+alter table users add column if not exists pica_comments jsonb not null default '{}'::jsonb;
