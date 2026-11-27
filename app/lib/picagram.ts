@@ -55,7 +55,16 @@ import { startMedia, deleteMedia, whenMediaReady, wornLately, MediaError, type M
 import { swapIn } from "./redo";
 import { allowsSuggestive, mediaMood, cleanTraits, DEFAULT_TRAITS, TRAITS } from "./traits";
 import { isValidTimeZone, localDate, zonedParts, zonedToUtc } from "./localTime";
-import { randomComments, quickComment } from "./picaComments";
+import { randomComments, quickComment, type CommentExtra } from "./picaComments";
+
+/** ✍️ The comment lines you added yourself in Settings → Admin, by group. jsonb comes back as an
+ *  object from one driver and a string from another, so either shape is accepted. */
+export async function commentExtras(userId: string): Promise<CommentExtra> {
+  const [u] = await sql()`select (to_jsonb(users)->>'pica_comments') as c from users where id = ${userId}`;
+  if (!u?.c) return {};
+  try { const o = JSON.parse(String(u.c)); return o && typeof o === "object" ? (o as CommentExtra) : {}; } catch { return {}; }
+}
+
 import { vibeNote, rollLesbian, FIRST_NAMES, LAST_NAMES } from "./vibes";
 import { usedNames } from "./makeCharacter";
 import { localNote } from "./local";
@@ -213,7 +222,7 @@ async function generateDay(userId: string, day: string, isToday: boolean): Promi
       values (${userId}, ${c.id}, ${accountOf.get(c.id) || null}, ${media ? "image" : "text"}, ${caption || (media ? "" : photo)}, ${media ? photo : ""}, ${media?.id || null}, ${big ? rand(200, 1500) : rand(20, 300)}, ${likers}, ${likerSecs}, ${p.vacation?.place ? scrub(String(p.vacation.place)).slice(0, 80) : ""}, ${at.toISOString()}) returning id`;
     for (const x of fc) await sql()`insert into pica_comments (post_id, user_id, author_id, text, created_at) values (${post.id}, ${userId}, ${x.c!.id}, ${x.text}, ${new Date(times[i] + rand(10, 240) * 60_000).toISOString()})`;
     // Her followers comment: more with a big following (up to 5 comments in all, counting a friend's).
-    for (const s of randomComments(`${caption} ${photo}`, media ? "image" : "text", Math.max(0, (big ? rand(3, 5) : rand(1, 3)) - fc.length), c.voice_kind === "male" ? "him" : "her"))
+    for (const s of randomComments(`${caption} ${photo}`, media ? "image" : "text", Math.max(0, (big ? rand(3, 5) : rand(1, 3)) - fc.length), c.voice_kind === "male" ? "him" : "her", await commentExtras(userId)))
       await sql()`insert into pica_comments (post_id, user_id, name, text, created_at) values (${post.id}, ${userId}, ${s.name}, ${s.text}, ${new Date(times[i] + rand(2, 360) * 60_000).toISOString()})`;
     // ✈️🏡 A (rare) stretch of time off: away somewhere, or a staycation at home.
     const vac = p.vacation, home = !!vac?.home || (!!vac && !String(vac.place || "").trim());
@@ -410,7 +419,7 @@ export async function picaPost(userId: string, caption: string, photo: string, u
   const now = Date.now();
   const [post] = await sql()`insert into pica_posts (user_id, author_id, kind, caption, photo, media_id, likes_target, seen_at) values (${userId}, null, ${media ? "image" : "text"}, ${cap}, ${media ? desc : ""}, ${media?.id || null}, ${rand(10, 300)}, now()) returning id`;
   // Women shoot their shot at the person too, on their own posts.
-  for (const s of randomComments(`${cap} ${desc}`, media ? "image" : "text", rand(1, 4), "him"))
+  for (const s of randomComments(`${cap} ${desc}`, media ? "image" : "text", rand(1, 4), "him", await commentExtras(userId)))
     await sql()`insert into pica_comments (post_id, user_id, name, text, created_at) values (${post.id}, ${userId}, ${s.name}, ${s.text}, ${new Date(now + rand(3, 240) * 60_000).toISOString()})`;
   // 🏷️ Who's in it and who it's about: the one in the picture with you, and anyone you named in
   // the caption or the photo. They all hear about it, whether or not you talk to them much.
@@ -454,7 +463,8 @@ export async function picaPost(userId: string, caption: string, photo: string, u
     // words of her own, and so is roughly one other; the rest are free.
     const inFrame = (f: { id: string }) => inIt.some(c => String(c.id) === String(f.id)) || mentioned.some(c => String(c.id) === String(f.id));
     const voiced = fans.filter(f => inFrame(f) || Math.random() < 0.3);
-    const freebies = new Map(fans.filter(f => !voiced.includes(f)).map(f => [String(f.id), quickComment()]));
+    const extras = await commentExtras(userId); // ✍️ your own lines are in the hat too
+    const freebies = new Map(fans.filter(f => !voiced.includes(f)).map(f => [String(f.id), quickComment(extras)]));
     const raw = !voiced.length ? "" : await writeText(commentBrains(availableBrains()), `People who know ${u.name} react to ${u.name}'s new Picagram post. For each person, write a short comment in their own voice (or "" if they'd just like it). ${t.post_comments}
 A person marked IN THIS PHOTO is the woman in it: she was there when it was taken, it's her own face and body in the picture, and ${u.name} has just put it up for everyone to see. She comments as herself from inside it — how she feels about being up there, what the two of them were doing, teasing him about the pose, being pleased or shy or smug about it. She NEVER talks about the woman in the photo as if she were someone else ("you two look great together", "who's she?") — that would make no sense, because it's her.
 Anyone else sees another woman in it and reacts the way she would — pleased, curious, teasing, or a little stung — never cruel. ${PLAIN_WORDS} JSON only: {"comments":[{"from":"Name","text":"..."}]}`,
@@ -465,7 +475,7 @@ Anyone else sees another woman in it and reacts the way she would — pleased, c
     for (const f of fans) {
       // Her own words if a brain wrote her one; otherwise a free line, so nobody comes up silent.
       const text = (noJargon(scrub(String(cs.find(x => String(x.from).toLowerCase() === String(f.name).toLowerCase())?.text || ""))).slice(0, 300)
-        || freebies.get(String(f.id)) || (inFrame(f) ? quickComment() : "")).slice(0, 300);
+        || freebies.get(String(f.id)) || (inFrame(f) ? quickComment(extras) : "")).slice(0, 300);
       if (text) await sql()`insert into pica_comments (post_id, user_id, author_id, text, created_at) values (${post.id}, ${userId}, ${f.id}, ${text}, ${new Date(now + rand(2, 90) * 60_000).toISOString()})`;
       const what = who(f);
       await sql()`insert into velo_memories (user_id, character_id, kind, text) values (${userId}, ${f.id}, 'fact',
@@ -676,7 +686,7 @@ async function accountPosts(userId: string, day: string, isToday: boolean, u: U,
     const at = isToday && i === 0 ? now - rand(5, 40) * 60_000 : start + Math.random() * (end - start);
     const likes = Math.max(150, Math.min(25000, Math.round(Number(a.followers) * (0.005 + Math.random() * 0.03))));
     const [post] = await sql()`insert into pica_posts (user_id, account_id, kind, caption, photo, media_id, likes_target, created_at) values (${userId}, ${String(a.id)}, 'image', ${caption}, ${photo}, ${media.id}, ${likes}, ${new Date(at).toISOString()}) returning id`;
-    for (const s of randomComments(`${caption} ${photo}`, "image", rand(3, 5)))
+    for (const s of randomComments(`${caption} ${photo}`, "image", rand(3, 5), "her", await commentExtras(userId)))
       await sql()`insert into pica_comments (post_id, user_id, name, text, created_at) values (${post.id}, ${userId}, ${s.name}, ${s.text}, ${new Date(at + rand(2, 300) * 60_000).toISOString()})`;
   }
 }
@@ -728,7 +738,7 @@ export async function putUpUploads(userId: string, a: Record<string, unknown>, m
     const likes = Math.max(150, Math.min(25000, Math.round(Number(a.followers) * (0.005 + Math.random() * 0.03))));
     const [post] = await sql()`insert into pica_posts (user_id, account_id, kind, caption, photo, media_id, likes_target, created_at)
       values (${userId}, ${String(a.id)}, 'image', ${caption}, ${photo}, ${String(r.id)}, ${likes}, ${new Date(at).toISOString()}) returning id`;
-    for (const c of randomComments(`${caption} ${photo}`, "image", rand(3, 5)))
+    for (const c of randomComments(`${caption} ${photo}`, "image", rand(3, 5), "her", await commentExtras(userId)))
       await sql()`insert into pica_comments (post_id, user_id, name, text, created_at) values (${post.id}, ${userId}, ${c.name}, ${c.text}, ${new Date(at + rand(2, 300) * 60_000).toISOString()})`;
   }
   return order.length;
@@ -815,7 +825,7 @@ async function postFor(userId: string, a: Record<string, unknown>, u: U, at: num
   const likes = Math.max(150, Math.min(25000, Math.round(Number(a.followers) * (0.005 + Math.random() * 0.03))));
   const [post] = await sql()`insert into pica_posts (user_id, account_id, kind, caption, photo, media_id, likes_target, created_at)
     values (${userId}, ${String(a.id)}, 'image', ${caption || "✨"}, ${photo}, ${made.id}, ${likes}, ${new Date(at).toISOString()}) returning id`;
-  for (const c of randomComments(`${caption} ${photo}`, "image", rand(3, 5)))
+  for (const c of randomComments(`${caption} ${photo}`, "image", rand(3, 5), "her", await commentExtras(userId)))
     await sql()`insert into pica_comments (post_id, user_id, name, text, created_at) values (${post.id}, ${userId}, ${c.name}, ${c.text}, ${new Date(at + rand(2, 300) * 60_000).toISOString()})`;
   return true;
 }
@@ -1271,7 +1281,7 @@ export async function picaFromPhoto(userId: string, mediaId: string): Promise<st
   // Her first post: the photo you liked.
   const [post] = await sql()`insert into pica_posts (user_id, account_id, kind, caption, photo, media_id, likes_target, created_at)
     values (${userId}, ${acc.id}, 'image', '✨', ${String(m.description || "").slice(0, 600)}, ${m.id}, ${rand(80, 900)}, now() - interval '3 hours') returning id`;
-  for (const s of randomComments(String(m.description || ""), "image", rand(2, 4)))
+  for (const s of randomComments(String(m.description || ""), "image", rand(2, 4), "her", await commentExtras(userId)))
     await sql()`insert into pica_comments (post_id, user_id, name, text, created_at) values (${post.id}, ${userId}, ${s.name}, ${s.text}, now() - interval '2 hours')`;
   // 🧠 Whoever sent the photo knows her — and knows they're both on Picagram now.
   if (m.character_id) {

@@ -119,6 +119,58 @@ const SOLEMN = ["So sorry for your loss 💔", "Thinking of you ❤️", "Sendin
   "Always with you ❤️", "Praying for you", "Hug sent 🫂", "Take your time, be gentle with yourself",
   "You're not alone in this", "Here for you, always"];
 
+// The handful of everyday lines that belong with "happy for them" or "cheering them on" instead.
+const HAPPY_LINES = new Set(["Happy for you!", "Enjoy!!", "Looks like so much fun", "This made my day"]);
+const MOTIVATIONAL_LINES = new Set(["So proud of you", "Love to see it", "You never miss", "Teach me your ways", "Big fan of this"]);
+
+// 🗂️ The six groups Settings → Admin lists, and what each is for. Everything here is a line a
+// stranger might leave on any post; the ones about what's IN the picture (gym, food, the beach…)
+// belong to those themes and are not part of these groups.
+export type CommentCat = "complimentary" | "generic" | "motivational" | "consoling" | "suggestive" | "happy";
+
+/** ⭐ About them, their looks, the shot. */
+export const COMPLIMENTARY = [...new Set([...GENERAL.filter(x => !HAPPY_LINES.has(x) && !MOTIVATIONAL_LINES.has(x)),
+  "Gorgeous", "Beautiful", "Wow", "Wow 😍", "Stunning", "Amazing look", "Lookin good", "Perfection 😍", "Beautiful as always",
+  "You look amazing", "Cute!", "So cute", "Adorable", "Obsessed", "Obsessed 😍", "Okay wow", "That smile ☺️", "Great shot",
+  "Love the vibe", "Love your style", "nice outfit!", "Lovely", "Class", "Perfect", "Incredible", ...HIM_ONLY])];
+
+/** 💬 Short replies and emoji — the bread and butter. */
+export const GENERIC = [...new Set([...TEXT, ...EMOJI, "Nice!", "👍", "So good", "Love this", "Yes!!", "This is great",
+  "Same ☺️", "Agreed", "So true", "Facts", "100%", "💯", "🙌", "👏", "👏👏", "✨", "Hi 👋", "Hello there", "Hey you ☺️",
+  "Long time!", "Sweet", "Nice ❤️", "Love it ❤️", "😏", "👋☺️", "Omg I love it", "Love this one", "Yes to all of this"])];
+
+/** 💪 Cheering them on. */
+export const MOTIVATIONAL = ["Proud of you", "So proud of you", "Keep it up", "Go you!", "Strong work 💪", "Consistency pays off!",
+  "Beast mode", "You never miss", "Put the rest of us to shame", "Teach me your ways", "Big fan of this", "Doing it right",
+  "Love to see it", "You've got this", "Hard work showing", "Inspiring honestly", "Keep going 💪", "Earned every bit of this",
+  "This is what effort looks like", "Rooting for you"];
+
+/** 🕯️ For a post about something heavy. */
+export const CONSOLING = SOLEMN;
+
+/** 😘 Someone shooting their shot. */
+export const SUGGESTIVE = [...new Set([...FLIRTY_ANY, ...FLIRTY_HER, ...FLIRTY_HIM])];
+
+/** 🎉 Glad for them: news, wins, good days. */
+export const HAPPY = ["Happy for you!", "Enjoy!", "Enjoy!!", "Have fun!!", "Looks fun", "So fun!!", "Looks like so much fun",
+  "Congrats!!", "Great news!", "Made my day ❤️", "This made my day", "This made me smile", "Love this for you",
+  "🎉", "Cheers to you!", "Best news I've had all day", "So well deserved", "Buzzing for you", "Celebrating with you 🥂",
+  "You deserve this one"];
+
+export const COMMENT_CATS: { key: CommentCat; label: string; about: string; lines: string[] }[] = [
+  { key: "complimentary", label: "⭐ Complimentary", about: "About them, their looks, the shot", lines: COMPLIMENTARY },
+  { key: "generic", label: "💬 Generic", about: "Short replies and emoji", lines: GENERIC },
+  { key: "motivational", label: "💪 Motivational", about: "Cheering them on", lines: MOTIVATIONAL },
+  { key: "consoling", label: "🕯️ Consoling", about: "For a post about something heavy", lines: CONSOLING },
+  { key: "suggestive", label: "😘 Suggestive", about: "Someone shooting their shot", lines: SUGGESTIVE },
+  { key: "happy", label: "🎉 Happy for them", about: "News, wins, good days", lines: HAPPY },
+];
+
+/** ✍️ Lines you added yourself in Settings, by group. */
+export type CommentExtra = Partial<Record<CommentCat, string[]>>;
+const mine = (e: CommentExtra | undefined, ...k: CommentCat[]) => (e ? k.flatMap(x => (e[x] || []).filter(Boolean)) : []);
+
+
 export function randomUser(): string {
   const n = Math.random() < 0.5 ? String(Math.floor(Math.random() * 999)) : "";
   return `${pick(FIRST)}${pick(TAIL)}${n}`.slice(0, 24);
@@ -142,20 +194,21 @@ export const QUICK = [
   "Lunch this week?", "You free this weekend?", "Proud of you", "Love to see it", "Keep it up", "Go you!",
   "Doing it right", "Great news!", "Congrats!!", "Aww", "Awww ❤️", "Sweet", "Lovely", "Class", "Perfect",
 ];
-/** One free comment, picked at random. */
-export const quickComment = () => pick(QUICK);
+/** One free comment, picked at random — your own lines are in the hat as well. */
+export const quickComment = (extra?: CommentExtra) =>
+  pick([...QUICK, ...mine(extra, "complimentary", "generic", "happy", "motivational")]);
 
 /** A few random strangers' comments for a post (some emoji-only).
  *  They're told what the picture shows — what she's doing and what she's wearing — so the
  *  comments land on it ("love the crop top", "wish I was on the beach too!"), not just "Love this!". */
-export function randomComments(text: string, kind: "image" | "text", n: number, who: "her" | "him" = "her"): { name: string; text: string }[] {
+export function randomComments(text: string, kind: "image" | "text", n: number, who: "her" | "him" = "her", extra?: CommentExtra): { name: string; text: string }[] {
   const t = text.toLowerCase();
   // 🕯️ Something sad: only condolences, and nothing else from the cheerful lists.
   if (SAD.test(t)) {
     const out: { name: string; text: string }[] = [];
     const used = new Set<string>();
     for (let i = 0; i < n * 5 && out.length < n; i++) {
-      const c = pick(SOLEMN);
+      const c = pick([...SOLEMN, ...mine(extra, "consoling")]);
       if (used.has(c)) continue;
       used.add(c);
       out.push({ name: randomUser(), text: c });
@@ -182,7 +235,7 @@ export function randomComments(text: string, kind: "image" | "text", n: number, 
     /sunset|sunrise|golden hour|skyline|dusk/.test(t) ? SUNSET : [],
     /danc|club floor|choreo/.test(t) ? DANCE : [],
   ].flat();
-  const general = him ? [...ok(GENERAL), ...HIM_ONLY] : GENERAL;
+  const general = [...(him ? [...ok(GENERAL), ...HIM_ONLY] : GENERAL), ...mine(extra, "complimentary", "generic", "happy", "motivational")];
   // 👗 Anything she's actually wearing, named.
   const wearing = kind === "image" ? WEAR.filter(([re]) => re.test(t)).slice(0, 3).flatMap(([, item]) => ABOUT_WEAR(item)) : [];
   // Comments that are about THIS picture — what she's doing and what she has on.
@@ -194,7 +247,7 @@ export function randomComments(text: string, kind: "image" | "text", n: number, 
   for (let i = 0; i < n * 4 && out.length < n; i++) {
     const r = Math.random();
     const c = r < 0.3 ? pick(EMOJI)
-      : kind === "text" ? (r < 0.8 ? pick(ok(TEXT)) : pick(general))
+      : kind === "text" ? (r < 0.8 ? pick([...ok(TEXT), ...mine(extra, "generic")]) : pick(general))
       : wearing.length && r < 0.45 ? pick(ok(wearing))
       : about.length && r < 0.72 ? pick(about)
       : pick(general);
@@ -206,7 +259,7 @@ export function randomComments(text: string, kind: "image" | "text", n: number, 
   // comment about the picture itself (that one stays), and never more than one on the same post.
   if (out.length > 1 && Math.random() < 0.35) {
     const at = 1 + Math.floor(Math.random() * (out.length - 1));
-    out[at] = { name: randomUser(), text: pick([...FLIRTY_ANY, ...(him ? FLIRTY_HIM : FLIRTY_HER)]) };
+    out[at] = { name: randomUser(), text: pick([...FLIRTY_ANY, ...(him ? FLIRTY_HIM : FLIRTY_HER), ...mine(extra, "suggestive")]) };
   }
   return out;
 }

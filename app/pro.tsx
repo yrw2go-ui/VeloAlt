@@ -507,6 +507,95 @@ type TalkSection = { key: string; title: string; about: string; slots: TalkSlot[
  * 🛠️ Settings → Admin → Messaging & wording. Every standing line that shapes how a character
  * talks, in plain boxes: edit one, save, and her next message uses it. Hard safety isn't here.
  */
+
+type CommentGroup = { key: string; label: string; about: string; lines: string[] };
+
+/** 💬 Settings → Admin → Picagram comments: every line a stranger might leave, by group, and the
+ *  ones you have added yourself. Yours go in the same hat as the built-in ones. */
+export function CommentsCard() {
+  const [open, setOpen] = useState(false);
+  const [groups, setGroups] = useState<CommentGroup[] | null>(null);
+  const [mine, setMine] = useState<Record<string, string[]>>({});
+  const [show, setShow] = useState<string | null>(null);
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    if (!open || groups) return;
+    data<{ groups: CommentGroup[]; mine: Record<string, string[]> }>("comments.get")
+      .then(r => { setGroups(r.groups || []); setMine(r.mine || {}); })
+      .catch(() => setGroups([]));
+  }, [open, groups]);
+  const add = async (key: string) => {
+    const line = (draft[key] || "").trim();
+    if (!line || busy) return;
+    setBusy(true); setErr("");
+    try { const r = await data<{ mine: Record<string, string[]> }>("comments.add", { group: key, line }); setMine(r.mine || {}); setDraft(d => ({ ...d, [key]: "" })); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't add it."); }
+    setBusy(false);
+  };
+  const remove = async (key: string, line: string) => {
+    if (busy) return;
+    setBusy(true); setErr("");
+    try { const r = await data<{ mine: Record<string, string[]> }>("comments.remove", { group: key, line }); setMine(r.mine || {}); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Couldn't remove it."); }
+    setBusy(false);
+  };
+  const chip = { padding: "3px 9px", borderRadius: 999, border: "1px solid var(--border)", background: "var(--surface2)", fontSize: 13 } as const;
+  return (
+    <div className="card" data-testid="pica-comments">
+      <button onClick={() => setOpen(o => !o)} style={{ all: "unset", cursor: "pointer", display: "flex", width: "100%", alignItems: "center", justifyContent: "space-between" }}>
+        <span>
+          <span style={{ fontWeight: 700 }}>💬 Picagram comments</span>
+          <span className="muted" style={{ fontSize: 13, display: "block", margin: "2px 0 0" }}>Every line strangers leave on a post, by group — and add your own.</span>
+        </span>
+        <span aria-hidden style={{ marginLeft: 10 }}>{open ? "▾" : "▸"}</span>
+      </button>
+      {open && (groups === null ? <div className="muted" style={{ marginTop: 12, fontSize: 13 }}>Loading…</div> : (
+        <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 12 }}>
+          <div className="muted" style={{ fontSize: 12 }}>Lines about what&apos;s in the picture — the gym, food, the beach — belong to those themes and aren&apos;t listed here.</div>
+          {err && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {err}</div>}
+          {groups.map(g => {
+            const yours = mine[g.key] || [];
+            const showing = show === g.key;
+            return (
+              <div key={g.key} style={{ border: "1px solid var(--border)", borderRadius: 12, padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                <button onClick={() => setShow(s => (s === g.key ? null : g.key))} data-testid={`comments-${g.key}`}
+                  style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span>
+                    <span style={{ fontWeight: 700, fontSize: 14 }}>{g.label}</span>
+                    <span className="muted" style={{ fontSize: 12, display: "block" }}>{g.about} · {g.lines.length} built in{yours.length ? ` · ${yours.length} yours` : ""}</span>
+                  </span>
+                  <span aria-hidden>{showing ? "▾" : "▸"}</span>
+                </button>
+                {showing && (
+                  <>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, maxHeight: 220, overflowY: "auto" }}>
+                      {yours.map(l => (
+                        <span key={`m:${l}`} data-testid="comment-mine" style={{ ...chip, border: "1px solid var(--accent)", background: "rgba(124,140,255,0.15)", display: "flex", alignItems: "center", gap: 6 }}>
+                          {l}
+                          <button onClick={() => void remove(g.key, l)} aria-label={`Remove ${l}`} disabled={busy}
+                            style={{ background: "none", border: "none", color: "var(--text)", cursor: "pointer", padding: 0, fontSize: 12 }}>✕</button>
+                        </span>
+                      ))}
+                      {g.lines.map(l => <span key={`b:${l}`} className="muted" style={chip}>{l}</span>)}
+                    </div>
+                    <form className="row" style={{ gap: 6 }} onSubmit={e => { e.preventDefault(); void add(g.key); }}>
+                      <input value={draft[g.key] || ""} onChange={e => setDraft(d => ({ ...d, [g.key]: e.target.value }))}
+                        maxLength={200} placeholder="Add a line of your own…" data-testid={`comment-add-${g.key}`} style={{ flex: 1, borderRadius: 10, fontSize: 13 }} />
+                      <button className="btn" disabled={busy || !(draft[g.key] || "").trim()} style={{ padding: "6px 12px", fontSize: 13 }}>Add</button>
+                    </form>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function AdminCard() {
   const [open, setOpen] = useState(false);
   const [sections, setSections] = useState<TalkSection[] | null>(null);
