@@ -405,7 +405,7 @@ export async function picaPost(userId: string, caption: string, photo: string, u
     // reference picture is who, and then your words, straight through to the picture service.
     media = await startMedia(userId, { kind: "image", with_me: true, they_asked: true, description: desc },
       { characterId: null, who: u.name, appearance: u.look, refs, romantic: u.adult, offer: false, other: null,
-        ...(other ? { people: [other] } : {}), pica: true, ...(other || refs.length ? { raw: true } : {}) });
+        ...(other ? { people: [other] } : {}), pica: true, raw: true });
   }
   const now = Date.now();
   const [post] = await sql()`insert into pica_posts (user_id, author_id, kind, caption, photo, media_id, likes_target, seen_at) values (${userId}, null, ${media ? "image" : "text"}, ${cap}, ${media ? desc : ""}, ${media?.id || null}, ${rand(10, 300)}, now()) returning id`;
