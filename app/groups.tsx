@@ -44,7 +44,7 @@ const When = ({ at, align }: { at?: string; align?: "left" | "right" | "center" 
   return t ? <div data-testid="when" style={{ fontSize: 10, lineHeight: 1.6, opacity: 0.55, color: "var(--text)", padding: "2px 2px 0", textAlign: align || "left" }}>{t}</div> : null;
 };
 
-export function GroupChat({ group: initial, chars, name, brains = [], onDeleted }: { group: Group; chars: Character[]; name: string; brains?: string[]; onDeleted: (id: string) => void }) {
+export function GroupChat({ group: initial, chars, name, brains = [], onDeleted, onSwitch }: { group: Group; chars: Character[]; name: string; brains?: string[]; onDeleted: (id: string) => void; onSwitch?: (g: Group) => void }) {
   const [group, setGroup] = useState(initial);
   const [sceneSheet, setSceneSheet] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false); // ➕ the composer's menu
@@ -52,6 +52,8 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
   const [pickGallery, setPickGallery] = useState(false); // 🖼️ a picture out of your gallery
   // 🧍 Together in person: the same thing a one-to-one does, for everyone here at once.
   const [togetherSheet, setTogetherSheet] = useState<{ place: string; busy: boolean; error?: string } | null>(null);
+  // 👥 Bringing someone else along to this lot.
+  const [bringSheet, setBringSheet] = useState<{ ids: string[]; place: string; busy: boolean; error?: string } | null>(null);
   const [peek, setPeek] = useState(false);
   const [msgs, setMsgs] = useState<Msg[] | null>(null);
   const [text, setText] = useState("");
@@ -122,6 +124,24 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
       const m = await api<{ messages: Msg[] }>("/api/groups", { action: "messages", id: group.id });
       setMsgs(m.messages);
     } catch (e) { setTogetherSheet(t => (t ? { ...t, busy: false, error: e instanceof Error ? e.message : "Try again." } : t)); }
+  };
+
+  // 👥 Someone else joins this lot: the server takes everyone who is already here plus whoever
+  // you have picked, and puts them together in person — each newcomer bringing their own recent
+  // chat with you. With different people in it, it is a different group, so the chat moves there.
+  const bringAlong = async () => {
+    if (!bringSheet?.ids.length) return;
+    setBringSheet(s => (s ? { ...s, busy: true, error: undefined } : s));
+    try {
+      const r = await api<{ group: Group }>("/api/groups", { action: "bring", fromId: members[0]?.id,
+        ids: [...members.slice(1).map(c => c.id), ...bringSheet.ids], place: bringSheet.place.trim(), name });
+      setBringSheet(null);
+      run.current++; setChatting(false);
+      if (r.group.id !== group.id && onSwitch) { onSwitch(r.group); return; }
+      setGroup(g => ({ ...g, ...r.group }));
+      const m = await api<{ messages: Msg[] }>("/api/groups", { action: "messages", id: r.group.id });
+      setMsgs(m.messages);
+    } catch (e) { setBringSheet(s => (s ? { ...s, busy: false, error: e instanceof Error ? e.message : "Try again." } : s)); }
   };
 
   const send = async () => {
@@ -355,6 +375,10 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
                 {!group.scene_title && group.in_person_place == null && <button type="button" role="menuitem" data-testid="group-inperson-open" onClick={() => { setMoreOpen(false); setTogetherSheet({ place: "", busy: false }); }}
                   style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", cursor: "pointer", fontSize: 14 }}>🧍 Together in person</button>}
                 {/* 🎙️ Say it instead of typing it — the words land in the box to send yourself. */}
+                {/* 👥 Someone else comes along: everyone here plus whoever you pick, together in person. */}
+                {!group.scene_title && chars.some(c => !members.some(m => m.id === c.id)) && <button type="button" role="menuitem" data-testid="group-bring-open"
+                  onClick={() => { setMoreOpen(false); setBringSheet({ ids: [], place: group.in_person_place || "", busy: false }); }}
+                  style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", cursor: "pointer", fontSize: 14 }}>👥 Bring someone along</button>}
                 {/* 📸 A photo of some of them, or of them and you. */}
                 <button type="button" role="menuitem" data-testid="group-photo-open" onClick={() => { setMoreOpen(false); setPhotoSheet(true); }}
                   style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", border: "none", borderRadius: 10, background: "transparent", color: "var(--text)", cursor: "pointer", fontSize: 14 }}>📸 A photo</button>
@@ -391,6 +415,34 @@ export function GroupChat({ group: initial, chars, name, brains = [], onDeleted 
             <input value={togetherSheet.place} onChange={e => setTogetherSheet(t => (t ? { ...t, place: e.target.value } : t))} maxLength={120} autoFocus aria-label="Where are you all?" placeholder="Where are you? (the kitchen, the pub…)" data-testid="group-inperson-place" style={{ borderRadius: 12 }} />
             {togetherSheet.error && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {togetherSheet.error}</div>}
             <button className="btn" disabled={togetherSheet.busy} data-testid="group-inperson-go">{togetherSheet.busy ? "…" : "🧍 We're together"}</button>
+          </form>
+        </div>
+      )}
+      {bringSheet && (
+        <div role="dialog" aria-modal="true" data-testid="group-bring-sheet" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 3000 }} onClick={() => setBringSheet(null)}>
+          <form className="card" onClick={e => e.stopPropagation()} onSubmit={e => { e.preventDefault(); void bringAlong(); }} style={{ width: "100%", maxWidth: 520, margin: 10, padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+            <div className="row" style={{ justifyContent: "space-between" }}>
+              <div style={{ fontWeight: 800, fontSize: 17 }}>👥 Bring someone along</div>
+              <button type="button" className="ghost" onClick={() => setBringSheet(null)} aria-label="Close" style={{ padding: "4px 10px" }}>✕</button>
+            </div>
+            <div className="muted" style={{ fontSize: 12 }}>Who else is coming? They join {members.map(c => c.name).join(" & ")} in person, each picking up from their own recent chat with you. Six at most.</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {chars.filter(c => !members.some(m => m.id === c.id)).map(c => {
+                const on = bringSheet.ids.includes(c.id);
+                const full = !on && members.length + bringSheet.ids.length >= 6;
+                return (
+                  <button key={c.id} type="button" disabled={full} data-testid={`bring-who-${c.name}`} aria-pressed={on}
+                    onClick={() => setBringSheet(s => (s ? { ...s, ids: on ? s.ids.filter(x => x !== c.id) : [...s.ids, c.id] } : s))}
+                    style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px 4px 4px", borderRadius: 999, cursor: full ? "default" : "pointer", fontSize: 13, fontWeight: 700, color: "var(--text)", opacity: full ? 0.4 : 1,
+                      border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, background: on ? "rgba(124,140,255,0.15)" : "var(--surface2)" }}>
+                    <CharacterFace c={c} size={24} /> {c.name}{on ? " ✓" : ""}
+                  </button>
+                );
+              })}
+            </div>
+            <input value={bringSheet.place} onChange={e => setBringSheet(s => (s ? { ...s, place: e.target.value } : s))} maxLength={120} aria-label="Where are you all?" placeholder="Where are you? (the kitchen, the pub…)" data-testid="group-bring-place" style={{ borderRadius: 12 }} />
+            {bringSheet.error && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ {bringSheet.error}</div>}
+            <button className="btn" disabled={bringSheet.busy || !bringSheet.ids.length} data-testid="group-bring-go">{bringSheet.busy ? "…" : "👥 They're here"}</button>
           </form>
         </div>
       )}
