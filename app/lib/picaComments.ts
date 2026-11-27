@@ -107,6 +107,18 @@ const FIRST = ["jess", "mike", "tay", "sam", "alex", "jordan", "chris", "brit", 
 const TAIL = ["_xo", ".fit", "_official", "lovesyou", "_vibes", "babyy", ".daily", "_travels", "_eats", "_gram", "x3", "__", "_ok", "_life", "_art", "_photo", "_99", "_21", "_07", ""];
 
 const pick = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)];
+
+// 🕯️ A heavy post — someone died, someone is ill, a funeral, a break-up, losing a job or a pet —
+// gets condolences, not "Okay wow 🔥". Nothing flirty and nothing about the outfit goes near it.
+const SAD = /\b(died|die|death|passed away|passed on|funeral|burial|grave|graveside|memorial|eulogy|r\.?i\.?p\.?|rest in peace|in loving memory|anniversary of (her|his|their|the) (death|passing|accident)|tragic|tragedy|fatal|car (accident|crash)|crash|overdose|suicide|cancer|chemo|hospice|hospital|icu|surgery|terminal|stroke|heart attack|miscarriage|stillborn|put (her|him|them) down|had to say goodbye|lost (my|her|his|our|a) (mom|mum|dad|father|mother|sister|brother|son|daughter|friend|dog|cat|grandma|grandpa|baby|husband|wife)|miss (her|him|them) so much|grief|grieving|mourning|heartbroken|divorce|break-?up|broke up|laid off|lost my job|fired)\b/i;
+
+const SOLEMN = ["So sorry for your loss 💔", "Thinking of you ❤️", "Sending you love", "Here if you need anything",
+  "No words. I'm so sorry", "She'd be proud of you", "Holding you in my thoughts", "That's so hard. I'm sorry",
+  "💔", "🙏", "❤️", "🕯️", "Sending strength", "Thinking of you and yours", "I'm so sorry 💔", "Much love to you",
+  "Can't imagine. I'm sorry", "Gone but never forgotten", "What a beautiful tribute", "Rest easy 🕊️",
+  "Always with you ❤️", "Praying for you", "Hug sent 🫂", "Take your time, be gentle with yourself",
+  "You're not alone in this", "Here for you, always"];
+
 export function randomUser(): string {
   const n = Math.random() < 0.5 ? String(Math.floor(Math.random() * 999)) : "";
   return `${pick(FIRST)}${pick(TAIL)}${n}`.slice(0, 24);
@@ -138,6 +150,18 @@ export const quickComment = () => pick(QUICK);
  *  comments land on it ("love the crop top", "wish I was on the beach too!"), not just "Love this!". */
 export function randomComments(text: string, kind: "image" | "text", n: number, who: "her" | "him" = "her"): { name: string; text: string }[] {
   const t = text.toLowerCase();
+  // 🕯️ Something sad: only condolences, and nothing else from the cheerful lists.
+  if (SAD.test(t)) {
+    const out: { name: string; text: string }[] = [];
+    const used = new Set<string>();
+    for (let i = 0; i < n * 5 && out.length < n; i++) {
+      const c = pick(SOLEMN);
+      if (used.has(c)) continue;
+      used.add(c);
+      out.push({ name: randomUser(), text: c });
+    }
+    return out;
+  }
   // 👨 A man's post: the lines that only fit a woman are dropped, and ones that fit him take their place.
   const him = who === "him";
   const ok = (a: string[]) => (him ? a.filter(x => !HER_ONLY.has(x)) : a);
