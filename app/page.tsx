@@ -503,7 +503,8 @@ function Main({ userId, onOut }: { userId: string; onOut: () => void }) {
             <button className="ghost" onClick={() => setGroupId(null)} style={{ padding: "6px 14px" }}>Back to the chat</button>
           </div>
         )}
-        {inGroup && <Boundary what="This group chat"><GroupChat key={inGroup.id} group={inGroup} chars={chars} name={name} brains={brains} onDeleted={id => { setGroups(gs => gs.filter(g => g.id !== id)); setGroupId(null); }} /></Boundary>}
+        {inGroup && <Boundary what="This group chat"><GroupChat key={inGroup.id} group={inGroup} chars={chars} name={name} brains={brains} onDeleted={id => { setGroups(gs => gs.filter(g => g.id !== id)); setGroupId(null); }}
+          onSwitch={g => { setGroups(gs => [g, ...gs.filter(x => x.id !== g.id)]); setGroupId(g.id); }} /></Boundary>}
         {tab === "chat" && !inGroup && !groupId && <Chat key={`${withChar?.id || "velo"}-${chatTick}`} calls={{ can: canCallVelo() && !calling && !inGroup, ringing, continuing, have: historyCount, need: CONTINUE_MIN, onCall: startCall, onContinue: continueCall }} startPlan={startingPlan} onPlanStarted={() => setStartPlan(null)} onSwipe={hopChat} brains={brains} userId={userId} name={name} onChanged={bump} added={chatAdd} onAdded={() => setChatAdd(null)} character={withChar} adult={!!profile?.adultConfirmed} onAdult={() => setProfileTick(t => t + 1)} onHistory={h => { chatHistory.current = h; setHistoryCount(h.length); }}
           onNewCharacter={() => api<{ characters: Character[] }>("/api/characters", { action: "list" }).then(r => setChars(r.characters)).catch(() => {})}
           others={chars.map(c => ({ id: c.id, name: c.name, pica_handle: c.pica_handle || null }))} onSocial={id => { setPicaOpen(id); setTab("pica"); }} onGroup={g => { setGroups(gs => [g, ...gs.filter(x => x.id !== g.id)]); setGroupId(g.id); }} />}
