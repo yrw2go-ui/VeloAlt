@@ -7,6 +7,7 @@
 //   "remember" / "memo" — after a call / chat: save a summary, goals and facts to memory
 //   "errand"    — a turn on a call Velo is making FOR the owner to someone else
 //   "errandsum" — a short report to the owner after that call
+import { noteUse } from "./usage";
 import { claimsMedia, mentionsMedia, askedForMedia, agreesMedia, plain } from "./mediaWords";
 import { cleanReply, isMeta, isOnlyEmoji, writtenCall, orphanDescription, dropOrphanDescription } from "./text";
 
@@ -502,6 +503,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
         tools: [SEND_MEDIA_TOOL(ch?.name || "Velo", romantic)], tool_choice: { type: "tool", name: "send_media" },
         messages: [...messages, ...extra.map(m => ({ role: m.role as "assistant" | "user", content: String((m as { content?: unknown }).content || "") })), { role: "user", content: nudge }],
       }).catch(e => { console.warn("velo: photo via Claude", e instanceof Error ? e.message : e); return null; });
+      if (forced) noteUse("photo request", forced.model, forced.usage.input_tokens, forced.usage.output_tokens);
       const call = forced?.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
       return call ? (call.input as Record<string, unknown>) : null;
     };
@@ -544,7 +546,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
       const oaTools = toOaTools([...own, ...(search ? [WEB_SEARCH_TOOL] : [])]);
       const oa: OaMessage[] = oaBase();
       for (let round = 0; round < 6; round++) {
-        const r = await oaChat(brainNow, oa, oaTools, maxTokens);
+        const r = await oaChat(brainNow, oa, oaTools, maxTokens, undefined, undefined, `chat · ${mode}`);
         reply = r.content;
         if (!r.toolCalls.length) { answered = true; break; }
         oa.push({ role: "assistant", content: r.content || null, tool_calls: r.toolCalls });
@@ -582,6 +584,7 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
       ...(tools ? { tools } : {}),
       messages,
     });
+    noteUse(`chat · ${mode}`, res.model, res.usage.input_tokens, res.usage.output_tokens);
     if (res.stop_reason === "refusal") { reply = errand ? "I'm sorry, I can't help with that. Thanks for your time, goodbye. [[END]]" : "I'd rather not go there — but I'm here for anything else. What's on your mind?"; break; }
     const texts = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text");
     reply = takeReact(texts.map(b => b.text).join("").trim());
@@ -713,6 +716,7 @@ async function searchWithClaude(query: string, tz: string, sources: Map<string, 
         tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 5, user_location: { type: "approximate", timezone: tz } }],
         messages,
       });
+      noteUse("web look-up", res.model, res.usage.input_tokens, res.usage.output_tokens);
       const texts = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text");
       text = texts.map(b => b.text).join("").trim();
       for (const t of texts) for (const c of t.citations || []) if (c.type === "web_search_result_location" && /^https:\/\//.test(c.url)) sources.set(c.url, c.title || new URL(c.url).hostname);

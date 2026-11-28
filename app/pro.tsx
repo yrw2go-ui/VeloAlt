@@ -508,6 +508,62 @@ type TalkSection = { key: string; title: string; about: string; slots: TalkSlot[
  * talks, in plain boxes: edit one, save, and her next message uses it. Hard safety isn't here.
  */
 
+
+type UsageRow = { source: string; model: string; calls: number; input: number; output: number };
+const kTok = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
+
+/** 📊 Settings → Admin → AI usage: what is being asked of the AI, by feature and by model. It counts
+ *  calls and tokens (what the bill is made of) — not dollars, since prices change. */
+export function UsageCard() {
+  const [open, setOpen] = useState(false);
+  const [days, setDays] = useState(7);
+  const [d, setD] = useState<{ rows: UsageRow[]; today: { calls: number; input: number; output: number }; byDay: { day: string; calls: number; tokens: number }[]; missing?: boolean } | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    setD(null);
+    data<NonNullable<typeof d>>("usage.get", { days }).then(setD).catch(() => setD({ rows: [], today: { calls: 0, input: 0, output: 0 }, byDay: [] }));
+  }, [open, days]);
+  const total = (d?.rows || []).reduce((n, r) => n + r.input + r.output, 0) || 1;
+  return (
+    <div className="card" data-testid="ai-usage">
+      <button onClick={() => setOpen(o => !o)} style={{ all: "unset", cursor: "pointer", display: "flex", width: "100%", alignItems: "center", justifyContent: "space-between" }}>
+        <span>
+          <span style={{ fontWeight: 700 }}>📊 AI usage</span>
+          <span className="muted" style={{ fontSize: 13, display: "block", margin: "2px 0 0" }}>What is being asked of the AI, by feature and model.</span>
+        </span>
+        <span aria-hidden style={{ marginLeft: 10 }}>{open ? "▾" : "▸"}</span>
+      </button>
+      {open && (d === null ? <div className="muted" style={{ marginTop: 12, fontSize: 13 }}>Loading…</div> : (
+        <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 12 }}>
+          {d.missing && <div style={{ color: "var(--bad)", fontSize: 13 }}>⚠️ The usage table isn&apos;t on this database yet — run migration 112, then this fills in as the AI is used.</div>}
+          <div className="row" style={{ gap: 8 }}>
+            {[1, 7, 30].map(n => <button key={n} className={days === n ? "btn" : "ghost"} onClick={() => setDays(n)} style={{ padding: "4px 12px", fontSize: 13 }}>{n === 1 ? "Today" : `${n} days`}</button>)}
+          </div>
+          <div className="muted" style={{ fontSize: 13 }}>Today: <b style={{ color: "var(--text)" }}>{d.today.calls.toLocaleString()}</b> calls · {kTok(d.today.input)} read · {kTok(d.today.output)} written</div>
+          {!d.rows.length && !d.missing && <div className="muted" style={{ fontSize: 13 }}>Nothing counted yet — it starts from the moment this was switched on.</div>}
+          {d.rows.map(r => (
+            <div key={`${r.source}|${r.model}`} data-testid="usage-row">
+              <div className="row" style={{ justifyContent: "space-between", fontSize: 14 }}>
+                <span><b>{r.source}</b> <span className="muted" style={{ fontSize: 12 }}>· {r.model}</span></span>
+                <span className="muted" style={{ fontSize: 12 }}>{r.calls.toLocaleString()} calls</span>
+              </div>
+              <div style={{ height: 6, borderRadius: 4, background: "var(--surface2)", margin: "4px 0" }}>
+                <div style={{ height: 6, borderRadius: 4, width: `${Math.max(2, Math.round(((r.input + r.output) / total) * 100))}%`, background: "var(--accent)" }} />
+              </div>
+              <div className="muted" style={{ fontSize: 12 }}>{kTok(r.input)} read · {kTok(r.output)} written · about {kTok(Math.round((r.input + r.output) / Math.max(1, r.calls)))} per call</div>
+            </div>
+          ))}
+          {d.byDay.length > 1 && (
+            <div className="muted" style={{ fontSize: 12 }}>
+              By day: {d.byDay.map(x => `${x.day.slice(5)} ${x.calls.toLocaleString()} calls`).join(" · ")}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 type CommentGroup = { key: string; label: string; about: string; lines: string[] };
 
 /** 💬 Settings → Admin → Picagram comments: every line a stranger might leave, by group, and the

@@ -110,6 +110,19 @@ export async function POST(req: NextRequest) {
         const [u] = await db`select prompt_words from users where id = ${me}`;
         return NextResponse.json({ bits: withDefaults(merge(u?.prompt_words)) });
       }
+      // 📊 What the AI has been asked: today and the last week, by feature and by model.
+      case "usage.get": {
+        const days = Math.min(30, Math.max(1, Number(b.days) || 7));
+        try {
+          const rows = await db`select source, model, sum(calls)::int as calls, sum(input_tokens)::bigint as input, sum(output_tokens)::bigint as output
+            from llm_usage where day > current_date - ${days}::int group by source, model order by sum(input_tokens + output_tokens) desc limit 60`;
+          const today = await db`select coalesce(sum(calls), 0)::int as calls, coalesce(sum(input_tokens), 0)::bigint as input, coalesce(sum(output_tokens), 0)::bigint as output from llm_usage where day = current_date`;
+          const byDay = await db`select day::text as day, sum(calls)::int as calls, sum(input_tokens + output_tokens)::bigint as tokens from llm_usage where day > current_date - ${days}::int group by day order by day desc`;
+          return NextResponse.json({ days, rows: rows.map(r => ({ source: String(r.source), model: String(r.model), calls: Number(r.calls), input: Number(r.input), output: Number(r.output) })),
+            today: { calls: Number(today[0]?.calls || 0), input: Number(today[0]?.input || 0), output: Number(today[0]?.output || 0) },
+            byDay: byDay.map(r => ({ day: String(r.day), calls: Number(r.calls), tokens: Number(r.tokens) })) });
+        } catch { return NextResponse.json({ days, rows: [], today: { calls: 0, input: 0, output: 0 }, byDay: [], missing: true }); }
+      }
       // 💬 Picagram comment lines: every built-in one by group, plus the ones you added.
       case "comments.get": {
         const [u] = await db`select (to_jsonb(users)->>'pica_comments') as c from users where id = ${me}`;
