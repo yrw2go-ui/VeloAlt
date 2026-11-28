@@ -21,3 +21,14 @@ create table if not exists chat_group_reads (
 
 -- 💬 111: the comment lines you add yourself in Settings → Admin.
 alter table users add column if not exists pica_comments jsonb not null default '{}'::jsonb;
+
+-- 📊 112: what the AI is asked, by day, feature and model (counts only).
+create table if not exists llm_usage (
+  day date not null default current_date,
+  source text not null,
+  model text not null,
+  calls int not null default 0,
+  input_tokens bigint not null default 0,
+  output_tokens bigint not null default 0,
+  primary key (day, source, model)
+);

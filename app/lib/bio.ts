@@ -1,6 +1,7 @@
 // 👤 "About you": what Velo and characters know about the person (all optional, written by them):
 // how they describe themselves, their look (from a photo, described once in words), age or
 // birthday, and the state they live in. Never used to make pictures of them.
+import { noteUse } from "./usage";
 import Anthropic from "@anthropic-ai/sdk";
 import { sql } from "./db";
 import { scrub } from "./secrets";
@@ -53,6 +54,7 @@ export async function describePhoto(data: Buffer, type: string): Promise<string 
     system: "You describe a person's visible appearance from their own profile photo so a friend can mention real details naturally. One or two short lines: hair (color, length, style), eye color if clearly visible, glasses, facial hair, freckles, dimples, smile, and clothing style. Do NOT guess identity, age, ethnicity, religion, health, body size or weight, and make no judgments. If no person is clearly visible, reply exactly NONE.",
     messages: [{ role: "user", content: [{ type: "image", source: { type: "base64", media_type: media, data: data.toString("base64") } }, { type: "text", text: "Describe their visible appearance." }] }],
   });
+  noteUse("profile photo", res.model, res.usage.input_tokens, res.usage.output_tokens);
   const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map(b => b.text).join(" ").replace(/\s+/g, " ").trim();
   if (!text || /^NONE\b/i.test(text) || res.stop_reason === "refusal") return null;
   return scrub(text).slice(0, 600);
