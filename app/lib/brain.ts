@@ -8,6 +8,7 @@
 //   "errand"    — a turn on a call Velo is making FOR the owner to someone else
 //   "errandsum" — a short report to the owner after that call
 import { noteUse } from "./usage";
+import { lightModel } from "./lightModel";
 import { claimsMedia, mentionsMedia, askedForMedia, agreesMedia, plain } from "./mediaWords";
 import { cleanReply, isMeta, isOnlyEmoji, writtenCall, orphanDescription, dropOrphanDescription } from "./text";
 
@@ -498,11 +499,14 @@ export async function askVelo(caller: Caller, opts: { sendPhoto?: boolean; asks?
   // Claude — the first one that actually picks the photo (calls send_media) wins. (A Claude-brain character starts with Claude.)
   const photoInput = async (extra: OaMessage[], nudge: string): Promise<Record<string, unknown> | null> => {
     const viaClaude = async () => {
-      const forced = await client.messages.create({
-        model: process.env.VELO_MODEL!, max_tokens: 600, system,
-        tools: [SEND_MEDIA_TOOL(ch?.name || "Velo", romantic)], tool_choice: { type: "tool", name: "send_media" },
+      const askPhoto = (choice: Anthropic.ToolChoice) => client.messages.create({
+        model: lightModel(), max_tokens: 600, system,
+        tools: [SEND_MEDIA_TOOL(ch?.name || "Velo", romantic)], tool_choice: choice,
         messages: [...messages, ...extra.map(m => ({ role: m.role as "assistant" | "user", content: String((m as { content?: unknown }).content || "") })), { role: "user", content: nudge }],
-      }).catch(e => { console.warn("velo: photo via Claude", e instanceof Error ? e.message : e); return null; });
+      });
+      const forced = await askPhoto({ type: "tool", name: "send_media" })
+        .catch(() => askPhoto({ type: "auto" }))
+        .catch(e => { console.warn("velo: photo via Claude", e instanceof Error ? e.message : e); return null; });
       if (forced) noteUse("photo request", forced.model, forced.usage.input_tokens, forced.usage.output_tokens);
       const call = forced?.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
       return call ? (call.input as Record<string, unknown>) : null;
