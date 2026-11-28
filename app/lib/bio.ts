@@ -2,6 +2,7 @@
 // how they describe themselves, their look (from a photo, described once in words), age or
 // birthday, and the state they live in. Never used to make pictures of them.
 import { noteUse } from "./usage";
+import { lightModel } from "./lightModel";
 import Anthropic from "@anthropic-ai/sdk";
 import { sql } from "./db";
 import { scrub } from "./secrets";
@@ -50,7 +51,7 @@ export async function describePhoto(data: Buffer, type: string): Promise<string 
   if (!process.env.ANTHROPIC_API_KEY || !process.env.VELO_MODEL) return null;
   const media = (["image/jpeg", "image/png", "image/webp", "image/gif"].includes(type) ? type : "image/jpeg") as "image/jpeg";
   const res = await client.messages.create({
-    model: process.env.VELO_MODEL, max_tokens: 1500, output_config: { effort: "low" },
+    model: lightModel(), max_tokens: 1500, output_config: { effort: "low" },
     system: "You describe a person's visible appearance from their own profile photo so a friend can mention real details naturally. One or two short lines: hair (color, length, style), eye color if clearly visible, glasses, facial hair, freckles, dimples, smile, and clothing style. Do NOT guess identity, age, ethnicity, religion, health, body size or weight, and make no judgments. If no person is clearly visible, reply exactly NONE.",
     messages: [{ role: "user", content: [{ type: "image", source: { type: "base64", media_type: media, data: data.toString("base64") } }, { type: "text", text: "Describe their visible appearance." }] }],
   });

@@ -1,6 +1,7 @@
 // ✍️ One-shot writing (peek descriptions, "how they met" stories): by the brain picked in
 // Settings. Only that one — if Claude is picked it's Claude, and if Qwen is picked Claude is
 // never quietly asked instead. A backup brain, when one is switched on, is tried after it.
+import { lightModel } from "./lightModel";
 import Anthropic from "@anthropic-ai/sdk";
 import { brainProvider } from "./models";
 import { oaChat } from "./openai";
@@ -45,7 +46,7 @@ export async function writeText(spec: unknown, system: string, user: string, max
 }
 
 async function viaClaude(system: string, user: string, maxTokens: number, left: null | (() => number)): Promise<string> {
-  const ask = (tokens: number) => client.messages.create({ model: process.env.VELO_MODEL!, max_tokens: tokens, system, messages: [{ role: "user", content: user }] },
+  const ask = (tokens: number) => client.messages.create({ model: lightModel(), max_tokens: tokens, system, messages: [{ role: "user", content: user }] },
     left ? { timeout: left() } : undefined);
   const words = (r: Awaited<ReturnType<typeof ask>>) => r.content.map(b => (b.type === "text" ? b.text : "")).join(" ");
   const res = await ask(maxTokens);
